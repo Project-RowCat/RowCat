@@ -6012,15 +6012,16 @@ required by stores and package managers    SemVer `MAJOR.MINOR.PATCH`  app.confi
 
 ## Commits
 
-Conventional Commits. The subject is one English line; the body is a Korean sentence or two stating **why.**
+Conventional Commits, **all in English**: the subject is one line, and the body is a sentence or two stating
+**why.** (Commits up to the open-source release carry Korean bodies; new ones do not.)
 
 ```
 feat(api): add hono api with auth, drizzle schema and story routes
 
-Better Auth를 /v2/auth/*에 물린 Hono 앱과 story·member·social 테이블. 열람자는
-미들웨어에서 요청당 한 번만 해석하고, 가시성·성인·차단 판정은 전부 서버에서 끝낸다.
+A Hono app with Better Auth mounted on /v2/auth/* and the story, member and social tables. The viewer is
+resolved once per request in middleware, and visibility, adult and block decisions all finish on the server.
 
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ```
 
 Push only when asked.

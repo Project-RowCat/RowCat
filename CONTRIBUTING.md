@@ -52,13 +52,13 @@ pnpm check && pnpm typecheck && pnpm test
 
 ## Commits
 
-[Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/). The subject is one line in English;
-the body states **why** the change was made, in a sentence or two, and may be written in Korean or English.
+[Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), written in English: the subject is one
+line, and the body states **why** the change was made, in a sentence or two.
 
 ```text
 fix(sync): keep the pull cursor in the same transaction as the applied page
 
-커서만 커밋되는 상태가 표현 가능하면 그 페이지의 기록이 영영 오지 않는다.
+If a state where only the cursor commits is representable, that page's records never arrive.
 
 Signed-off-by: Your Name <you@example.com>
 ```
@@ -68,9 +68,9 @@ Keep each commit to one logical change. Public versions are dates (`YYYY-MM-DD`)
 
 ## Language
 
-Code comments, `AGENTS.md`, the root documents and the web app's default locale are in English. The decision
-records under `docs/` are in Korean, as are most existing commit bodies and the Korean product copy that the
-conversation prompts carry. You do not need to write Korean to contribute: issues, pull requests and review
+Code comments, commit messages, `AGENTS.md`, the root documents and the web app's default locale are in
+English. The decision records under `docs/` are in Korean, as is the Korean product copy that the conversation
+prompts carry (commits from before the open-source release also have Korean bodies). You do not need to write Korean to contribute: issues, pull requests and review
 discussion in English are welcome. When you change behaviour that a Korean document explains, update that text
 too (in Korean if you can; otherwise say so in the pull request and a maintainer will help).
 
