@@ -125,6 +125,17 @@
 		 *
 		 * 4 is `pnpm -r`'s default workspace concurrency, so this value keeps the load profile from
 		 * before turbo. `typecheck` and `build` are one process each and are not affected.
+		 *
+		 * Four still oversubscribes a small machine. The public CI runner has four vCPUs, so four
+		 * suites forking per core is three processes per core, and there a markdown case that takes
+		 * 0.6 s alone measured 6.1 s. So the same root script passes `--testTimeout=30000
+		 * --hookTimeout=30000` to every package's `vitest run` (arguments after `--` reach each task).
+		 * The flag sits there and not in each package's config because fifteen packages have no
+		 * config, and a config added later replaces vitest's defaults without saying so; the flag
+		 * reaches every suite either way. It widens wall-clock time only: runaway creator code is cut
+		 * by the runtime's own execution budget, and no assertion passes because of it. Two packages
+		 * still state the same budget in their own config: `runtime-host`, whose cases are slow even
+		 * alone, and `api`, whose script chains two `vitest run`s so the flag reaches only the second.
 		 */
 		"test": {
 			"dependsOn": ["topo"],

@@ -17,7 +17,7 @@
     "env:doctor": "pnpm --filter @rowcat/api env:doctor",
     "format": "biome format --write",
     "lint": "biome lint",
-    "test": "turbo run test --concurrency=4",
+    "test": "turbo run test --concurrency=4 -- --testTimeout=30000 --hookTimeout=30000",
     "runtime:declarations": "tsx packages/runtime/scripts/generate-declarations.ts",
     "runtime:declarations:check": "tsx packages/runtime/scripts/generate-declarations.ts --check",
     "runtime:sandbox": "tsx packages/runtime/scripts/generate-sandbox.ts",

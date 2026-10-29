@@ -5601,7 +5601,12 @@ page is still a plain pnpm script. **The commands themselves did not move** — 
   once puts the heavy runtime suites (QuickJS, TypeScript) past their 5s timeouts, and that
   failure does not reproduce when the suite runs alone. Four is `pnpm -r`'s own default, so the
   load profile is the one this repository had before turbo. (The full suite is flaky either way —
-  see the api and web notes.)
+  see the api and web notes.) **The same script passes `--testTimeout=30000 --hookTimeout=30000`
+  to every suite**, because four still oversubscribes the four-vCPU CI runner (a 0.6s case measured
+  6.1s there). It lives in the root script, not per package: fifteen packages have no vitest config,
+  and a config added later would replace the default silently. Two packages still state the same
+  budget themselves: `runtime-host` (slow even alone) and `api` (its script chains two runs and the
+  flag reaches only the second).
 - **`web#build` reads outside its package** (`docs/public/runtime/**` — the `gen:*` steps its build
   runs first), so that path is in its `inputs`. Without it, editing the runtime docs and rebuilding is a
   **cache hit** that ships the old copy.

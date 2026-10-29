@@ -62,12 +62,15 @@ export default defineConfig({
 		 */
 		exclude: [...configDefaults.exclude, "src/**/*.verified.test.ts"],
 		/**
-		 * Three times the default. These tests run against real Postgres while turbo runs other packages'
-		 * suites beside them, and a runtime publication now compiles in a fresh worker thread
-		 * (`services/story/runtime-compile.ts`, about a second, more under `tsx`); a test that publishes
-		 * two or three times sat right at 5 s. A real hang still fails, at 15 s.
+		 * The workspace budget, stated here because this package's script chains two `vitest run`s and
+		 * the root `pnpm test` flag (`turbo.json`, the `test` task) reaches only the second. These tests
+		 * run against real Postgres while turbo runs other packages' suites beside them, and a runtime
+		 * publication compiles in a fresh worker thread (`services/story/runtime-compile.ts`, about a
+		 * second, more under `tsx`): 15 s still cut an aggregate-query case under a full local run. A
+		 * real hang still fails, at 30 s.
 		 */
-		testTimeout: 15_000,
+		testTimeout: 30_000,
+		hookTimeout: 30_000,
 		/**
 		 * Parallel only when each worker has its own database. This was `false` while everything shared
 		 * one database, where parallel cleanup deletes the other side's rows; that reason still stands,

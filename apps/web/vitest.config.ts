@@ -17,15 +17,6 @@ export default defineConfig({
 	test: {
 		include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
 		/**
-		 * Wall-clock time only, the same widening `runtime-host` made: tests here build real QuickJS
-		 * instances and run real compiles, and on a CI runner where turbo runs four suites at once a case
-		 * that takes a second alone passed vitest's default 5 seconds (the first public CI runs). Runaway
-		 * creator code is cut by the session's execution budget, not by this, so no assertion passes
-		 * because of it.
-		 */
-		testTimeout: 30_000,
-		hookTimeout: 30_000,
-		/**
 		 * IndexedDB is a browser API that Node does not have. A polyfill is used instead of a real
 		 * browser because what is tested is our rules on top of Dexie (scope separation, transactions,
 		 * cursors). A spec-conforming IndexedDB implementation gives the same results for those.
