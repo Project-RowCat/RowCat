@@ -115,7 +115,7 @@ API의 `BACKGROUND_JOBS_TIMEZONE` 기본값이 앞의 것을 읽는다. 둘은 �
 ## 13. `@rowcat/mcp` 배포
 
 npm 배포는 `.github/workflows/mcp-publish.yml`과 `apps/mcp/scripts/release-policy.mjs`가 함께 지킨다. 그 정책은
-**배포 권한이 있는 저장소**를 `RELEASE_REPOSITORY`(`project-rowcat/rowcat`)로 고정하고, 공개
+**배포 권한이 있는 저장소**를 `RELEASE_REPOSITORY`(`Project-RowCat/RowCat`)로 고정하고, 공개
 manifest(`apps/mcp/package.json`의 `repository`·`bugs`·`homepage`)가 그 저장소를 가리키는지 본다 — npm이 신뢰
 배포에 붙이는 출처 증명(provenance)이 `repository.url`을 배포한 저장소와 견주므로, 어긋나면 다른 관문을 다 지난
 뒤 레지스트리에서 실패한다. 포크가 그 도구를 따로 내려면 패키지 이름(`PACKAGE_NAME`)·`RELEASE_REPOSITORY`·

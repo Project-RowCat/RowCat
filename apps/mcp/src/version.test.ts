@@ -182,12 +182,12 @@ describe("the public release's license", () => {
  * pins the values).
  */
 describe("public links lead to the public repository", () => {
-	const REPO = "https://github.com/project-rowcat/rowcat";
+	const REPO = "https://github.com/Project-RowCat/RowCat";
 
 	test("repository names it, with this package's directory", () => {
 		expect(manifest.repository).toEqual({
 			type: "git",
-			url: "git+https://github.com/project-rowcat/rowcat.git",
+			url: "git+https://github.com/Project-RowCat/RowCat.git",
 			directory: "apps/mcp",
 		});
 	});

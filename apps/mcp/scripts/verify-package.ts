@@ -270,7 +270,7 @@ async function main(): Promise<void> {
 	// `identityProblems` in `release-policy.mjs` checks the same just before publish.
 	const repository = manifestLicense.repository as { url?: string } | undefined;
 	check(
-		repository?.url === "git+https://github.com/project-rowcat/rowcat.git",
+		repository?.url === "git+https://github.com/Project-RowCat/RowCat.git",
 		"repository names the public repository",
 		repository?.url ?? "(none)",
 	);

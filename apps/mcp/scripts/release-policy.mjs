@@ -54,11 +54,16 @@ export const releaseTagFor = (version) => `${RELEASE_TAG_PREFIX}${version}`;
  * that the repository is public and the manifest names it too; `identityProblems` checks the two
  * agree instead of deriving one from the other.
  */
-export const RELEASE_REPOSITORY = "project-rowcat/rowcat";
+/**
+ * Written in GitHub's canonical casing, because the checks below compare it exactly with
+ * `GITHUB_REPOSITORY` and `GITHUB_WORKFLOW_REF`, which Actions fills in that casing; GitHub itself
+ * treats the name case-insensitively, so a lowercase spelling here would refuse every real release.
+ */
+export const RELEASE_REPOSITORY = "Project-RowCat/RowCat";
 
 /**
  * Whether a public-metadata value names exactly this repository. A substring check would let
- * `project-rowcat/rowcat-fork` pass, so the name has to end at a path, fragment, `.git` or the end.
+ * `Project-RowCat/RowCat-fork` pass, so the name has to end at a path, fragment, `.git` or the end.
  */
 const namesReleaseRepository = (value) =>
 	new RegExp(

@@ -34,8 +34,8 @@ const MANIFEST = {
 /** The environment a tag release job actually sees. */
 const RELEASE_ENV = {
 	GITHUB_ACTIONS: "true",
-	GITHUB_REPOSITORY: "project-rowcat/rowcat",
-	GITHUB_WORKFLOW_REF: `project-rowcat/rowcat/${RELEASE_WORKFLOW}@refs/tags/mcp-v0.1.0-alpha.1`,
+	GITHUB_REPOSITORY: "Project-RowCat/RowCat",
+	GITHUB_WORKFLOW_REF: `Project-RowCat/RowCat/${RELEASE_WORKFLOW}@refs/tags/mcp-v0.1.0-alpha.1`,
 	GITHUB_REF_TYPE: "tag",
 	GITHUB_REF_NAME: "mcp-v0.1.0-alpha.1",
 };
@@ -189,7 +189,7 @@ describe("publish permission", () => {
 				...RELEASE_ENV,
 				GITHUB_REF_TYPE: "branch",
 				GITHUB_REF_NAME: "main",
-				GITHUB_WORKFLOW_REF: `project-rowcat/rowcat/${RELEASE_WORKFLOW}@refs/heads/main`,
+				GITHUB_WORKFLOW_REF: `Project-RowCat/RowCat/${RELEASE_WORKFLOW}@refs/heads/main`,
 			},
 			MANIFEST,
 			"starts from a tag",
@@ -205,7 +205,7 @@ describe("publish permission", () => {
 			{
 				...RELEASE_ENV,
 				GITHUB_WORKFLOW_REF:
-					"project-rowcat/rowcat/.github/workflows/ci.yml@refs/tags/mcp-v0.1.0-alpha.1",
+					"Project-RowCat/RowCat/.github/workflows/ci.yml@refs/tags/mcp-v0.1.0-alpha.1",
 			},
 			MANIFEST,
 			RELEASE_WORKFLOW,

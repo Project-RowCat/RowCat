@@ -16,7 +16,7 @@
 | D2 | 이름·상표 | 이름과 `@rowcat/` 스코프는 유지. 포크는 다른 이름으로 배포한다(README의 상표 단락) | 2026-10-29 |
 | D4 | 기여 | DCO(`Signed-off-by`) — `CONTRIBUTING.md` | 2026-10-29 |
 | D5 | 언어 | 코드 주석·`AGENTS.md`·루트 문서·웹 기본 로케일은 영어, `docs/`의 결정 기록은 한국어 | 2026-10-29 |
-| D6 | `@rowcat/mcp` | 공개 저장소(`project-rowcat/rowcat`)의 태그 워크플로에서만 배포한다(`FORKING.md` §13). 공개 전에 npm에 올라간 판은 종료된 API를 가리킨다 | 2026-10-29 |
+| D6 | `@rowcat/mcp` | 공개 저장소(`Project-RowCat/RowCat`)의 태그 워크플로에서만 배포한다(`FORKING.md` §13). 공개 전에 npm에 올라간 판은 종료된 API를 가리킨다 | 2026-10-29 |
 | D7 | 공개 시점 | 서버를 내린 뒤 공개한다 — 운영 중인 코드를 읽힌 채 서비스를 돌리지 않는다 | 2026-10-28 |
 | D8 | 마이그레이션 | **기준선 하나로 압축**(`apps/api/drizzle/0000_baseline.sql`). 옛 백필·이관 문장은 싣지 않는다. 옛 로컬 개발 DB는 이 기준선과 맞지 않으므로 새로 만든다 | 2026-10-29 |
 | D9 | 저작권자 | `astra-void` — `Copyright (c) 2026 astra-void` | 2026-10-29 |

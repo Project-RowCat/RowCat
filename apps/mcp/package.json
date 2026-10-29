@@ -6,11 +6,11 @@
 	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/project-rowcat/rowcat.git",
+		"url": "git+https://github.com/Project-RowCat/RowCat.git",
 		"directory": "apps/mcp"
 	},
-	"bugs": { "url": "https://github.com/project-rowcat/rowcat/issues" },
-	"homepage": "https://github.com/project-rowcat/rowcat/tree/main/apps/mcp#readme",
+	"bugs": { "url": "https://github.com/Project-RowCat/RowCat/issues" },
+	"homepage": "https://github.com/Project-RowCat/RowCat/tree/main/apps/mcp#readme",
 	"type": "module",
 	"bin": { "rowcat-mcp": "./dist/index.mjs" },
 	"files": ["dist", "README.md", "LICENSE"],
