@@ -1,0 +1,49 @@
+{
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "tsdown.config.ts",
+    "drizzle.config.ts"
+  ],
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "paths": {
+      "#/*": ["./src/*"],
+      "@rowcat/chat": ["../../packages/chat/src/index.ts"],
+      "@rowcat/chat/*": ["../../packages/chat/src/*.ts"],
+      "@rowcat/contracts": ["../../packages/contracts/src/index.ts"],
+      "@rowcat/contracts/*": ["../../packages/contracts/src/*.ts"],
+      "@rowcat/domain": ["../../packages/domain/src/index.ts"],
+      "@rowcat/domain/*": ["../../packages/domain/src/*.ts"],
+      "@rowcat/sync": ["../../packages/sync/src/index.ts"],
+      "@rowcat/sync/*": ["../../packages/sync/src/*.ts"]
+    },
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+
+    /* Run by tsx / node: only syntax that is erased without runtime transforms */
+    "erasableSyntaxOnly": true,
+
+    /*
+     * Only the mail copy is JSX (`src/services/mail/templates.tsx`). It is run by tsx (esbuild) and
+     * the deploy bundle (tsdown), and both transform JSX; node's type stripping alone does not run
+     * these files, so adding `.tsx` files is done knowing that.
+     */
+    "jsx": "react-jsx",
+
+    /* Linting */
+    "skipLibCheck": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "name": "rowcat",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "description": "",
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "dev:api": "pnpm --filter api dev",
+    "dev:admin": "pnpm --filter admin dev",
+    "dev:all": "turbo run dev --ui=stream --filter=web --filter=@rowcat/api --filter=admin",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck && pnpm typecheck:e2e",
+    "typecheck:e2e": "tsc --noEmit -p tsconfig.json",
+    "check": "biome check && pnpm env:check && pnpm runtime:declarations:check && pnpm runtime:sandbox:check && pnpm runtime-vm:harness:check && pnpm runtime-docs:check && pnpm runtime-ai-docs:check && pnpm llms:check && pnpm mobile:runtime:check",
+    "env:check": "pnpm --filter @rowcat/api env:check",
+    "env:doctor": "pnpm --filter @rowcat/api env:doctor",
+    "format": "biome format --write",
+    "lint": "biome lint",
+    "test": "turbo run test --concurrency=4",
+    "runtime:declarations": "tsx packages/runtime/scripts/generate-declarations.ts",
+    "runtime:declarations:check": "tsx packages/runtime/scripts/generate-declarations.ts --check",
+    "runtime:sandbox": "tsx packages/runtime/scripts/generate-sandbox.ts",
+    "runtime:sandbox:check": "tsx packages/runtime/scripts/generate-sandbox.ts --check",
+    "updates:generate": "tsx packages/domain/scripts/generate-update-notes.ts",
+    "updates:check": "tsx packages/domain/scripts/generate-update-notes.ts --check",
+    "updates:discord": "tsx packages/domain/scripts/print-discord-note.ts",
+    "mobile:update": "pnpm --silent --filter @rowcat/mobile ota",
+    "mobile:runtime:check": "pnpm --silent --filter @rowcat/mobile ota runtime:check",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "runtime-vm:harness": "pnpm --filter @rowcat/mobile runtime-vm:harness",
+    "runtime-vm:harness:check": "pnpm --filter @rowcat/mobile runtime-vm:harness:check",
+    "runtime-docs": "pnpm --filter web gen:runtime-docs",
+    "runtime-docs:check": "pnpm --filter web gen:runtime-docs:check",
+    "runtime-ai-docs": "pnpm --filter @rowcat/runtime-ai-docs gen",
+    "runtime-ai-docs:check": "pnpm --filter @rowcat/runtime-ai-docs gen --check",
+    "llms": "pnpm --filter web gen:llms",
+    "llms:check": "pnpm --filter web gen:llms:check",
+    "runtime:public-beta:check": "pnpm runtime:declarations:check && pnpm runtime:sandbox:check && pnpm runtime-vm:harness:check && pnpm runtime-docs:check && pnpm runtime-ai-docs:check && pnpm llms:check && pnpm --filter @rowcat/runtime test && pnpm --filter @rowcat/runtime-compiler test && pnpm --filter @rowcat/runtime-host test && pnpm --filter @rowcat/runtime-persistence test && pnpm --filter @rowcat/runtime-ai-docs test && pnpm --filter @rowcat/runtime-mcp test && pnpm --filter @rowcat/runtime-renderer-web test && pnpm --filter @rowcat/runtime-renderer-native test"
+  },
+  "packageManager": "pnpm@10.34.5",
+  "devDependencies": {
+    "@biomejs/biome": "2.4.5",
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^22.20.1",
+    "tsx": "^4.23.12",
+    "turbo": "^2.10.12",
+    "typescript": "^7.0.2"
+  },
+  "pnpm": {
+    "overrides": {
+      "react-native": "0.86.3",
+      "fast-uri": ">=3.1.6"
+    }
+  }
+}

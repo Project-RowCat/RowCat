@@ -1,0 +1,44 @@
+{
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx"
+  ],
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "preserve",
+    "lib": [
+      "ESNext"
+    ],
+    "jsx": "react-jsx",
+    "paths": {
+      "@rowcat/runtime": [
+        "../runtime/src/index.ts"
+      ],
+      "@rowcat/runtime/declarations": [
+        "../runtime/src/declarations/index.ts"
+      ],
+      "@rowcat/runtime/*": [
+        "../runtime/src/*.ts"
+      ],
+      "@rowcat/runtime-host": [
+        "../runtime-host/src/index.ts"
+      ],
+      "@rowcat/runtime-host/*": [
+        "../runtime-host/src/*.ts"
+      ]
+    },
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true,
+    "customConditions": [
+      "react-native"
+    ]
+  }
+}

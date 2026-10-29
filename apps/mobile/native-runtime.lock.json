@@ -1,0 +1,32 @@
+{
+	"generations": {
+		"rowcat-native-1": {
+			"fingerprint": "8e54a817bd1e2b5a4f549550bfa476f3ae046f71",
+			"recordedAt": "2026-10-03"
+		},
+		"rowcat-native-2": {
+			"fingerprint": "b60a13ca938f4dcf61d0f33a73f8b4a8d206005a",
+			"recordedAt": "2026-10-06"
+		},
+		"rowcat-native-3": {
+			"fingerprint": "dc9079f108f55198cc3db74af1dac2ac025fcfd7",
+			"recordedAt": "2026-10-28"
+		},
+		"rowcat-native-4": {
+			"fingerprint": "d5512a89130805592ac441cf57d996596dbdbcc3",
+			"recordedAt": "2026-10-29"
+		},
+		"rowcat-native-5": {
+			"fingerprint": "b02ae9646bbdc647d86295872383f0f0a51f9c0f",
+			"recordedAt": "2026-10-29"
+		},
+		"rowcat-native-6": {
+			"fingerprint": "73b480f94070759e233959729e9f6c8e90b89dd2",
+			"recordedAt": "2026-10-29"
+		},
+		"rowcat-native-7": {
+			"fingerprint": "7cf13cdb2718dab85c83c5530ef07c732e6e0e7f",
+			"recordedAt": "2026-10-29"
+		}
+	}
+}

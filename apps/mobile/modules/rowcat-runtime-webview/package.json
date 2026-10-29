@@ -1,0 +1,7 @@
+{
+  "name": "rowcat-runtime-webview",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Trusted creator runtime WebView: the Android WebMessagePort bridge and the runtime assets for both platforms.",
+  "main": "index.ts"
+}

@@ -1,0 +1,27 @@
+{
+  "name": "@rowcat/markdown",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@rowcat/contracts": "workspace:*",
+    "@types/mdast": "^4.0.4",
+    "remark-breaks": "^4.0.0",
+    "remark-cjk-friendly": "^2.3.1",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "unified": "^11.0.5"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

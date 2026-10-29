@@ -1,0 +1,71 @@
+# The build context needs only the pnpm manifests and sources. Host build output mixed in would
+# conflict with what the container builds.
+
+**/node_modules
+**/.pnpm-store
+
+# Build output — rebuilt inside the image
+**/dist
+**/.output
+**/.nitro
+**/.vinxi
+**/.tanstack
+**/.tanstack-start
+**/.vite
+**/.turbo
+**/build
+**/out
+**/*.tsbuildinfo
+
+# Output specific to deployment targets
+**/.wrangler
+**/.vercel
+**/.netlify
+
+# Secrets — injected at runtime. Never bake them into an image layer.
+**/.env
+**/.env.*
+!**/.env.example
+**/*.local
+**/.dev.vars
+**/.dev.vars.*
+**/*.pem
+**/*.key
+**/*.p8
+**/*.p12
+**/*.jks
+
+# Tests / caches / logs
+**/coverage
+**/.nyc_output
+**/playwright-report
+**/test-results
+**/.cache
+**/.biome-cache
+**/*.log
+
+# Mobile native — unrelated to the server image
+apps/mobile
+# One exception: **a manifest**. pnpm's --frozen-lockfile checks that every workspace listed in the
+# lockfile exists, and rejects the install (ERR_PNPM_OUTDATED_LOCKFILE) if one is missing. Sources
+# still stay out; this one file is all the server image carries.
+!apps/mobile/package.json
+**/.expo
+**/ios/Pods
+**/android/build
+
+# VCS / editor / tooling
+.git
+.gitignore
+.github
+.vscode
+.idea
+.claude
+.serena
+**/.DS_Store
+
+# Docker's own files
+compose.yaml
+compose.*.yaml
+**/Dockerfile
+.dockerignore

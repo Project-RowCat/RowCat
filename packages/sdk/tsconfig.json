@@ -1,0 +1,26 @@
+{
+  "include": ["src/**/*.ts"],
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "lib": ["ES2022", "DOM"],
+    "paths": {
+      "@rowcat/sdk": ["./src/index.ts"],
+      "@rowcat/sdk/*": ["./src/*.ts"],
+      "@rowcat/contracts": ["../contracts/src/index.ts"],
+      "@rowcat/contracts/*": ["../contracts/src/*.ts"],
+      "@rowcat/domain": ["../domain/src/index.ts"],
+      "@rowcat/domain/*": ["../domain/src/*.ts"]
+    },
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true
+  }
+}

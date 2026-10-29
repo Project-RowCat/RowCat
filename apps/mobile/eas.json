@@ -1,0 +1,46 @@
+{
+	"cli": {
+		"version": ">= 23.0.0",
+		"requireCommit": true,
+		"appVersionSource": "remote"
+	},
+
+	"build": {
+		"development": {
+			"developmentClient": true,
+			"distribution": "internal",
+
+			"android": { "buildType": "apk" }
+		},
+
+		"preview": {
+			"distribution": "internal",
+			"android": { "buildType": "apk" },
+			"env": {
+				"EXPO_PUBLIC_WEB_ORIGIN": "https://example.com"
+			}
+		},
+
+		"testflight": {
+			"distribution": "store",
+			"autoIncrement": true,
+			"env": {
+				"EXPO_PUBLIC_API_ORIGIN": "https://staging-api.example.com",
+				"EXPO_PUBLIC_WEB_ORIGIN": "https://example.com"
+			}
+		},
+
+		"production": {
+			"autoIncrement": true,
+			"android": { "buildType": "app-bundle" },
+			"env": {
+				"EXPO_PUBLIC_API_ORIGIN": "https://api.example.com",
+				"EXPO_PUBLIC_WEB_ORIGIN": "https://example.com"
+			}
+		}
+	},
+	
+	"submit": {
+		"production": {}
+	}
+}

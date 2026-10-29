@@ -1,0 +1,28 @@
+{
+  "name": "@rowcat/runtime-mcp",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./node": "./src/node/host.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@jitl/quickjs-ng-wasmfile-release-sync": "0.32.0",
+    "@rowcat/authoring": "workspace:*",
+    "@rowcat/runtime": "workspace:*",
+    "@rowcat/runtime-ai-docs": "workspace:*",
+    "@rowcat/runtime-compiler": "workspace:*",
+    "@rowcat/runtime-host": "workspace:*",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

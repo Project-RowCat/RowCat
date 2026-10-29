@@ -1,0 +1,88 @@
+# Public CI, the only one in the repository.
+#
+# It does exactly what AGENTS.md's "When you finish" says: check → typecheck → test.
+# It uses no secrets at all, so a fork's PR gets the same verdict.
+#
+# What is not here, and why:
+#   mobile native builds · OTA · store submission   need signing keys and accounts (docs/ota/)
+#   browser journeys (e2e/, Playwright)             a layer that needs the API, web and generation stub up.
+#                                                   Runs locally with `pnpm test:e2e`
+#   Redis                                           api tests run with REDIS_URL empty (vitest.config.ts).
+#                                                   Only the two adapter files run when REDIS_TEST_URL is set, and skip otherwise
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# When a new commit arrives on the same ref, the earlier run is not worth answering.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    services:
+      # Started with the same credentials as vitest.config.ts's default connection string. POSTGRES_USER
+      # is a superuser, so it comes with the CREATEDB needed for per-worker databases (rowcat_test_w1…).
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: rowcat
+          POSTGRES_PASSWORD: rowcat
+          POSTGRES_DB: rowcat
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rowcat -d rowcat"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      # No `version`: the root package.json's `packageManager` is the only source.
+      # setup-node's pnpm cache has to find pnpm, so this comes first.
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      # 22 is the lowest supported release (apps/mcp's engines >=22.12, same as mcp-publish.yml).
+      # The deploy images are node:26, but images build themselves, and running on the lower release is the wider promise.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # biome · environment config drift · generated artifact drift (runtime declarations, sandbox, harness, docs, llms)
+      # · native fingerprint (mobile:runtime:check).
+      - run: pnpm check
+
+      - run: pnpm typecheck
+
+      # api tests skip, rather than fail, when they can't reach the database, and without CREATEDB they
+      # quietly fold to sequential runs. Both end green, so this asks first, before the tests.
+      - name: Postgres is reachable with CREATEDB
+        env:
+          DATABASE_URL: postgres://rowcat:rowcat@127.0.0.1:5432/rowcat
+        run: |
+          can=$(psql "$DATABASE_URL" -tAc "select rolcreatedb from pg_roles where rolname = current_user")
+          if [ "$can" != "t" ]; then
+            echo "::error::Connected to Postgres but without CREATEDB — the api tests would fold to sequential runs on a shared database." >&2
+            exit 1
+          fi
+
+      # DATABASE_URL reaches only @rowcat/api#test (turbo.json: only that task is envMode loose).
+      # The value equals the default but is written anyway: the shell value beating the file and the default is CI's path.
+      - run: pnpm test
+        env:
+          DATABASE_URL: postgres://rowcat:rowcat@127.0.0.1:5432/rowcat

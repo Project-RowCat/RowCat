@@ -1,0 +1,47 @@
+import type { Messages } from "../../types.ts";
+
+export const notifications: Messages["notifications"] = {
+	title: "알림",
+	tabsLabel: "알림 종류",
+	general: "일반",
+	updates: "업데이트",
+	listLabel: "알림 목록",
+	markAllRead: "모두 읽음",
+	markAllReadFailed:
+		"알림을 모두 읽음으로 표시하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+	offlineTitle: "지금은 연결되어 있지 않습니다.",
+	offlineDetail: "연결되면 알림을 다시 불러옵니다.",
+	loadFailedTitle: "알림을 불러오지 못했습니다.",
+	loadFailedDetail: "잠시 후 다시 시도해 주세요.",
+	empty: "아직 알림이 없습니다.",
+	loading: "불러오는 중…",
+	showMore: "더 보기",
+	loadingNotifications: "알림을 불러오는 중입니다",
+	stale: "마지막 갱신에 실패해 이전에 받은 상태를 보여 주고 있습니다.",
+	staleRetry: "마지막 갱신에 실패했습니다. 다시 시도",
+	staleRetrying: "마지막 갱신에 실패했습니다. 불러오는 중…",
+	viewAll: "모든 알림 보기",
+	viewAllUpdates: "업데이트 모두 보기",
+	unread: "읽지 않음, {{message}}",
+	unreadSummary: "읽지 않음 {{count}}개",
+	deletedActor: "삭제된 사용자",
+	unnamed: "이름 없음",
+	message: {
+		follow: "{{who}}님이 회원님을 팔로우했습니다.",
+		storyComment: '{{who}}님이 "{{title}}"에 댓글을 남겼습니다.',
+		storyCommentUntitled: "{{who}}님이 회원님의 작품에 댓글을 남겼습니다.",
+		commentReply:
+			'{{who}}님이 "{{title}}"에 남긴 회원님의 댓글에 답글을 남겼어요.',
+		commentReplyUntitled: "{{who}}님이 회원님의 댓글에 답글을 남겼어요.",
+		published: "{{who}}님이 새 작품을 공개했습니다.",
+		reportReviewed: "신고하신 내용을 검토했습니다.",
+		moderationAction: "계정에 운영 조치가 적용되었습니다.",
+		moderationReversed: "적용되었던 운영 조치가 해제되었습니다.",
+		appUpdate: "앱 업데이트가 필요합니다.",
+		appealAccepted: "이의 제기가 받아들여졌습니다.",
+		appealRejected: "이의 제기가 받아들여지지 않았습니다.",
+		appealResolved: "이의 제기 결과가 등록되었습니다.",
+		appUpdateDetail:
+			"{{platform}} 앱 {{version}} 미만은 더 이상 지원되지 않습니다.",
+	},
+};

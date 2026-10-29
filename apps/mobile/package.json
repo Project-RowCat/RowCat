@@ -1,0 +1,102 @@
+{
+  "name": "@rowcat/mobile",
+  "version": "2.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "ios": "expo run:ios",
+    "android": "expo run:android",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "doctor": "expo-doctor",
+    "build": "expo export --platform ios --platform android --output-dir dist",
+    "runtime-vm:harness": "tsx scripts/build-runtime-vm-harness.ts",
+    "runtime-vm:harness:check": "tsx scripts/build-runtime-vm-harness.ts --check",
+    "ota": "tsx scripts/ota/cli.ts"
+  },
+  "dependencies": {
+    "@better-auth/expo": "1.7.2",
+    "@noble/hashes": "^2.3.0",
+    "@portone/browser-sdk": "^0.1.9",
+    "@portone/react-native-sdk": "0.7.0",
+    "@rowcat/authoring": "workspace:*",
+    "@rowcat/chat": "workspace:*",
+    "@rowcat/contracts": "workspace:*",
+    "@rowcat/design": "workspace:*",
+    "@rowcat/domain": "workspace:*",
+    "@rowcat/markdown": "workspace:*",
+    "@rowcat/prompt-packs": "workspace:*",
+    "@rowcat/query": "workspace:*",
+    "@rowcat/runtime": "workspace:*",
+    "@rowcat/runtime-host": "workspace:*",
+    "@rowcat/runtime-persistence": "workspace:*",
+    "@rowcat/runtime-renderer-native": "workspace:*",
+    "@rowcat/sdk": "workspace:*",
+    "@rowcat/sync": "workspace:*",
+    "@rowcat/ui-native": "workspace:*",
+    "@tanstack/react-query": "^5.101.4",
+    "better-auth": "1.7.2",
+    "expo": "^57.0.20",
+    "expo-apple-authentication": "~57.0.1",
+    "expo-audio": "57.0.4",
+    "expo-blur": "~57.0.2",
+    "expo-clipboard": "~57.0.1",
+    "expo-constants": "~57.0.17",
+    "expo-crypto": "~57.0.2",
+    "expo-file-system": "~57.0.6",
+    "expo-font": "~57.0.3",
+    "expo-image-manipulator": "~57.0.16",
+    "expo-image-picker": "~57.0.16",
+    "expo-linking": "~57.0.9",
+    "expo-network": "~57.0.1",
+    "expo-notifications": "~57.0.17",
+    "expo-router": "~57.0.19",
+    "expo-secure-store": "~57.0.3",
+    "expo-sqlite": "~57.0.2",
+    "expo-status-bar": "~57.0.1",
+    "expo-updates": "~57.0.24",
+    "expo-web-browser": "~57.0.2",
+    "react": "19.2.8",
+    "react-native": "0.86.3",
+    "react-native-pulsar": "1.7.0",
+    "react-native-reanimated": "4.5.1",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "~4.26.2",
+    "react-native-svg": "15.15.4",
+    "react-native-webview": "13.16.1",
+    "react-native-worklets": "0.10.1"
+  },
+  "devDependencies": {
+    "@expo/fingerprint": "0.20.12",
+    "@jitl/quickjs-ng-wasmfile-release-sync": "0.32.0",
+    "@rowcat/runtime-compiler": "workspace:*",
+    "@types/react": "~19.2.18",
+    "aws4fetch": "^1.0.20",
+    "esbuild": "^0.28.2",
+    "expo-doctor": "^1.18.4",
+    "quickjs-emscripten-core": "0.32.0",
+    "vitest": "^3.2.4"
+  },
+  "expo": {
+    "install": {
+      "exclude": [
+        "react"
+      ]
+    },
+    "autolinking": {
+      "nativeModulesDir": "./modules",
+      "ios": {
+        "exclude": [
+          "@expo/ui"
+        ]
+      },
+      "android": {
+        "exclude": [
+          "react-native-pulsar"
+        ]
+      }
+    }
+  }
+}

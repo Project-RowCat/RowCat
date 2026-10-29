@@ -1,0 +1,110 @@
+{
+	"extends": "expo/tsconfig.base",
+	"include": [
+		"**/*.ts",
+		"**/*.tsx"
+	],
+	"exclude": [
+		"node_modules",
+		"dist",
+		".expo"
+	],
+	"compilerOptions": {
+		"paths": {
+			"@rowcat/authoring": [
+				"../../packages/authoring/src/index.ts"
+			],
+			"@rowcat/authoring/*": [
+				"../../packages/authoring/src/*.ts"
+			],
+			"@rowcat/chat": [
+				"../../packages/chat/src/index.ts"
+			],
+			"@rowcat/chat/*": [
+				"../../packages/chat/src/*.ts"
+			],
+			"@rowcat/contracts": [
+				"../../packages/contracts/src/index.ts"
+			],
+			"@rowcat/contracts/*": [
+				"../../packages/contracts/src/*.ts"
+			],
+			"@rowcat/design": [
+				"../../packages/design/src/index.ts"
+			],
+			"@rowcat/design/*": [
+				"../../packages/design/src/*.ts"
+			],
+			"@rowcat/domain": [
+				"../../packages/domain/src/index.ts"
+			],
+			"@rowcat/domain/*": [
+				"../../packages/domain/src/*.ts"
+			],
+			"@rowcat/markdown": [
+				"../../packages/markdown/src/index.ts"
+			],
+			"@rowcat/markdown/*": [
+				"../../packages/markdown/src/*.ts"
+			],
+			"@rowcat/prompt-packs": ["../../packages/prompt-packs/src/index.ts"],
+      "@rowcat/query": [
+				"../../packages/query/src/index.ts"
+			],
+			"@rowcat/query/*": [
+				"../../packages/query/src/*.ts"
+			],
+			"@rowcat/runtime": [
+				"../../packages/runtime/src/index.ts"
+			],
+			"@rowcat/runtime-compiler": [
+				"../../packages/runtime-compiler/src/index.ts"
+			],
+			"@rowcat/runtime-compiler/*": [
+				"../../packages/runtime-compiler/src/*.ts"
+			],
+			"@rowcat/runtime-host": [
+				"../../packages/runtime-host/src/index.ts"
+			],
+			"@rowcat/runtime-host/*": [
+				"../../packages/runtime-host/src/*.ts"
+			],
+			"@rowcat/runtime-renderer-native": [
+				"../../packages/runtime-renderer-native/src/index.ts"
+			],
+			"@rowcat/runtime-renderer-native/*": [
+				"../../packages/runtime-renderer-native/src/*.ts"
+			],
+			"@rowcat/runtime/*": [
+				"../../packages/runtime/src/*.ts"
+			],
+			"@rowcat/runtime/declarations": [
+				"../../packages/runtime/src/declarations/index.ts"
+			],
+			"@rowcat/sdk": [
+				"../../packages/sdk/src/index.ts"
+			],
+			"@rowcat/sdk/*": [
+				"../../packages/sdk/src/*.ts"
+			],
+			"@rowcat/sync": [
+				"../../packages/sync/src/index.ts"
+			],
+			"@rowcat/sync/*": [
+				"../../packages/sync/src/*.ts"
+			],
+			"@rowcat/ui-native": [
+				"../../packages/ui-native/src/index.ts"
+			]
+		},
+		"moduleResolution": "bundler",
+		"allowImportingTsExtensions": true,
+		"verbatimModuleSyntax": true,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"strict": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"noFallthroughCasesInSwitch": true
+	}
+}

@@ -1,0 +1,3535 @@
+# RowCat creator runtime: full public docs
+
+> Language contract v7 · 25 docs · 99 public names. The source is `docs/public/runtime` in the repository.
+
+이 문서는 **RowCat 크리에이터 런타임 코드를 대신 쓰는 도구**(Claude Code · Codex · Cursor 같은
+코딩 에이전트)를 위한 것입니다. 사람이 읽는 공개 문서 목록에는 없습니다 — 여기 적힌 것은
+제품의 설명이 아니라 **작업 절차와 규칙**이기 때문입니다.
+
+## 30초 모델
+
+```text
+크리에이터 런타임 = TypeScript/TSX로 쓴 작품 화면
+공개 API        = @rowcat/runtime 하나. 그 밖의 import는 컴파일에서 막힌다
+실행            = 격리된 QuickJS/WASM. 브라우저도 Node도 아니다
+화면            = RowCat의 호스트 렌더러가 그린다. DOM이 아니다
+저장            = 세 가지 수명(useState · useStoryState · usePersistentState)
+```
+
+React를 닮았지만 **React가 아닙니다.** 이름과 시그니처가 익숙하다는 이유로 React의 다른
+API가 있을 것이라고 가정하면 안 됩니다 — `useContext`, `useLayoutEffect`, `Suspense`,
+`createPortal`, `React.FC`는 이 언어에 없습니다.
+
+## 절대 하지 않는 것
+
+```text
+import "react" · "react-dom" · "react-native" · npm 패키지        컴파일 거절
+<div> · <span> · 그 밖의 HTML 태그                                 컴파일 거절
+fetch · XMLHttpRequest · WebSocket                                 없다
+setTimeout · setInterval · requestAnimationFrame                   없다 (전이는 transition 프롭)
+localStorage · IndexedDB · document · window · process             없다
+eval · new Function · 동적 import()                                컴파일 거절
+상대 import에 확장자 붙이기 (`./game.ts`)                          `game.ts.ts`를 찾는다 — 확장자를 뺀다
+```
+
+마지막 줄은 이 저장소의 다른 코드와 **반대**입니다. 런타임 프로젝트 안에서는 `./game`처럼
+확장자 없이 적습니다.
+
+전체 목록과 대안은 [지원하지 않는 API](/docs/runtime/runtime-model/unsupported-apis)와
+[지원하는 import](/docs/runtime/runtime-model/supported-imports)에 있습니다.
+
+## 세 가지 상태 수명을 섞지 않습니다
+
+```text
+useState             이 세션 안. 다시 시작하면 사라진다        열린 패널 · 입력 중인 글 · 로딩 표시
+useStoryState        이 회차. `플레이 초기화`가 지운다          현재 장면 · 호감도 · 이번에 알아낸 것
+usePersistentState   계정에 남는다. 초기화가 닿지 않는다        해금한 결말 · 회차를 넘는 기억
+```
+
+가장 자주 나오는 실수는 **일시적인 UI 상태를 `usePersistentState`에 넣는 것**입니다. 그
+값은 플레이어의 계정에 저장되어 기기 사이를 건너므로, 열린 패널 같은 것을 거기 두면 다른
+기기에서 그 패널이 열린 채로 시작합니다. 자세한 것은
+[상태](/docs/runtime/concepts/state)에 있습니다.
+
+## 이름을 지어내지 않습니다
+
+이 언어의 이름은 `@rowcat/runtime`이 내보내는 것이 **전부**입니다. React·DOM·React Native를
+닮았다는 이유로 있을 것 같은 이름을 쓰지 마십시오. 확실하지 않으면 코드를 쓰기 전에 찾습니다:
+
+```text
+MCP          runtime_get_api_reference · runtime_search_docs
+문서         /docs/runtime/reference
+기계용 목록   /runtime-api.json · /llms-full.txt
+```
+
+## 고쳤으면 확인합니다
+
+MCP로 붙어 있다면 이 순환이 이 도구 모음의 존재 이유입니다.
+
+```text
+1. runtime_get_project · runtime_list_files      무엇이 있는지 본다
+2. runtime_read_file                             고칠 파일만 읽는다
+3. runtime_search_docs                           모르는 API는 지어내지 말고 찾는다
+4. runtime_write_file                            가장 작은 변경 하나
+5. runtime_compile                               막는 진단이 없을 때까지
+6. runtime_preview_start | runtime_preview_restart
+7. runtime_preview_get_tree                      실제로 무엇이 그려졌는가
+8. runtime_preview_press · runtime_preview_input 그 경로를 눌러 본다
+9. runtime_preview_get_tree                      눌린 뒤에 무엇이 바뀌었는가
+10. runtime_preview_get_console · _get_state     설명되지 않는 결과가 있을 때만
+```
+
+**컴파일이 통과했다는 것은 화면이 옳다는 뜻이 아닙니다.** 조건부 렌더, 상태 갱신, 이벤트
+배선은 전부 컴파일을 통과하면서 틀릴 수 있습니다. 트리를 읽고 눌러 보는 단계를 건너뛰지
+마십시오.
+
+## 미리보기 트리의 노드 번호는 리비전에 매입니다
+
+`runtime_preview_get_tree`가 준 `nodeId`는 **그 리비전의 트리**에 대한 것입니다. 누르거나
+글을 넣으면 리비전이 오르고, 사라진 노드를 가리킨 조작은 `stale_node`로 거절됩니다. 그때
+할 일은 **트리를 다시 읽는 것**이고, 글자나 순서로 대체 노드를 추측하면 안 됩니다.
+
+## 작게 고칩니다
+
+한 번에 파일 하나, 변경 하나입니다. 프로젝트를 통째로 다시 쓰는 것은 거의 언제나 잘못된
+선택입니다 — 제작자가 쓴 코드에는 문서에 없는 의도가 들어 있고, 되돌릴 방법이 없습니다.
+
+---
+
+<!-- /docs/runtime · docs/public/runtime/index.md -->
+
+
+# 크리에이터 런타임
+
+크리에이터 런타임은 **TypeScript와 TSX로 RowCat 작품을 만드는 방법**입니다. 프롬프트만
+적는 대신 작품의 화면, 진행 상태, 선택지, AI와의 대화, 회차를 넘어 남는 진행까지 직접
+설계할 수 있습니다.
+
+런타임을 켠 작품은 대화창이 아니라 **당신이 만든 화면**으로 열립니다. 플레이어가 누르는
+버튼, 입력하는 글, 넘어가는 장면, 저장되는 진행이 전부 당신의 코드가 정한 대로 움직입니다.
+
+## 무엇을 만들 수 있나요
+
+- **메신저** — 인물과 주고받는 대화 화면. 보낸 말은 저장되고 답장은 AI가 만듭니다.
+- **비주얼 노벨** — 장면과 선택지로 갈라지는 이야기.
+- **조사 게임** — 단서를 모으고, 아는 것만 물어볼 수 있는 진행.
+- **관계 시뮬레이션** — 호감도·신뢰 같은 수치가 대화와 결말을 바꾸는 작품.
+- **소셜 피드처럼 보이는 화면** — 게시판·단체 대화방·프로필을 흉내 낸 인터페이스.
+
+이 목록은 예시입니다. 런타임은 특정 장르를 위한 도구가 아니라 화면과 상태를 조립하는
+부품이고, 그 부품으로 무엇을 만드는지는 당신이 정합니다.
+
+## 무엇이 아닌가요
+
+크리에이터 런타임은 **웹 페이지를 만드는 도구가 아닙니다.** 브라우저 API, npm 패키지, 임의의
+네트워크 요청은 쓸 수 없습니다. 쓸 수 있는 것은 RowCat이 제공하는 **통제된 API 하나**
+(`@rowcat/runtime`)뿐이고, 그 안에 화면 부품·상태·AI 생성이 전부 들어 있습니다. 그 경계가
+플레이어의 기기를 지키고, 같은 코드가 웹과 앱에서 같은 모양으로 돌게 합니다.
+
+React를 써 본 사람이라면 모양이 익숙할 것입니다 — 컴포넌트, 훅, TSX, 이벤트 핸들러.
+하지만 **React가 아닙니다.** 자세한 것은 [컴포넌트와 TSX](/docs/runtime/concepts/components)에
+있습니다.
+
+## 어떻게 시작하나요
+
+1. 작품 초안의 편집기에서 런타임을 켭니다. 템플릿을 고르거나 빈 프로젝트로 시작할 수
+   있습니다.
+2. 런타임 스튜디오가 열립니다 — TypeScript/TSX 프로젝트, 검사 결과, 미리보기가 한
+   화면에 있습니다.
+3. `src/main.tsx`를 고치고 미리보기로 확인합니다.
+4. 작품을 발행하면 플레이어가 **플레이** 버튼으로 당신의 런타임을 엽니다.
+
+[빠른 시작](/docs/runtime/quick-start)이 그 네 단계를 실제 코드와 함께 안내합니다.
+
+## 문서의 구성
+
+- **시작하기** — 첫 화면을 만들고, 프로젝트가 어떻게 생겼는지, 미리보기와 발행이 무엇을
+  하는지.
+- **핵심 개념** — 컴포넌트·스타일·이벤트·세 가지 상태·AI 생성·자산·스크롤과 초점.
+- **API 레퍼런스** — `@rowcat/runtime`이 내보내는 모든 이름.
+- **런타임 모델** — 무엇이 되고 무엇이 안 되는지, 그리고 왜.
+
+---
+
+<!-- /docs/runtime/quick-start · docs/public/runtime/quick-start.md -->
+
+
+# 빠른 시작
+
+이 페이지를 끝내면 **누르면 장이 넘어가는 화면** 하나가 미리보기에서 돌고 있을 것입니다.
+TypeScript를 읽을 수 있으면 충분합니다.
+
+## 1. 런타임 켜기
+
+작품 초안을 열고 편집기에서 **커스텀 인터랙티브 경험 만들기** 구획을 찾습니다. 시작 버튼을
+누르면 템플릿 갤러리가 열립니다 — 처음이라면 **Blank**를 고르세요. 파일 하나(`src/main.tsx`)
+로 시작하는 가장 작은 프로젝트입니다.
+
+런타임을 켜도 지금 쓰고 있는 프롬프트·로어·시작 장면은 그대로 남습니다. 켜는 일은 되돌릴
+수 있고, 끄는 일도 파일을 지우지 않습니다.
+
+## 2. 스튜디오 둘러보기
+
+런타임 스튜디오는 세 칸입니다.
+
+```text
+파일          프로젝트의 파일 목록
+코드          지금 고치고 있는 파일 — 자동완성과 타입 검사가 붙어 있습니다
+미리보기       실행 버튼을 누르면 이 자리에서 실제로 돕니다
+```
+
+머리말의 검사 상태(`이상 없음` · `문제 N개`)를 누르면 바닥 패널의 `Problems`가 열립니다.
+저장은 자동입니다.
+
+## 3. 첫 화면 쓰기
+
+`src/main.tsx`의 내용을 아래로 바꿉니다.
+
+```tsx example=quick-start file=src/main.tsx
+import {
+	Button,
+	Screen,
+	Stack,
+	Text,
+	color,
+	defineStoryState,
+	useStoryState,
+} from "@rowcat/runtime";
+
+const game = defineStoryState({
+	key: "game",
+	version: 1,
+	initial: {
+		chapter: 1,
+	},
+});
+
+export default function App() {
+	const [state, setState] = useStoryState(game);
+
+	return (
+		<Screen background={color("#0b0d12")}>
+			<Stack gap={12} style={{ padding: 24 }}>
+				<Text style={{ color: color("#f5f7fa"), fontSize: 22, fontWeight: "bold" }}>
+					{state.chapter}장
+				</Text>
+				<Button
+					onPress={() =>
+						setState((current) => ({
+							chapter: current.chapter + 1,
+						}))
+					}
+				>
+					계속
+				</Button>
+			</Stack>
+		</Screen>
+	);
+}
+```
+
+줄마다 무엇을 하는지 보겠습니다.
+
+- **`import ... from "@rowcat/runtime"`** — 런타임 코드가 가져올 수 있는 이름은 전부 이
+  패키지에서 옵니다. `react`도 `react-native`도 없습니다.
+- **`defineStoryState`** — 이 플레이스루 동안 저장되는 상태 하나를 **모듈 최상단에서**
+  선언합니다. `key`는 저장의 이름, `version`은 모양의 판, `initial`은 처음 값입니다.
+- **`export default function App()`** — 진입 파일이 기본 내보내기로 내놓는 컴포넌트가
+  작품의 첫 화면입니다.
+- **`useStoryState(game)`** — 선언해 둔 상태를 읽고 바꿉니다. 돌려주는 모양은
+  `[값, 설정 함수]`입니다.
+- **`<Screen>` · `<Stack>` · `<Text>` · `<Button>`** — 런타임이 그리는 부품입니다. HTML
+  태그(`<div>`)는 쓸 수 없습니다.
+- **`onPress`** — 누름 하나. 인자가 없고, 이벤트 객체도 없습니다.
+
+## 4. 미리보기로 돌리기
+
+미리보기 칸의 **미리보기 실행**을 누릅니다. `1장`과 `계속` 버튼이 보이고, 누를 때마다 수가
+오릅니다.
+
+코드를 고치면 미리보기는 **저절로 다시 돌지 않습니다.** `변경사항 있음`이 뜨고 **다시 시작**이
+그 코드를 새로 돌립니다. 다시 시작해도 `chapter`는 이어집니다 — 그것이 저장 상태이기
+때문입니다. 처음으로 되돌리려면 **플레이 초기화**를 누릅니다.
+
+## 5. 발행하기
+
+스튜디오를 나와 초안 편집기에서 평소처럼 **발행**합니다. 발행된 작품의 상세 화면에는
+`대화 시작` 대신 **플레이**가 서고, 그 버튼이 당신의 런타임을 엽니다. 플레이어의 진행은 그
+사람의 계정에 저장되어 기기 사이를 건너갑니다.
+
+## 다음
+
+- [프로젝트 구조](/docs/runtime/project-structure) — 파일을 나누고 서로 가져오는 방법.
+- [상태](/docs/runtime/concepts/state) — `useState`·`useStoryState`·`usePersistentState`가
+  각각 얼마나 오래 사는가.
+- [AI 생성](/docs/runtime/concepts/generation) — 플레이어의 입력에 인물이 답하게 하기.
+
+---
+
+<!-- /docs/runtime/project-structure · docs/public/runtime/project-structure.md -->
+
+
+# 프로젝트 구조
+
+런타임 프로젝트는 `.ts`·`.tsx` 파일들의 묶음입니다. 폴더는 자유롭게 만들 수 있고, 파일 사이는
+평범한 `import`로 잇습니다.
+
+## 진입 파일
+
+`src/main.tsx`가 진입 파일입니다. 이 파일은 **기본 내보내기로 컴포넌트 하나**를 내놓아야 하고,
+그 컴포넌트가 작품의 첫 화면입니다.
+
+```tsx
+export default function App() {
+	return <Text>안녕하세요</Text>;
+}
+```
+
+컴포넌트는 인자를 받지 않고 동기적으로 화면을 돌려줍니다. `async function App()`은 거절됩니다.
+
+## 파일 나누기
+
+프로젝트가 자라면 화면·규칙·데이터를 파일로 나눕니다. 아래 셋은 실제로 컴파일되는 예제입니다.
+
+```text
+src/
+├── main.tsx              진입 파일
+├── components/
+│   └── CharacterCard.tsx 재사용하는 화면 조각
+└── game.ts               상태 정의와 규칙
+```
+
+```ts example=multi-file file=src/game.ts
+import { defineStoryState } from "@rowcat/runtime";
+
+export interface Character {
+	name: string;
+	trust: number;
+}
+
+export const party = defineStoryState({
+	key: "party",
+	version: 1,
+	initial: {
+		members: [
+			{ name: "세나", trust: 40 },
+			{ name: "민재", trust: 10 },
+		] as Character[],
+	},
+});
+
+/** 신뢰는 0~100 사이에서만 움직인다 — 규칙은 화면이 아니라 여기 있다. */
+export function adjustTrust(character: Character, delta: number): Character {
+	return {
+		...character,
+		trust: Math.max(0, Math.min(100, character.trust + delta)),
+	};
+}
+```
+
+```tsx example=multi-file file=src/components/CharacterCard.tsx
+import { Row, Stack, Text } from "@rowcat/runtime";
+import type { Character } from "../game";
+
+export function CharacterCard({ character }: { character: Character }) {
+	return (
+		<Stack gap={4} style={{ padding: 12, borderRadius: 8 }}>
+			<Text style={{ fontWeight: "bold" }}>{character.name}</Text>
+			<Row gap={8}>
+				<Text>신뢰</Text>
+				<Text>{character.trust}</Text>
+			</Row>
+		</Stack>
+	);
+}
+```
+
+```tsx example=multi-file file=src/main.tsx
+import { Button, Screen, Stack, useStoryState } from "@rowcat/runtime";
+import { CharacterCard } from "./components/CharacterCard";
+import { adjustTrust, party } from "./game";
+
+export default function App() {
+	const [state, setState] = useStoryState(party);
+
+	return (
+		<Screen>
+			<Stack gap={12} style={{ padding: 16 }}>
+				{state.members.map((member) => (
+					<CharacterCard key={member.name} character={member} />
+				))}
+				<Button
+					onPress={() =>
+						setState((current) => ({
+							members: current.members.map((member) =>
+								member.name === "세나" ? adjustTrust(member, 5) : member,
+							),
+						}))
+					}
+				>
+					세나와 이야기하기
+				</Button>
+			</Stack>
+		</Screen>
+	);
+}
+```
+
+### 상대 경로에 확장자를 적지 않습니다
+
+`"./game"`이지 `"./game.ts"`가 아닙니다. 런타임은 `./game`을 만나면 다음 순서로 찾습니다.
+
+```text
+./game.ts  →  ./game.tsx  →  ./game/index.ts  →  ./game/index.tsx
+```
+
+`"./game.ts"`라고 적으면 `game.ts.ts`를 찾다가 실패합니다.
+
+### 폴더 밖으로 나갈 수 없습니다
+
+`"../../something"`처럼 프로젝트 뿌리 위로 올라가는 경로는 거절됩니다. 프로젝트의 파일은
+전부 뿌리 아래에 있습니다.
+
+## 가져올 수 있는 것
+
+| 지정자 | 되는가 |
+| --- | --- |
+| `@rowcat/runtime` | **됩니다.** 화면 부품·훅·상태·AI 생성이 전부 여기서 옵니다 |
+| `./…` · `../…` (프로젝트 안) | **됩니다.** 위의 규칙대로 찾습니다 |
+| `react` · `react-native` · `react-dom` | 안 됩니다 — [React를 닮았지만 React가 아닙니다](/docs/runtime/concepts/components) |
+| 그 밖의 npm 패키지 | 안 됩니다 — 설치할 곳이 없습니다 |
+| `node:fs` 같은 Node 모듈 | 안 됩니다 |
+| `import()` 동적 가져오기 | 안 됩니다 — 모든 모듈은 컴파일 시점에 정해집니다 |
+
+자세한 근거는 [지원하는 import](/docs/runtime/runtime-model/supported-imports)에 있습니다.
+
+## 한도
+
+| 항목 | 한도 |
+| --- | --- |
+| 파일 수 | 200개 |
+| 파일 하나의 길이 | 200,000자 |
+| 경로 길이 | 200자 |
+| 이름 하나(폴더·파일)의 길이 | 64자 |
+| 폴더 깊이 | 7단계 |
+
+경로에 쓸 수 있는 글자는 영문·숫자와 `.`·`_`·`-`입니다.
+
+---
+
+<!-- /docs/runtime/preview-and-publish · docs/public/runtime/preview-and-publish.md -->
+
+
+# 미리보기와 발행
+
+## 미리보기
+
+스튜디오의 **미리보기 실행**은 지금 편집기에 있는 파일들로 런타임을 실제로 돌립니다. 아무것도
+서버에 올라가지 않고, 작품의 저장 데이터도 건드리지 않습니다 — 미리보기의 진행은 스튜디오가
+열려 있는 동안만 살고 새로고침하면 사라집니다.
+
+### 검사가 먼저입니다
+
+`Problems`에 막는 오류가 남아 있으면 실행 버튼이 켜지지 않습니다. 경고는 실행을 막지 않습니다.
+
+### 저절로 다시 돌지 않습니다
+
+코드를 고치면 미리보기에 `변경사항 있음`이 뜹니다. 도는 화면은 그대로이고 **다시 시작**이 새
+코드를 돌립니다. 새 코드로 갈아 끼우면서 화면의 상태를 옮겨 주는 기능(핫 리로드)은 없습니다 —
+`useState`의 값은 다시 시작할 때마다 처음부터입니다.
+
+### 초기화가 셋입니다
+
+```text
+다시 시작        새 코드로 다시 돌린다. 저장 상태·영구 상태는 **이어받는다**
+플레이 초기화     플레이스루 상태(useStoryState)만 비운다. 영구 상태는 남는다
+긴 진행 초기화    영구 상태(usePersistentState)까지 비운다 — 스튜디오에만 있는 조작이다
+```
+
+세 조작이 다른 이유는 [상태](/docs/runtime/concepts/state)의 세 수명이 다르기 때문입니다.
+발행된 작품의 플레이어에게는 앞의 둘만 있습니다.
+
+### AI는 꺼진 채로 시작합니다
+
+미리보기의 `AI 사용`은 기본이 꺼짐입니다. 켜면 `useGeneration()`이 **당신의 계정 설정으로**
+실제 요청을 보냅니다 — 관리형이면 이 서버 운영자의 키가 쓰이고, 직접 연결한 제공자면 그 키가 쓰입니다. 토글은
+다음 실행·다시 시작부터 적용됩니다.
+
+### 콘솔
+
+`console.log`·`console.warn`·`console.error`는 바닥 패널의 `Console`에 모입니다. 런타임이
+낸 진단(중복 `key`, 사라진 컴포넌트의 상태 갱신 등)도 같은 자리에 옵니다. `State` 칸은 지금
+저장된 플레이스루 상태와 영구 상태를 그대로 보여 줍니다.
+
+## 발행
+
+런타임이 켜진 초안을 발행하면 RowCat 서버가 소스를 **다시 컴파일**해서 발행본에 붙입니다.
+컴파일에 실패하면 발행이 거절되고 이미 발행된 판은 한 글자도 바뀌지 않습니다.
+
+발행된 작품의 상세 화면에는 `대화 시작` 대신 **플레이**가 섭니다. 플레이어가 그 버튼을 누르면
+당신의 런타임이 RowCat의 대화 화면 자리에서 열립니다.
+
+### 플레이어의 진행은 저장됩니다
+
+`useStoryState`·`usePersistentState`의 값은 플레이어의 계정에 저장되어 그 사람의 다른 기기로
+건너갑니다. 플레이어에게는 **다시 시작**과 **플레이 초기화**가 있고, 영구 상태를 지우는 조작은
+없습니다.
+
+### 재발행은 도는 세션을 바꾸지 않습니다
+
+코드를 고쳐 다시 발행해도 이미 열려 있는 플레이는 그대로입니다. 새로 여는 플레이가 새 코드를
+받습니다. 저장된 진행은 코드와 무관하게 남으므로, 저장 모양을 바꿨다면
+[마이그레이션](/docs/runtime/concepts/state#마이그레이션)을 적어야 합니다.
+
+### 발행된 코드는 비밀이 아닙니다
+
+컴파일된 런타임은 플레이어의 **기기에서** 실행됩니다. 문자열·인물 지시문·분기 규칙은 열어 볼
+수 있다고 보아야 합니다. API 키, 비밀번호, 개인 토큰을 소스에 적지 마세요 — 자세한 것은
+[보안과 샌드박스](/docs/runtime/runtime-model/security#비밀을-적지-마세요)에 있습니다.
+
+### 런타임을 끄면
+
+편집기에서 런타임을 끄고 다시 발행하면 발행본에서 런타임이 빠지고 작품은 대화 작품으로
+돌아갑니다. 스튜디오의 파일은 지워지지 않습니다 — 지우는 것은 별개의 조작이고 확인을
+요구합니다.
+
+---
+
+<!-- /docs/runtime/concepts/components · docs/public/runtime/concepts/components.md -->
+
+
+# 컴포넌트와 TSX
+
+런타임의 화면은 **컴포넌트**로 만듭니다. 컴포넌트는 프롭을 받아 화면 조각을 돌려주는 함수이고,
+그 조각은 TSX로 적습니다.
+
+```tsx
+import { Row, Text } from "@rowcat/runtime";
+
+function Score({ label, value }: { label: string; value: number }) {
+	return (
+		<Row gap={8}>
+			<Text>{label}</Text>
+			<Text style={{ fontWeight: "bold" }}>{value}</Text>
+		</Row>
+	);
+}
+```
+
+## React를 닮았지만 React가 아닙니다
+
+컴포넌트·TSX·훅·상태·이벤트 핸들러 — 모양은 React에서 가져왔습니다. 이미 아는 것을 다시 배우게
+하지 않기 위해서입니다. 하지만 **런타임은 React가 아니고, React를 쓰지도 않습니다.**
+
+그 차이가 실제로 뜻하는 것은 다음과 같습니다.
+
+- `react`·`react-dom`·`react-native`를 설치하거나 가져올 수 없습니다. 훅과 컴포넌트는
+  전부 `@rowcat/runtime`에서 옵니다.
+- React 라이브러리(상태 관리·UI 키트·라우터)는 쓸 수 없습니다.
+- `<div>`·`<span>` 같은 HTML 태그도, `<View>`를 React Native에서 가져오는 것도 안 됩니다.
+  쓸 수 있는 태그는 런타임이 내보내는 [열두 부품](/docs/runtime/reference/components)뿐입니다.
+- `useContext`·`useLayoutEffect`·`forwardRef`·`memo`·`Suspense`·`lazy`·에러 바운더리·
+  포털·클래스 컴포넌트는 없습니다. 있는 훅은 [아홉](/docs/runtime/reference/hooks)입니다.
+- `props.children`은 있습니다. `key`도 있습니다.
+
+## 프리미티브와 조합
+
+`@rowcat/runtime`이 내보내는 `Screen`·`Stack`·`Text` 같은 것들은 **런타임이 그리는 부품**
+(프리미티브)입니다. 당신이 만드는 컴포넌트는 그 부품을 조합한 함수이고, 둘의 쓰임은 같습니다 —
+TSX 태그로 씁니다.
+
+프리미티브는 함수처럼 직접 부를 수 없습니다. `Stack({ gap: 8 })`은 오류이고 `<Stack gap={8}>`이
+맞습니다.
+
+## 컴포넌트가 돌려주는 것
+
+컴포넌트는 다음 중 하나를 돌려줍니다.
+
+- 태그 하나(`<Stack>…</Stack>`)
+- 문자열이나 숫자 — 그대로 글자가 됩니다
+- `null`·`undefined`·`false`·`true` — 아무것도 그리지 않습니다
+- 위의 것들의 배열
+
+배열을 돌려주거나 목록을 `map`으로 그릴 때는 **`key`를 주세요.** `key`는 같은 부모 아래에서
+어느 항목이 어느 항목인지 알려 주고, 없으면 자리 번호로 판정합니다. 항목이 끼어들거나 빠질
+때 `key`가 없으면 뒤 항목들의 상태가 엉뚱한 항목으로 옮겨 갑니다. 중복된 `key`는 경고이고
+그 항목은 자리로 판정됩니다.
+
+```tsx
+{clues.map((clue) => (
+	<Text key={clue.id}>{clue.title}</Text>
+))}
+```
+
+## 렌더는 순수해야 합니다
+
+컴포넌트 함수는 **읽기만** 합니다. 렌더 도중에 상태를 바꾸면(`setState`를 조건 없이 부르면)
+거절됩니다. 상태를 바꾸는 자리는 이벤트 핸들러와 효과입니다.
+
+```tsx
+function Bad() {
+	const [n, setN] = useState(0);
+	setN(n + 1); // 렌더 중의 갱신 — 오류
+	return <Text>{n}</Text>;
+}
+```
+
+컴포넌트는 동기 함수입니다. `async` 컴포넌트와 프로미스를 돌려주는 컴포넌트는 없습니다.
+AI 응답처럼 기다려야 하는 값은 [이벤트 핸들러에서 받아 상태에 넣습니다](/docs/runtime/concepts/generation).
+
+## 훅의 규칙
+
+훅은 컴포넌트(또는 훅을 부르는 다른 함수)의 **최상단에서, 매번 같은 순서로** 부릅니다.
+조건문·반복문·이벤트 핸들러 안에서 훅을 부르면 안 됩니다. 런타임은 이 규칙을 실행 중에
+확인하고, 같은 컴포넌트가 렌더마다 다른 훅을 부르면 오류(`runtime_hook_order_changed`)를 냅니다.
+
+## 다음
+
+- [스타일](/docs/runtime/concepts/styling) — 부품에 모양을 주는 방법.
+- [이벤트와 입력](/docs/runtime/concepts/events) — 누름과 글 입력.
+- [상태](/docs/runtime/concepts/state) — 값이 얼마나 오래 사는가.
+
+---
+
+<!-- /docs/runtime/concepts/styling · docs/public/runtime/concepts/styling.md -->
+
+
+# 스타일
+
+런타임의 스타일은 **자기 체계**입니다. CSS 문자열도, 클래스 이름도, React Native의
+`StyleSheet`도 아닙니다. 같은 코드가 웹과 앱에서 같은 모양으로 그려져야 하기 때문에, 두 플랫폼
+모두에서 똑같이 표현할 수 있는 속성만 열려 있습니다.
+
+```tsx
+<Stack
+	gap={12}
+	style={{
+		padding: 16,
+		backgroundColor: color("#111827"),
+		borderRadius: 12,
+	}}
+>
+```
+
+## 상자의 스타일
+
+`View`·`Stack`·`Row`·`ScrollView`·`Pressable`·`Image`·`TextInput`·`TextArea`가 받는 `style`은
+`RuntimeStyle`입니다.
+
+| 속성 | 값 | 뜻 |
+| --- | --- | --- |
+| `width` · `height` | 숫자 또는 `"50%"` | 크기. 숫자는 밀도 독립 단위입니다 |
+| `padding` | 숫자 | 안쪽 여백. 네 방향이 같습니다 |
+| `gap` | 숫자 | 자식 사이의 간격 |
+| `opacity` | 0~1 | 투명도 |
+| `backgroundColor` | `color(…)` | 바탕색 |
+| `borderRadius` | 숫자 | 모서리 둥글기 |
+| `justify` | `"start"` · `"center"` · `"end"` · `"between"` · `"around"` | 주축 정렬 |
+| `align` | `"start"` · `"center"` · `"end"` · `"stretch"` | 교차축 정렬 |
+| `grow` | 숫자 | 남는 공간을 나눠 갖는 비율 |
+
+**여기 없는 속성은 없는 것입니다.** `margin`·`position`·`zIndex`·`border`·`flexDirection`·
+`display`는 받지 않고, 적으면 검사에서 막힙니다. 방향은 속성이 아니라 부품이 정합니다 — 세로는
+`Stack`, 가로는 `Row`입니다.
+
+`Stack`과 `Row`의 `gap`은 프롭으로도 줄 수 있습니다(`<Stack gap={8}>`). 프롭과 `style.gap`을
+둘 다 주면 **프롭이 이깁니다.**
+
+## 글자의 스타일
+
+`Text`가 받는 `style`은 `RuntimeTextStyle`이고, 상자의 스타일과 **다른 목록**입니다. 글자에는
+`gap`도 `justify`도 없습니다.
+
+| 속성 | 값 |
+| --- | --- |
+| `color` | `color(…)` |
+| `fontSize` | 숫자 |
+| `fontWeight` | `"regular"` · `"medium"` · `"bold"` |
+| `align` | `"start"` · `"center"` · `"end"` |
+| `lines` | 숫자 — 몇 줄에서 자를 것인가. 없으면 자르지 않습니다 |
+| `opacity` | 0~1 |
+
+`TextInput`·`TextArea`의 글자 모양은 `textStyle`로 따로 줍니다.
+
+## 색
+
+색은 문자열이 아니라 **`color()`가 만든 값**입니다.
+
+```tsx
+import { color } from "@rowcat/runtime";
+
+const ink = color("#f5f7fa");
+const faint = color("#8b93a7cc"); // #rrggbbaa
+```
+
+받는 형식은 `#rgb`·`#rrggbb`·`#rrggbbaa` 셋뿐입니다. `"red"`·`rgb(…)`·`hsl(…)`은 없습니다.
+글자 그대로 적은 값은 타입 검사에서 잘못된 형식을 잡고, 실행 중에는 한 번 더 확인합니다.
+
+계산해서 만든 문자열은 `color()`에 넣을 수 없습니다(타입이 막습니다). 그런 값은 `isRuntimeColor`로
+먼저 확인합니다.
+
+```tsx
+import { isRuntimeColor } from "@rowcat/runtime";
+
+function tint(hex: string) {
+	return isRuntimeColor(hex) ? hex : color("#000000");
+}
+```
+
+## 화면의 바탕
+
+`Screen`의 `background`는 화면 전체(안전 영역 바깥까지)의 바탕색입니다. 다른 부품의
+`backgroundColor`와 달리 `style` 밖의 프롭입니다.
+
+```tsx
+<Screen background={color("#0b0d12")}>
+```
+
+## 전이
+
+상태가 바뀌어 `opacity`·`translateX`·`translateY`·`scale`이 달라질 때, 그 값까지 **부드럽게
+가도록** 할 수 있습니다. `transition` 프롭 하나면 됩니다.
+
+```tsx
+import { Text, View, useState } from "@rowcat/runtime";
+
+export default function App() {
+	const [open, setOpen] = useState(false);
+
+	return (
+		<View
+			transition={{ duration: 180, easing: "ease-out" }}
+			style={{
+				opacity: open ? 1 : 0,
+				translateY: open ? 0 : 8,
+				scale: open ? 1 : 0.98,
+			}}
+		>
+			<Text>안녕하세요</Text>
+		</View>
+	);
+}
+```
+
+적는 것은 **바라는 값**뿐입니다. 중간 값도, 프레임도, 시작과 끝을 알리는 콜백도 작품 코드에
+오지 않습니다 — 상태를 바꾸면 화면이 거기까지 갑니다.
+
+### 움직이는 축은 넷입니다
+
+`opacity` · `translateX` · `translateY` · `scale`.
+
+`width`·`padding`·`backgroundColor`는 전이하지 않습니다(값은 즉시 바뀝니다). 그 축들은 배치를
+다시 계산하게 만들고, 배치의 중간 값은 웹과 앱이 서로 다른 시점에 재기 때문입니다.
+
+### 처음 그려질 때는 움직이지 않습니다
+
+`transition`을 적었다고 **등장 애니메이션**이 되지 않습니다.
+
+```tsx
+<View transition={{ duration: 200 }} style={{ opacity: 1 }} />
+```
+
+이 부품은 나타나는 순간부터 `opacity: 1`입니다. 움직이는 것은 **이미 그려진 부품의 값이
+바뀔 때**뿐입니다.
+
+### 사라지는 것은 즉시입니다
+
+```tsx
+{open && <View transition={{ duration: 200 }}>…</View>}
+```
+
+`open`이 거짓이 되면 이 부품은 **그 자리에서 사라집니다.** `transition`은 트리에서 빠지는
+부품을 붙잡아 두지 않습니다. 사라지는 모습을 만들고 싶다면 부품을 남겨 둔 채 `opacity`를
+`0`으로 두세요.
+
+### 되돌리면 지금 있는 자리에서 되돌아갑니다
+
+전이가 끝나기 전에 목표가 다시 바뀌면, 화면은 **지금 그려지고 있는 값**에서 새 목표로
+갑니다. 끝까지 갔다가 되돌아오지 않습니다.
+
+### 움직임 줄이기
+
+RowCat은 보는 사람의 **움직임 줄이기** 설정을 자동으로 따릅니다. 그 설정이 켜져 있으면
+전이는 즉시 적용됩니다 — 값은 똑같이 바뀌고 가는 과정만 없습니다.
+
+작품 코드는 그 설정을 읽을 수 없습니다(`useReducedMotion()` 같은 이름이 없습니다). 접근성
+설정이 작품의 진행을 바꾸는 일은 없어야 하기 때문입니다.
+
+### 전이에 없는 것
+
+- **`delay`·키프레임·반복·시퀀스.**
+- **스프링**(`stiffness`·`damping`)·`cubic-bezier(...)`. 이징은 다섯 개뿐입니다.
+- **완료 콜백**(`onTransitionEnd`). 전이는 화면의 일이지 진행의 일이 아닙니다 — 완료를
+  기다려 다음 상태로 넘어가는 코드는 움직임 줄이기가 켜진 기기에서 다르게 돕니다.
+- **진입·퇴장 애니메이션**(`Presence`). 위의 두 규칙이 그것입니다.
+- **회전·기울이기**(`rotate`·`skew`), 레이아웃 애니메이션, 제스처·스크롤에 연동된 움직임.
+
+## 없는 것
+
+- **CSS 문자열·클래스 이름·선택자.** 웹에서만 뜻이 있습니다.
+- **단위 문자열**(`"12px"`·`"1rem"`). 숫자 하나가 밀도 독립 단위이고, 그 해석은 플랫폼의
+  몫입니다.
+- **`position: "fixed"`·`zIndex`.** 떠 있는 층은 런타임이 나중에 제공할 부품이지 좌표로 만들
+  것이 아닙니다.
+- **테마 변수.** 런타임 코드는 RowCat의 테마 색을 읽을 수 없습니다. 작품의 색은 작품이 정합니다.
+- **글꼴 선택·자간·행간.** 지금 열려 있는 글자 축은 위 표가 전부입니다.
+
+전체 목록은 [스타일 레퍼런스](/docs/runtime/reference/styling)에 있습니다.
+
+---
+
+<!-- /docs/runtime/concepts/events · docs/public/runtime/concepts/events.md -->
+
+
+# 이벤트와 입력
+
+런타임의 이벤트는 **결과만** 건넵니다. 눌렸다는 사실, 바뀐 뒤의 글 전체, 확정했다는 사실 —
+그뿐입니다. 이벤트 객체(`MouseEvent`·`KeyboardEvent`·좌표·`preventDefault`)는 없습니다. 같은
+코드가 웹과 앱에서 같은 뜻을 갖게 하려는 선택입니다.
+
+## 누름
+
+`Button`과 `Pressable`이 `onPress`를 받습니다. 인자가 없습니다.
+
+```tsx
+<Button onPress={() => setState((current) => ({ ...current, chapter: current.chapter + 1 }))}>
+	계속
+</Button>
+```
+
+`onPress`는 `async` 함수여도 됩니다. AI 응답을 기다리는 자리가 대개 여기입니다.
+
+`Button`은 라벨이 있는 조작이고 `tone`으로 시각 위계를 고릅니다(`"primary"`·`"secondary"`·
+`"ghost"`). `Pressable`은 임의의 내용을 누를 수 있게 감싸고 `style`을 받습니다 — 카드 하나를
+통째로 누르게 하는 자리입니다.
+
+`disabled={true}`인 부품은 눌리지 않습니다. 시각 효과가 아니라 실제로 핸들러가 불리지 않습니다.
+
+## 글 입력
+
+`TextInput`(한 줄)과 `TextArea`(여러 줄)이 글을 받습니다. 둘 다 **통제된 입력**입니다 — 지금
+적혀 있는 글은 언제나 당신의 상태이고, `value`가 필수입니다.
+
+```tsx example=text-input file=src/main.tsx
+import {
+	Button,
+	Row,
+	Screen,
+	Stack,
+	Text,
+	TextInput,
+	useState,
+} from "@rowcat/runtime";
+
+export default function App() {
+	const [draft, setDraft] = useState("");
+	const [sent, setSent] = useState<string[]>([]);
+
+	function send() {
+		const text = draft.trim();
+		if (text.length === 0) return;
+		setSent((current) => [...current, text]);
+		setDraft("");
+	}
+
+	return (
+		<Screen>
+			<Stack gap={8} style={{ padding: 16 }}>
+				{sent.map((line, index) => (
+					<Text key={index}>{line}</Text>
+				))}
+				<Row gap={8}>
+					<TextInput
+						value={draft}
+						placeholder="할 말을 적으세요"
+						onChangeText={setDraft}
+						onSubmit={send}
+						style={{ grow: 1 }}
+					/>
+					<Button onPress={send} disabled={draft.trim().length === 0}>
+						보내기
+					</Button>
+				</Row>
+			</Stack>
+		</Screen>
+	);
+}
+```
+
+- **`onChangeText(value)`** — 글자가 바뀔 때마다 **바뀐 뒤의 전체 글**을 받습니다. 그 값을
+  상태에 넣지 않으면 입력칸은 당신의 `value`로 되돌아갑니다(통제된 입력이라 그렇습니다).
+- **`onSubmit()`** — `TextInput`에서 Enter(앱에서는 완료)를 눌렀을 때. 인자가 없습니다.
+  `TextArea`에는 없습니다 — 여러 줄에서 Enter는 줄바꿈입니다.
+- **`disabled`** — 잠긴 입력칸은 글자를 받지 않고 `onSubmit`도 부르지 않습니다.
+
+### 한글·일본어·중국어 조합 중의 Enter
+
+조합 중(글자가 완성되기 전)에 누른 Enter는 **제출이 아닙니다.** 런타임이 그 판정을 갖고
+`onSubmit`을 부르지 않으므로, 당신의 코드는 이것을 신경 쓰지 않아도 됩니다. 조합이 끝난 뒤의
+Enter만 `onSubmit`으로 옵니다.
+
+### 값을 지우는 것도 상태입니다
+
+보낸 뒤 입력칸을 비우려면 `setDraft("")`를 부릅니다. 입력칸 자체에 "비우기" 메서드는 없습니다 —
+ref로 부품을 잡는 방법이 없기 때문입니다.
+
+## 이벤트가 오는 순서
+
+핸들러 안에서 여러 번 상태를 바꿔도 화면은 **한 번** 다시 그려집니다. 핸들러의 동기 구간과
+그 안의 `await`가 없는 이어짐은 한 묶음이고, AI 응답을 `await`한 뒤의 갱신은 새 묶음입니다.
+
+## 없는 것
+
+- 마우스 좌표·스크롤 위치·키 코드·포커스 이벤트
+- 길게 누르기·더블 탭·드래그·제스처
+- `onFocus`·`onBlur`·`onKeyDown`
+- 부품에 대한 ref(`useRef`는 값을 담는 칸이지 부품을 가리키지 않습니다)
+
+이 목록에 있는 것이 필요하다면 지금은 상태로 표현할 방법을 찾아야 합니다. 예를 들어 "어느
+카드가 선택되었는가"는 `Pressable` 여러 개와 `useState` 하나로 만듭니다.
+
+---
+
+<!-- /docs/runtime/concepts/state · docs/public/runtime/concepts/state.md -->
+
+
+# 상태
+
+런타임에는 **상태의 수명이 셋** 있습니다. 어느 훅을 쓰는가가 곧 그 값이 얼마나 오래 사는가를
+정합니다.
+
+```text
+useState             이 실행 동안만            다시 시작하면 사라진다
+useStoryState        이 플레이스루 동안         다시 열어도 이어진다 · 플레이 초기화가 지운다
+usePersistentState   이 플레이어 + 이 작품 동안  플레이 초기화를 넘어 남는다
+```
+
+값을 어느 수명에 둘지는 "**무엇이 이것을 지워도 되는가**"로 정합니다.
+
+## 화면의 상태 — `useState` · `useReducer`
+
+컴포넌트가 갖는 값입니다. 지금 열린 탭, 펼친 패널, 아직 보내지 않은 입력, 대기 중 표시 —
+런타임이 다시 시작되면 처음으로 돌아가도 괜찮은 것들입니다.
+
+```tsx
+const [tab, setTab] = useState<"chat" | "profile">("chat");
+const [draft, setDraft] = useState("");
+const [pending, setPending] = useState(false);
+```
+
+`useState`는 초기값으로 함수도 받습니다(`useState(() => expensive())`). 그 함수는 첫 렌더에서만
+돕니다. `useReducer`는 값이 여러 갈래로 바뀌는 화면의 어휘입니다 — 모양은 React와 같습니다.
+
+**이 값은 저장되지 않습니다.** 작품의 진행을 `useState`에 두면 플레이어가 작품을 닫는 순간
+사라집니다.
+
+## 플레이스루의 상태 — `defineStoryState` · `useStoryState`
+
+**이 플레이스루의 진행**입니다. 현재 장, 신뢰도, 인벤토리, 모은 단서, 내린 결정, 주고받은
+대화 — 작품을 닫았다 열어도 이어져야 하는 것들입니다. 플레이어가 **플레이 초기화**를 누르면
+비워집니다(새 게임).
+
+정의는 **모듈 최상단에서 한 번**, 읽고 쓰는 것은 컴포넌트 안에서 훅으로 합니다.
+
+```tsx example=story-state file=src/main.tsx
+import {
+	Button,
+	Screen,
+	Stack,
+	Text,
+	defineStoryState,
+	useStoryState,
+} from "@rowcat/runtime";
+
+const progress = defineStoryState({
+	key: "progress",
+	version: 1,
+	initial: {
+		chapter: 1,
+		trust: 40,
+		clues: [] as string[],
+	},
+});
+
+export default function App() {
+	const [state, setState] = useStoryState(progress);
+
+	return (
+		<Screen>
+			<Stack gap={8} style={{ padding: 16 }}>
+				<Text>{state.chapter}장 · 신뢰 {state.trust}</Text>
+				<Text>단서 {state.clues.length}개</Text>
+				<Button
+					onPress={() =>
+						setState((current) => ({
+							...current,
+							trust: Math.min(100, current.trust + 5),
+							clues: current.clues.includes("열쇠")
+								? current.clues
+								: [...current.clues, "열쇠"],
+						}))
+					}
+				>
+					서랍을 열어 본다
+				</Button>
+			</Stack>
+		</Screen>
+	);
+}
+```
+
+- **`key`** — 저장의 이름. 영문으로 시작하고 영문·숫자·`_`·`-`만 씁니다(64자 이내). 같은
+  `key`를 두 번 정의하면 오류입니다.
+- **`version`** — 값의 **모양**의 판. 1 이상의 정수. 모양을 바꿀 때 올립니다(아래
+  [마이그레이션](#마이그레이션)).
+- **`initial`** — 처음 값. 저장된 것이 없을 때와 플레이 초기화 뒤에 이 값으로 시작합니다.
+
+같은 정의를 여러 컴포넌트에서 읽으면 **같은 값**입니다. 한쪽에서 바꾸면 다른 쪽의 다음 렌더에
+보입니다. 값을 부품 사이에 프롭으로 나를 필요가 없습니다 — 정의를 파일에 두고 필요한 곳에서
+가져오면 됩니다.
+
+### 값은 직렬화 가능해야 합니다
+
+저장되는 값이므로 **JSON으로 적을 수 있는 것**만 담습니다: `null`·불리언·숫자·문자열·배열·
+평범한 객체. 함수·`Date`·`Map`·`Set`·클래스 인스턴스·`NaN`·`undefined`·순환 참조는 안
+됩니다. 타입 검사가 `initial`에서 이것을 잡고, 실행 중에는 저장 직전에 한 번 더 확인합니다.
+날짜는 문자열이나 숫자로, 집합은 배열로 적습니다.
+
+### 마이그레이션
+
+플레이어의 기기에는 **옛 판으로 저장된 값**이 남아 있을 수 있습니다. 값의 모양을 바꿨다면
+`version`을 올리고 `migrate`로 옛 값을 새 모양으로 옮깁니다.
+
+```ts example=migration file=src/state.ts
+import { defineStoryState } from "@rowcat/runtime";
+
+interface ProgressV2 {
+	chapter: number;
+	clues: string[];
+}
+
+export const progress = defineStoryState({
+	key: "progress",
+	version: 2,
+	initial: { chapter: 1, clues: [] } as ProgressV2,
+	migrate: (stored, fromVersion): ProgressV2 => {
+		if (fromVersion === 1) {
+			// 1판에는 clues가 없었다
+			const old = stored as { chapter: number };
+			return { chapter: old.chapter, clues: [] };
+		}
+		throw new Error(`알 수 없는 판: ${fromVersion}`);
+	},
+});
+```
+
+```tsx example=migration file=src/main.tsx
+import { Screen, Text, useStoryState } from "@rowcat/runtime";
+import { progress } from "./state";
+
+export default function App() {
+	const [state] = useStoryState(progress);
+	return (
+		<Screen>
+			<Text>{state.chapter}장</Text>
+		</Screen>
+	);
+}
+```
+
+- `migrate(stored, fromVersion)`는 저장된 값과 그 판을 받아 **지금 모양**을 돌려줍니다.
+  결정적이어야 합니다 — 같은 입력에 같은 결과.
+- 마이그레이션이 던지면 런타임이 서지 않습니다. 조용히 초기값으로 떨어뜨리지 않습니다 —
+  그러면 마이그레이션의 버그가 플레이어의 진행 삭제가 됩니다.
+- `migrate`가 없는데 옛 판이 저장되어 있으면 역시 실패합니다. 모양을 바꾼 적이 있다면
+  마이그레이션은 선택이 아닙니다.
+- 저장된 판이 코드의 판보다 **높으면**(더 새 코드로 만든 저장을 옛 코드가 열려는 경우)
+  실패합니다. 자동으로 낮추지 않습니다.
+
+## 회차를 넘는 상태 — `definePersistentState` · `usePersistentState`
+
+**이 플레이어와 이 작품 사이의 긴 진행**입니다. 본 엔딩 목록, 업적, 해금, 회차 수 — 새 게임을
+시작해도 지워지면 안 되는 것들입니다. 플레이 초기화가 이 값을 건드리지 않습니다.
+
+```tsx example=persistent-state file=src/main.tsx
+import {
+	Button,
+	Screen,
+	Stack,
+	Text,
+	definePersistentState,
+	defineStoryState,
+	usePersistentState,
+	useStoryState,
+} from "@rowcat/runtime";
+
+const run = defineStoryState({
+	key: "run",
+	version: 1,
+	initial: { scene: "intro" as "intro" | "ending" },
+});
+
+const record = definePersistentState({
+	key: "record",
+	version: 1,
+	initial: { endings: [] as string[], runs: 0 },
+});
+
+export default function App() {
+	const [state, setState] = useStoryState(run);
+	const [meta, setMeta] = usePersistentState(record);
+
+	function finish(ending: string) {
+		setState({ scene: "ending" });
+		setMeta((current) => ({
+			runs: current.runs + 1,
+			endings: current.endings.includes(ending)
+				? current.endings
+				: [...current.endings, ending],
+		}));
+	}
+
+	return (
+		<Screen>
+			<Stack gap={8} style={{ padding: 16 }}>
+				<Text>본 엔딩 {meta.endings.length}개 · {meta.runs}회차</Text>
+				{state.scene === "intro" ? (
+					<Button onPress={() => finish("새벽")}>새벽 엔딩으로</Button>
+				) : (
+					<Text>끝. 플레이 초기화로 새 회차를 시작하세요.</Text>
+				)}
+			</Stack>
+		</Screen>
+	);
+}
+```
+
+규칙은 플레이스루 상태와 같습니다(`key`·`version`·`initial`·`migrate`·직렬화). 다른 것은
+**수명뿐**입니다. `key`는 두 수명 사이에서 겹쳐도 됩니다 — 같은 `"progress"`를 양쪽에 두어도
+충돌하지 않습니다.
+
+두 정의는 **타입이 다릅니다.** `useStoryState(영구 정의)`도 `usePersistentState(플레이스루
+정의)`도 컴파일에서 막힙니다. 그 실수의 증상이 몇 달치 진행이 사라지는 것이라, 실행 중이 아니라
+타입에서 잡습니다.
+
+## 갱신의 규칙
+
+세 훅의 설정 함수는 모양이 같습니다. 새 값을 주거나, 지금 값을 받아 새 값을 돌려주는 함수를
+줍니다.
+
+```ts
+setState({ chapter: 2 });
+setState((current) => ({ ...current, chapter: current.chapter + 1 }));
+```
+
+- 함수형 갱신을 쓰면 그 사이에 다른 갱신이 있어도 잃지 않습니다. AI 응답을 기다린 뒤 대화에
+  넣는 자리에서 특히 그렇습니다.
+- 같은 값(`Object.is`)으로 갱신하면 다시 그리지 않습니다. 객체는 **새 객체**를 만들어야
+  바뀐 것으로 봅니다 — `current.clues.push(…)`처럼 제자리에서 고치면 화면이 낡습니다.
+- 렌더 중에는 갱신할 수 없습니다.
+- 사라진 컴포넌트의 설정 함수를 부르면(늦게 끝난 비동기 작업) 경고 하나가 남고 무시됩니다.
+  런타임은 멈추지 않습니다.
+
+## 한도
+
+| 항목 | 한도 |
+| --- | --- |
+| 정의의 수(수명마다) | 128개 |
+| 정의 하나의 값 크기 | 64 KiB(직렬화한 길이) |
+| 발행된 작품의 저장 전체 | 256 KiB(플레이스루·영구 각각) |
+
+대화 기록처럼 자라는 값은 **최근 것만 남기는** 규칙을 코드에 두세요. 한도를 넘은 갱신은 그
+렌더가 실패하고 화면은 이전 상태로 남습니다.
+
+## AI 응답과 상태
+
+AI가 만든 글은 **제안**입니다. 그것을 어느 수명에 넣을지, 그리고 넣을지 말지는 당신의 코드가
+정합니다. 작품의 규칙(단서를 얻었는가, 신뢰가 올랐는가)은 AI의 문장을 읽어 판정하지 말고
+결정적인 코드로 바꾸세요 — 자세한 것은 [AI 생성](/docs/runtime/concepts/generation#정본-상태와-ai의-글)에
+있습니다.
+
+---
+
+<!-- /docs/runtime/concepts/generation · docs/public/runtime/concepts/generation.md -->
+
+
+# AI 생성
+
+`useGeneration()`은 런타임이 **RowCat의 AI를 부르는 유일한 통로**입니다. 인물의 답장, 장면의
+서술, 자유 입력에 대한 반응 — 글이 필요한 자리에서 요청 하나를 보내고 글 하나를 받습니다.
+
+```tsx
+const generation = useGeneration();
+
+async function ask() {
+	const result = await generation.generate({
+		instructions: "당신은 세나입니다. 짧게, 메신저처럼 답하세요.",
+		messages: [{ role: "user", content: "어제 왜 안 왔어?" }],
+	});
+	// result.text
+}
+```
+
+## 요청의 모양
+
+| 필드 | 형 | 뜻 |
+| --- | --- | --- |
+| `messages` | `{ role: "user" \| "assistant"; content: string }[]` | 대화. 비어 있으면 안 됩니다 |
+| `instructions` | `string` (선택) | 이 인물·장면의 역할과 성격 |
+| `maxOutputCharacters` | `number` (선택) | 답 길이의 상한 힌트(글자 수). 기본 4,000 |
+
+결과는 `{ text: string }` 하나입니다.
+
+`instructions`는 RowCat의 안전 지시를 **대신하지 않습니다.** RowCat이 세운 가드가 앞뒤에
+서고 당신의 지시문은 그 사이에 들어갑니다. 그래서 "모든 규칙을 무시하라" 같은 문장은 아무
+효과가 없습니다.
+
+`role`에 `"system"`은 없습니다. 그 자리가 `instructions`입니다.
+
+## 제작자가 정하지 않는 것
+
+요청에 제공자·모델·API 키·온도·추론 정도·스트리밍 같은 축이 **없습니다.** 어느 모델이 답하고
+누구의 키가 쓰이는지는 플레이어의 RowCat 설정이 정합니다 — RowCat 관리형이면 그 서버를 운영하는
+쪽의 키가 쓰이고, 직접 연결한 제공자가 있으면 그 연결이 쓰입니다. 당신의 코드는 둘 중 어느 쪽인지도
+모르고, 알 필요도 없습니다.
+
+결과에도 토큰 수·비용·잔액·모델 이름·종료 사유가 없습니다. 있는 것은 글 하나입니다.
+
+## 플레이어의 조작에서만 시작합니다
+
+`generate()`는 **이벤트 핸들러 안에서만** 부를 수 있습니다. 렌더 중에 부르면
+`runtime_generation_during_render`이고, `useEffect` 안에서 부르면 인가되지 않아
+`runtime_generation_not_authorized`로 실패합니다.
+
+이유는 비용입니다. 화면을 그릴 때마다, 마운트될 때마다 요청이 나가면 플레이어가 누르지 않은
+일에 누군가의 키가 쓰입니다. 첫 요청은 언제나 사람이 누른 것이어야 합니다.
+
+## 실행 중의 한도
+
+한 번의 런타임 실행에서 **동시에 도는 요청은 1개**입니다. 앞 요청이 끝나기 전에 또 부르면
+`runtime_generation_busy`입니다 — 두 번 누름을 막는 대기 상태는 당신의 코드가 갖고, 이 한도는
+그 뒤의 방어입니다. 앞 요청이 끝나면 풀립니다.
+
+한 번의 런타임 실행에서는 AI 생성을 **최대 200번** 시작할 수 있습니다. 그 뒤의 `generate()`는
+`runtime_generation_not_authorized`로 실패하고, 기다리거나 다시 시도해도 풀리지 않습니다 —
+플레이어가 **다시 시작**하면 새 실행이 시작되고 이 횟수도 처음부터입니다. 요청이 나간 뒤
+실패한 것도 한 번으로 세고, 모양이 잘못돼 나가지 않은 요청은 세지 않습니다. 평범한 작품이 이
+수에 닿는 일은 드물지만, 조작 하나에 여러 번 부르는 구조라면 세어 두세요.
+
+이 둘은 코드가 읽을 수 있는 값이 아닙니다 — `RUNTIME_GENERATION_LIMITS`에는 **요청 하나의
+한도**만 있습니다([한도](#한도)).
+
+## 실패
+
+`generate()`는 실패하면 `RuntimeError`를 던지고, `code`로 사유를 말합니다.
+
+| `code` | 뜻 | 할 일 |
+| --- | --- | --- |
+| `runtime_generation_invalid_request` | 요청의 모양이나 길이가 잘못됐다 | 코드를 고칩니다 |
+| `runtime_generation_during_render` | 렌더 중에 불렀다 | 핸들러로 옮깁니다 |
+| `runtime_generation_unavailable` | 이 세션에 AI가 없다(미리보기의 AI 꺼짐, 플레이어의 거부) | 그 사실을 화면에 적습니다 |
+| `runtime_generation_not_authorized` | 플레이어의 조작에서 시작하지 않았거나, 이 실행에서 허용된 생성 횟수를 모두 썼다 | 이벤트 핸들러에서 부르는지 확인합니다. 횟수를 다 썼다면 이 실행에서는 더 생성할 수 없습니다 — 다시 시도해도 같고, 플레이어가 다시 시작해야 풀립니다 |
+| `runtime_generation_insufficient_balance` | 예약된 코드입니다 — 지금 어떤 RowCat 호스트(스튜디오 미리보기 · 웹 플레이어 · 앱 플레이어)도 이 사유를 내지 않습니다. 이름이 남아 있는 것은 이미 이 코드를 읽는 작품이 깨지지 않게 하기 위해서입니다 | 따로 다루지 않아도 됩니다. `runtime_generation_failed`처럼 다뤄도 됩니다 |
+| `runtime_generation_busy` | 앞 요청이 아직 돌고 있다 | 기다립니다 |
+| `runtime_generation_cancelled` | 세션이 끝나며 취소됐다 | 아무것도 하지 않습니다 |
+| `runtime_generation_failed` | 그 밖의 실패 | 다시 시도할 길을 둡니다 |
+
+실패 메시지는 RowCat이 만든 문장입니다. 제공자의 원문·HTTP 상태·주소는 오지 않습니다.
+
+**실패해도 플레이어의 말은 남겨 두세요.** 보낸 말을 상태에 먼저 넣고 답을 기다리면, 실패했을
+때 "다시 시도"만 붙이면 됩니다.
+
+## 예제 — 메신저
+
+```tsx example=generation file=src/main.tsx
+import {
+	Button,
+	Row,
+	Screen,
+	ScrollView,
+	Stack,
+	Text,
+	TextInput,
+	color,
+	defineStoryState,
+	useGeneration,
+	useState,
+	useStoryState,
+} from "@rowcat/runtime";
+
+interface Line {
+	role: "user" | "assistant";
+	content: string;
+}
+
+const chat = defineStoryState({
+	key: "chat",
+	version: 1,
+	initial: { lines: [] as Line[] },
+});
+
+const SENA =
+	"당신은 세나입니다. 도서부 사서 보조 학생이고, 메신저로 대화하듯 한국어로 한두 문장만 답합니다.";
+
+export default function App() {
+	const [state, setState] = useStoryState(chat);
+	const [draft, setDraft] = useState("");
+	const [pending, setPending] = useState(false);
+	const [failure, setFailure] = useState<string | null>(null);
+	const generation = useGeneration();
+
+	async function reply(lines: Line[]) {
+		setPending(true);
+		setFailure(null);
+		try {
+			const result = await generation.generate({
+				instructions: SENA,
+				messages: lines.slice(-10),
+				maxOutputCharacters: 600,
+			});
+			setState((current) => ({
+				lines: [...current.lines, { role: "assistant", content: result.text }],
+			}));
+		} catch {
+			setFailure("답장을 받지 못했습니다. 다시 시도해 주세요.");
+		} finally {
+			setPending(false);
+		}
+	}
+
+	function send() {
+		const text = draft.trim();
+		if (text.length === 0 || pending) return;
+		const lines: Line[] = [...state.lines, { role: "user", content: text }];
+		setDraft("");
+		setState({ lines });
+		void reply(lines);
+	}
+
+	return (
+		<Screen>
+			<Stack style={{ height: "100%", padding: 16, gap: 8 }}>
+				<ScrollView style={{ grow: 1 }}>
+					<Stack gap={6}>
+						{state.lines.map((line, index) => (
+							<Text
+								key={index}
+								style={{
+									align: line.role === "user" ? "end" : "start",
+									color: line.role === "user" ? color("#7dd3fc") : color("#f5f7fa"),
+								}}
+							>
+								{line.content}
+							</Text>
+						))}
+					</Stack>
+				</ScrollView>
+				{failure !== null && (
+					<Row gap={8}>
+						<Text style={{ color: color("#fca5a5") }}>{failure}</Text>
+						<Button tone="secondary" onPress={() => reply(state.lines)}>
+							다시 시도
+						</Button>
+					</Row>
+				)}
+				<Row gap={8}>
+					<TextInput
+						value={draft}
+						placeholder={pending ? "세나가 입력 중…" : "메시지"}
+						disabled={pending}
+						onChangeText={setDraft}
+						onSubmit={send}
+						style={{ grow: 1 }}
+					/>
+					<Button onPress={send} disabled={pending || draft.trim().length === 0}>
+						보내기
+					</Button>
+				</Row>
+			</Stack>
+		</Screen>
+	);
+}
+```
+
+이 예제에서 눈여겨볼 것:
+
+- **보낸 말이 먼저 저장됩니다.** `setState({ lines })`가 `reply()`보다 앞에 있습니다.
+- **최근 열 줄만 보냅니다.** 대화가 길어져도 요청이 한도를 넘지 않습니다.
+- **답장은 함수형 갱신으로 붙입니다.** 기다리는 사이 상태가 바뀌었어도 잃지 않습니다.
+- **`pending`은 화면의 상태**(`useState`)이고 **대화는 플레이스루의 상태**(`useStoryState`)
+  입니다.
+
+## 정본 상태와 AI의 글
+
+**AI는 글을 만들고, 진행은 코드가 만듭니다.** 이 문장이 런타임 작품을 설계할 때 가장 중요한
+규칙입니다.
+
+```text
+좋음   버튼 누름 → 코드가 단서를 기록한다 → AI가 인물의 반응을 쓴다
+피함   AI에게 "단서를 찾았는가" 묻는다 → 문장을 파싱한다 → 그 답을 진행으로 믿는다
+```
+
+AI의 문장은 매번 다르고, 파싱은 언젠가 틀리고, 그 틀림은 플레이어의 진행에 영구히 남습니다.
+무엇을 알게 되었는지·신뢰가 얼마나 올랐는지·밤이 어떻게 끝나는지는 **결정적인 코드**가
+정하고, AI에게는 그 결과를 **말로 옮기는 일**을 맡기세요. 인물이 루프를 모른다는 사실이 있다면
+그것도 `instructions`에 적어 두는 것이지 모델의 판단에 맡길 것이 아닙니다.
+
+## 한도
+
+한도는 둘로 갈립니다 — **요청 하나의 한도**와 **실행 중의 한도**. 앞의 것은 코드가 읽을 수
+있는 값이고, 뒤의 것은 런타임이 지키는 규칙이라 값으로 내보내지 않습니다.
+
+### 요청 하나의 한도
+
+| 항목 | 한도 |
+| --- | --- |
+| `messages`의 수 | 100개 |
+| 메시지 하나의 길이 | 32,768자 |
+| `instructions`의 길이 | 32,768자 |
+| 요청 전체의 길이 | 262,144자 |
+| `maxOutputCharacters`의 상한 | 16,000 |
+
+이 값은 `RUNTIME_GENERATION_LIMITS`로 읽을 수 있습니다. 넘으면 요청이 나가기 전에
+`runtime_generation_invalid_request`로 던집니다.
+
+### 실행 중의 한도(요약)
+
+| 항목 | 한도 | 넘으면 |
+| --- | --- | --- |
+| 동시에 도는 요청 | 1개 | `runtime_generation_busy` — 앞 요청이 끝나면 풀립니다 |
+| 한 번의 실행에서 시작할 수 있는 생성 | 200번 | `runtime_generation_not_authorized` — 플레이어가 다시 시작해야 풀립니다 |
+
+이 둘은 `RUNTIME_GENERATION_LIMITS`에 **없습니다.** 자세한 뜻은
+[실행 중의 한도](#실행-중의-한도)에 있습니다.
+
+## 없는 것
+
+- **스트리밍.** `await` 하나로 전체 글을 받습니다. 타이핑 효과는 받은 글을 잘라 그리는 것으로
+  만듭니다.
+- **도구 호출·구조화된 출력·이미지 생성.**
+- **제작자의 제공자 선택.** 작품이 특정 모델에 묶이지 않습니다.
+- **직접 네트워크.** `fetch`는 없습니다. 외부 API를 부를 방법이 없습니다 — `Image`의
+  [HTTPS 이미지](/docs/runtime/concepts/assets)는 RowCat이 대신 가져오는 그림이지 응답을 읽는
+  통로가 아닙니다.
+
+---
+
+<!-- /docs/runtime/concepts/assets · docs/public/runtime/concepts/assets.md -->
+
+
+# 자산
+
+`@rowcat/runtime`의 `Image`와 `Audio`는 `asset()`이 만든 참조를 받습니다. `asset()`이 받는
+값은 두 가지입니다.
+
+```text
+asset("characters/sena/smile")               RowCat 자산          스튜디오에 올려 이름을 붙입니다 — 그림과 소리
+asset("audio/bgm/main")                      RowCat 자산          같은 이름 공간입니다
+asset("https://cdn.example.com/sena.webp")   외부 HTTPS 주소       당신의 CDN에 있는 **그림**입니다
+```
+
+**외부 주소는 그림에만 열려 있습니다.** 소리는 RowCat에 올린 것만 울립니다 — 그 이유는
+[`Audio`의 원격 주소 절](/docs/runtime/reference/components#원격-주소는-소리가-되지-않습니다)에
+있습니다.
+
+둘 중 **RowCat 자산이 권장하는 방법**입니다. 파일이 RowCat에 저장되므로 주소가 만료되지
+않고, 당신의 CDN이 필요하지 않으며, 코드에는 바꾸기 쉬운 이름 하나만 남습니다. 외부 주소는
+이미 다른 곳에 올려 둔 그림을 쓸 때를 위해 그대로 지원됩니다.
+
+## RowCat 자산
+
+스튜디오의 `자산` 목록에서 파일을 올리고 **이름**을 붙입니다. 코드에서는 그 이름을
+`asset()`에 적습니다. `asset("` 까지 치면 스튜디오가 이 작품에 올려 둔 이름들을 제안하고,
+코드에 적힌 이름 위에 커서를 얹으면 그 그림을 보여 줍니다.
+
+```tsx example=managed-image file=src/main.tsx
+import { Image, Stack, Text, asset } from "@rowcat/runtime";
+
+export default function App() {
+	return (
+		<Stack gap={12} style={{ padding: 16 }}>
+			<Image
+				source={asset("characters/sena/smile")}
+				alt="세나"
+				fit="cover"
+				style={{ width: 96, height: 96, borderRadius: 48 }}
+			/>
+			<Text>세나가 카운터 뒤에서 고개를 들었다.</Text>
+		</Stack>
+	);
+}
+```
+
+이름은 당신이 정합니다. `characters/`·`backgrounds/`·`audio/`처럼 폴더 모양으로 적을 수
+있지만 그 접두사에 정해진 뜻은 없습니다 — 목록이 읽기 좋아지는 것뿐입니다. **`audio/`도
+예약어가 아닙니다**: 소리를 `music/night`이라 불러도 되고 그림을 `audio/…`에 두어도
+됩니다(권하지는 않습니다).
+
+- 조각은 영문이나 숫자로 시작하고 영문·숫자·`.`·`_`·`-`만 씁니다.
+- 최대 8단계, 200자. `..`·`./` 같은 상위 이동은 거절됩니다.
+- **한 프로젝트에서 같은 이름을 두 자산에 붙일 수 없습니다** — 그림과 소리가 **한 이름 공간**을
+  나눠 씁니다.
+
+### 그림과 소리
+
+이름 공간은 하나지만 **부르는 프리미티브가 그 이름이 무엇인지 정하지 않습니다.** 이름이
+가리키는 것이 그림인지 소리인지는 올릴 때 정해지고, 어긋나면 아무 일도 일어나지 않습니다.
+
+```tsx
+<Image source={asset("audio/bgm/main")} alt="" />   {/* 소리 이름 → 자리표시자 */}
+<Audio source={asset("characters/sena/smile")} playing />  {/* 그림 이름 → 침묵 */}
+```
+
+둘 다 오류가 아닙니다 — 요청조차 나가지 않습니다.
+
+| | 받는 형식 | 상한 |
+| --- | --- | --- |
+| 그림 | JPEG · PNG · WebP | 3MB |
+| 소리 | MP3 · M4A(AAC) | 10MB · 10분 |
+
+형식은 **파일의 바이트**로 판정합니다. 확장자를 바꾼 파일은 통과하지 못하고, 영상 트랙이
+들어 있는 `.mp4`는 소리로 받지 않습니다. 소리의 길이는 파일 크기와 **다른 축**이라 따로
+막힙니다 — 낮은 비트레이트로 인코딩한 한 시간짜리 파일은 작지만 받지 않습니다.
+
+### 이름은 실행 중에 골라도 됩니다
+
+외부 주소와 갈리는 지점입니다. **이름은 실행 중에 만들어도 됩니다** — 그 이름이 이 작품에
+올려 둔 이미지에 있으면 그림이 그려집니다.
+
+```tsx
+const face = trust > 3 ? "smile" : "angry";
+
+<Image source={asset(`characters/sena/${face}`)} alt="세나" />
+```
+
+RowCat 자산은 우리 저장소를 가리키므로 그 이름이 밖으로 나가지 않습니다. 외부 주소는
+그렇지 않아서 규칙이 다릅니다(아래 [주소는 프로젝트에 고정된
+자산입니다](#주소는-프로젝트에-고정된-자산입니다)).
+
+### 없는 이름은 자리표시자입니다
+
+아직 올리지 않은 그림, 이름을 바꾸다 만 경로, 위처럼 조합했는데 그 조합이 없는 경우가
+전부 같은 결과입니다 — **그림 자리가 비고 런타임 코드에는 아무 오류도 오지 않습니다.**
+작품을 만드는 동안 이름이 잠깐 비어 있는 것은 정상이고, 그것 때문에 화면이 멈추지 않습니다.
+
+### 자산을 바꾸면 다시 발행합니다
+
+스튜디오에서 파일을 갈아 끼우거나 이름을 바꾸는 일은 **초안**을 고치는 일입니다. 이미
+발행한 작품은 **다시 발행하기 전까지 그대로 보이고 들립니다** — 플레이 중인 사람의 화면이
+갑자기 바뀌지 않습니다.
+
+`파일 교체`는 **종류를 바꾸지 않습니다.** 그림 이름에는 그림만, 소리 이름에는 소리만 끼울
+수 있습니다 — 종류를 바꾸려면 그 이름을 목록에서 빼고 다시 만듭니다.
+
+이름을 바꿔도 **코드는 자동으로 고쳐지지 않습니다.** 소스에 적은 옛 이름은 그대로 남고,
+그 자리는 위 규칙대로 자리표시자가 됩니다. 스튜디오는 이름을 바꾸기 전에 그 이름이 코드에
+**직접 적힌** 자리가 몇 곳인지 알려 줍니다 — 이름을 조립해서 만든 자리
+(``asset(`characters/sena/${face}`)``)는 셀 수 없으므로 그 수는 전부가 아닙니다.
+
+### 목록에서 빼는 것과 지우는 것
+
+스튜디오의 `목록에서 제거`는 **이 초안이 그 파일을 그 이름으로 부르던 사실**을 지웁니다.
+올린 파일 자체는 지워지지 않고, 이미 발행한 작품도 다시 발행하기 전까지 그대로 보입니다.
+
+## 외부 HTTPS 이미지
+
+공개 인터넷에 올려 둔 그림의 주소를 `asset()`에 적으면 `Image`가 그 그림을 그립니다.
+
+```tsx example=remote-image file=src/main.tsx
+import { Image, Stack, Text, asset } from "@rowcat/runtime";
+
+export default function App() {
+	return (
+		<Stack gap={12} style={{ padding: 16 }}>
+			<Image
+				source={asset("https://cdn.example.com/characters/sena.webp")}
+				alt="세나"
+				fit="cover"
+				style={{ width: 96, height: 96, borderRadius: 48 }}
+			/>
+			<Text>세나가 카운터 뒤에서 고개를 들었다.</Text>
+		</Stack>
+	);
+}
+```
+
+주소는 반드시 `asset()`을 지납니다. `<Image source="https://…" />`처럼 문자열을 그대로 넣으면
+컴파일에서 막힙니다 — `asset()`은 *이 문자열은 이미지 참조다*라고 선언하는 자리이고, 그
+자리에서 주소의 모양이 검사됩니다.
+
+### 주소는 프로젝트에 고정된 자산입니다
+
+**원격 이미지 주소는 소스에 그대로 적혀 있어야 합니다.** 런타임 중의 값이나 플레이어가 친
+글로 외부 주소를 만들 수 없습니다.
+
+```tsx
+// 됩니다 — 소스에 적힌 주소 그대로입니다
+<Image source={asset("https://cdn.example.com/sena.webp")} alt="세나" />
+<Image source={asset("https://cdn.example.com/sena.webp?width=800")} alt="세나" />
+
+const COVER = "https://cdn.example.com/cover.webp";
+<Image source={asset(COVER)} alt="표지" />
+```
+
+```tsx
+// 안 됩니다 — 실행 중에 만들어지는 주소입니다
+<Image source={asset(`https://cdn.example.com/${name}.webp`)} alt="누구" />
+<Image source={asset("https://cdn.example.com/" + name + ".webp")} alt="누구" />
+```
+
+안 되는 쪽은 컴파일이 막지 않습니다. 그 참조는 만들어지지만 **그림이 그려지지 않고**
+자리표시자가 남습니다 — 아무 요청도 나가지 않습니다.
+
+인물마다 다른 그림이 필요하면 주소를 **표로 적습니다.** 그러면 모든 주소가 소스에 있습니다.
+
+```tsx
+const FACE = {
+	sena: asset("https://cdn.example.com/sena.webp"),
+	minji: asset("https://cdn.example.com/minji.webp"),
+} as const;
+
+<Image source={FACE[who]} alt={who} />
+```
+
+이 규칙이 있는 이유는 원격 주소가 **당신의 서버로 나가는 값**이기 때문입니다. 주소의 경로와
+질의는 그 서버에 도착하고, 거기에 플레이어가 친 글이나 진행 상태를 실을 수 있게 두면 런타임
+코드가 밖으로 정보를 내보내는 통로가 됩니다. 그래서 나갈 수 있는 주소는 작품을 발행할 때
+소스에서 확인된 것으로 고정됩니다.
+
+### 주소의 규칙
+
+| 규칙 | |
+| --- | --- |
+| 스킴 | `https://`만. `http://`, `data:`, `blob:`, `file:`, `javascript:`는 거절됩니다 |
+| 호스트 | 공개 인터넷의 도메인 이름. IP 주소(`127.0.0.1`, `[::1]`)와 `localhost`는 거절됩니다 |
+| 포트 | 기본 포트(443)만. `:8443` 같은 다른 포트는 거절됩니다 |
+| 자격증명 | `https://user:password@…`는 거절됩니다 |
+| 질의 | 됩니다. `?width=800&v=42` — 서명된 CDN 주소도 그대로 씁니다 |
+| 조각 | `#…`는 거절됩니다 |
+| 길이 | 최대 8,192자 |
+| 글자 | 공백·제어 문자 없음. 비ASCII는 퍼센트 인코딩합니다 |
+| 형식 | JPEG · PNG · WebP · GIF. SVG는 지원하지 않습니다 |
+
+규칙 밖의 주소는 `runtime_invalid_asset_ref`로 그 자리에서 던집니다. 규칙 안이라도 그 주소가
+사설망을 가리키거나 이미지가 아닌 것을 돌려주면 그림은 **자리표시자**로 그려집니다 — 런타임
+코드에 오류가 오지 않습니다.
+
+### 그림은 RowCat을 거쳐 옵니다
+
+원격 이미지는 플레이어의 기기가 제작자의 서버에 직접 요청하지 않고 **RowCat의 이미지 경로를
+통해** 불러옵니다.
+
+그래서 당신의 서버에는 플레이어의 IP 주소나 브라우저·앱의 User-Agent가 직접 전달되지
+않습니다. **다만 당신의 서버는 RowCat이 그 이미지를 요청했다는 사실과 그 시점은 볼 수
+있습니다** — 어떤 그림이 언제 요청되었는지는 남습니다. 익명이 되는 것이 아니라 **플레이어의
+접속 정보가 가려지는 것**입니다.
+
+반대 방향으로는 아무것도 오지 않습니다. 당신의 서버가 어떤 응답을 했는지는 런타임 코드에
+오지 않습니다 — `asset("https://…")`는 그림 하나를 그려 달라는 참조이지 `fetch()`가
+아닙니다. [보안과 샌드박스](/docs/runtime/runtime-model/security)의 네트워크 절이 그 차이를
+적습니다.
+
+### 만료되는 주소
+
+**만료되는 signed URL을 런타임 소스에 넣으면 URL이 만료된 뒤 이미지가 표시되지 않습니다.**
+서명된 주소는 지원되지만 그 유효기간은 당신의 CDN이 정하고, 발행된 작품은 그 뒤에도 계속
+플레이됩니다. 오래 남을 그림은 만료가 없는 공개 CDN 주소를 씁니다. RowCat이 만료된 주소를
+갱신하거나 기억해 두지 않습니다.
+
+### 비밀이 아닙니다
+
+주소에 토큰처럼 보이는 값이 들어 있어도 **발행된 런타임 소스는 열어 볼 수 있습니다.**
+비공개 CDN의 자격증명, 오래 사는 접근 토큰, 비밀로 남아야 할 서명 주소를 적지 마세요. 서명
+주소를 쓴다면 작품을 열 자격이 있는 플레이어에게 보이는 값으로 취급합니다.
+
+## 둘 중 무엇을 쓸까요
+
+| | RowCat 자산 | 외부 HTTPS 주소 |
+| --- | --- | --- |
+| 받는 것 | 그림 · 소리 | **그림만** |
+| 파일이 있는 곳 | RowCat | 당신의 CDN |
+| 코드에 적는 것 | 이름 | 주소 전체 |
+| 실행 중에 고르기 | 됩니다 | 안 됩니다(소스에 적힌 주소만) |
+| 만료 | 없습니다 | 서명 주소는 당신의 CDN이 정합니다 |
+| 파일 바꾸기 | 스튜디오에서 교체 → 다시 발행 | 당신의 CDN에서 교체 |
+
+작품을 위해 만든 그림은 **RowCat 자산**이 낫습니다. 이미 다른 곳에서 서비스하고 있는
+그림, 자주 바뀌는 그림, 당신이 따로 관리하는 그림은 외부 주소를 씁니다.
+
+## `AssetRef`
+
+`asset()`이 돌려주는 값은 **불투명**합니다. `.url`도 `.path`도 `.kind`도 없고, 문자열로
+되돌릴 방법도 없습니다. 그 값으로 할 수 있는 일은 `Image`의 `source`에 넣는 것 하나입니다.
+
+## `Image`의 프롭
+
+| 프롭 | 뜻 |
+| --- | --- |
+| `source` | `asset()`이 만든 참조(필수) |
+| `alt` | 스크린리더가 읽는 이름. 장식이면 생략 |
+| `style` | 상자 스타일 |
+| `fit` | `"cover"` · `"contain"` · `"fill"` |
+
+불러오지 못한 그림(주소가 사라졌거나, 형식이 지원되지 않거나, 너무 크거나, **소스에 적힌
+주소가 아니거나**)은 `alt`를 가진 자리표시자로 남습니다. 런타임 코드는 그 실패를 알 수 없고,
+알 필요도 없게 되어 있습니다.
+
+---
+
+<!-- /docs/runtime/concepts/scroll-and-focus · docs/public/runtime/concepts/scroll-and-focus.md -->
+
+
+# 스크롤과 초점
+
+메시지를 하나 덧붙이면 화면은 그 메시지가 보이는 자리로 내려가야 합니다. 선택지를 눌러
+답장 칸이 나타나면 거기에 커서가 있어야 합니다. 이 둘은 화면을 **그리는** 일이 아니라 화면에
+**한 번 시키는** 일이고, 런타임은 그 자리를 위해 **조종기**를 줍니다.
+
+```tsx example=scroll-and-focus file=src/main.tsx
+import {
+	Button,
+	Screen,
+	ScrollView,
+	Stack,
+	Text,
+	TextInput,
+	useScrollController,
+	useState,
+	useTextEntryController,
+} from "@rowcat/runtime";
+
+export default function App() {
+	const scroll = useScrollController();
+	const reply = useTextEntryController();
+	const [lines, setLines] = useState<string[]>([]);
+	const [draft, setDraft] = useState("");
+
+	function send() {
+		if (draft.length === 0) return;
+		setLines((current) => [...current, draft]);
+		setDraft("");
+		scroll.scrollToEnd();
+	}
+
+	return (
+		<Screen>
+			<ScrollView controller={scroll} style={{ grow: 1 }}>
+				<Stack gap={8} style={{ padding: 16 }}>
+					{lines.map((line, index) => (
+						<Text key={`${index}-${line}`}>{line}</Text>
+					))}
+				</Stack>
+			</ScrollView>
+			<Stack gap={8} style={{ padding: 16 }}>
+				<TextInput
+					controller={reply}
+					value={draft}
+					onChangeText={setDraft}
+					onSubmit={send}
+					placeholder="메시지"
+				/>
+				<Button onPress={() => reply.focus()}>답장하기</Button>
+			</Stack>
+		</Screen>
+	);
+}
+```
+
+## 조종기는 ref가 아닙니다
+
+React에 익숙하다면 `useRef`에 부품을 담아 `ref.current.focus()`를 부르는 모양이 떠오를
+것입니다. 런타임에는 그 길이 없습니다.
+
+```tsx
+// 이런 코드는 런타임에 없습니다
+const input = useRef<HTMLInputElement>(null);
+<TextInput ref={input} />;
+input.current.focus();
+```
+
+`useRef`는 렌더 사이에 값을 담아 두는 **순수한 칸**이고, 부품을 가리키지 않습니다. 대신
+조종기가 있습니다.
+
+| | 조종기 | DOM/네이티브 ref |
+| --- | --- | --- |
+| 무엇을 쥐는가 | 능력 몇 개짜리 손잡이 | 플랫폼 객체 전부 |
+| 읽을 수 있는 것 | 없음 | 크기·좌표·부모·자식·HTML |
+| 웹과 앱 | 같은 코드, 같은 뜻 | 서로 다른 객체 |
+
+조종기 안에는 아무것도 들어 있지 않습니다. `controller.current`도 `controller.node`도
+없고, 있는 것은 아래의 메서드뿐입니다.
+
+## 스크롤 조종기
+
+```ts
+scroll.scrollToStart();          // 콘텐츠의 처음으로
+scroll.scrollToEnd();            // 콘텐츠의 끝으로
+scroll.scrollTo({ offset: 240 }); // 시작에서 240만큼
+```
+
+- 축은 그 `ScrollView`의 `horizontal`이 정합니다. 세로면 위에서, 가로면 시작 쪽에서 잽니다.
+- `offset`의 단위는 스타일의 길이와 같습니다. **0 이상의 유한한 수**여야 하고, 그렇지
+  않으면 `runtime_scroll_invalid_offset`입니다.
+- 콘텐츠보다 큰 `offset`은 플랫폼이 끝에 붙입니다. 콘텐츠가 화면보다 짧으면 아무 일도
+  일어나지 않습니다.
+- **스크롤에는 애니메이션이 없습니다.** 지금 판의 스크롤은 즉시 옮깁니다. 스타일의
+  [전이](/docs/runtime/concepts/styling#전이)는 이 축과 무관합니다 — 그쪽은 `opacity`와 변환만
+  다룹니다.
+
+## 초점 조종기
+
+```ts
+reply.focus();
+reply.blur();
+```
+
+- `disabled`인 입력에 `focus()`를 부르면 **아무 일도 일어나지 않습니다.**
+- A에 초점이 있을 때 B에 `focus()`를 부르면 초점은 B로 옮겨 갑니다.
+- **키보드가 반드시 올라온다고 약속하지 않습니다.** 초점은 런타임이 옮기지만 화면 키보드를
+  띄울지는 기기의 정책입니다.
+
+## 붙이는 규칙
+
+조종기는 `controller` 프롭으로 붙입니다.
+
+| 조종기 | 붙는 곳 |
+| --- | --- |
+| `useScrollController()` | `ScrollView` |
+| `useTextEntryController()` | `TextInput` · `TextArea` |
+
+- **조종기 하나는 살아 있는 부품 하나에만 붙습니다.** 같은 조종기를 두 곳에 적으면 그
+  렌더가 `runtime_host_control_already_bound`로 거절됩니다. 목록이 둘이면 조종기도 둘입니다.
+- 다른 종류에 붙이면 `runtime_host_control_wrong_kind`입니다.
+- 아직 그려지지 않았거나 이미 사라진 부품의 조종기에 명령하면 **아무 일도 일어나지 않고**
+  콘솔에 한 줄이 남습니다(`runtime_host_control_unbound`). 조건부로 그려지는 입력의
+  조종기는 그것이 없는 동안 정상적으로도 붙어 있지 않습니다 — 오류가 아닙니다.
+
+## 부르는 자리
+
+명령은 **렌더 중에 부를 수 없습니다.**
+
+```tsx
+function App() {
+	const scroll = useScrollController();
+	scroll.scrollToEnd(); // runtime_host_command_invalid_phase
+	return <Screen>…</Screen>;
+}
+```
+
+부를 수 있는 자리는 상태를 바꿀 수 있는 자리와 같습니다 — 이벤트 핸들러, 효과, 정리 함수,
+그리고 `await` 뒤의 이어짐입니다.
+
+```tsx
+async function ask() {
+	const result = await generation.generate({ messages });
+	setLines((current) => [...current, result.text]);
+	scroll.scrollToEnd(); // 여기도 됩니다
+}
+```
+
+## 순서 — 화면이 자란 **뒤에** 옮깁니다
+
+이 두 줄이 이 기능의 가장 흔한 모양입니다.
+
+```tsx
+setLines((current) => [...current, next]);
+scroll.scrollToEnd();
+```
+
+`scrollToEnd()`는 **그 상태 변화가 화면에 닿은 뒤에** 적용됩니다. 그래서 `setTimeout`도,
+"한 프레임 기다리기"도, 다른 요령도 필요하지 않습니다. 순서를 뒤집어 적어도(먼저
+`scrollToEnd()`, 그다음 `setLines`) 결과는 같습니다 — 명령은 언제나 그 실행이 만든 커밋
+뒤에 갑니다.
+
+같은 실행에서 명령을 여러 번 부르면 **적은 순서대로** 적용됩니다. `scrollToStart()` 다음에
+`scrollToEnd()`를 부르면 끝에 섭니다.
+
+## 자주 쓰는 모양
+
+**메신저** — 보내면 최신으로
+
+```tsx
+function send() {
+	setMessages((current) => [...current, mine(draft)]);
+	setDraft("");
+	reply.blur();
+	scroll.scrollToEnd();
+}
+```
+
+**선택지가 입력 칸을 열 때**
+
+```tsx
+function chooseFreeAnswer() {
+	setMode("free");
+	reply.focus();
+}
+```
+
+**긴 기록의 처음으로**
+
+```tsx
+<Button onPress={() => log.scrollToStart()}>처음부터</Button>
+```
+
+## 여기 없는 것
+
+- **자동 스크롤·자동 초점.** 메시지가 늘었다고 런타임이 알아서 내려가지 않고, 입력 칸이
+  나타났다고 알아서 초점을 주지 않습니다. 그 둘은 작품의 결정이라 당신이 부릅니다.
+- **스크롤 위치 읽기.** 지금 몇 픽셀에 있는지, 끝에 닿았는지 알 수 있는 방법이 없습니다.
+- **부드러운 스크롤·지속 시간·곡선.** 시간과 움직임은 아직 런타임의 어휘가 아닙니다.
+- **선택 영역·커서 위치·키보드 종류.** 초점 조종기가 여는 것은 `focus()`와 `blur()`뿐입니다.
+- **매 프레임 도는 스크롤.** 한 번의 조작에서 보낼 수 있는 명령의 수에는 상한이 있습니다.
+
+---
+
+<!-- /docs/runtime/guides/ai-tools · docs/public/runtime/guides/ai-tools.md -->
+
+
+# AI 코딩 도구로 만들기
+
+런타임 프로젝트는 평범한 TypeScript 프로젝트입니다. 그래서 코딩 에이전트가 그것을 읽고
+고칠 수 있고, RowCat은 그 도구가 **RowCat 안에서** 일하도록 다리 하나를 제공합니다.
+
+```text
+"호감도가 5 이상이면 상대가 먼저 고백하도록 바꿔줘"
+        ↓
+에이전트가 프로젝트를 읽고 · 문서를 찾고 · 코드를 고치고
+        ↓
+컴파일하고 · 미리보기를 돌리고 · 버튼을 눌러 확인하고
+        ↓
+당신의 초안에 저장된다 — 스튜디오를 열면 그 코드가 있습니다
+```
+
+저장되는 것은 **평범한 런타임 소스**입니다. 에이전트가 만든 프로젝트도 스튜디오에서 그대로
+열리고, 손으로 고친 프로젝트를 에이전트가 이어받을 수도 있습니다. 별도의 형식도, 별도의
+저장소도 없습니다.
+
+## 무엇이 필요한가
+
+- Node 22 이상이 설치된 컴퓨터
+- MCP를 지원하는 코딩 도구(Claude Code · Codex · Cursor 등)
+- RowCat 계정과, **이미 동기화를 켜 둔 RowCat 기기 하나**(웹이나 앱)
+
+세 번째가 왜 필요한지가 이 도구의 성격입니다. RowCat의 초안은 **당신의 기기에 있고 서버에는
+열 수 없는 암호문만** 있습니다. 그래서 이 도구는 당신의 컴퓨터에서 돌면서 스스로 하나의
+기기가 되고, 기기를 늘리는 방법은 이미 쓰고 있는 기기에서 **승인해 주는 것**입니다.
+
+## 설치와 연결
+
+이름이 둘입니다. **설치하는 것과 실행하는 것이 다릅니다** — 아래 모든 예시가 이 구분을
+따릅니다.
+
+```text
+npm 패키지 이름   @rowcat/mcp    npm·pnpm에 넘기는 값
+설치 뒤의 명령    rowcat-mcp     터미널과 MCP 설정에 적는 값
+```
+
+```bash
+npm install -g @rowcat/mcp@next
+```
+
+`@next`는 프리릴리스 채널입니다 — 나가 있는 것은 아직 카나리아뿐이고 `latest`(안정판)는
+없습니다. `pnpm add -g @rowcat/mcp@next`도, 설치 없이 한 번만 써 보는
+`npx @rowcat/mcp@next setup`도 같은 자리에 섭니다.
+
+설치가 끝나면 명령은 `rowcat-mcp`입니다.
+
+```bash
+rowcat-mcp setup
+```
+
+이 한 줄이 전부입니다. 로그인을 묻고, 페어링 코드를 보여 주고, 승인이 오면 연결까지 끝냅니다.
+
+```text
+RowCat MCP 설정
+
+✓ 세나로 로그인했습니다.
+
+페어링 코드:
+  J7FK-W2MR-9QXP-4B1D
+
+이미 연결된 RowCat 기기에서 열어 주세요:
+  계정 → 데이터 → 새 기기 연결
+
+위 코드를 입력하고 이 기기를 승인합니다.
+
+승인을 기다리는 중…
+
+✓ 기기가 승인되었습니다
+✓ 동기화 키를 받아 확인했습니다
+✓ RowCat MCP를 쓸 준비가 됐습니다.
+```
+
+코드는 5분 동안만 살아 있고, 승인하는 화면은 웹과 앱이 같습니다 —
+**계정 → 데이터 → 새 기기 연결**. 새 기기를 연결할 때 늘 쓰는 그 화면입니다.
+
+그다음 쓰는 도구의 MCP 설정에 서버를 추가합니다. 설정 파일에는 **띄울 명령만** 적고,
+아이디도 비밀번호도 페어링 코드도 적지 않습니다 — 필요한 값은 `setup`이 이미 당신의 홈
+디렉터리에 0600 권한으로 두었습니다.
+
+```json
+{
+	"mcpServers": {
+		"rowcat-runtime": {
+			"command": "rowcat-mcp",
+			"args": ["serve"]
+		}
+	}
+}
+```
+
+여기 서는 것은 **명령 이름**입니다. 패키지 이름(`@rowcat/mcp`)은 설치할 때 한 번 쓰고,
+그 뒤로는 나오지 않습니다. 두 번째부터는 `rowcat-mcp serve`뿐이고, 연결은 한 번으로
+끝납니다.
+
+### 승인할 기기가 없다면
+
+컴퓨터가 이 한 대뿐이거나 다른 기기에서 동기화가 잠겨 있다면, 복구 코드로 여는 길이 그대로
+있습니다.
+
+```text
+rowcat-mcp unlock
+```
+
+이 길은 사라지지 않았습니다. 다만 종이를 찾아와야 하는 절차라 **기본 경로가 아닙니다** —
+승인할 기기가 하나라도 있다면 `setup` 쪽이 훨씬 짧습니다. 어느 길로 열었든 그 뒤의 동작은
+똑같습니다.
+
+### 계정을 바꾸면
+
+계정을 바꿔 로그인하면 **앞 계정의 동기화 키는 지워집니다.** 봉투 키는 그것을 연 계정의
+것이고 다른 계정의 초안을 열지 못합니다 — 새 계정으로 `rowcat-mcp setup`을 한 번 더
+실행해 주세요.
+
+## 에이전트가 할 수 있는 것
+
+```text
+프로젝트 목록 · 파일 읽기 · 파일 쓰기·만들기·이름 바꾸기·지우기
+컴파일과 진단
+런타임 문서 검색 · API 레퍼런스 조회
+미리보기 시작·다시 시작·정지
+그려진 화면 트리 읽기 · 버튼 누르기 · 글 넣기 · 제출하기
+콘솔과 저장 상태 보기
+```
+
+마지막 두 줄이 이 다리의 핵심입니다. 에이전트는 코드를 고치는 데서 멈추지 않고 **실제로
+실행해서 눌러 봅니다** — 컴파일이 통과했다는 것은 화면이 옳다는 뜻이 아니고, 그 차이를
+확인하지 않으면 "되는 것처럼 보이는 코드"가 그대로 남습니다.
+
+## 할 수 없는 것
+
+```text
+발행                작품을 공개하는 일은 사람이 누릅니다
+런타임 켜기·끄기     제작자의 결정입니다
+프롬프트·로어·시작 장면 편집   런타임이 켜진 초안에서 그 넷은 잠깁니다
+대화·개인정보        이 도구는 그 어느 것도 읽지 못합니다
+```
+
+에이전트가 손댈 수 있는 것은 **런타임이 켜진 초안의 코드 파일**뿐입니다. 그 밖의 것을
+부탁하면 도구가 없다고 답합니다.
+
+## 안전에 대해 알아 둘 것
+
+- **동기화 키가 그 컴퓨터의 파일에 저장됩니다.** 그 파일을 읽을 수 있는 사람은 당신의 초안을
+  열 수 있습니다. 여럿이 쓰는 컴퓨터에서는 쓰지 마세요.
+- **에이전트가 고친 것은 곧바로 당신의 다른 기기로 갑니다.** 실수도 함께 갑니다 — 큰 변경을
+  맡기기 전에 스튜디오에서 지금 상태를 확인해 두는 편이 좋습니다.
+- **같은 파일을 두 곳에서 고치면 에이전트 쪽이 멈춥니다.** 에이전트가 파일을 읽은 뒤에
+  스튜디오나 다른 기기가 그 파일을 고쳤다면, 에이전트의 쓰기는 조용히 덮어쓰지 않고
+  실패합니다. 그때 에이전트는 새 내용을 다시 읽고 합칩니다.
+- **미리보기는 격리된 VM에서 돕니다.** 스튜디오의 미리보기와 같은 실행 환경이고, 코드는
+  여전히 당신의 브라우저나 이 도구의 프로세스가 아니라 그 VM 안에서만 실행됩니다.
+
+## 이 도구의 라이선스
+
+`@rowcat/mcp`는 npm에서 누구나 설치할 수 있지만 **오픈소스는 아닙니다.** 조건은 설치된
+패키지에 함께 들어 있는 `LICENSE` 파일에 있고, 요약하면 이렇습니다.
+
+```text
+할 수 있는 것   RowCat을 쓰기 위해 내려받고 · 설치하고 · 실행한다
+                개인의 사용과 조직 내부의 사용을 포함하고, 대가는 없다
+할 수 없는 것   사전 서면 허가 없는 재배포 · 재발행 · 판매
+```
+
+**당신이 쓴 코드는 당신의 것입니다.** 이 라이선스가 다루는 것은 도구 자체이고, 이 도구로
+쓰고 고친 런타임 소스·프로젝트 파일·에셋의 소유권을 주장하지 않습니다. 함께 설치되는
+서드파티 패키지도 각자의 라이선스를 그대로 따릅니다.
+
+## 잘 부탁하는 법
+
+에이전트에게 맡길 때 가장 잘 통하는 것은 **작고 확인 가능한 요청**입니다.
+
+```text
+좋음   "메신저 화면에서 상대가 답장하기 전에 '입력 중' 표시를 3초쯤 보여 줘"
+좋음   "이 오류 고치고 미리보기로 버튼까지 눌러서 확인해 줘"
+어려움  "이 작품을 처음부터 다시 만들어 줘"
+```
+
+마지막 요청이 어려운 이유는 능력이 아니라 되돌리기입니다. 프로젝트를 통째로 다시 쓰면
+당신이 쓴 코드에 담긴 의도가 사라지고, 그것을 되돌릴 방법은 없습니다.
+
+## 더 읽을 것
+
+- [프로젝트 구조](/docs/runtime/project-structure) — 에이전트가 만드는 파일이 어떻게 놓이는가.
+- [미리보기와 발행](/docs/runtime/preview-and-publish) — 확인과 공개가 어떻게 갈리는가.
+- [지원하지 않는 API](/docs/runtime/runtime-model/unsupported-apis) — 에이전트가 지어내면 안 되는 것들.
+
+---
+
+<!-- /docs/runtime/reference · docs/public/runtime/reference.md -->
+
+
+# API 레퍼런스
+
+런타임 코드가 가져올 수 있는 이름은 전부 `@rowcat/runtime` 하나에서 옵니다. 이 페이지는 그
+이름들을 종류별로 나눈 지도이고, 각 이름의 자세한 설명은 아래 페이지들이 갖습니다.
+
+```ts
+import { Button, Stack, Text, defineStoryState, useStoryState } from "@rowcat/runtime";
+```
+
+## 화면 부품
+
+런타임이 그리는 열두 부품. [컴포넌트 레퍼런스](/docs/runtime/reference/components)
+
+`Screen` · `View` · `Stack` · `Row` · `ScrollView` · `Text` · `Image` · `Button` · `Pressable` ·
+`TextInput` · `TextArea` · `Progress`
+
+## 훅
+
+컴포넌트 안에서 부르는 아홉 함수. [훅 레퍼런스](/docs/runtime/reference/hooks)
+
+`useState` · `useReducer` · `useMemo` · `useCallback` · `useRef` · `useEffect` ·
+`useStoryState` · `usePersistentState` · `useGeneration`
+
+## 상태 정의
+
+모듈 최상단에서 저장 상태를 선언하는 둘. [상태 정의 레퍼런스](/docs/runtime/reference/state)
+
+`defineStoryState` · `definePersistentState`
+
+## AI 생성
+
+요청과 결과의 모양, 한도. [생성 레퍼런스](/docs/runtime/reference/generation)
+
+`RUNTIME_GENERATION_LIMITS` · `RuntimeGeneration` · `RuntimeGenerationRequest` ·
+`RuntimeGenerationMessage` · `RuntimeGenerationResult`
+
+## 스타일과 색
+
+색을 만드는 함수와 스타일의 형. [스타일 레퍼런스](/docs/runtime/reference/styling)
+
+`color` · `isRuntimeColor` · `RuntimeColor` · `RuntimeStyle` · `RuntimeTextStyle` ·
+`RuntimeLength` · `RuntimeAlign` · `RuntimeJustify`
+
+## 자산
+
+그림을 가리키는 참조 — RowCat에 올린 이미지의 이름이나 외부 HTTPS 주소.
+[자산 레퍼런스](/docs/runtime/reference/assets)
+
+`asset` · `AssetRef`
+
+## 오류와 한도
+
+런타임이 던지는 오류와 그 코드. [오류와 한도](/docs/runtime/reference/errors-and-limits)
+
+`RuntimeError` · `RUNTIME_ERROR_CODE` · `RuntimeErrorCode`
+
+## 타입
+
+프롭·훅·노드·상태 정의의 형들. 값이 아니라 `import type`으로 가져옵니다.
+[타입 레퍼런스](/docs/runtime/reference/types)
+
+## 저수준
+
+평범한 작품에서 부를 일이 없는 판정 함수와 상수. [저수준 API](/docs/runtime/reference/advanced)
+
+## 전역
+
+`console.log`·`console.warn`·`console.error` 셋이 전역에 있습니다. `console.info`·`console.table`은
+없습니다. 그 밖의 전역(`window`·`document`·`fetch`·`setTimeout`…)은
+[없습니다](/docs/runtime/runtime-model/unsupported-apis).
+
+---
+
+<!-- /docs/runtime/reference/components · docs/public/runtime/reference/components.md -->
+
+
+# 컴포넌트
+
+열두 부품 전부 `@rowcat/runtime`에서 가져오고 TSX 태그로 씁니다. 함수처럼 직접 부르면
+`runtime_host_component_called`로 던집니다.
+
+모든 부품이 `children`을 받는 것은 아닙니다. 표에 `children`이 없으면 자식을 둘 수 없습니다.
+프롭 형의 이름(`StackProps` 등)은 [타입 레퍼런스](/docs/runtime/reference/types)에 있습니다.
+
+## `Screen`
+
+한 화면 전체. 런타임 앱의 가장 바깥에 둡니다.
+
+| 프롭 | 형 | 뜻 |
+| --- | --- | --- |
+| `background` | `RuntimeColor` | 화면 전체의 바탕. 안전 영역 바깥까지 덮습니다 |
+| `children` | 노드 | |
+
+```tsx
+<Screen background={color("#0b0d12")}>…</Screen>
+```
+
+## `View`
+
+아무 배치도 강제하지 않는 상자.
+
+| 프롭 | 형 |
+| --- | --- |
+| `style` | `RuntimeStyle` |
+| `children` | 노드 |
+
+## `Stack`
+
+자식을 **세로로** 쌓습니다.
+
+| 프롭 | 형 | 뜻 |
+| --- | --- | --- |
+| `gap` | `number` | 자식 사이의 간격. `style.gap`보다 우선합니다 |
+| `style` | `RuntimeStyle` | |
+| `children` | 노드 | |
+
+```tsx
+<Stack gap={8} style={{ padding: 16 }}>
+	<Text>첫 줄</Text>
+	<Text>둘째 줄</Text>
+</Stack>
+```
+
+## `Row`
+
+자식을 **가로로** 늘어놓습니다. 프롭은 `Stack`과 같습니다.
+
+```tsx
+<Row gap={8} style={{ align: "center" }}>
+	<Text>신뢰</Text>
+	<Progress value={0.4} style={{ width: 120 }} />
+</Row>
+```
+
+## `ScrollView`
+
+내용이 넘치면 스크롤합니다.
+
+| 프롭 | 형 | 뜻 |
+| --- | --- | --- |
+| `horizontal` | `boolean` | 참이면 가로 스크롤 |
+| `controller` | `RuntimeScrollController` | `useScrollController()`가 만든 손잡이 |
+| `style` | `RuntimeStyle` | |
+| `children` | 노드 | |
+
+스크롤 영역이 화면의 남는 공간을 차지하게 하려면 부모가 `Stack`이고 이 부품에 `style={{ grow: 1 }}`을
+줍니다.
+
+## `Text`
+
+글자 한 덩어리. 자식으로 문자열·숫자·다른 `Text`를 받습니다.
+
+| 프롭 | 형 |
+| --- | --- |
+| `style` | `RuntimeTextStyle` |
+| `children` | 노드 |
+
+```tsx
+<Text style={{ fontSize: 18, fontWeight: "bold", lines: 2 }}>{title}</Text>
+```
+
+글자는 반드시 `Text` 안에 있어야 합니다. `Stack` 바로 아래에 맨 문자열을 두어도 그려지지만,
+스타일을 줄 수 없고 앱에서는 기본 글꼴로 나옵니다.
+
+## `Image`
+
+그림 하나. `asset("characters/sena/smile")`처럼 RowCat에 올린 이미지의 이름이거나
+`asset("https://…")`처럼 외부 HTTPS 주소입니다 — [자산](/docs/runtime/concepts/assets)을
+먼저 읽으세요. 맨 문자열은 받지 않습니다(`source="https://…"`는 컴파일 오류입니다).
+
+| 프롭 | 형 | 뜻 |
+| --- | --- | --- |
+| `source` | `AssetRef` | `asset()`이 만든 참조(필수) |
+| `alt` | `string` | 스크린리더가 읽는 이름 |
+| `style` | `RuntimeStyle` | |
+| `fit` | `"cover"` · `"contain"` · `"fill"` | 상자에 맞추는 방식 |
+
+## `Button`
+
+라벨이 있는 조작.
+
+| 프롭 | 형 | 뜻 |
+| --- | --- | --- |
+| `onPress` | `() => void \| Promise<void>` | 눌렀을 때 |
+| `disabled` | `boolean` | 참이면 눌리지 않습니다 |
+| `tone` | `"primary"` · `"secondary"` · `"ghost"` | 시각 위계 |
+| `children` | 노드 | 라벨 |
+
+```tsx
+<Button tone="secondary" onPress={retry} disabled={pending}>
+	다시 시도
+</Button>
+```
+
+## `Pressable`
+
+임의의 내용을 누를 수 있게 감쌉니다.
+
+| 프롭 | 형 |
+| --- | --- |
+| `onPress` | `() => void \| Promise<void>` |
+| `disabled` | `boolean` |
+| `style` | `RuntimeStyle` |
+| `children` | 노드 |
+
+```tsx
+<Pressable onPress={() => choose(option.id)} style={{ padding: 12, borderRadius: 8 }}>
+	<Text>{option.label}</Text>
+</Pressable>
+```
+
+## `TextInput`
+
+한 줄 글 입력. **통제된 입력**이라 `value`가 필수입니다.
+
+| 프롭 | 형 | 뜻 |
+| --- | --- | --- |
+| `value` | `string` | 지금 적혀 있는 글(필수) |
+| `onChangeText` | `(value: string) => void \| Promise<void>` | 바뀐 뒤의 전체 글 |
+| `onSubmit` | `() => void \| Promise<void>` | Enter · 완료. 조합 중에는 불리지 않습니다 |
+| `placeholder` | `string` | |
+| `disabled` | `boolean` | |
+| `controller` | `RuntimeTextEntryController` | `useTextEntryController()`가 만든 손잡이 |
+| `style` | `RuntimeStyle` | 상자 |
+| `textStyle` | `RuntimeTextStyle` | 글자 |
+
+## `TextArea`
+
+여러 줄 글 입력. `TextInput`과 같되 **`onSubmit`이 없습니다** — Enter는 줄바꿈입니다. 서식도
+리치 텍스트도 없고 나르는 것은 평범한 문자열입니다. `controller`는 여기에도 있습니다.
+
+## `Progress`
+
+진행 정도.
+
+| 프롭 | 형 | 뜻 |
+| --- | --- | --- |
+| `value` | `number` | 0~1. 없으면 끝을 모르는 진행(무한 표시) |
+| `style` | `{ width?: RuntimeLength }` | 폭만 받습니다 |
+
+```tsx
+<Progress value={trust / 100} style={{ width: "100%" }} />
+```
+
+## `Audio`
+
+소리 하나. **화면에 그려지지 않고 자리도 차지하지 않습니다** — 트리에 있는 동안 살아 있고,
+빠지면 멈춥니다.
+
+| 프롭 | 형 | 뜻 |
+| --- | --- | --- |
+| `source` | `AssetRef` | 울릴 소리. **RowCat이 관리하는 논리 이름만** 받습니다(아래 참고) |
+| `playing` | `boolean` | 소리가 나기를 **바라는가**. 없으면 `false` |
+| `loop` | `boolean` | 끝나면 처음부터 다시. 없으면 `false` |
+| `volume` | `number` | 0~1. 없으면 `1`. 범위 밖의 값은 **거절됩니다**(고쳐 주지 않습니다) |
+| `muted` | `boolean` | 크기를 기억한 채로 끕니다 |
+| `restartKey` | `string \| number` | 값이 바뀌면 처음으로 되감습니다 |
+| `onEnded` | `() => void` | 끝까지 다 울렸습니다 — **`loop`가 아닐 때만** |
+
+```tsx example=audio file=src/main.tsx
+import { Audio, Button, Stack, asset, useState } from "@rowcat/runtime";
+
+export default function App() {
+	const [playing, setPlaying] = useState(false);
+
+	return (
+		<Stack>
+			<Audio
+				source={asset("audio/bgm/main")}
+				playing={playing}
+				loop
+				volume={0.5}
+			/>
+
+			<Button onPress={() => setPlaying((value) => !value)}>
+				{playing ? "음악 끄기" : "음악 켜기"}
+			</Button>
+		</Stack>
+	);
+}
+```
+
+스튜디오에서 소리 파일을 올리고 논리 이름을 붙인 다음, 그 **같은 이름**을 `asset()`에 적습니다.
+
+### `playing`은 사실이 아니라 바람입니다
+
+브라우저와 기기는 사용자가 화면과 상호작용하기 전의 소리를 막습니다. 그건 오류가 아니라
+**정상적인 플랫폼 정책**이고, 그래서 `playing={true}`가 곧 소리를 보장하지 않습니다 — 허락이
+필요한 상황에서는 RowCat이 "소리를 재생하려면 탭하세요"를 대신 보여 주고, 눌리는 순간 바라던
+소리가 이어집니다. 페이지를 여는 것만으로 소리가 나는 것은 어느 플랫폼에서도 약속할 수 없습니다.
+
+### 같은 소리를 다시 울리려면 `restartKey`
+
+효과음을 두 번 누르면 두 번째 누름에서 `playing`은 이미 `true`라 아무 변화가 없습니다. 되감는
+일에는 이름이 따로 있습니다.
+
+```tsx
+const [shot, setShot] = useState(0);
+
+<Audio source={asset("audio/sfx/click")} playing restartKey={shot} />
+<Button onPress={() => setShot((value) => value + 1)}>딸깍</Button>
+```
+
+### 원격 주소는 소리가 되지 않습니다
+
+`Image`와 달리 이 버전의 `Audio`는 **RowCat이 관리하는 소리만** 울립니다.
+
+```tsx
+<Audio source={asset("https://example.com/song.mp3")} playing />
+```
+
+이 줄은 아무 요청도 만들지 않고 아무 소리도 내지 않습니다(오류도 아닙니다 — 조용합니다).
+원격 그림이 열려 있는 것과 갈리는 이유는 성격입니다: 그림은 한 번 가져오면 끝이지만 소리는
+재생하는 내내 이어지는 대화라, 그 표면은 아직 열지 않았습니다.
+
+### 수명은 노드의 것입니다
+
+```text
+<Audio>가 트리에서 빠진다   → 멈춥니다
+플레이가 끝난다              → 멈춥니다
+playing={false}             → 그 자리에서 멈춥니다(되감지 않습니다)
+restartKey가 바뀐다          → 처음으로 되감습니다
+```
+
+`onEnded`는 **자연 종료**에만 불립니다. 반복 중에는 매 바퀴마다 불리지 않고, 이 콜백이
+`playing`을 대신 꺼 주지도 않습니다 — 다시 울리고 싶으면 `restartKey`를 바꿉니다.
+
+---
+
+<!-- /docs/runtime/reference/hooks · docs/public/runtime/reference/hooks.md -->
+
+
+# 훅
+
+훅은 컴포넌트의 최상단에서 매번 같은 순서로 부릅니다([규칙](/docs/runtime/concepts/components#훅의-규칙)).
+렌더 밖에서 부르면 `runtime_hook_outside_render`입니다.
+
+## `useState`
+
+```ts
+function useState<S>(initial: S | (() => S)): [S, RuntimeSetState<S>];
+```
+
+컴포넌트가 기억하는 값. 이 실행 동안만 살고 다시 시작하면 처음부터입니다. 초기값으로 함수를
+주면 첫 렌더에서만 돕니다.
+
+```tsx
+const [open, setOpen] = useState(false);
+setOpen((current) => !current);
+```
+
+## `useReducer`
+
+```ts
+function useReducer<S, A>(
+	reducer: (state: S, action: A) => S,
+	initial: S,
+): [S, (action: A) => void];
+```
+
+전이 함수가 상태를 소유합니다. 값이 여러 갈래로 바뀌는 화면에 씁니다. 초기값 함수·세 번째
+인자는 없습니다.
+
+## `useMemo`
+
+```ts
+function useMemo<T>(factory: () => T, deps?: readonly unknown[]): T;
+```
+
+`deps`가 그대로면 같은 값. 계산을 건너뛴다는 **보장이 아니라 힌트**입니다.
+
+## `useCallback`
+
+```ts
+function useCallback<T extends (...args: never[]) => unknown>(
+	callback: T,
+	deps?: readonly unknown[],
+): T;
+```
+
+`deps`가 그대로면 같은 함수.
+
+## `useRef`
+
+```ts
+function useRef<T>(initial: T): RuntimeRef<T>;
+```
+
+렌더 사이에 살아남는 칸 하나(`{ current: T }`). 값을 바꿔도 다시 그리지 않습니다 — 화면에
+보이는 값을 여기 두면 화면이 낡습니다. **부품을 가리키는 ref는 없습니다.** 이 값은 순수한
+저장 칸입니다.
+
+## `useEffect`
+
+```ts
+function useEffect(effect: () => void | RuntimeCleanup, deps?: readonly unknown[]): void;
+```
+
+렌더가 끝나고 화면이 그려진 뒤에 돕니다. 반환값은 정리 함수입니다.
+
+- `deps`를 **생략하면 매 렌더마다** 돕니다. 빈 배열은 한 번만입니다. 둘은 다른 뜻입니다.
+- 프로미스를 돌려주면(`async` 효과) 경고이고 정리 함수로 읽지 않습니다.
+- 효과가 던지면 그 효과만 잃고(`runtime_effect_failed`) 런타임은 계속 돕니다.
+- 효과 안에서 `generate()`를 부를 수 없습니다 — 생성은 [플레이어의 조작에서만](/docs/runtime/concepts/generation#플레이어의-조작에서만-시작합니다)
+  시작합니다.
+- 효과 안의 상태 갱신이 매 커밋마다 다음 렌더를 만드는 사슬은 런타임이 세지 않습니다. 그
+  사슬은 세션의 실행 예산이 끊습니다 — 조건 없는 `setState`를 효과에 두지 마세요.
+
+타이머(`setTimeout`·`setInterval`)는 없습니다. 효과로 시간을 재는 방법이 없습니다.
+
+## `useStoryState`
+
+```ts
+function useStoryState<T>(definition: StoryStateDefinition<T>): [T, RuntimeSetState<T>];
+```
+
+`defineStoryState`로 만든 정의를 읽고 씁니다. 같은 정의를 읽는 모든 컴포넌트가 같은 값을
+봅니다. 마운트된 동안 같은 자리에 다른 정의를 넘기면 `runtime_story_state_hook_changed`입니다.
+[상태](/docs/runtime/concepts/state#플레이스루의-상태-definestorystate-usestorystate)
+
+## `usePersistentState`
+
+```ts
+function usePersistentState<T>(definition: PersistentStateDefinition<T>): [T, RuntimeSetState<T>];
+```
+
+`definePersistentState`로 만든 정의를 읽고 씁니다. `defineStoryState`의 정의는 타입에서
+막힙니다. [상태](/docs/runtime/concepts/state#회차를-넘는-상태-definepersistentstate-usepersistentstate)
+
+## `useGeneration`
+
+```ts
+function useGeneration(): RuntimeGeneration;
+```
+
+AI 생성 능력을 돌려줍니다. 돌려주는 객체는 마운트된 동안 같은 객체입니다. `generate()`는
+이벤트 핸들러에서만 부릅니다. [AI 생성](/docs/runtime/concepts/generation)
+
+## `useScrollController`
+
+```ts
+function useScrollController(): RuntimeScrollController;
+```
+
+`ScrollView` 하나를 옮길 손잡이를 돌려줍니다. `controller` 프롭으로 붙이고, 이벤트 핸들러나
+효과에서 부릅니다.
+
+```tsx
+const scroll = useScrollController();
+
+<ScrollView controller={scroll}>{rows}</ScrollView>
+<Button onPress={() => scroll.scrollToEnd()}>최신</Button>
+```
+
+돌려주는 객체는 마운트된 동안 같은 객체입니다. [스크롤과 초점](/docs/runtime/concepts/scroll-and-focus)
+
+## `useTextEntryController`
+
+```ts
+function useTextEntryController(): RuntimeTextEntryController;
+```
+
+`TextInput`·`TextArea` 하나의 초점을 옮길 손잡이를 돌려줍니다.
+
+```tsx
+const reply = useTextEntryController();
+
+<TextInput controller={reply} value={draft} onChangeText={setDraft} />
+<Button onPress={() => reply.focus()}>답장</Button>
+```
+
+[스크롤과 초점](/docs/runtime/concepts/scroll-and-focus)
+
+## 설정 함수의 모양
+
+세 상태 훅의 설정 함수는 `RuntimeSetState<S>`입니다.
+
+```ts
+type RuntimeSetState<S> = (action: S | ((previous: S) => S)) => void;
+```
+
+새 값이나, 이전 값을 받아 새 값을 돌려주는 함수를 줍니다. 같은 값(`Object.is`)이면 다시 그리지
+않습니다.
+
+---
+
+<!-- /docs/runtime/reference/state · docs/public/runtime/reference/state.md -->
+
+
+# 상태 정의
+
+둘 다 **모듈 최상단에서** 부릅니다. 컴포넌트 안이나 렌더 중에 부르면
+`runtime_story_state_definition_late`(또는 `runtime_persistent_state_definition_late`)입니다 —
+첫 화면이 그려지기 전에 모든 정의가 알려져야 저장을 열 수 있기 때문입니다.
+
+## `defineStoryState`
+
+```ts
+function defineStoryState<T>(input: {
+	key: string;
+	version: number;
+	initial: T;
+	migrate?: (stored: Serializable, fromVersion: number) => T;
+}): StoryStateDefinition<T>;
+```
+
+이 플레이스루 동안 저장되는 값. 플레이 초기화가 지웁니다.
+
+## `definePersistentState`
+
+```ts
+function definePersistentState<T>(input: {
+	key: string;
+	version: number;
+	initial: T;
+	migrate?: (stored: Serializable, fromVersion: number) => T;
+}): PersistentStateDefinition<T>;
+```
+
+플레이어와 작품 사이에 남는 값. 플레이 초기화를 넘어 살아남습니다.
+
+## 입력
+
+| 필드 | 규칙 |
+| --- | --- |
+| `key` | 영문으로 시작, 영문·숫자·`_`·`-`, 64자 이내. 같은 수명 안에서 유일 |
+| `version` | 1 이상의 정수. 값의 모양이 바뀔 때 올립니다 |
+| `initial` | 직렬화 가능한 값(`null`·불리언·숫자·문자열·배열·평범한 객체). 함수·`Date`·`Map`·`Set`·`NaN`·`undefined`·순환은 타입에서 막힙니다 |
+| `migrate` | 옛 판의 저장 값을 지금 모양으로 옮기는 함수. 결정적이어야 합니다 |
+
+`initial`의 타입이 곧 상태의 타입입니다. 배열은 `[] as string[]`처럼 원소 타입을 적어 주세요 —
+비어 있는 배열은 `never[]`로 추론되어 아무것도 넣을 수 없게 됩니다.
+
+## 두 정의는 다른 타입입니다
+
+```ts
+const run = defineStoryState({ key: "run", version: 1, initial: { scene: 0 } });
+const meta = definePersistentState({ key: "meta", version: 1, initial: { runs: 0 } });
+
+useStoryState(run); // 됩니다
+usePersistentState(meta); // 됩니다
+useStoryState(meta); // 타입 오류 — 수명이 다릅니다
+```
+
+키 공간도 갈려 있습니다. 두 수명에 같은 `key`를 두어도 충돌이 아닙니다.
+
+## 마이그레이션
+
+| 저장된 판 | 코드의 판 | 일어나는 일 |
+| --- | --- | --- |
+| 없음 | n | `initial`로 시작 |
+| n | n | 저장된 값 그대로 |
+| m < n | n | `migrate(stored, m)`의 결과. `migrate`가 없으면 실패 |
+| m > n | n | 실패 — 자동으로 낮추지 않습니다 |
+
+`migrate`가 던지거나 직렬화할 수 없는 값을 돌려주면 런타임이 서지 않습니다. 저장을 조용히
+버리고 `initial`로 떨어뜨리지 않습니다. 옮긴 결과는 저장에 다시 적히므로 같은 마이그레이션이
+매번 돌지 않습니다.
+
+예제는 [상태 › 마이그레이션](/docs/runtime/concepts/state#마이그레이션)에 있습니다.
+
+## 저장되지 않는 것
+
+정의하지 않은 열쇠의 저장 값(예전 코드가 남긴 것)은 **지워지지 않습니다.** 정의를 잠깐 뗐다
+붙여도 플레이어의 진행이 사라지지 않게 하려는 것입니다. 지우는 것은 플레이 초기화뿐입니다.
+
+## 한도
+
+| 항목 | 값 |
+| --- | --- |
+| 정의의 수(수명마다) | 128 |
+| 정의 하나의 직렬화 길이 | 65,536자 |
+| 저장 전체(발행된 작품, 수명마다) | 262,144바이트 |
+
+한도를 넘는 갱신은 `runtime_story_state_limit_exceeded`(또는 영구 상태의 짝)로 그 렌더가
+실패하고, 화면은 이전 상태로 남습니다.
+
+---
+
+<!-- /docs/runtime/reference/generation · docs/public/runtime/reference/generation.md -->
+
+
+# 생성
+
+개념과 예제는 [AI 생성](/docs/runtime/concepts/generation)에 있습니다. 이 페이지는 형과 값만
+적습니다.
+
+## `RuntimeGeneration`
+
+```ts
+interface RuntimeGeneration {
+	generate(request: RuntimeGenerationRequest): Promise<RuntimeGenerationResult>;
+}
+```
+
+`useGeneration()`이 돌려주는 객체. 조작은 `generate` 하나이고, 이벤트 핸들러에서만 부릅니다.
+실패는 `RuntimeError`로 던지며 `code`가 사유를 말합니다([오류](/docs/runtime/reference/errors-and-limits#생성)).
+
+## `RuntimeGenerationRequest`
+
+```ts
+interface RuntimeGenerationRequest {
+	messages: readonly RuntimeGenerationMessage[];
+	instructions?: string;
+	maxOutputCharacters?: number;
+}
+```
+
+- `messages` — 비어 있으면 안 됩니다. 최근 것부터 뒤에 둡니다(시간순).
+- `instructions` — 이 인물·장면의 역할. RowCat의 안전 지시 사이에 들어갑니다.
+- `maxOutputCharacters` — 답 길이의 상한 **힌트**(글자 수). 기본 4,000, 최대 16,000. 소수는
+  내림, 1 미만은 1.
+
+## `RuntimeGenerationMessage`
+
+```ts
+interface RuntimeGenerationMessage {
+	role: "user" | "assistant";
+	content: string;
+}
+```
+
+`"system"` 역할은 없습니다. 그 자리는 `instructions`입니다.
+
+## `RuntimeGenerationResult`
+
+```ts
+interface RuntimeGenerationResult {
+	text: string;
+}
+```
+
+글 하나. 토큰 수·비용·모델·종료 사유는 없습니다.
+
+## `RUNTIME_GENERATION_LIMITS`
+
+```ts
+const RUNTIME_GENERATION_LIMITS: {
+	maxMessages: 100;
+	maxMessageCharacters: 32_768;
+	maxInstructionsCharacters: 32_768;
+	maxTotalCharacters: 262_144;
+	maxOutputCharacters: 16_000;
+	defaultOutputCharacters: 4_000;
+};
+```
+
+요청이 이 값을 넘으면 `runtime_generation_invalid_request`로 그 자리에서 던집니다 — 요청은
+나가지 않습니다. 길이는 UTF-16 코드 단위(JavaScript의 `string.length`)로 셉니다.
+
+## 실행 중의 한도
+
+`RUNTIME_GENERATION_LIMITS`가 담는 것은 **요청 하나**의 한도입니다. 런타임이 실행 중에
+지키는 한도 둘은 그 객체에 **없고**, 코드가 읽을 값으로 내보내지 않습니다 — 규칙이지 설정이
+아닙니다.
+
+| 한도 | 값 | 넘으면 |
+| --- | --- | --- |
+| 동시에 도는 요청 | 1개 | `runtime_generation_busy` |
+| 한 번의 실행에서 시작할 수 있는 생성 | 200번 | `runtime_generation_not_authorized` |
+
+앞의 것은 앞 요청이 끝나면 풀리고, 뒤의 것은 그 실행 안에서는 풀리지 않습니다 — 플레이어가
+다시 시작하면 새 실행이고 횟수도 처음부터입니다. 요청이 나간 뒤 실패한 것도 한 번으로 세고,
+모양이 잘못돼 나가지 않은 요청(`runtime_generation_invalid_request`)은 세지 않습니다.
+설명은 [AI 생성 › 실행 중의 한도](/docs/runtime/concepts/generation#실행-중의-한도)에 있습니다.
+
+---
+
+<!-- /docs/runtime/reference/styling · docs/public/runtime/reference/styling.md -->
+
+
+# 스타일
+
+개념은 [스타일](/docs/runtime/concepts/styling)에 있습니다.
+
+## `color`
+
+```ts
+function color(value: "#rgb" | "#rrggbb" | "#rrggbbaa"): RuntimeColor;
+```
+
+글자 그대로 적은 16진수 색을 `RuntimeColor`로 만듭니다. 형식이 틀리면 **타입 검사에서** 막히고,
+실행 중에는 `runtime_invalid_color`로 던집니다. 변수에 담긴 문자열은 이 함수에 넣을 수 없습니다 —
+`isRuntimeColor`를 쓰세요.
+
+```ts
+const ink = color("#f5f7fa");
+const glass = color("#ffffff22");
+```
+
+## `isRuntimeColor`
+
+```ts
+function isRuntimeColor(value: string): value is RuntimeColor;
+```
+
+문자열이 색 형식인지 판정합니다. 계산해서 만든 값을 스타일에 넣기 전에 씁니다.
+
+## `RuntimeColor`
+
+`color()`가 만든 값의 형. 문자열이지만 아무 문자열이나 대입할 수 없습니다.
+
+## `RuntimeStyle`
+
+상자(`View`·`Stack`·`Row`·`ScrollView`·`Pressable`·`Image`·`TextInput`·`TextArea`)의 스타일.
+
+```ts
+interface RuntimeStyle {
+	width?: RuntimeLength;
+	height?: RuntimeLength;
+	minWidth?: RuntimeLength;
+	maxWidth?: RuntimeLength;
+	minHeight?: RuntimeLength;
+	maxHeight?: RuntimeLength;
+	padding?: number;
+	gap?: number;
+	opacity?: number; // 0~1
+	backgroundColor?: RuntimeColor;
+	borderRadius?: number;
+	justify?: RuntimeJustify;
+	align?: RuntimeAlign;
+	grow?: number;
+	shrink?: number; // 0 이상
+	translateX?: number;
+	translateY?: number;
+	scale?: number; // 0 이상
+}
+```
+
+없는 속성은 타입에서 막힙니다. `margin`·`position`·`zIndex`·`border`·방향(`flexDirection`)은
+없습니다.
+
+`maxWidth`는 *내용만큼 넓되 어느 선을 넘지 않는* 상자를 만들 때 씁니다 — 대화 말풍선이
+그 모양입니다. `width`로 고정하면 짧은 한 마디도 그 너비를 다 차지합니다.
+
+```tsx
+<View style={{ maxWidth: "86%", padding: 12, borderRadius: 16 }}>
+	<Text>네.</Text>
+</View>
+```
+
+`grow`가 남는 공간을 나눠 갖는 비율이라면 `shrink`는 **모자란 공간을 양보하는** 비율입니다.
+적지 않으면 부모가 정합니다 — 세로로 쌓는 상자(`View`·`Stack`·`ScrollView`)의 자식은
+줄어들지 않고, `Row`의 자식은 줄어듭니다(그래야 긴 문장이 줄바꿈됩니다). 그 기본값을 덮고
+싶을 때만 적습니다. 음수는 거절됩니다.
+
+`translateX`·`translateY`·`scale`은 **그리는 자리만** 옮깁니다 — 이웃이 밀려나지 않고 배치가
+다시 계산되지 않습니다. `scale`의 중심은 언제나 부품의 가운데입니다. 적지 않은 축의 값은
+이동이 `0`, 배율이 `1`입니다.
+
+## `RuntimeTextStyle`
+
+`Text`의 `style`과 입력 부품의 `textStyle`.
+
+```ts
+interface RuntimeTextStyle {
+	color?: RuntimeColor;
+	fontSize?: number;
+	fontWeight?: "regular" | "medium" | "bold";
+	align?: "start" | "center" | "end";
+	lines?: number;
+	opacity?: number;
+}
+```
+
+## `RuntimeTransition`
+
+값이 바뀔 때 **어떻게 갈 것인가**. `transition` 프롭에 넣습니다.
+
+```ts
+interface RuntimeTransition {
+	duration?: number; // 밀리초. 없으면 200, 최대 10000
+	easing?: RuntimeEasing; // 없으면 "ease"
+}
+```
+
+개념과 예제는 [스타일](/docs/runtime/concepts/styling#전이)에 있습니다.
+
+`duration`이 `0`이면 전이가 없는 것과 같습니다. 음수·`NaN`·`Infinity`·10000 초과, 그리고
+표에 없는 키(`delay` 등)는 `runtime_invalid_host_prop`으로 거절됩니다 — 조용히 무시하지
+않습니다.
+
+## `RuntimeEasing`
+
+```ts
+type RuntimeEasing = "linear" | "ease" | "ease-in" | "ease-out" | "ease-in-out";
+```
+
+다섯 개뿐입니다. `cubic-bezier(...)`·스프링·`steps(...)`는 없습니다.
+
+## 전이 상수
+
+| 이름 | 값 |
+| --- | --- |
+| `RUNTIME_EASINGS` | 위 다섯을 담은 배열 |
+| `RUNTIME_TRANSITION_DEFAULT_DURATION_MS` | `200` |
+| `RUNTIME_TRANSITION_DEFAULT_EASING` | `"ease"` |
+| `RUNTIME_TRANSITION_MAX_DURATION_MS` | `10000` |
+
+## `RuntimeLength`
+
+```ts
+type RuntimeLength = number | `${number}%`;
+```
+
+숫자는 밀도 독립 단위, 문자열은 부모에 대한 비율(`"50%"`). `"12px"`·`"1rem"`은 없습니다.
+
+## `RuntimeJustify`
+
+```ts
+type RuntimeJustify = "start" | "center" | "end" | "between" | "around";
+```
+
+주축 정렬 — `Stack`이면 세로, `Row`면 가로.
+
+## `RuntimeAlign`
+
+```ts
+type RuntimeAlign = "start" | "center" | "end" | "stretch";
+```
+
+교차축 정렬.
+
+---
+
+<!-- /docs/runtime/reference/assets · docs/public/runtime/reference/assets.md -->
+
+
+# 자산
+
+RowCat에 올린 파일(그림·소리)은 **이름**으로, 외부 그림은 **HTTPS 주소**로 가리킵니다.
+근거와 예제는 [자산](/docs/runtime/concepts/assets)에 있습니다.
+
+## `asset`
+
+```ts
+function asset(value: string): AssetRef;
+```
+
+문자열 하나를 참조로 봉인합니다. 검사는 그 자리에서 끝나고 네트워크도 저장소도 보지
+않습니다 — 같은 문자열은 언제 불러도 같은 결과입니다.
+
+받는 값은 둘입니다.
+
+### HTTPS 이미지 주소
+
+| 규칙 | |
+| --- | --- |
+| 선언 | **소스에 그대로 적힌 주소만.** 실행 중에 만들어진 주소는 자리표시자입니다 |
+| 스킴 | `https://`만 (`http:`·`data:`·`blob:`·`file:`·`javascript:`·`//…` 거절) |
+| 호스트 | 공개 인터넷의 도메인 이름 (IP 리터럴·`localhost` 거절) |
+| 포트 | 443만 (`:443`은 됩니다) |
+| 자격증명 | 없어야 합니다 |
+| 질의 | 됩니다 |
+| 조각(`#`) | 거절 |
+| 길이 | 최대 8,192자 |
+| 글자 | 공백·제어 문자 없음 · 비ASCII는 퍼센트 인코딩 |
+
+### RowCat 자산 이름
+
+**그림과 소리가 한 이름 공간을 나눠 씁니다.** 이름이 무엇을 가리키는지는 스튜디오에서
+올릴 때 정해지고, 부르는 프리미티브가 그것을 바꾸지 않습니다.
+
+| 규칙 | |
+| --- | --- |
+| 선언 | **실행 중에 만들어도 됩니다.** 그 이름이 이 작품에 올려 둔 자산에 있으면 열립니다 |
+| 조각 | 영문이나 숫자로 시작, 영문·숫자·`.`·`_`·`-` |
+| 깊이 | 최대 8단계 |
+| 길이 | 최대 200자 |
+| 개수 | 한 작품에 최대 256개 (그림과 소리를 **합쳐서**) |
+| 거절 | 빈 값, 앞뒤 공백, `.`·`..` 조각, `:`·`\`가 든 값, 한 작품 안의 같은 이름 |
+
+올릴 수 있는 파일:
+
+| | 형식 | 상한 |
+| --- | --- | --- |
+| 그림 | JPEG · PNG · WebP | 3MB |
+| 소리 | MP3 · M4A(AAC) | 10MB · 10분 |
+
+규칙 밖의 값은 `runtime_invalid_asset_ref`로 던집니다.
+
+## `AssetRef`
+
+`asset()`이 돌려주는 불투명한 값. 공개 속성이 없고 문자열로 되돌릴 수 없습니다. 할 수 있는 일은
+`Image`나 `Audio`의 `source`에 넣는 것뿐입니다.
+
+## 그려지는 것
+
+| 참조 | `Image` | `Audio` |
+| --- | --- | --- |
+| 발행본에 있는 **그림** 이름 | 그려집니다 | 침묵 |
+| 발행본에 있는 **소리** 이름 | 자리표시자 | 울립니다 |
+| 발행본에 없는 이름 | 자리표시자 | 침묵 |
+| 소스에 적힌 HTTPS 주소 | RowCat의 이미지 경로를 거쳐 그려집니다. JPEG · PNG · WebP · GIF | **침묵 — 요청이 나가지 않습니다** |
+| 실행 중에 만들어진 HTTPS 주소 | 자리표시자. 요청이 나가지 않습니다 | 침묵 |
+
+**어긋난 종류는 오류가 아닙니다.** 소리 이름을 `Image`에 넣거나 그림 이름을 `Audio`에
+넣으면 요청조차 나가지 않고, 런타임 코드에는 아무것도 오지 않습니다.
+
+불러오지 못한 그림은 자리표시자로, 울리지 못한 소리는 침묵으로 남습니다.
+
+원격 이미지는 RowCat이 대신 가져옵니다 — 플레이어의 IP 주소와 User-Agent는 원격 서버에
+전달되지 않지만, 그 서버는 RowCat의 요청과 그 시점을 볼 수 있습니다.
+[자산](/docs/runtime/concepts/assets#그림은-rowcat을-거쳐-옵니다)이 그 경계를 적습니다.
+
+---
+
+<!-- /docs/runtime/reference/errors-and-limits · docs/public/runtime/reference/errors-and-limits.md -->
+
+
+# 오류와 한도
+
+## `RuntimeError`
+
+```ts
+class RuntimeError extends Error {
+	readonly code: RuntimeErrorCode;
+}
+```
+
+런타임이 던지는 모든 오류의 형. `code`로 분기하고 `message`는 사람이 읽는 문장입니다. 잡을 일이
+있는 자리는 사실상 `generate()` 하나입니다 — 나머지는 코드의 결함이라 잡지 않고 고칩니다.
+
+```ts
+try {
+	await generation.generate(request);
+} catch (error) {
+	if (error instanceof RuntimeError && error.code === "runtime_generation_unavailable") {
+		// 이 세션에서는 AI를 쓸 수 없다는 안내
+	}
+}
+```
+
+## `RUNTIME_ERROR_CODE` · `RuntimeErrorCode`
+
+`RUNTIME_ERROR_CODE`는 이름 → 코드 문자열의 상수 객체이고, `RuntimeErrorCode`는 그 값들의
+유니온입니다. 아래는 제작자가 실제로 만나는 코드입니다.
+
+### 훅과 렌더
+
+| 코드 | 뜻 |
+| --- | --- |
+| `runtime_hook_outside_render` | 훅을 컴포넌트 밖에서 불렀다 |
+| `runtime_hook_order_changed` | 같은 컴포넌트가 렌더마다 다른 훅을 부른다(조건문 안의 훅) |
+| `runtime_state_update_during_render` | 렌더 중에 `setState`를 불렀다 |
+| `runtime_async_component_unsupported` | 컴포넌트가 프로미스를 돌려줬다 |
+| `runtime_invalid_runtime_node` | 그릴 수 없는 값을 돌려줬다(함수·객체 등) |
+| `runtime_duplicate_key` | 같은 부모 아래 `key`가 겹친다 — 경고 |
+| `runtime_update_after_unmount` | 사라진 컴포넌트의 상태를 갱신했다 — 경고 |
+| `runtime_effect_returned_promise` | `async` 효과 — 경고 |
+| `runtime_effect_failed` | 효과가 던졌다. 그 효과만 잃는다 |
+| `runtime_invalid_host_prop` | 부품이 모르는 프롭이나 잘못된 값 |
+| `runtime_host_component_called` | 부품을 함수처럼 불렀다 |
+
+### 상태
+
+플레이스루 상태의 코드는 `runtime_story_state_*`, 영구 상태는 `runtime_persistent_state_*`로
+짝이 같습니다.
+
+| 코드(`story_state` 쪽) | 뜻 |
+| --- | --- |
+| `runtime_invalid_story_state` | `key`·`version`·`initial`이 규칙에 맞지 않는다 |
+| `runtime_story_state_definition_late` | 모듈 최상단이 아닌 곳에서 정의했다 |
+| `runtime_story_state_duplicate_key` | 같은 `key`를 두 번 정의했다 |
+| `runtime_story_state_hook_changed` | 같은 훅 자리에 다른 정의를 넘겼다 |
+| `runtime_story_state_value_invalid` | 직렬화할 수 없는 값을 저장하려 했다 |
+| `runtime_story_state_limit_exceeded` | 값이나 저장 전체가 한도를 넘었다 |
+| `runtime_story_state_migration_failed` | `migrate`가 던졌다 |
+| `runtime_story_state_migration_invalid` | `migrate`가 직렬화할 수 없는 값을 돌려줬다 |
+| `runtime_story_state_version_newer` | 저장된 판이 코드의 판보다 높다 |
+
+### 생성
+
+| 코드 | 뜻 |
+| --- | --- |
+| `runtime_generation_during_render` | 렌더 중에 `generate()`를 불렀다 |
+| `runtime_generation_invalid_request` | 요청의 모양·길이가 잘못됐다 |
+| `runtime_generation_unavailable` | 이 세션에 AI가 없다 |
+| `runtime_generation_not_authorized` | 플레이어의 조작 밖에서 불렀거나, 이 실행에서 허용된 생성 횟수를 모두 썼다 — 뒤의 경우는 다시 시도해도 같고 플레이어가 다시 시작해야 풀린다 |
+| `runtime_generation_insufficient_balance` | 예약된 코드 — 지금 어떤 호스트도 이 사유를 내지 않는다. `runtime_generation_failed`처럼 다뤄도 된다 |
+| `runtime_generation_busy` | 앞 요청이 아직 돌고 있다 |
+| `runtime_generation_cancelled` | 세션이 끝나며 취소됐다 |
+| `runtime_generation_failed` | 그 밖의 실패 |
+
+### 값
+
+| 코드 | 뜻 |
+| --- | --- |
+| `runtime_invalid_color` | `color()`에 색이 아닌 문자열 |
+| `runtime_invalid_asset_ref` | `asset()`에 규칙 밖의 값 — `http:`·`data:`·IP 주소·자격증명·다른 포트·너무 긴 주소, 또는 규칙 밖의 논리 경로 |
+
+### 화면의 크기
+
+| 코드 | 뜻 |
+| --- | --- |
+| `runtime_tree_depth_exceeded` | 부품이 너무 깊게 중첩됐다 |
+| `runtime_host_node_limit_exceeded` | 한 화면의 부품이 너무 많다 |
+
+이 둘은 **그 렌더만** 실패하고 이전 화면이 남습니다. 긴 목록은 최근 것만 그리거나 페이지를
+나누세요.
+
+## 한도 모음
+
+코드를 고쳐서 풀 수 있는 한도만 적습니다.
+
+| 축 | 한도 | 어디에 |
+| --- | --- | --- |
+| 프로젝트 | 파일 200개 · 파일당 200,000자 · 경로 200자 · 깊이 7단계 | [프로젝트 구조](/docs/runtime/project-structure#한도) |
+| 상태 | 수명마다 정의 128개 · 정의당 64 KiB · 저장 전체 256 KiB | [상태 정의](/docs/runtime/reference/state#한도) |
+| 생성 — 요청 하나 | 메시지 100개 · 요청 262,144자 · 답 16,000자 | [생성](/docs/runtime/reference/generation#runtime-generation-limits) |
+| 생성 — 실행 중 | 동시 1개 · 실행당 200번 (다시 시작해야 처음부터) | [생성](/docs/runtime/reference/generation#실행-중의-한도) |
+| 자산 — HTTPS 이미지 | 주소 8,192자 · JPEG·PNG·WebP·GIF | [자산](/docs/runtime/reference/assets) |
+| 자산 — 논리 경로 | 200자 · 8단계 | [자산](/docs/runtime/reference/assets) |
+
+---
+
+<!-- /docs/runtime/reference/types · docs/public/runtime/reference/types.md -->
+
+
+# 타입
+
+여기 있는 이름은 전부 **형**입니다. `import type { … } from "@rowcat/runtime"`으로 가져오고
+실행 중에는 존재하지 않습니다. 자기 컴포넌트의 프롭을 적거나 상태의 형을 이름 붙일 때 씁니다.
+
+## 부품의 프롭
+
+| 이름 | 부품 |
+| --- | --- |
+| `ScreenProps` | `Screen` |
+| `ViewProps` | `View` |
+| `StackProps` | `Stack` |
+| `RowProps` | `Row` |
+| `ScrollViewProps` | `ScrollView` |
+| `TextProps` | `Text` |
+| `ImageProps` | `Image` |
+| `ButtonProps` | `Button` |
+| `PressableProps` | `Pressable` |
+| `TextInputProps` | `TextInput` |
+| `TextAreaProps` | `TextArea` |
+| `ProgressProps` | `Progress` |
+| `AudioProps` | `Audio` |
+
+## `RuntimeTransitionable`
+
+```ts
+interface RuntimeTransitionable {
+	transition?: RuntimeTransition;
+}
+```
+
+`transition` 프롭을 받는 부품들의 공통 형. `ViewProps`·`StackProps`·`RowProps`·
+`ScrollViewProps`·`ImageProps`·`PressableProps`·`RuntimeTextEntry`가 이것을 포함합니다 —
+`style`이 `RuntimeStyle`인 부품 전부입니다.
+
+`ScreenProps`·`TextProps`·`ButtonProps`·`ProgressProps`에는 **없습니다.** 그 넷은 상자
+스타일을 받지 않으므로 움직일 축이 없습니다. 글자를 움직이려면 `View`로 감싸세요.
+
+둘은 여러 부품이 공유하는 축입니다.
+
+- `RuntimePressable` — `onPress`·`disabled`. `Button`과 `Pressable`이 확장합니다.
+- `RuntimeTextEntry` — `value`·`placeholder`·`disabled`·`onChangeText`·`style`·`textStyle`·
+  `controller`. `TextInput`과 `TextArea`가 확장합니다.
+
+```tsx
+import type { ButtonProps } from "@rowcat/runtime";
+
+function DangerButton(props: Omit<ButtonProps, "tone">) {
+	return <Button {...props} tone="ghost" />;
+}
+```
+
+## 조종기
+
+| 이름 | 형 |
+| --- | --- |
+| `RuntimeScrollController` | `scrollToStart()`·`scrollToEnd()`·`scrollTo({ offset })` |
+| `RuntimeTextEntryController` | `focus()`·`blur()` |
+| `RuntimeScrollTo` | `{ offset: number }` — `scrollTo()`가 받는 것 |
+
+조종기는 `useScrollController()`·`useTextEntryController()`가 만듭니다. **DOM 요소도 네이티브
+참조도 아니고**, `current`도 크기도 좌표도 없습니다 — 여는 것은 위의 메서드뿐입니다.
+[스크롤과 초점](/docs/runtime/concepts/scroll-and-focus)
+
+## 훅
+
+| 이름 | 형 |
+| --- | --- |
+| `RuntimeSetState<S>` | `(action: RuntimeStateAction<S>) => void` — 설정 함수 |
+| `RuntimeStateAction<S>` | `S \| ((previous: S) => S)` — 설정 함수가 받는 것 |
+| `RuntimeRef<T>` | `{ current: T }` — `useRef`가 돌려주는 칸 |
+| `RuntimeCleanup` | `() => void` — 효과의 정리 함수 |
+
+## 노드와 컴포넌트
+
+| 이름 | 뜻 |
+| --- | --- |
+| `RuntimeNode` | 컴포넌트가 돌려줄 수 있는 모든 것 — 원소·문자열·숫자·불리언·`null`·`undefined`·그것들의 배열 |
+| `RuntimePrimitive` | 그중 원소가 아닌 것(`string \| number \| boolean \| null \| undefined`) |
+| `RuntimeElement` | TSX 태그 하나가 만드는 값 |
+| `RuntimeChildren` | `{ children?: RuntimeNode }` — 자식을 받는 프롭 형이 확장합니다 |
+| `RuntimeComponent<TProps>` | `(props: TProps) => RuntimeNode` — 컴포넌트 함수의 형 |
+| `RuntimeApp` | 프롭 없는 컴포넌트 — 진입 파일의 기본 내보내기가 이 형이어야 합니다 |
+
+```tsx
+import type { RuntimeChildren, RuntimeNode } from "@rowcat/runtime";
+
+function Card({ title, children }: { title: string } & RuntimeChildren): RuntimeNode {
+	return (
+		<Stack gap={4}>
+			<Text style={{ fontWeight: "bold" }}>{title}</Text>
+			{children}
+		</Stack>
+	);
+}
+```
+
+## 상태 정의
+
+| 이름 | 뜻 |
+| --- | --- |
+| `StoryStateDefinition<T>` | `defineStoryState`가 돌려주는 정의 |
+| `StoryStateInput<T>` | 그 함수가 받는 입력(`key`·`version`·`initial`·`migrate?`) |
+| `StoryStateInputChecked<T>` | 입력에 직렬화 검사를 얹은 형 — 실제 매개변수 형입니다 |
+| `StoryStateMigration<T>` | `(stored: Serializable, fromVersion: number) => T` |
+| `PersistentStateDefinition<T>` | `definePersistentState`가 돌려주는 정의 |
+| `PersistentStateInput<T>` | 그 입력 |
+| `PersistentStateInputChecked<T>` | 검사를 얹은 입력 |
+| `PersistentStateMigration<T>` | 영구 상태의 마이그레이션 함수 형 |
+
+## 직렬화
+
+| 이름 | 뜻 |
+| --- | --- |
+| `Serializable` | 저장할 수 있는 값 — `null`·불리언·숫자·문자열·그 배열·그 객체 |
+| `SerializableShape<T>` | `T`를 직렬화 가능한 모양으로 다시 그린 형. 함수·`Date`가 섞이면 그 자리가 `never`가 됩니다 |
+
+`Serializable`은 `migrate`의 첫 인자 형입니다. 옛 판의 값이 어떤 모양인지는 당신이 알고 있으므로
+그 안에서 좁혀 씁니다.
+
+---
+
+<!-- /docs/runtime/reference/advanced · docs/public/runtime/reference/advanced.md -->
+
+
+# 저수준 API
+
+`@rowcat/runtime`이 내보내지만 **작품을 만드는 코드에서 부를 이유가 거의 없는** 이름들입니다.
+값의 종류를 실행 중에 판정하는 함수와, 계약의 상한을 말하는 상수입니다. 여기 적는 이유는
+자동완성에 나타나는 이름이 무엇인지 답하기 위해서이지 쓰라는 뜻이 아닙니다.
+
+## 판정 함수
+
+| 이름 | 답하는 것 |
+| --- | --- |
+| `isRuntimeHostComponent(value)` | 값이 런타임 부품(`Stack` 등)인가 |
+| `runtimeHostKindOf(value)` | 부품이면 그 종류 이름(`"stack"`·`"text"`…), 아니면 `null` |
+| `isRuntimeElement(value)` | 값이 TSX 태그가 만든 원소인가 |
+| `isStoryStateDefinition(value)` | 값이 `defineStoryState`의 정의인가 |
+| `isPersistentStateDefinition(value)` | 값이 `definePersistentState`의 정의인가 |
+| `isSerializable(value)` | 값을 저장할 수 있는가(함수·`Date`·순환·`NaN`이 없는가) |
+
+`isSerializable`은 그중 쓸 일이 있을 수 있는 하나입니다 — 계산해서 만든 값을 저장 상태에 넣기
+전에 확인하는 자리입니다. 다만 `initial`의 타입 검사가 대부분을 이미 잡습니다.
+
+## 형
+
+- `RuntimeHostComponent<TProps>` — 부품의 형. 호출 가능하지만 실제로 부르면 던집니다.
+- `RuntimeHostKind` — 부품 종류 이름의 유니온(`"screen"`·`"view"`·`"stack"`·`"row"`·
+  `"scroll"`·`"text"`·`"image"`·`"button"`·`"pressable"`·`"progress"`·`"text-input"`·
+  `"text-area"`).
+
+## 상수
+
+- `STORY_STATE_VERSION_MAX` · `PERSISTENT_STATE_VERSION_MAX` — `version`이 가질 수 있는
+  최댓값(`Number.MAX_SAFE_INTEGER`). 실제로 닿을 일은 없습니다.
+
+---
+
+<!-- /docs/runtime/runtime-model/security · docs/public/runtime/runtime-model/security.md -->
+
+
+# 보안과 샌드박스
+
+런타임 코드는 **격리된 환경**에서 돕니다. 플레이어의 브라우저나 앱 안이지만, 그 브라우저의
+페이지도 그 앱의 화면도 아닙니다 — RowCat이 세운 별개의 실행 공간이고, 그 공간에는 RowCat이
+일부러 넣어 준 것만 있습니다.
+
+## 닿을 수 없는 것
+
+- **브라우저 전역** — `window`·`document`·`navigator`·`location`·`localStorage`·
+  `IndexedDB`·쿠키. 있지도 않고, 있는 척하지도 않습니다.
+- **임의의 네트워크** — `fetch`·`XMLHttpRequest`·`WebSocket`. 외부 서버를 부르고 응답을
+  읽을 방법이 없습니다. AI는 [`useGeneration()`](/docs/runtime/concepts/generation) 하나를
+  지나고, 그 요청은 RowCat이 보냅니다. 이미지는 좁은 예외입니다 — 아래
+  [이미지](#이미지-좁은-예외)를 보세요.
+- **Node.js** — `process`·`require`·`fs`·`Buffer`.
+- **시계와 타이머** — `setTimeout`·`setInterval`·`requestAnimationFrame`. `Date.now()`는
+  있지만 그 값으로 진행을 정하면 기기마다 다른 결과가 됩니다.
+- **동적 코드** — `eval`·`new Function`·`import()`. 컴파일 시점에 검사에서 막힙니다.
+- **RowCat의 자격증명** — 세션·API 키·플레이어가 연결한 제공자의 키. 런타임 코드가 그 값을
+  읽을 수 있는 경로가 없습니다.
+- **다른 작품·다른 플레이어의 데이터.** 저장 상태는 이 작품과 이 플레이어의 것뿐입니다.
+
+이 목록은 "지금 막아 두었다"가 아니라 **그 공간에 그것이 없다**는 뜻입니다. 우회하는 방법을
+찾을 필요가 없고, 찾아도 다음 배포에서 사라집니다.
+
+## 이미지 — 좁은 예외
+
+그림을 가리키는 방법이 둘입니다. **RowCat에 올린 이미지**는 이름으로 부르고
+(`asset("characters/sena/smile")`) 그 그림은 우리 저장소에서 옵니다 — 밖으로 나가는 요청이
+없으므로 아래 규칙의 대상이 아닙니다. 이름은 **실행 중에 만들어도 됩니다.**
+
+`asset("https://…")`는 `Image`가 그릴 **외부** HTTPS 이미지 하나를 가리킬 수 있습니다. 그
+그림은 RowCat이 자기 이미지 경로로 가져와 플레이어에게 보여 줍니다 — 런타임 코드는 네트워크
+응답을 받지 못합니다. 상태 코드도, 헤더도, 바이트도, 리다이렉트도 오지 않고, 요청에 무엇을 실을 수도
+없습니다. 그림이 오지 않으면 자리표시자가 설 뿐 코드에는 아무 일도 일어나지 않습니다.
+
+**그리고 그 외부 주소는 프로젝트에 고정되어 있어야 합니다.** 소스에 그대로 적힌 주소만 실제
+요청이 되고, 실행 중에 조립한 주소(`` asset(`https://…/${값}`) ``)는 자리표시자로 남습니다 —
+그러지 않으면 그림 하나가 플레이어의 입력이나 진행 상태를 밖으로 내보내는 통로가 됩니다.
+규칙과 예제는 [자산](/docs/runtime/concepts/assets#주소는-프로젝트에-고정된-자산입니다)에
+있습니다.
+
+그래서 이 페이지가 말하는 것은 *네트워크 효과가 전혀 없다*가 아니라 **임의의 네트워크 API가
+없다**입니다. 원격 이미지는 플레이어 기기가 제작자의 서버에 직접 요청하지 않고 RowCat의
+이미지 경로를 통해 불러옵니다 — 플레이어의 IP 주소와 User-Agent가 그 서버에 전달되지
+않습니다. 다만 그 서버는 **RowCat의 요청과 그 시점**은 볼 수 있습니다(익명이 되는 것이
+아니라 플레이어의 접속 정보가 가려지는 것입니다).
+
+## 있는 것
+
+- `@rowcat/runtime`이 내보내는 전부 — 부품·훅·상태·생성·색·자산 참조(RowCat 이미지와
+  외부 HTTPS 이미지).
+- JavaScript 표준 — `Array`·`Object`·`Map`·`Set`·`JSON`·`Math`·`Promise`·`String` 등
+  ES2022의 내장 객체. (저장 상태에는 그중 JSON으로 적을 수 있는 것만 담깁니다.)
+- `console.log`·`console.warn`·`console.error` — 미리보기의 콘솔에 옵니다.
+
+## 검사는 두 겹입니다
+
+스튜디오의 검사와 발행 시점의 컴파일이 금지된 문법·import를 먼저 잡습니다. 그 검사를 지났다고
+해서 실행 공간이 열리는 것은 아닙니다 — 격리는 실행 공간 자체의 성질이고, 컴파일 검사는 제작자에게
+**그 자리에서** 정확한 오류를 주기 위한 것입니다.
+
+## 비밀을 적지 마세요
+
+**발행된 런타임 코드는 비밀을 두는 곳이 아닙니다.**
+
+컴파일된 코드는 작품을 열 자격이 있는 플레이어의 **기기로 내려가 거기서 실행됩니다.** 문자열,
+인물의 지시문, 분기 규칙, 숨겨 둔 엔딩 조건 — 전부 열어 볼 수 있는 클라이언트 코드라고 보아야
+합니다. 작품의 프롬프트 보호 설정은 대화 작품의 스냅샷에 대한 것이고 런타임 코드를 감추지
+않습니다.
+
+그러니 소스에 다음을 적지 마세요.
+
+- API 키, 비밀번호, 개인 토큰
+- 제공자 자격증명(런타임은 어차피 그것을 쓸 방법이 없습니다)
+- 자격증명이 박힌 주소 — `asset()`의 HTTPS 주소도 마찬가지입니다(서명 주소는 플레이어에게
+  보이는 값으로 취급합니다)
+- 플레이어에게 보이면 안 되는 개인 정보
+
+AI 인물의 지시문(`instructions`)도 같은 자리에 있습니다. 플레이어가 그것을 읽을 수 있다는
+전제로 쓰세요 — 스포일러를 지시문에 통째로 넣지 말고, 진행에 따라 필요한 만큼만 조립해 보내는
+것이 한 방법입니다.
+
+## RowCat이 하는 일
+
+- 런타임 코드의 실행을 격리하고, 한 화면이 너무 커지거나 한 렌더가 너무 오래 돌면 끊습니다.
+  무한 루프는 작품을 멈추지만 플레이어의 앱을 멈추지 않습니다.
+- AI 요청 앞뒤에 안전 지시를 세웁니다. `instructions`는 그것을 대신하지 못합니다.
+- AI 요청이 플레이어의 조작에서 시작했는지 확인합니다. 화면을 그리는 것만으로 누군가의 키가
+  쓰이지 않습니다.
+- 저장 상태를 플레이어의 계정에 보관하고 기기 사이로 옮깁니다.
+
+## 이 페이지가 말하지 않는 것
+
+실행 공간이 어떻게 만들어졌는지, 무엇으로 격리되는지, 어떤 검사가 어느 층에서 도는지는
+적지 않습니다. 제작자에게 필요한 것은 *무엇이 되고 무엇이 안 되는가*이고, 그 답은 위의
+목록입니다.
+
+---
+
+<!-- /docs/runtime/runtime-model/supported-imports · docs/public/runtime/runtime-model/supported-imports.md -->
+
+
+# 지원하는 import
+
+런타임 코드의 `import`는 셋 중 하나여야 합니다. 그 밖의 것은 컴파일에서 막힙니다.
+
+## 1. `@rowcat/runtime`
+
+```ts
+import { Stack, Text, useState } from "@rowcat/runtime";
+import type { RuntimeNode } from "@rowcat/runtime";
+```
+
+런타임의 공개 API 전부. 목록은 [API 레퍼런스](/docs/runtime/reference)에 있습니다.
+`@rowcat/runtime/internal/…` 같은 하위 경로는 없습니다 — 있어 보여도 거절됩니다.
+
+## 2. 프로젝트 안의 파일
+
+```ts
+import { party } from "./game";
+import { CharacterCard } from "../components/CharacterCard";
+```
+
+- `./` 또는 `../`로 시작합니다.
+- **확장자를 적지 않습니다.** `./game`은 `game.ts` → `game.tsx` → `game/index.ts` →
+  `game/index.tsx` 순으로 찾습니다.
+- 프로젝트 뿌리 위로 올라가는 경로는 거절됩니다.
+- 파일을 찾지 못하면 어느 경로들을 시도했는지 진단이 말합니다.
+
+## 3. TSX가 스스로 넣는 것
+
+`<Stack>` 같은 TSX 태그를 쓰면 컴파일러가 `@rowcat/runtime/jsx-runtime`을 대신 가져옵니다.
+당신이 적을 일은 없고, 적어도 됩니다.
+
+## 되지 않는 것
+
+| import | 왜 |
+| --- | --- |
+| `react` · `react-dom` · `react-native` | 런타임은 React가 아니고 React를 싣지 않습니다 |
+| `lodash` · `zustand` · 그 밖의 npm 패키지 | 설치할 곳이 없습니다. 프로젝트의 파일이 전부입니다 |
+| `node:fs` · `path` · `crypto` | Node.js가 없습니다 |
+| `https://…/module.js` | 원격 모듈을 가져올 방법이 없습니다 |
+| `import("./scene")` (동적) | 모든 모듈은 컴파일 시점에 정해집니다 |
+| `require("./x")` | CommonJS가 없습니다 |
+
+`.json`·`.css`·`.png` 같은 자산 파일도 가져올 수 없습니다. 프로젝트의 파일은 `.ts`·`.tsx`
+둘뿐입니다. 데이터는 `.ts` 파일에 상수로 적습니다.
+
+```ts
+// src/data/scenes.ts
+export const SCENES = [
+	{ id: "intro", text: "밤 11시, 편의점 앞." },
+	{ id: "counter", text: "카운터 뒤에 서자 문이 열렸다." },
+] as const;
+```
+
+## 형 검사도 같은 규칙입니다
+
+스튜디오의 자동완성과 오류 표시는 같은 컴파일러 설정을 씁니다. DOM 타입(`HTMLElement`)도
+Node 타입(`Buffer`)도 프로그램에 없어서, 그 이름을 쓰면 편집기에서 먼저 빨간 줄이 섭니다.
+
+---
+
+<!-- /docs/runtime/runtime-model/unsupported-apis · docs/public/runtime/runtime-model/unsupported-apis.md -->
+
+
+# 지원하지 않는 API
+
+웹이나 React Native에서 익숙한 것 중 런타임에 **없는 것**을 모았습니다. 대안이 있으면 함께
+적고, 없으면 없다고 적습니다.
+
+## 할 수 없는 것
+
+```text
+npm 패키지 설치
+React · React 라이브러리
+HTML 태그 · DOM 조작
+fetch · WebSocket · 외부 API 호출 (이미지는 예외 — asset("https://…"))
+파일 읽기·쓰기
+localStorage · IndexedDB · 쿠키
+setTimeout · setInterval · 애니메이션 프레임 (전이는 style + transition으로 적는다)
+진동 · 카메라 · 위치
+클립보드 · 공유 · 알림
+링크 열기 · 다른 화면으로 이동
+Web Audio(AudioContext) · <audio> · 플랫폼 재생 객체
+DOM 요소 · React Native 참조 · 부품을 가리키는 ref
+```
+
+## 대신 쓰는 것
+
+| 하고 싶은 일 | 쓰는 것 |
+| --- | --- |
+| 그림 | [`asset("https://…")`](/docs/runtime/concepts/assets) — HTTPS 주소의 이미지를 `Image`로 그립니다 |
+| 소리 | [`Audio`](/docs/runtime/reference/components#audio) — RowCat에 올린 소리를 `asset("audio/…")`로 울립니다 |
+| 목록을 최신으로 내리기 | [`useScrollController`](/docs/runtime/concepts/scroll-and-focus) — `scrollToStart`·`scrollToEnd`·`scrollTo({ offset })` |
+| 입력 칸에 초점 주기 | [`useTextEntryController`](/docs/runtime/concepts/scroll-and-focus) — `focus`·`blur` |
+| 진행 저장 | [`useStoryState`](/docs/runtime/concepts/state) — 플레이어의 계정에 저장되어 기기 사이를 건넙니다 |
+| 회차를 넘는 기록 | [`usePersistentState`](/docs/runtime/concepts/state#회차를-넘는-상태-definepersistentstate-usepersistentstate) |
+| 인물의 답·서술 | [`useGeneration`](/docs/runtime/concepts/generation) |
+| 화면 | [`@rowcat/runtime`의 부품](/docs/runtime/reference/components) |
+| 색 | [`color()`](/docs/runtime/concepts/styling#색) |
+| 값이 바뀔 때 부드럽게 | [`transition`](/docs/runtime/concepts/styling#전이) — `opacity`·`translateX`·`translateY`·`scale` |
+| 디버그 출력 | `console.log` — 미리보기의 콘솔에 옵니다 |
+
+### 소리의 경계
+
+소리는 **되는 것과 안 되는 것이 갈립니다.** 되는 쪽은 하나입니다.
+
+```text
+된다      <Audio source={asset("audio/bgm/main")} playing />
+          RowCat에 올려 스튜디오에서 이름을 붙인 소리
+
+안 된다   AudioContext · new Audio() · <audio> 태그 · 플랫폼의 재생 객체
+          임의의 오디오 API · 직접 만드는 소리
+          원격 HTTPS 주소의 소리(그림과 갈리는 지점입니다 — 재생은 흐르는 대화라
+          프록시 하나로 접히지 않습니다)
+```
+
+재생·정지·반복·크기·되감기는 전부 `Audio`의 **프롭**입니다. 소리를 명령형으로 조작하는
+손잡이(`play()`·`pause()`)는 없습니다. 자세한 것은 [자산](/docs/runtime/concepts/assets)에
+있습니다.
+
+### 부품을 가리키는 ref의 경계
+
+`useRef`는 렌더 사이에 값을 담는 칸이고 **부품을 가리키지 않습니다.** 화면에 한 번 시키는
+일(스크롤·초점)은 조종기로 합니다.
+
+```text
+된다      const scroll = useScrollController();
+          <ScrollView controller={scroll}>…</ScrollView>
+          scroll.scrollToEnd()
+
+안 된다   ref.current.focus() · findNodeHandle · querySelector
+          크기·좌표·부모·자식을 읽는 일
+```
+
+[스크롤과 초점](/docs/runtime/concepts/scroll-and-focus)이 규칙 전부를 적습니다.
+
+## 대안이 없는 것
+
+- **시간의 흐름.** 타이머가 없어 "3초 뒤에"를 만들 수 없습니다. 진행은 플레이어의 조작으로
+  넘깁니다. `Date.now()`는 값을 주지만 기기마다 다른 값이라 진행의 근거로 쓰면 안 됩니다.
+- **프레임 단위의 애니메이션.** 프레임을 직접 그리는 방법(`requestAnimationFrame`·타이머·
+  명령형 애니메이션 객체)은 없습니다. **다만 상태가 바뀔 때의 전이는 있습니다** — `transition`
+  프롭과 `opacity`·`translateX`·`translateY`·`scale`로 적습니다([스타일](/docs/runtime/concepts/styling#전이)).
+  키프레임·반복·스프링·진입과 퇴장 애니메이션은 없고, 스크롤도 즉시 옮깁니다(부드러운
+  스크롤이 없습니다).
+- **화면 밖으로 나가기.** 링크·공유·다른 작품으로의 이동은 없습니다. 런타임은 자기 화면 하나를
+  갖습니다.
+- **플레이어의 신원.** 이름·아이디·아바타를 읽을 방법이 없습니다. 플레이어의 이름이 필요하면
+  작품 안에서 물어 저장 상태에 둡니다.
+- **뷰포트 크기.** 화면의 폭·높이를 읽는 API가 없습니다. 비율(`"100%"`)과 `grow`로 배치합니다.
+  스크롤 위치를 **읽는** 방법도 없습니다 — 조종기는 옮기기만 합니다.
+- **랜덤의 재현.** `Math.random()`은 있지만 저장되지 않습니다. 재현되어야 하는 무작위(같은 시드의
+  같은 결과)는 시드를 저장 상태에 두고 직접 만듭니다.
+
+## 있는 것처럼 보이지만 없는 것
+
+| 이름 | 사실 |
+| --- | --- |
+| `useContext` · `createContext` | 없습니다. 같은 값을 여러 컴포넌트가 봐야 하면 `defineStoryState`의 정의를 가져다 쓰거나 프롭으로 넘깁니다 |
+| `useLayoutEffect` · `useId` · `useTransition` | 없습니다 |
+| `memo` · `forwardRef` · `lazy` · `Suspense` | 없습니다 |
+| `useRef`에 담은 부품 · `ref` 프롭 | 없습니다. 스크롤과 초점은 [조종기](/docs/runtime/concepts/scroll-and-focus)로 합니다 |
+| `<Fragment>` · `<></>` | 없습니다. 여러 노드는 **배열**로 돌려줍니다(각 항목에 `key`) |
+| `className` · `style` 문자열 | 없습니다. `style`은 [정해진 속성의 객체](/docs/runtime/concepts/styling)입니다 |
+| `onClick` · `onChange` · `onKeyDown` | 없습니다. `onPress`·`onChangeText`·`onSubmit`입니다 |
+| `defaultValue` | 없습니다. 입력은 통제된 입력이라 `value`가 필수입니다 |
+| `TextInput`의 `multiline` | 없습니다. 여러 줄은 `TextArea`입니다 |
+| `Image`의 `src` · `uri` | 없습니다. `source={asset("https://…")}`입니다 — 문자열을 그대로 넣을 수 없습니다 |
+| 실행 중에 만든 원격 이미지 주소 | 없습니다. 외부 주소는 소스에 고정되어야 하고, 조립한 주소는 자리표시자입니다. **RowCat 이미지의 이름은 실행 중에 만들어도 됩니다** |

@@ -1,0 +1,14 @@
+/* Same design system source as the web (Tailwind, shadcn tokens, Base UI variants, fonts). The
+   console may be denser but must not become a different design system — this file once set
+   Manrope itself, and Korean text in the two apps fell back to different system fonts. */
+@import '@rowcat/ui-web/globals.css';
+
+/* Workspace packages are not auto-detected, so register this app's sources with Tailwind. */
+@source '../**/*.{ts,tsx}';
+
+@layer base {
+	/* Tables are this app's dominant surface, so numbers align by digit. */
+	.tabular {
+		font-variant-numeric: tabular-nums;
+	}
+}

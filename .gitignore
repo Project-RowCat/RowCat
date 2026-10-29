@@ -1,0 +1,143 @@
+# dependencies
+node_modules
+.pnpm-store
+.pnpm-debug.log*
+.yarn/*
+!.yarn/patches
+!.yarn/releases
+!.yarn/plugins
+!.yarn/versions
+
+# build output
+dist
+dist-ssr
+build
+out
+.output
+.nitro
+.vinxi
+.tanstack
+.tanstack-start
+.vite
+.wrangler
+.vercel
+.netlify
+*.tsbuildinfo
+.turbo
+
+# generated
+__unconfig*
+todos.json
+# Output of scripts/pack.sh. It is a snapshot of the repository, so do not commit it.
+digest.txt
+*.zip
+
+# Local compose overrides (db/redis host ports, local only). docker-compose.yml points here. Without
+# this entry, following that hint would commit local port bindings.
+docker-compose.override.yml
+
+# env
+.env
+.env.*
+!.env.example
+*.local
+.dev.vars
+.dev.vars.*
+
+# test / coverage
+coverage
+.nyc_output
+playwright-report
+blob-report
+test-results
+.vitest-cache
+
+# logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# caches
+.cache
+.eslintcache
+.biome-cache
+
+# mobile (expo / react native)
+.expo
+.expo-shared
+# Prebuild output: **never commit it.** `expo run:ios`/`run:android` regenerate it from
+# app.config.ts (managed workflow). Committed copies drift from the config, and nothing then says
+# which is true. Add native code through a config plugin instead.
+/apps/mobile/ios/
+/apps/mobile/android/
+android/app/build
+android/build
+android/.gradle
+android/local.properties
+# The four lines above match only the repo-root `android/` (a pattern with a slash is anchored
+# here). Native modules' Android folders (apps/mobile/modules/*/android/) need name matches instead:
+# Gradle caches there were committed and dirtied the working tree on every build.
+.gradle/
+ios/Pods
+ios/build
+ios/.xcode.env.local
+*.jks
+*.keystore
+*.p8
+*.p12
+*.key
+*.mobileprovision
+# OTA: the publishing tool's working folder (exported and signed bundles) and the **signing private
+# key**. The key is generated outside the repo (`keys:generate` refuses in-repo paths); this rule
+# keeps a hand-copied key from being committed too. Certificates (apps/mobile/certs/*.pem) are
+# public and committed.
+/apps/mobile/.ota/
+*private-key*.pem
+*.orig.*
+web-build
+
+# editors / os
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+.idea
+.fleet
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+
+# agent tooling
+# Agent and editor tooling traces (preview server config, code-graph index, hooks, extension work
+# folders). These are this machine's tool settings, not source; in a public tree they would run on
+# other people's machines. AGENTS.md is the only agent guidance the repo provides.
+.claude/
+.trail/
+graft/
+.github/modernize/
+
+# playwright (browser journeys)
+# Run output: traces, videos and snapshots of failed journeys accumulate here. Committing
+# them makes the repo carry run history. The config and journeys (playwright.config.ts,
+# e2e/) are committed.
+/test-results
+/playwright-report
+/blob-report
+/playwright/.cache
+
+# react-email preview server (`pnpm --filter @rowcat/api email:dev`)
+# Dev-tool cache for rendering mail previews. It is output, not source (a Next build result):
+# committing it would ship a bundle built on someone else's machine.
+.react-email/

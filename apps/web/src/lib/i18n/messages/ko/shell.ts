@@ -1,0 +1,77 @@
+import type { Messages } from "../../types.ts";
+
+export const shell: Messages["shell"] = {
+	nav: {
+		label: "주요 탐색",
+		open: "주요 탐색 열기",
+		discover: "발견",
+		chat: "대화",
+		create: "만들기",
+		recent: "최근 대화",
+		allChats: "모든 대화",
+	},
+	header: {
+		signIn: "로그인",
+		settings: "설정",
+		accountMenu: "{{name}} 계정 메뉴",
+		account: "계정",
+		signOut: "로그아웃",
+		chat: "대화",
+		draft: "초안",
+	},
+	theme: {
+		toggle: "테마 전환",
+		light: "라이트",
+		dark: "다크",
+		system: "시스템",
+	},
+	bell: {
+		label: "알림",
+		unread: "알림, 읽지 않음 {{count}}개",
+		unseenUpdate: ", 새로운 업데이트 있음",
+	},
+	fallback: {
+		notFoundTitle: "페이지를 찾을 수 없습니다",
+		notFoundBody: "주소가 바뀌었거나 존재하지 않는 페이지입니다.",
+		backToDiscover: "발견으로 돌아가기",
+		errorTitle: "화면을 불러오지 못했습니다",
+		retryLater: "잠시 후 다시 시도해 주세요.",
+		requestId: "요청 ID: {{id}}",
+	},
+	updates: {
+		empty: "아직 업데이트 안내가 없습니다.",
+		title: "{{date}} 업데이트 안내",
+		ok: "확인",
+		section: {
+			additions: "새로운 기능",
+			improvements: "개선 사항",
+			fixes: "수정 사항",
+			notices: "참고 사항",
+		},
+	},
+	loadingDraft: "초안을 불러오는 중…",
+	loadingProject: "프로젝트를 불러오는 중…",
+	titles: {
+		discover: "발견 · {{app}}",
+		discoverDescription:
+			"{{app}}에 올라온 작품을 성향·인기·등급으로 둘러봅니다.",
+		login: "로그인 · {{app}}",
+		resetPassword: "비밀번호 재설정 · {{app}}",
+		guardian: "보호자 동의 · {{app}}",
+		notifications: "알림 · {{app}}",
+		creator: "{{name}}님의 공개 작품 · {{app}}",
+		account: "계정 · {{app}}",
+		playtest: "작품 테스트 · {{app}}",
+		runtimeStudio: "런타임 스튜디오 · {{app}}",
+		create: "만들기 · {{app}}",
+		play: "플레이 · {{app}}",
+		aiSettings: "AI 설정 · {{app}}",
+		chats: "대화 | {{app}}",
+		story: "{{name}}님의 작품 · {{app}}",
+		personaSettings: "페르소나 설정 · {{app}}",
+		settings: "설정 · {{app}}",
+		accountDeletion: "계정 삭제 안내 · {{app}}",
+		accountDeletionDescription:
+			"{{app}} 계정을 삭제하는 방법과, 삭제되는 데이터·남을 수 있는 데이터 안내.",
+	},
+};

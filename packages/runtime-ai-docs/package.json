@@ -1,0 +1,25 @@
+{
+  "name": "@rowcat/runtime-ai-docs",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./source": "./src/source/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "gen": "tsx scripts/generate.ts"
+  },
+  "dependencies": {
+    "@rowcat/runtime": "workspace:*",
+    "typescript-compiler-api": "npm:typescript@5.9.3"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.12",
+    "vitest": "^3.2.4"
+  }
+}

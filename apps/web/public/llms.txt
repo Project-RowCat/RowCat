@@ -1,0 +1,264 @@
+# RowCat creator runtime
+
+> 크리에이터 런타임은 TypeScript와 TSX로 RowCat 작품의 화면·상태·상호작용을 직접 만드는 방법입니다. (language contract v7)
+
+이 문서는 **RowCat 크리에이터 런타임 코드를 대신 쓰는 도구**(Claude Code · Codex · Cursor 같은
+코딩 에이전트)를 위한 것입니다. 사람이 읽는 공개 문서 목록에는 없습니다 — 여기 적힌 것은
+제품의 설명이 아니라 **작업 절차와 규칙**이기 때문입니다.
+
+## 30초 모델
+
+```text
+크리에이터 런타임 = TypeScript/TSX로 쓴 작품 화면
+공개 API        = @rowcat/runtime 하나. 그 밖의 import는 컴파일에서 막힌다
+실행            = 격리된 QuickJS/WASM. 브라우저도 Node도 아니다
+화면            = RowCat의 호스트 렌더러가 그린다. DOM이 아니다
+저장            = 세 가지 수명(useState · useStoryState · usePersistentState)
+```
+
+React를 닮았지만 **React가 아닙니다.** 이름과 시그니처가 익숙하다는 이유로 React의 다른
+API가 있을 것이라고 가정하면 안 됩니다 — `useContext`, `useLayoutEffect`, `Suspense`,
+`createPortal`, `React.FC`는 이 언어에 없습니다.
+
+## 절대 하지 않는 것
+
+```text
+import "react" · "react-dom" · "react-native" · npm 패키지        컴파일 거절
+<div> · <span> · 그 밖의 HTML 태그                                 컴파일 거절
+fetch · XMLHttpRequest · WebSocket                                 없다
+setTimeout · setInterval · requestAnimationFrame                   없다 (전이는 transition 프롭)
+localStorage · IndexedDB · document · window · process             없다
+eval · new Function · 동적 import()                                컴파일 거절
+상대 import에 확장자 붙이기 (`./game.ts`)                          `game.ts.ts`를 찾는다 — 확장자를 뺀다
+```
+
+마지막 줄은 이 저장소의 다른 코드와 **반대**입니다. 런타임 프로젝트 안에서는 `./game`처럼
+확장자 없이 적습니다.
+
+전체 목록과 대안은 [지원하지 않는 API](/docs/runtime/runtime-model/unsupported-apis)와
+[지원하는 import](/docs/runtime/runtime-model/supported-imports)에 있습니다.
+
+## 세 가지 상태 수명을 섞지 않습니다
+
+```text
+useState             이 세션 안. 다시 시작하면 사라진다        열린 패널 · 입력 중인 글 · 로딩 표시
+useStoryState        이 회차. `플레이 초기화`가 지운다          현재 장면 · 호감도 · 이번에 알아낸 것
+usePersistentState   계정에 남는다. 초기화가 닿지 않는다        해금한 결말 · 회차를 넘는 기억
+```
+
+가장 자주 나오는 실수는 **일시적인 UI 상태를 `usePersistentState`에 넣는 것**입니다. 그
+값은 플레이어의 계정에 저장되어 기기 사이를 건너므로, 열린 패널 같은 것을 거기 두면 다른
+기기에서 그 패널이 열린 채로 시작합니다. 자세한 것은
+[상태](/docs/runtime/concepts/state)에 있습니다.
+
+## 이름을 지어내지 않습니다
+
+이 언어의 이름은 `@rowcat/runtime`이 내보내는 것이 **전부**입니다. React·DOM·React Native를
+닮았다는 이유로 있을 것 같은 이름을 쓰지 마십시오. 확실하지 않으면 코드를 쓰기 전에 찾습니다:
+
+```text
+MCP          runtime_get_api_reference · runtime_search_docs
+문서         /docs/runtime/reference
+기계용 목록   /runtime-api.json · /llms-full.txt
+```
+
+## 고쳤으면 확인합니다
+
+MCP로 붙어 있다면 이 순환이 이 도구 모음의 존재 이유입니다.
+
+```text
+1. runtime_get_project · runtime_list_files      무엇이 있는지 본다
+2. runtime_read_file                             고칠 파일만 읽는다
+3. runtime_search_docs                           모르는 API는 지어내지 말고 찾는다
+4. runtime_write_file                            가장 작은 변경 하나
+5. runtime_compile                               막는 진단이 없을 때까지
+6. runtime_preview_start | runtime_preview_restart
+7. runtime_preview_get_tree                      실제로 무엇이 그려졌는가
+8. runtime_preview_press · runtime_preview_input 그 경로를 눌러 본다
+9. runtime_preview_get_tree                      눌린 뒤에 무엇이 바뀌었는가
+10. runtime_preview_get_console · _get_state     설명되지 않는 결과가 있을 때만
+```
+
+**컴파일이 통과했다는 것은 화면이 옳다는 뜻이 아닙니다.** 조건부 렌더, 상태 갱신, 이벤트
+배선은 전부 컴파일을 통과하면서 틀릴 수 있습니다. 트리를 읽고 눌러 보는 단계를 건너뛰지
+마십시오.
+
+## 미리보기 트리의 노드 번호는 리비전에 매입니다
+
+`runtime_preview_get_tree`가 준 `nodeId`는 **그 리비전의 트리**에 대한 것입니다. 누르거나
+글을 넣으면 리비전이 오르고, 사라진 노드를 가리킨 조작은 `stale_node`로 거절됩니다. 그때
+할 일은 **트리를 다시 읽는 것**이고, 글자나 순서로 대체 노드를 추측하면 안 됩니다.
+
+## 작게 고칩니다
+
+한 번에 파일 하나, 변경 하나입니다. 프로젝트를 통째로 다시 쓰는 것은 거의 언제나 잘못된
+선택입니다 — 제작자가 쓴 코드에는 문서에 없는 의도가 들어 있고, 되돌릴 방법이 없습니다.
+
+## Getting started
+
+- [소개](/docs/runtime): 크리에이터 런타임은 TypeScript와 TSX로 RowCat 작품의 화면·상태·상호작용을 직접 만드는 방법입니다.
+- [빠른 시작](/docs/runtime/quick-start): 런타임을 켜고 첫 화면을 만들어 미리보기까지 확인하는 가장 짧은 길입니다.
+- [프로젝트 구조](/docs/runtime/project-structure): 진입 파일, 파일을 나누는 방법, 가져올 수 있는 것과 없는 것.
+- [미리보기와 발행](/docs/runtime/preview-and-publish): 스튜디오 미리보기가 하는 일, 세 가지 초기화의 차이, 발행하면 무엇이 달라지는가.
+
+## Core concepts
+
+- [컴포넌트와 TSX](/docs/runtime/concepts/components): 런타임 컴포넌트가 무엇이고, React와 어디가 같고 어디가 다른가.
+- [스타일](/docs/runtime/concepts/styling): 런타임 스타일은 CSS도 React Native 스타일시트도 아닌 자기 체계입니다. 쓸 수 있는 속성, 색을 적는 방법, 값이 바뀔 때의 전이.
+- [이벤트와 입력](/docs/runtime/concepts/events): 누름과 글 입력이 어떤 모양으로 오는가. 통제된 입력, Enter와 한글 조합, 비활성.
+- [상태](/docs/runtime/concepts/state): 화면의 상태, 플레이스루의 상태, 회차를 넘는 상태 — 셋의 수명이 다르고 쓰는 훅이 다릅니다.
+- [AI 생성](/docs/runtime/concepts/generation): useGeneration()으로 RowCat의 AI를 부르는 방법, 요청의 모양, 실패의 이름, 정본 상태와 AI 글의 구분.
+- [자산](/docs/runtime/concepts/assets): asset()으로 그림과 소리를 부르는 방법. RowCat에 올린 파일은 이름으로 부르고, 외부 HTTPS 주소는 그림에만 열려 있으며 프로젝트에 고정된 자산이어야 합니다.
+- [스크롤과 초점](/docs/runtime/concepts/scroll-and-focus): 목록을 최신으로 내리고 입력 칸에 초점을 주는 방법. 조종기, 붙이는 규칙, 부르는 자리, 순서.
+
+## Guides
+
+- [AI 코딩 도구로 만들기](/docs/runtime/guides/ai-tools): Claude Code 같은 코딩 에이전트가 당신의 런타임 프로젝트를 직접 읽고 고치고 미리보기로 확인하게 하는 방법입니다.
+
+## API reference
+
+- [API 레퍼런스](/docs/runtime/reference): @rowcat/runtime이 내보내는 모든 이름의 지도. 무엇이 어느 페이지에 있는가.
+- [컴포넌트](/docs/runtime/reference/components): 런타임이 그리는 열두 부품의 프롭과 쓰임.
+- [훅](/docs/runtime/reference/hooks): 컴포넌트 안에서 부르는 열한 훅의 시그니처와 규칙.
+- [상태 정의](/docs/runtime/reference/state): defineStoryState와 definePersistentState의 입력, 판, 마이그레이션, 한도.
+- [생성](/docs/runtime/reference/generation): useGeneration()이 돌려주는 객체와 요청·결과의 형, 한도 상수.
+- [스타일](/docs/runtime/reference/styling): color()와 스타일 형의 전체 목록.
+- [자산](/docs/runtime/reference/assets): asset()과 AssetRef의 형. RowCat 자산 이름(그림·소리)과 정적으로 선언된 HTTPS 이미지 주소의 규칙.
+- [오류와 한도](/docs/runtime/reference/errors-and-limits): 런타임이 던지는 RuntimeError, 제작자가 만날 수 있는 코드, 코드를 고쳐 풀 수 있는 한도.
+- [타입](/docs/runtime/reference/types): 값이 아니라 형만 내보내는 이름들. 프롭·훅·노드·상태 정의의 형.
+- [저수준 API](/docs/runtime/reference/advanced): 평범한 작품에서 부를 일이 없는 판정 함수와 상수. 있다는 사실을 적어 두는 페이지입니다.
+
+## Runtime model
+
+- [보안과 샌드박스](/docs/runtime/runtime-model/security): 런타임 코드가 어디서 돌고 무엇에 닿을 수 없는가. 그리고 발행된 코드에 비밀을 적으면 안 되는 이유.
+- [지원하는 import](/docs/runtime/runtime-model/supported-imports): 런타임 코드가 가져올 수 있는 모듈 셋과 그 규칙.
+- [지원하지 않는 API](/docs/runtime/runtime-model/unsupported-apis): 흔히 있을 것으로 기대하지만 런타임에 없는 것들과, 대신 무엇을 쓰는가.
+
+## The whole public API (99 names)
+
+The names below are everything `@rowcat/runtime` exports. **A name not here does not exist in this language.**
+
+### component
+
+- `Audio` — [reference/components](/docs/runtime/reference/components)
+- `Button` — [reference/components](/docs/runtime/reference/components)
+- `Image` — [reference/components](/docs/runtime/reference/components)
+- `Pressable` — [reference/components](/docs/runtime/reference/components)
+- `Progress` — [reference/components](/docs/runtime/reference/components)
+- `Row` — [reference/components](/docs/runtime/reference/components)
+- `Screen` — [reference/components](/docs/runtime/reference/components)
+- `ScrollView` — [reference/components](/docs/runtime/reference/components)
+- `Stack` — [reference/components](/docs/runtime/reference/components)
+- `Text` — [reference/components](/docs/runtime/reference/components)
+- `TextArea` — [reference/components](/docs/runtime/reference/components)
+- `TextInput` — [reference/components](/docs/runtime/reference/components)
+- `View` — [reference/components](/docs/runtime/reference/components)
+
+### hook
+
+- `useCallback` — [reference/hooks](/docs/runtime/reference/hooks)
+- `useEffect` — [reference/hooks](/docs/runtime/reference/hooks)
+- `useGeneration` — [reference/hooks](/docs/runtime/reference/hooks)
+- `useMemo` — [reference/hooks](/docs/runtime/reference/hooks)
+- `usePersistentState` — [reference/hooks](/docs/runtime/reference/hooks)
+- `useReducer` — [reference/hooks](/docs/runtime/reference/hooks)
+- `useRef` — [reference/hooks](/docs/runtime/reference/hooks)
+- `useScrollController` — [reference/hooks](/docs/runtime/reference/hooks)
+- `useState` — [reference/hooks](/docs/runtime/reference/hooks)
+- `useStoryState` — [reference/hooks](/docs/runtime/reference/hooks)
+- `useTextEntryController` — [reference/hooks](/docs/runtime/reference/hooks)
+
+### function
+
+- `asset` — [reference/assets](/docs/runtime/reference/assets)
+- `color` — [reference/styling](/docs/runtime/reference/styling)
+- `definePersistentState` — [reference/state](/docs/runtime/reference/state)
+- `defineStoryState` — [reference/state](/docs/runtime/reference/state)
+- `isPersistentStateDefinition` — [reference/advanced](/docs/runtime/reference/advanced)
+- `isRuntimeColor` — [reference/styling](/docs/runtime/reference/styling)
+- `isRuntimeElement` — [reference/advanced](/docs/runtime/reference/advanced)
+- `isRuntimeHostComponent` — [reference/advanced](/docs/runtime/reference/advanced)
+- `isSerializable` — [reference/advanced](/docs/runtime/reference/advanced)
+- `isStoryStateDefinition` — [reference/advanced](/docs/runtime/reference/advanced)
+- `runtimeHostKindOf` — [reference/advanced](/docs/runtime/reference/advanced)
+
+### constant
+
+- `PERSISTENT_STATE_VERSION_MAX` — [reference/advanced](/docs/runtime/reference/advanced)
+- `RUNTIME_EASINGS` — [reference/styling](/docs/runtime/reference/styling)
+- `RUNTIME_ERROR_CODE` — [reference/errors-and-limits](/docs/runtime/reference/errors-and-limits)
+- `RUNTIME_GENERATION_LIMITS` — [reference/generation](/docs/runtime/reference/generation)
+- `RUNTIME_TRANSITION_DEFAULT_DURATION_MS` — [reference/styling](/docs/runtime/reference/styling)
+- `RUNTIME_TRANSITION_DEFAULT_EASING` — [reference/styling](/docs/runtime/reference/styling)
+- `RUNTIME_TRANSITION_MAX_DURATION_MS` — [reference/styling](/docs/runtime/reference/styling)
+- `STORY_STATE_VERSION_MAX` — [reference/advanced](/docs/runtime/reference/advanced)
+
+### class
+
+- `RuntimeError` — [reference/errors-and-limits](/docs/runtime/reference/errors-and-limits)
+
+### type
+
+- `PersistentStateInput` — [reference/types](/docs/runtime/reference/types)
+- `PersistentStateInputChecked` — [reference/types](/docs/runtime/reference/types)
+- `PersistentStateMigration` — [reference/types](/docs/runtime/reference/types)
+- `RuntimeAlign` — [reference/styling](/docs/runtime/reference/styling)
+- `RuntimeApp` — [reference/types](/docs/runtime/reference/types)
+- `RuntimeCleanup` — [reference/types](/docs/runtime/reference/types)
+- `RuntimeColor` — [reference/styling](/docs/runtime/reference/styling)
+- `RuntimeComponent` — [reference/types](/docs/runtime/reference/types)
+- `RuntimeEasing` — [reference/styling](/docs/runtime/reference/styling)
+- `RuntimeErrorCode` — [reference/errors-and-limits](/docs/runtime/reference/errors-and-limits)
+- `RuntimeHostKind` — [reference/advanced](/docs/runtime/reference/advanced)
+- `RuntimeJustify` — [reference/styling](/docs/runtime/reference/styling)
+- `RuntimeLength` — [reference/styling](/docs/runtime/reference/styling)
+- `RuntimeNode` — [reference/types](/docs/runtime/reference/types)
+- `RuntimePrimitive` — [reference/types](/docs/runtime/reference/types)
+- `RuntimeSetState` — [reference/types](/docs/runtime/reference/types)
+- `RuntimeStateAction` — [reference/types](/docs/runtime/reference/types)
+- `Serializable` — [reference/types](/docs/runtime/reference/types)
+- `SerializableShape` — [reference/types](/docs/runtime/reference/types)
+- `StoryStateInput` — [reference/types](/docs/runtime/reference/types)
+- `StoryStateInputChecked` — [reference/types](/docs/runtime/reference/types)
+- `StoryStateMigration` — [reference/types](/docs/runtime/reference/types)
+
+### interface
+
+- `AssetRef` — [reference/assets](/docs/runtime/reference/assets)
+- `AudioProps` — [reference/types](/docs/runtime/reference/types)
+- `ButtonProps` — [reference/types](/docs/runtime/reference/types)
+- `ImageProps` — [reference/types](/docs/runtime/reference/types)
+- `PersistentStateDefinition` — [reference/types](/docs/runtime/reference/types)
+- `PressableProps` — [reference/types](/docs/runtime/reference/types)
+- `ProgressProps` — [reference/types](/docs/runtime/reference/types)
+- `RowProps` — [reference/types](/docs/runtime/reference/types)
+- `RuntimeChildren` — [reference/types](/docs/runtime/reference/types)
+- `RuntimeElement` — [reference/types](/docs/runtime/reference/types)
+- `RuntimeGeneration` — [reference/generation](/docs/runtime/reference/generation)
+- `RuntimeGenerationMessage` — [reference/generation](/docs/runtime/reference/generation)
+- `RuntimeGenerationRequest` — [reference/generation](/docs/runtime/reference/generation)
+- `RuntimeGenerationResult` — [reference/generation](/docs/runtime/reference/generation)
+- `RuntimeHostComponent` — [reference/advanced](/docs/runtime/reference/advanced)
+- `RuntimePressable` — [reference/types](/docs/runtime/reference/types)
+- `RuntimeRef` — [reference/types](/docs/runtime/reference/types)
+- `RuntimeScrollController` — [reference/types](/docs/runtime/reference/types)
+- `RuntimeScrollTo` — [reference/types](/docs/runtime/reference/types)
+- `RuntimeStyle` — [reference/styling](/docs/runtime/reference/styling)
+- `RuntimeTextEntry` — [reference/types](/docs/runtime/reference/types)
+- `RuntimeTextEntryController` — [reference/types](/docs/runtime/reference/types)
+- `RuntimeTextStyle` — [reference/styling](/docs/runtime/reference/styling)
+- `RuntimeTransition` — [reference/styling](/docs/runtime/reference/styling)
+- `RuntimeTransitionable` — [reference/types](/docs/runtime/reference/types)
+- `ScreenProps` — [reference/types](/docs/runtime/reference/types)
+- `ScrollViewProps` — [reference/types](/docs/runtime/reference/types)
+- `StackProps` — [reference/types](/docs/runtime/reference/types)
+- `StoryStateDefinition` — [reference/types](/docs/runtime/reference/types)
+- `TextAreaProps` — [reference/types](/docs/runtime/reference/types)
+- `TextInputProps` — [reference/types](/docs/runtime/reference/types)
+- `TextProps` — [reference/types](/docs/runtime/reference/types)
+- `ViewProps` — [reference/types](/docs/runtime/reference/types)
+
+## Optional
+
+- [llms-full.txt](/llms-full.txt): the full text of all 25 public docs, for putting the whole thing in context.
+- [runtime-api.json](/runtime-api.json): a machine-readable API reference: names, kinds, signatures and doc comments.

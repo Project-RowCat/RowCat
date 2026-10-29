@@ -1,0 +1,55 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.4.5/schema.json",
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true
+	},
+	"files": {
+		"ignoreUnknown": false,
+		"includes": [
+			"**/src/**/*",
+			"**/apps/mobile/modules/**/*.ts",
+			"**/.vscode/**/*",
+			"**/index.html",
+			"**/vite.config.ts",
+			"**/tsdown.config.ts",
+			"e2e/**/*.ts",
+			"playwright.config.ts",
+			"!**/src/routeTree.gen.ts",
+			"!**/apps/web/src/generated/**/*",
+			"!**/packages/domain/src/update-notes/generated/**/*",
+			"!**/packages/runtime-ai-docs/src/generated/**/*",
+			"!**/packages/runtime/src/declarations/generated.ts",
+			"!**/packages/runtime/src/sandbox/generated.ts",
+			"!**/apps/mobile/src/lib/runtime-native/runtime-assets.generated.ts",
+			"!**/apps/mobile/src/lib/runtime-native/fixture.generated.ts",
+			"!**/src/styles/globals.css",
+			"!**/packages/design/src/tokens.css",
+			"!**/packages/design/src/tokens.native.ts",
+			"!**/packages/ui-web/src/components/**/*",
+			"!**/packages/prompt-packs/src/packs/**/*"
+		]
+	},
+	"css": {
+		"parser": {
+			"tailwindDirectives": true
+		}
+	},
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab"
+	},
+	"assist": { "actions": { "source": { "organizeImports": "on" } } },
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"recommended": true
+		}
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "double"
+		}
+	}
+}

@@ -1,0 +1,160 @@
+{
+	"$schema": "https://turborepo.com/schema.json",
+
+	/*
+	 * Run order and caching for workspace tasks.
+	 *
+	 * This file does exactly two things: **what runs before what**, and **what must run again when
+	 * something changes**. What a task does still lives in each package's `package.json`; commands are
+	 * not copied here. `pnpm --filter web build` must keep working without this file: the Docker
+	 * images build through that path (`apps/web/Dockerfile`), and the moment deployment needs the
+	 * scheduler, this file stops being tooling and becomes a dependency.
+	 *
+	 * ## The packages in this repository have no build
+	 *
+	 * `@rowcat/*` exports **TS source as is**, not build output (each package's `exports` points at
+	 * `.ts`, which is why the tsdown configs of `apps/api` and `apps/mcp` fold it into their bundles).
+	 * So the usual single `dependsOn: ["^build"]` does not build a hash: upstream packages have no
+	 * `build` script, so that task is a missing node, and a one-line change in `@rowcat/contracts`
+	 * lets `@rowcat/sdk`'s typecheck pass as a **cache hit**. The symptom of that state is not an
+	 * error but **a check that pretends to pass**.
+	 *
+	 * `topo` is what stands it up. No package has such a script, and none should. The node is useful
+	 * not for running anything but for **pulling the dependency graph into the hash** (the transit
+	 * node pattern from Turborepo's docs). `^topo` climbs upstream, so a change in upstream source
+	 * changes downstream task hashes, and with no script to run it costs nothing in forced ordering.
+	 *
+	 * ## Each uncached task has its own reason
+	 *
+	 * Caching is dangerous not for tasks without outputs but for **tasks whose input lives outside
+	 * the repository**. Turborepo hashes only files git tracks, so a task whose input is a live
+	 * Postgres or a gitignored `.env` can represent "passed without running". Such tasks are marked
+	 * `cache: false` one by one below.
+	 */
+
+	/*
+	 * Turborepo adds the lockfile to the global hash on its own. What is listed here is the file
+	 * outside it that changes resolution for **every** package: the workspace list and build allowlist.
+	 *
+	 * The root `tsconfig.json` is left out on purpose. It is the browser journeys' own project
+	 * (`pnpm typecheck:e2e`) and no package extends it; listing it here would wipe the whole
+	 * repository's cache every time one line of journey config changed.
+	 */
+	"globalDependencies": ["pnpm-workspace.yaml"],
+
+	/*
+	 * Turborepo defaults to the **strict** env mode: a task process sees only the values listed here,
+	 * the system defaults (PATH, HOME and so on), and the prefixes framework inference adds (`VITE_*`,
+	 * `EXPO_PUBLIC_*`). That strictness is the point of this file: there is no path at all for a value
+	 * missing from the hash to freeze into an artifact.
+	 *
+	 * `NODE_ENV` is **hashed**, not passed through. It changes the bundle's content, so development
+	 * and production builds must never share a cache entry. Conversely, `CI` and the color switch only
+	 * change how logs look; hashing them would keep local runs and CI from ever using each other's cache.
+	 */
+	"globalEnv": ["NODE_ENV"],
+	"globalPassThroughEnv": ["CI", "FORCE_COLOR"],
+
+	"tasks": {
+		/* The transit node from the comment above. It has no script, so nothing runs. */
+		"topo": {
+			"dependsOn": ["^topo"]
+		},
+
+		/*
+		 * Only the five apps have `build` (no package does), and apps do not depend on each other, so
+		 * `^build` does nothing today. It is written anyway so that the day a package gains build
+		 * output, the ordering does not have to be rediscovered here.
+		 */
+		"build": {
+			"dependsOn": ["^build", "topo"],
+			/*
+			 * Each app writes to a different place: web (TanStack Start/nitro) to `.output`, the
+			 * rest (vite, tsdown, expo export) to `dist`. The union is listed.
+			 */
+			"outputs": [".output/**", "dist/**"]
+		},
+
+		/*
+		 * The web build has inputs outside this package. `build` runs two generation steps first
+		 * (`gen:runtime-docs`, `gen:llms`) whose source is the docs at the repository root. Without
+		 * listing them, editing the public docs and rebuilding is a **cache hit** that ships the old docs.
+		 *
+		 * `VITE_*` **freezes into the browser bundle as a value**. Missing from the hash, a bundle built
+		 * for another origin is reused, and that deployment cannot call its own API.
+		 */
+		"web#build": {
+			"dependsOn": ["^build", "topo"],
+			"outputs": [".output/**", "dist/**"],
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/docs/public/runtime/**"
+			],
+			"env": ["VITE_API_ORIGIN", "VITE_ADMIN_ORIGIN"]
+		},
+
+		"admin#build": {
+			"dependsOn": ["^build", "topo"],
+			"outputs": ["dist/**"],
+			"env": ["VITE_API_ORIGIN"]
+		},
+
+		/* Expo freezes the same values into the bundle as `EXPO_PUBLIC_*`, and build profiles split the config. */
+		"@rowcat/mobile#build": {
+			"dependsOn": ["^build", "topo"],
+			"outputs": ["dist/**"],
+			"env": [
+				"EXPO_PUBLIC_API_ORIGIN",
+				"PUBLIC_WEB_ORIGIN",
+				"EAS_BUILD",
+				"EAS_BUILD_PROFILE"
+			]
+		},
+
+		"typecheck": {
+			"dependsOn": ["topo"],
+			"outputs": []
+		},
+
+		/*
+		 * ⚠️ The root `pnpm test` runs with `--concurrency=4`, not Turborepo's default (10). vitest
+		 * **already uses every core inside itself** (a fork per file), so the parallelism at this layer
+		 * multiplies **processes**, not suites. Starting twenty-three at once puts the heavy suites that
+		 * drag QuickJS and TypeScript past their 5-second timeouts; that failure comes from the machine,
+		 * not the code, and does not reproduce when the suite runs alone.
+		 *
+		 * 4 is `pnpm -r`'s default workspace concurrency, so this value keeps the load profile from
+		 * before turbo. `typecheck` and `build` are one process each and are not affected.
+		 */
+		"test": {
+			"dependsOn": ["topo"],
+			"outputs": []
+		},
+
+		/*
+		 * ⚠️ Only this suite is uncached: **half its input lives outside the repository.**
+		 *
+		 * These tests use a real Postgres and skip, rather than fail, when there is no database
+		 * (`vitest.config.ts`). The connection details come from the gitignored `apps/api/.env`, which
+		 * cannot enter Turborepo's hash. Cached, **a run that skipped without a database is stored as a
+		 * pass**, and the next run with the database up hits the same hash and is skipped; the symptom
+		 * of that state is green.
+		 */
+		"@rowcat/api#test": {
+			"dependsOn": ["topo"],
+			"cache": false,
+			/*
+			 * It is uncached, so the hash has nothing to protect here. What would hurt instead is
+			 * someone who exported `DATABASE_URL` or `REDIS_TEST_URL` in their shell quietly running
+			 * against the default database, and that failure would not say the env mode caused it.
+			 */
+			"envMode": "loose"
+		},
+
+		/* Dev servers. They never finish, so there is no cache and no completion. */
+		"dev": {
+			"cache": false,
+			"persistent": true
+		}
+	}
+}

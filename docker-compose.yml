@@ -1,0 +1,301 @@
+name: rowcat
+
+# Every port is fixed (3000/3001/3002/5432/6379) and is not changed through .env. As variables,
+# healthchecks, CORS and inter-service URLs would all shift with them, for no gain.
+# If a deployment has to move a host port, override only that service's ports in a gitignored
+# docker-compose.override.yml (the committed config keeps the fixed values).
+#
+# Only web, api and admin open to the host. db and redis have no ports, so they are visible only
+# inside the compose network.
+# So ports never collide with another stack: each project gets its own bridge network and its own
+# container IPs, so another stack already using 5432 or 6379 does not matter.
+# For a one-off connection from the host, run inside the container instead of opening a port:
+#   docker compose exec db psql -U rowcat rowcat
+#   docker compose exec redis redis-cli
+# If a GUI client really has to connect, put ports in a gitignored docker-compose.override.yml
+# instead of this file, and always bind them to 127.0.0.1 (the committed config never opens them).
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rowcat}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rowcat}
+      POSTGRES_DB: ${POSTGRES_DB:-rowcat}
+    volumes:
+      # Mounts the parent directory. 18+ images keep data under a per-major subpath
+      # (/var/lib/postgresql/18/docker), so mounting .../data directly makes the image report an
+      # "unused mount/volume" and refuse to start. Only the parent also allows pg_upgrade --link.
+      - db-data:/var/lib/postgresql
+    # No host port. The api connects on the same network, so there is no reason to expose it, and
+    # an open port puts the database on the internet behind a single local firewall setting.
+    healthcheck:
+      # Without -U the check asks as the container's Linux user (root) and fails even when the account is fine.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rowcat} -d ${POSTGRES_DB:-rowcat}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  # Shared state across processes, with two consumers: rate-limit counters and the server cache
+  # (`apps/api/src/lib/cache/`). The data is volatile, so no volume is attached: counters and cache
+  # may both vanish on restart (neither is a source of truth), and persistence would only add one
+  # more piece of state nobody can clear.
+  #
+  # Leaving maxmemory-policy unset is deliberate. `allkeys-lru` and `allkeys-lfu` cannot pick only
+  # cache keys; they **evict rate-limit counters too**, and a counter that vanishes before it expires
+  # quietly resets that account's ceiling. So the cache bounds its size through key design rather
+  # than eviction (short TTL + a cap of 288 keys — `services/gallery-cache.ts`). Splitting the two
+  # physically is for the day that cap actually runs short.
+  #
+  # Like db, it is not opened to the host. That is also why running without auth holds up: the
+  # moment ports open, an unauthenticated Redis is exposed as is, and --requirepass becomes mandatory.
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: rowcat/api:latest
+    environment:
+      NODE_ENV: production
+      # Binds to 0.0.0.0, not loopback, because it must be reachable from outside the container.
+      HOST: 0.0.0.0
+      PORT: 3001
+      # Origins whose browsers call the API directly (CSV). Credentials are used, so * is not allowed.
+      # In production, put that deployment's web origin (e.g. https://example.com) in .env.
+      #
+      # **The operations console (admin) origin must be here too.** Missing it, every console lookup
+      # is blocked by CORS while the preflight passes with a 204 and the server log holds only a
+      # `[cors]` warning, so the screen shows nothing but "network failure". That is why the local
+      # default includes 3002; it is harmless in a stack without the console (nobody comes from that
+      # origin). In production, list both domains in .env as CSV:
+      #   WEB_ORIGIN=https://example.com,https://admin.example.com
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000,http://localhost:3002}
+      # The public address. The container binds to 3001, but clients come in through this domain.
+      # The default is the port this stack opens on the host; in production, put the real domain in .env
+      # (e.g. https://api.example.com). This file defaults to no operator's domain.
+      API_ORIGIN: ${API_ORIGIN:-http://localhost:3001}
+      # Inside the compose network, the service name is the host name.
+      DATABASE_URL: postgres://${POSTGRES_USER:-rowcat}:${POSTGRES_PASSWORD:-rowcat}@db:5432/${POSTGRES_DB:-rowcat}
+      # Service name + fixed internal port, for the same reason as db (not open on the host).
+      # The consumer is distributed rate limiting (`apps/api/src/lib/rate-limit/`). Left empty, the
+      # limiter falls back to an in-process counter, and with two or more replicas the ceiling is
+      # multiplied by that many; the boot log warns about it in production.
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      # Background jobs (orphan media cleanup, retention destruction, push delivery).
+      #
+      # **The default is on only inside this file.** The code default is off
+      # (`apps/api/src/env.ts`), so a developer's laptop, CI and migration scripts do not each get a
+      # scheduler. It is on here because this stack is the deployment: off, the retention destruction
+      # the policy promises never happens.
+      #
+      # Leave it as is when adding replicas. A Postgres advisory lock keeps the same job from running
+      # twice at once ("there is one container for now" is not used as an architectural guarantee),
+      # and a second instance that cannot take the lock skips that tick.
+      BACKGROUND_JOBS_ENABLED: ${BACKGROUND_JOBS_ENABLED:-on}
+      # Time and timezone of the daily jobs. The host's TZ is not read: images and orchestrators each
+      # decide that value, so leaning on it would run destruction at a different hour per deployment of
+      # the same commit. The exact minute is not a correctness condition (a late run reaches the same result).
+      BACKGROUND_JOBS_DAILY_AT: ${BACKGROUND_JOBS_DAILY_AT:-03:00}
+      BACKGROUND_JOBS_TIMEZONE: ${BACKGROUND_JOBS_TIMEZONE:-Asia/Seoul}
+      # Only counts retention destruction (`on`). Turn it on for a few days right after rollout, then
+      # off. Left on and forgotten, the promised destruction never happens, a violation with no symptom.
+      LEGAL_RETENTION_DRY_RUN: ${LEGAL_RETENTION_DRY_RUN:-}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET is required - openssl rand -base64 32}
+      AUTH_TRUSTED_ORIGINS: ${AUTH_TRUSTED_ORIGINS:-}
+      AUTH_COOKIE_DOMAIN: ${AUTH_COOKIE_DOMAIN:-}
+      # What the sign-in limiter reads the client IP from. Behind a CDN/LB one of the two is required
+      # (without it, one header line bypasses the limit or everyone shares one bucket); see env-schema.ts.
+      AUTH_TRUSTED_PROXIES: ${AUTH_TRUSTED_PROXIES:-}
+      AUTH_IP_HEADER: ${AUTH_IP_HEADER:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      # Sign in with Apple. **The four go together, and one missing blocks boot**: a half configuration
+      # fails only after the user finishes signing in on Apple's screen. There is no secret to paste;
+      # the server signs a short-lived JWT per request with the `.p8` private key below.
+      APPLE_SIGN_IN_CLIENT_ID: ${APPLE_SIGN_IN_CLIENT_ID:-}
+      APPLE_SIGN_IN_TEAM_ID: ${APPLE_SIGN_IN_TEAM_ID:-}
+      APPLE_SIGN_IN_KEY_ID: ${APPLE_SIGN_IN_KEY_ID:-}
+      APPLE_SIGN_IN_PRIVATE_KEY: ${APPLE_SIGN_IN_PRIVATE_KEY:-}
+      KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:-}
+      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:-}
+      # Outgoing mail. **This value turns on email ownership verification**: empty means no
+      # verification step; filled, sign-up sends a verification mail and unverified sign-in is blocked.
+      # There is no separate switch because a deployment that "requires it but cannot send" only
+      # creates accounts that can't sign in. `dev` blocks boot in production (it leaks verification links to the server log).
+      MAIL_TRANSPORT: ${MAIL_TRANSPORT:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      # Empty means 587 (STARTTLS). Use 465 together with SMTP_SECURE=true.
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_SECURE: ${SMTP_SECURE:-}
+      # Filling only half blocks boot; otherwise sending fails after the user finishes signing up.
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      # Opens password reset; only `on` turns it on. A mail transport (MAIL_TRANSPORT) must exist too.
+      # Leave it empty in a deployment whose published privacy policy does not list the reset mail.
+      PASSWORD_RESET_ENABLED: ${PASSWORD_RESET_ENABLED:-}
+      # Native push. **This value actually sends pushes**: when empty, registrations and delivery
+      # records are still created; they just never go out (and expire once their lifetime passes).
+      # Without BACKGROUND_JOBS_ENABLED=on as well, nothing goes out.
+      PUSH_TRANSPORT: ${PUSH_TRANSPORT:-}
+      # Optional. Required if push security is on in the Expo account. Secret, so it never reaches logs.
+      EXPO_ACCESS_TOKEN: ${EXPO_ACCESS_TOKEN:-}
+      # Passkeys. Empty derives them from WEB_ORIGIN; write a parent domain only when several
+      # subdomains share the same passkeys. If the rpID does not cover the origin, boot is blocked.
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
+      WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-}
+      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-}
+      # Conversation generation provider key. Empty makes only generation a 503; the gallery and auth
+      # still come up. Refusing to start the whole API for a missing key would make local development impossible.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      # Leaving it empty is normal; an empty value uses the code default (apps/api/src/env.ts).
+      # The model is not here: managed models are a value the user chooses, not deployment config,
+      # and the public identity → upstream slug table lives in apps/api/src/services/managed-models.ts.
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-}
+      # Who may use managed generation: allowlist (default) | everyone. There is no metering, so
+      # what guards the bill for the key above is the per-member rate limit and this allowlist. With
+      # allowlist, only listed members and staff/admin use it; everyone else goes BYO. Unknown values block boot.
+      MANAGED_GENERATION_ACCESS: ${MANAGED_GENERATION_ACCESS:-}
+      # Mobile OTA publish jobs: the operations console starts the CI workflow. **Fill all three or
+      # leave all three empty** (half blocks boot). Empty, the console reads releases and only
+      # rolls out, pauses and resumes. ⚠️ No signing key comes here; that is a CI environment (ota-<channel>) secret.
+      OTA_CI_GITHUB_REPOSITORY: ${OTA_CI_GITHUB_REPOSITORY:-}
+      OTA_CI_GITHUB_TOKEN: ${OTA_CI_GITHUB_TOKEN:-}
+      OTA_CI_CHANNELS: ${OTA_CI_CHANNELS:-}
+      # Identity verification (guardian consent). Empty makes only guardian consent requests a 503 and
+      # everything else comes up; there is no path that records consent without verification (fail-closed).
+      IDENTITY_VERIFICATION_PROVIDER: ${IDENTITY_VERIFICATION_PROVIDER:-}
+      # The first two are public values that go to the browser; only the secret stays on the server.
+      PORTONE_STORE_ID: ${PORTONE_STORE_ID:-}
+      PORTONE_IDENTITY_CHANNEL_KEY: ${PORTONE_IDENTITY_CHANNEL_KEY:-}
+      PORTONE_V2_API_SECRET: ${PORTONE_V2_API_SECRET:-}
+      # Age gate rollout switch. Empty is off; turn it on after the screens and legal documents are deployed.
+      MEMBERSHIP_AGE_GATE: ${MEMBERSHIP_AGE_GATE:-}
+      # Yearly adult re-verification. Leave it empty in a deployment whose published documents do not state it.
+      ADULT_REVERIFICATION_ENABLED: ${ADULT_REVERIFICATION_ENABLED:-}
+    # The api applies migrations at boot, so it must start only once the database is really ready.
+    # service_started is not enough: the container may be up while Postgres is still initializing.
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+    healthcheck:
+      # Liveness-only path; it touches no dependency.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3001/v2/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      # Values baked into the browser bundle, so these are **build args**, not runtime environment.
+      #
+      # An empty value means "unspecified", and the Dockerfile then folds to the local API
+      # (http://localhost:3001), so the local stack runs with no args. A production deployment writes
+      # its origin in .env. The default is not duplicated here so the value has only one source.
+      #
+      # The console origin has **no production default.** Empty just means the operations tool link on
+      # the account screen is not drawn, and nothing is sent to a guessed domain: a dead link reads as
+      # a sign the console is broken.
+      args:
+        VITE_API_ORIGIN: ${VITE_API_ORIGIN:-}
+        VITE_ADMIN_ORIGIN: ${VITE_ADMIN_ORIGIN:-}
+    image: rowcat/web:latest
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      # The address the server render uses to call the API, a **different axis** from the browser's
+      # value (VITE_API_ORIGIN). Browsers come in through the port open on the host, but calling that
+      # address from inside the web container calls itself. From a container the API's name is its
+      # service name (same as db and redis). It is a runtime value, so no image rebuild is needed, and it never reaches the browser bundle.
+      API_INTERNAL_ORIGIN: ${API_INTERNAL_ORIGIN:-http://api:3001}
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # Operations console: **comes up with the default `up` and opens 3002 on the host.**
+  #
+  # For a while it sat behind a profile, on the grounds of "keep internal tools off the public
+  # surface". That basis was dropped, because this console's access control is **the server's
+  # authorization**, not network position: every lookup and operation goes through
+  # `requireModeratorViewer` (the admin-only three through `requireAdminViewer`), and that gate
+  # stands on `requireActiveViewer`. The screen's gate is flicker prevention, not authorization, so
+  # a role-less session that receives the whole bundle gets nothing but a 403. The decision to have
+  # no static admin key (`apps/admin/README.md`) pays off here: no secret ships to the browser, so
+  # nothing leaks if the bundle is public.
+  #
+  # Behind a profile there was a quiet failure instead: this stack is the deployment, so if turning
+  # it on has to be remembered, the console being missing from a deployment has no symptom either.
+  #
+  # Standing it on a public domain needs two things: TLS termination (a reverse proxy) in front of
+  # this port, and **that domain in the API's `WEB_ORIGIN`** (see the api service's comment above).
+  admin:
+    build:
+      context: .
+      dockerfile: apps/admin/Dockerfile
+      # Values baked into the browser bundle, so these are **build args**, not runtime environment.
+      # It takes the same value as web: both apps call the same API, and the same arg also fills the
+      # console's CSP (`connect-src`) (apps/admin/Dockerfile). Empty folds to the local API.
+      args:
+        VITE_API_ORIGIN: ${VITE_API_ORIGIN:-}
+    image: rowcat/admin:latest
+    # Serves static files only (no SSR), which is why it has no runtime environment variables.
+    # The API address is baked into the bundle by the build arg above, and the browser sends the session straight to the API.
+    ports:
+      - "3002:3002"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      # nginx:alpine has neither node nor curl, so this uses busybox wget.
+      # `--spider` reads only the status, not the body.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3002/"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  db-data:

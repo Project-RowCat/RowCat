@@ -1,0 +1,44 @@
+{
+	/*
+	 * Config for the browser journeys (E2E) only, the one TypeScript project living at the repository root.
+	 *
+	 * Apps and packages each have their own `tsconfig.json`, and `pnpm -r typecheck` walks them.
+	 * `e2e/` and `playwright.config.ts` belong to no workspace, so without this file **no type check
+	 * looks at that code**: a journey holding a broken selector or a missing field says nothing until
+	 * a browser actually launches.
+	 *
+	 * `pnpm typecheck:e2e` walks this project. It is not in the workspace list because journeys are
+	 * not an app (no build, no deploy).
+	 *
+	 * **Repository scripts are here for the same reason.** `packages/domain/scripts/*` runs on the
+	 * root's `tsx` (`pnpm updates:discord`) and sits in no package's `include`: the domain package
+	 * checks only `src/**`, and outside it there is no type config that allows `process`. Left out of
+	 * here, those scripts **are seen by no type check.**
+	 */
+	"include": [
+		"e2e/**/*.ts",
+		"playwright.config.ts",
+		"packages/domain/scripts/**/*.ts",
+		"packages/runtime/scripts/**/*.ts",
+		"apps/mcp/scripts/**/*.ts"
+	],
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "ESNext",
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"types": ["node"],
+
+		/* This repository's convention: relative imports carry the extension. */
+		"moduleResolution": "bundler",
+		"allowImportingTsExtensions": true,
+		"verbatimModuleSyntax": true,
+		"noEmit": true,
+
+		"skipLibCheck": true,
+		"strict": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"noFallthroughCasesInSwitch": true,
+		"noUncheckedSideEffectImports": true
+	}
+}

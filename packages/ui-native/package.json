@@ -1,0 +1,39 @@
+{
+	"name": "@rowcat/ui-native",
+	"version": "0.0.0",
+	"private": true,
+	"license": "AGPL-3.0-only",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@rn-primitives/alert-dialog": "^1.5.2",
+		"@rn-primitives/avatar": "^1.5.2",
+		"@rn-primitives/dialog": "^1.5.2",
+		"@rn-primitives/dropdown-menu": "^1.5.2",
+		"@rn-primitives/label": "^1.5.2",
+		"@rn-primitives/portal": "^1.5.3",
+		"@rn-primitives/radio-group": "^1.5.2",
+		"@rn-primitives/separator": "^1.5.2",
+		"@rowcat/design": "workspace:*",
+		"expo-blur": "~57.0.2",
+		"lucide-react-native": "^1.33.0"
+	},
+	"peerDependencies": {
+		"react": "^19.2.0",
+		"react-native": "^0.86.0",
+		"react-native-reanimated": "~4.5.1",
+		"react-native-safe-area-context": "^5.7.0",
+		"react-native-svg": "*",
+		"react-native-worklets": "~0.10.1"
+	},
+	"devDependencies": {
+		"@types/react": "~19.2.18",
+		"vitest": "^3.2.4"
+	}
+}

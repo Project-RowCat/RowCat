@@ -1,0 +1,39 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.projectrowcat.runtimewebview'
+version = '0.0.0'
+
+/**
+ * The runtime assets are **packaged by the module.**
+ *
+ * `assets/runtime/` (harness HTML + QuickJS WASM) becomes the APK's `assets/runtime/`, and the
+ * WebView serves it through `shouldInterceptRequest` on the same origin as its own document.
+ * Neither Metro nor expo-asset is involved, for determinism: through them the path becomes a
+ * different address in development and release (http ↔ file) and carries a hashed name, so the
+ * harness's relative path could not point at it.
+ */
+android {
+  namespace 'com.projectrowcat.runtimewebview'
+  defaultConfig {
+    versionCode 1
+    versionName '0.0.0'
+  }
+  sourceSets {
+    main {
+      assets.srcDirs += ["$projectDir/../assets"]
+    }
+  }
+}
+
+dependencies {
+  /**
+   * `WebViewCompat.createWebMessageChannel`: this dependency is why the module exists.
+   * `react-native-webview` does not expose that API, and without it the bridge stays on the
+   * slowest path, evaluating a script on the UI thread per call
+   * (`docs/creator-runtime/native-vm-host.md` §7).
+   */
+  implementation 'androidx.webkit:webkit:1.15.0'
+}

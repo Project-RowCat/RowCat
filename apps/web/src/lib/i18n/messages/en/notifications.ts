@@ -1,0 +1,47 @@
+/**
+ * The notification inbox, the header bell and notification copy (features/notifications).
+ */
+export const notifications = {
+	title: "Notifications",
+	tabsLabel: "Notification types",
+	general: "General",
+	updates: "Updates",
+	listLabel: "Notification list",
+	markAllRead: "Mark all read",
+	markAllReadFailed:
+		"Couldn't mark all notifications as read. Please try again in a moment.",
+	offlineTitle: "You're not connected right now.",
+	offlineDetail: "Notifications reload once you're connected.",
+	loadFailedTitle: "Couldn't load notifications.",
+	loadFailedDetail: "Please try again in a moment.",
+	empty: "No notifications yet.",
+	loading: "Loading…",
+	showMore: "Show more",
+	loadingNotifications: "Loading notifications",
+	stale: "The last refresh failed, so the previous state is shown.",
+	staleRetry: "The last refresh failed. Try again",
+	staleRetrying: "The last refresh failed. Loading…",
+	viewAll: "See all notifications",
+	viewAllUpdates: "See all updates",
+	unread: "Unread, {{message}}",
+	unreadSummary: "{{count}} unread",
+	deletedActor: "Deleted user",
+	unnamed: "No name",
+	message: {
+		follow: "{{who}} followed you.",
+		storyComment: '{{who}} commented on "{{title}}".',
+		storyCommentUntitled: "{{who}} commented on your story.",
+		commentReply: '{{who}} replied to your comment on "{{title}}".',
+		commentReplyUntitled: "{{who}} replied to your comment.",
+		published: "{{who}} published a new story.",
+		reportReviewed: "We reviewed your report.",
+		moderationAction: "A moderation action was applied to your account.",
+		moderationReversed: "A moderation action on your account was lifted.",
+		appUpdate: "An app update is required.",
+		appealAccepted: "Your appeal was accepted.",
+		appealRejected: "Your appeal was not accepted.",
+		appealResolved: "Your appeal has a result.",
+		appUpdateDetail:
+			"{{platform}} app versions below {{version}} are no longer supported.",
+	},
+};

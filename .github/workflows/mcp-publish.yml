@@ -1,0 +1,222 @@
+# The only path @rowcat/mcp reaches npm by.
+#
+# **Publishing is a deliberate act, not a consequence of pushing code.** Nothing on
+# `main`, no pull request and no ordinary CI run reaches the registry: publication
+# starts from one tag dedicated to this package, and an npm version is immutable —
+# a wrong 0.1.0 stays 0.1.0 forever.
+#
+# ```text
+# apps/mcp/package.json  version = 0.1.0-alpha.2      ← the source of truth for the version
+# git tag mcp-v0.1.0-alpha.2 && git push origin ...   ← the trigger
+#         ↓
+# this workflow: agree on the version → install frozen → check · typecheck
+#                → build → pack + isolated install → clean tree → pnpm publish --tag next
+# ```
+#
+# ## Two entries, and the difference is the event — not an input
+#
+# ```text
+# push(mcp-v*)        publishes
+# workflow_dispatch   never publishes. it is the rehearsal: same gates, no registry write
+# ```
+#
+# A `dry-run: true` input would put publication one mis-set checkbox away. Splitting
+# on the event makes an unintended publish **unrepresentable** — there is no value
+# anyone can set on a dispatch run that reaches `pnpm publish`.
+#
+# ## The command is `pnpm publish`, and that matters more than it looks
+#
+# pnpm does not talk to the registry itself. It runs `prepublishOnly`, packs the
+# tarball **with `workspace:*` replaced by real versions**, and then hands that
+# tarball to `npm publish --ignore-scripts`. Two consequences this file depends on:
+#
+#   * the npm on PATH is what authenticates — hence `npm install -g npm@latest`
+#     below, because trusted publishing needs npm >= 11.5.1 and the runner ships
+#     an older one;
+#   * `apps/mcp/scripts/guard-publish.mjs` runs exactly once, in `apps/mcp`, and it
+#     is the boundary that refuses a publish from anywhere but this workflow.
+#
+# ## Trusted publishing (OIDC) — what this file can and cannot do
+#
+# There is no NPM_TOKEN here on purpose. npm mints a short-lived credential from
+# this workflow's OIDC identity, so no long-lived secret sits in repository
+# settings. That needs `id-token: write` (below) and the npm upgrade.
+#
+# The other half is configured on npmjs.com, not here — @rowcat/mcp's package
+# settings name this repository and **this workflow's filename** as its trusted
+# publisher. That is done. Two things follow from where it lives:
+#
+#   * renaming this file breaks publishing, silently, until someone updates npm.
+#     `RELEASE_WORKFLOW` in apps/mcp/scripts/release-policy.mjs carries the same
+#     path, and the guard refuses a publish that did not come from it — so the
+#     rename fails loudly here before it fails obscurely there.
+#   * if the publish step ever ends in an auth error, the fix is on npm, not in
+#     this file. **Do not add a token to get past it** — a half-configured release
+#     path must not fall back to a secret, because that fallback is the thing
+#     trusted publishing removes.
+#
+# Provenance comes with that identity — npm attests the source commit and workflow
+# on its own once trusted publishing is in effect. There is no `--provenance` flag
+# here on purpose: pnpm forwards unknown arguments to npm untouched, so a flag this
+# repository cannot exercise before a release would first be exercised *by* one.
+name: MCP Publish
+
+on:
+  push:
+    tags: ["mcp-v*"]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch or commit to rehearse (this run never publishes)
+        type: string
+        required: false
+
+# Releases queue; they do not cancel each other. A publish cut off midway can
+# leave the registry in a state this repository cannot describe.
+concurrency:
+  group: rowcat-mcp-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  # Trusted publishing mints npm credentials from this token. Nothing else here
+  # needs a write scope — this workflow creates no release, tag or commit.
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          # This job pushes nothing. A checkout token left in .git/config would be
+          # readable by every step below, including the package's own build.
+          persist-credentials: false
+
+      # Pinned rather than read from a .node-version file: this repo has no such
+      # file, and adding one to satisfy a workflow would make the workflow the
+      # reason a version lives in the tree. The package requires >= 22.12.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          registry-url: https://registry.npmjs.org
+
+      # **First, and before anything slow.** A tag that disagrees with
+      # package.json must die here rather than after twenty minutes of gates.
+      # This step needs nothing but node and the manifest.
+      - name: Release plan
+        id: plan
+        run: node scripts/release-plan.mjs
+        working-directory: apps/mcp
+
+      # npm versions are immutable, so a re-run of an already-published version is
+      # not a retry but a request npm will refuse. Failing here says which version
+      # to bump; failing at the publish step says "403". A package that does not
+      # exist yet (E404) is the normal first-release state and passes through —
+      # `npm publish` remains the authority, this is only a clearer message.
+      - name: Refuse to republish
+        if: github.event_name == 'push'
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          published=$(npm view "@rowcat/mcp@${VERSION}" version 2>/dev/null || true)
+          if [ "$published" = "$VERSION" ]; then
+            echo "::error::@rowcat/mcp@${VERSION} is already on npm. Versions are immutable — bump the version and tag again." >&2
+            exit 1
+          fi
+          echo "@rowcat/mcp@${VERSION} is not on the registry yet."
+
+      # The runner's bundled npm predates trusted publishing, and `pnpm publish`
+      # hands the tarball to whichever npm is on PATH.
+      - run: npm install -g npm@latest
+
+      # No `version`: the action reads `packageManager` from the root
+      # package.json, so the pnpm version has one source in this repository.
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      # Frozen: a release must be reproducible from the tagged commit. A lockfile
+      # this install would have to change is a release that is not that commit.
+      # Not cached either — a release is the one place where a stale cache entry
+      # is more expensive than the minutes it saves.
+      - run: pnpm install --frozen-lockfile
+
+      # The repo-wide gates, including the generated-artifact drift checks
+      # (`pnpm check` runs runtime:declarations / sandbox / harness / docs / llms).
+      # A release that skips these is a release nobody checked.
+      #
+      # ⚠️ `pnpm test` is deliberately **not** here, and the price is stated rather
+      # than hidden: this workflow does not prove the suite passes. What it does
+      # prove — the tree type-checks, the generated artifacts are not stale, and
+      # the packed tarball actually runs outside the repository — is the part that
+      # is specific to shipping. The reason the suite is out is that the QuickJS
+      # files fail under CI concurrency while passing individually, so as a release
+      # gate it goes red for reasons that have nothing to do with the release, and
+      # a gate people learn to re-run is a gate nobody reads. Run `pnpm test`
+      # before tagging; put it back here the day that flakiness is fixed.
+      - run: pnpm check
+      - run: pnpm typecheck
+
+      - run: pnpm --filter @rowcat/mcp build
+
+      # Packs into an OS temp directory and runs the installed executable there —
+      # including the compiler and QuickJS. A green `--help` is not packaging proof.
+      - run: pnpm --filter @rowcat/mcp pack:verify
+
+      # Everything above regenerates artifacts this repository commits. If any of
+      # them moved, the tree is no longer the tagged commit and what would go out
+      # is not what was reviewed. `dist/` is gitignored, so a build alone is clean.
+      - name: The tree is still the tagged commit
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::The working tree changed while building. Regenerate and commit before tagging." >&2
+            git status --porcelain >&2
+            exit 1
+          fi
+
+      # `--no-git-checks` is not a shortcut past a safety net; it is required, and
+      # each thing it turns off is answered elsewhere:
+      #
+      #   branch     actions/checkout on a tag leaves a detached HEAD, which pnpm
+      #              refuses outright (GIT_UNKNOWN_BRANCH). The stronger question —
+      #              is this the tag for this version — is answered by the plan
+      #              step and again by the guard.
+      #   clean      answered by the step above, with a message about drift rather
+      #              than about publishing.
+      #   remote     meaningless for a tag checkout, and its prompt would hang a
+      #              runner that has no TTY.
+      - name: Publish
+        if: github.event_name == 'push'
+        working-directory: apps/mcp
+        run: pnpm publish --tag "${{ steps.plan.outputs.dist-tag }}" --access public --no-git-checks
+
+      # ⚠️ npm accepts a publish and *then* processes it — "Your package is being
+      # processed and may take a few minutes to become available" is the normal
+      # path, not a warning. Measured on the 0.1.0-alpha.2 release: the tarball
+      # appeared roughly seven minutes after `+ @rowcat/mcp@…`. So this step waits
+      # in minutes, not seconds; a 50-second window reports a successful publish
+      # as a failed one, which is the worst answer this file can give.
+      #
+      # If it still ends red, do **not** publish again — read the registry first.
+      # A red line here means "could not confirm", never "did not publish", and
+      # the fix for a genuinely missing version is a new version, never a second
+      # attempt at the same one (npm versions are immutable).
+      - name: Verify the registry
+        if: github.event_name == 'push'
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+          DIST_TAG: ${{ steps.plan.outputs.dist-tag }}
+        run: |
+          for attempt in $(seq 1 40); do
+            got=$(npm view "@rowcat/mcp@${VERSION}" version 2>/dev/null || true)
+            tagged=$(npm view "@rowcat/mcp" "dist-tags.${DIST_TAG}" 2>/dev/null || true)
+            if [ "$got" = "$VERSION" ] && [ "$tagged" = "$VERSION" ]; then
+              echo "@rowcat/mcp@${VERSION} is on npm, and ${DIST_TAG} points at it."
+              exit 0
+            fi
+            echo "attempt ${attempt}/40: version=${got:-none} ${DIST_TAG}=${tagged:-none}"
+            sleep 20
+          done
+          echo "::error::Could not confirm @rowcat/mcp@${VERSION} on the registry. Check npm before doing anything else — the publish may have succeeded." >&2
+          exit 1

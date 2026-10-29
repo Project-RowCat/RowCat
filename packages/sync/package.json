@@ -1,0 +1,25 @@
+{
+  "name": "@rowcat/sync",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@noble/ciphers": "^2.3.0",
+    "@noble/curves": "^2.3.0",
+    "@noble/hashes": "^2.3.0",
+    "@rowcat/contracts": "workspace:*",
+    "fflate": "^0.8.3"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

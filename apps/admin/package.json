@@ -1,0 +1,41 @@
+{
+	"name": "admin",
+	"private": true,
+	"license": "AGPL-3.0-only",
+	"type": "module",
+	"imports": {
+		"#/*": "./src/*"
+	},
+	"scripts": {
+		"dev": "vite dev --port 3002",
+		"build": "vite build",
+		"preview": "vite preview --port 3002",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@rowcat/contracts": "workspace:*",
+		"@rowcat/design": "workspace:*",
+		"@rowcat/domain": "workspace:*",
+		"@rowcat/query": "workspace:*",
+		"@rowcat/sdk": "workspace:*",
+		"@rowcat/ui-web": "workspace:*",
+		"@tailwindcss/vite": "^4.1.18",
+		"@tanstack/react-query": "^5.101.4",
+		"@tanstack/react-router": "^1.170.29",
+		"better-auth": "1.7.2",
+		"lucide-react": "^0.577.0",
+		"motion": "^13.1.0",
+		"react": "^19.2.0",
+		"react-dom": "^19.2.0",
+		"tailwindcss": "^4.1.18"
+	},
+	"devDependencies": {
+		"@types/node": "^22.10.2",
+		"@types/react": "^19.2.0",
+		"@types/react-dom": "^19.2.0",
+		"@vitejs/plugin-react": "^6.0.1",
+		"vite": "^8.0.0",
+		"vitest": "^3.2.4"
+	}
+}

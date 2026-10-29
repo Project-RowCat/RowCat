@@ -1,0 +1,84 @@
+/* Body font. Without a chosen font, the same screen renders with a different Korean font per
+   device (Apple SD Gothic Neo · Malgun Gothic · Noto Sans KR). Letter spacing and glyph height
+   differ, so line counts split, and the difference only shows with screenshots side by side. So
+   Latin is pinned to the same font too: leaving Latin on system-ui keeps half the nondeterminism.
+   It is one variable font with a dynamic subset, so only the glyph slices a screen uses download. */
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css');
+
+@import 'tailwindcss';
+/* Base UI state variants such as data-open/data-checked. A required dependency of base-* styles. */
+@import 'shadcn/tailwind.css';
+/* Color and radius tokens (generated from @rowcat/design/src/tokens.ts). */
+@import '@rowcat/design/tokens.css';
+@plugin '@tailwindcss/typography';
+
+/* Tailwind does not detect workspace packages on its own, so this package's sources are named. */
+@source '../**/*.{ts,tsx}';
+
+@custom-variant dark (&:is(.dark *));
+
+/* The font stack has one source, here. If each app wrote its own, the web and the operations
+   console would quietly diverge. `Pretendard` (non-variable) is second for people who installed it,
+   and the trailing emoji families are Tailwind's default stack as is (Pretendard has no emoji). */
+@theme {
+  --font-sans: 'Pretendard Variable', Pretendard, system-ui, -apple-system, sans-serif,
+    'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+}
+
+/* The **only capability** that draws the account background gradient; this is the one CSS that
+   knows the value.
+
+   The web's application layer sets `--account-background-image` on the document root
+   (`apps/web/src/lib/theme/background-gradient.ts`); without it the value falls back to `none` and
+   the surface keeps its own background color. It is a utility because there are **two** consumers
+   (below). If each screen wrote the property name, one would eventually carry a typo or a stale
+   name, and the symptom, "the gradient breaks on just one surface", is silent.
+
+   ## Attach it only to **surfaces that stand in for the app background**
+
+   ```text
+   body          the page floor: the real owner
+   app header    a translucent strip across the floor to the edges. Without it the color breaks there
+   ```
+
+   Do not attach it to cards, popovers, dialogs, inputs, buttons or sidebar items. Those are
+   **surfaces**, not the background (the surface family owns their color), and attaching it would
+   draw a gradient restarting inside each element's own box.
+
+   ## `fixed` stitches the two together
+
+   The coordinate system is the viewport, so both surfaces with this capability paint **the same
+   pixels**: the slice the header draws is exactly the color the page would have drawn there, so no
+   seam shows. With the default that follows document height (`scroll`), that alignment breaks and
+   on short pages both colors get squeezed into the top few hundred pixels. Without an image it has
+   no effect. */
+@utility account-background {
+  background-image: var(--account-background-image, none);
+  background-attachment: fixed;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  /* Setting the token again here is pinning, not duplication. Tailwind's preflight reaches this
+     value through its own internal variable `--default-font-family`, and that indirection is an
+     axis we do not own, so a version bump can quietly break it (the symptom is not an error but
+     Korean falling back to the system font). The value still comes only from the token above. */
+  html {
+    font-family: var(--font-sans);
+  }
+  body {
+    @apply bg-background text-foreground account-background;
+  }
+  /* Turns off the browser's default clear button on `type="search"`. Our search field draws its own
+     clear button ("Clear search"), and Chromium draws its own X next to it, so two targets with the
+     same meaning stand 30px apart, one with no name and unreachable by keyboard. We do not remove
+     ours instead because the browser's varies: some browsers have it and some do not, so relying on
+     it would leave browsers without a clear button. */
+  input[type='search']::-webkit-search-cancel-button,
+  input[type='search']::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+}

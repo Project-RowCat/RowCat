@@ -1,0 +1,22 @@
+{
+  "name": "@rowcat/design",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./native": "./src/native.ts",
+    "./visual-lab": "./src/visual-lab.ts",
+    "./tokens.css": "./src/tokens.css"
+  },
+  "scripts": {
+    "gen": "node scripts/gen-tokens.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "vitest": "^3.2.4"
+  }
+}

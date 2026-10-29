@@ -1,0 +1,107 @@
+RowCat
+Copyright (c) 2026 astra-void
+
+This repository is distributed under two licenses. The full text of each is in
+the LICENSE file at the place named below; the summary here does not replace it.
+
+GNU Affero General Public License v3.0 only (AGPL-3.0-only)
+  Everything in this repository, unless it is listed under Apache-2.0 below or
+  under "Third-party material" further down. Full text: LICENSE (repository
+  root). This includes every app in apps/ (api, web, admin, mobile, mcp) and
+  every package in packages/ not listed below.
+
+Apache License 2.0 (Apache-2.0)
+  The creator-runtime language, its toolchain and the wire contracts. Each of
+  these packages carries its own copy of the license (packages/<name>/LICENSE)
+  and its own NOTICE:
+
+    packages/runtime                  @rowcat/runtime
+    packages/runtime-compiler         @rowcat/runtime-compiler
+    packages/runtime-host             @rowcat/runtime-host
+    packages/runtime-renderer-web     @rowcat/runtime-renderer-web
+    packages/runtime-renderer-native  @rowcat/runtime-renderer-native
+    packages/runtime-persistence      @rowcat/runtime-persistence
+    packages/runtime-ai-docs          @rowcat/runtime-ai-docs
+    packages/contracts                @rowcat/contracts
+
+  None of these packages depends on an AGPL-3.0-only package of this
+  repository; a static test locks that direction
+  (apps/api/src/license-split.test.ts).
+
+The "license" field of every package.json in this repository states which of
+the two applies to that package.
+
+
+Third-party material committed to this repository
+-------------------------------------------------
+
+The files below were not written for this project. They keep their own
+licenses, which this repository's licenses do not alter or replace. Ordinary
+npm dependencies are not listed here: a package manager installs them from
+their own distributions, each with its own license.
+
+Pretendard (fonts)
+  Files:     apps/mobile/assets/fonts/Pretendard-{Regular,Medium,SemiBold,
+             Bold,Black}.otf
+  License:   SIL Open Font License, Version 1.1
+             Full text with the copyright notices: apps/mobile/assets/fonts/OFL.txt
+  Copyright (c) 2021, Kil Hyung-jin (https://github.com/orioncactus/pretendard),
+  with Reserved Font Name 'Pretendard'. The OFL.txt file also carries the
+  notices of the fonts Pretendard derives from (Source by Adobe,
+  Inter, M PLUS 1).
+  Source:    https://github.com/orioncactus/pretendard
+
+QuickJS-ng WebAssembly build (via quickjs-emscripten)
+  Files:     apps/mobile/modules/rowcat-runtime-webview/assets/runtime/quickjs-ng.wasm
+             apps/mobile/assets/runtime/quickjs-ng.wasm
+             These are the bytes of
+             @jitl/quickjs-ng-wasmfile-release-sync@0.32.0/dist/emscripten-module.wasm,
+             copied verbatim.
+  License:   MIT
+  quickjs-ng:
+    Copyright (c) 2017-2024 Fabrice Bellard
+    Copyright (c) 2017-2024 Charlie Gordon
+    Copyright (c) 2023-2025 Ben Noordhuis
+    Copyright (c) 2023-2025 Saúl Ibarra Corretgé
+  quickjs-emscripten:
+    Copyright (c) 2019-2024 Jake Teton-Landis
+  Source:    https://github.com/justjake/quickjs-emscripten
+             https://github.com/quickjs-ng/quickjs
+
+Runtime harness bundle
+  File:      apps/mobile/modules/rowcat-runtime-webview/assets/runtime/harness.html
+  This generated page bundles, besides this repository's own code, the
+  JavaScript of quickjs-emscripten-core@0.32.0,
+  @jitl/quickjs-ffi-types@0.32.0 and the Emscripten loader of
+  @jitl/quickjs-ng-wasmfile-release-sync@0.32.0 — all MIT, with the
+  quickjs-emscripten and quickjs-ng notices above.
+
+  The MIT License text that applies to the two QuickJS entries above:
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the
+    "Software"), to deal in the Software without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish,
+    distribute, sublicense, and/or sell copies of the Software, and to permit
+    persons to whom the Software is furnished to do so, subject to the
+    following conditions:
+
+    The above copyright notice and this permission notice shall be included
+    in all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+    OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+    NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+    DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+    OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+    USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Narration pack bodies (not included)
+  The hosted RowCat service carried 24 narration pack bodies, a third
+  party's original work (the "Goseumdochi" project by Jakho), used under a
+  license granted for RowCat's own features. A right to redistribute them was
+  never established, so they are not in this repository. packages/prompt-packs holds only the loader, with an empty
+  table; the narration vocabulary and rules in packages/chat remain, and do
+  nothing until a build adds bodies it has the right to use
+  (docs/chat/NARRATION.md).

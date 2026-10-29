@@ -1,0 +1,30 @@
+{
+	"include": ["src/**/*.ts", "src/**/*.tsx"],
+	"compilerOptions": {
+		"target": "ESNext",
+		"module": "preserve",
+		"moduleResolution": "bundler",
+		/*
+		 * Does not extend `expo/tsconfig.base`: that base puts DOM in `lib`, and this package must
+		 * **not see** the DOM (code using `document` would compile and first break on a device). Not
+		 * depending on `expo` also fits the boundary: these are React Native components, not an Expo
+		 * app.
+		 */
+		"lib": ["ESNext"],
+		"jsx": "react-jsx",
+		"customConditions": ["react-native"],
+		"paths": {
+			"@rowcat/design": ["../design/src/index.ts"],
+			"@rowcat/design/*": ["../design/src/*.ts"]
+		},
+		"allowImportingTsExtensions": true,
+		"verbatimModuleSyntax": true,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"strict": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"noFallthroughCasesInSwitch": true,
+		"noUncheckedSideEffectImports": true
+	}
+}

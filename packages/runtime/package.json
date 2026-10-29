@@ -1,0 +1,25 @@
+{
+  "name": "@rowcat/runtime",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./jsx-runtime": "./src/jsx-runtime.ts",
+    "./jsx-dev-runtime": "./src/jsx-dev-runtime.ts",
+    "./declarations": "./src/declarations/index.ts",
+    "./sandbox": "./src/sandbox/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "gen": "tsx ../../packages/runtime/scripts/generate-declarations.ts && tsx ../../packages/runtime/scripts/generate-sandbox.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.12",
+    "typescript-compiler-api": "npm:typescript@5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,4 @@
+/* Design system: Tailwind, shadcn/ui tokens, Base UI variants — and the font stack.
+   No @import url() for fonts here: the family is fixed once in the design system,
+   so the web app and the operator console cannot drift apart. */
+@import '@rowcat/ui-web/globals.css';

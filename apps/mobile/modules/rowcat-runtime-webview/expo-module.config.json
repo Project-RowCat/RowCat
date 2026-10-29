@@ -1,0 +1,17 @@
+{
+  "platforms": [
+    "apple",
+    "android"
+  ],
+  "apple": {
+    "podspecPath": "RowcatRuntimeWebView.podspec",
+    "modules": [
+      "RowcatRuntimeWebViewModule"
+    ]
+  },
+  "android": {
+    "modules": [
+      "com.projectrowcat.runtimewebview.RowcatRuntimeWebViewModule"
+    ]
+  }
+}

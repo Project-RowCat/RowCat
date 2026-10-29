@@ -1,0 +1,55 @@
+{
+	"name": "@rowcat/mcp",
+	"version": "0.1.0-alpha.3",
+	"description": "The MCP server for the RowCat creator runtime: coding agents author runtime stories.",
+	"keywords": ["rowcat", "mcp", "model-context-protocol", "creator-runtime"],
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/project-rowcat/rowcat.git",
+		"directory": "apps/mcp"
+	},
+	"bugs": { "url": "https://github.com/project-rowcat/rowcat/issues" },
+	"homepage": "https://github.com/project-rowcat/rowcat/tree/main/apps/mcp#readme",
+	"type": "module",
+	"bin": { "rowcat-mcp": "./dist/index.mjs" },
+	"files": ["dist", "README.md", "LICENSE"],
+	"engines": { "node": ">=22.12.0" },
+	"publishConfig": { "access": "public", "tag": "next" },
+	"imports": { "#/*": "./src/*" },
+	"scripts": {
+		"build": "tsdown",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run",
+		"start": "tsx src/index.ts",
+		"doctor": "tsx src/index.ts doctor",
+		"pack:verify": "tsx scripts/verify-package.ts",
+		"prepack": "tsdown",
+		"prepublishOnly": "node scripts/guard-publish.mjs"
+	},
+	"dependencies": {
+		"@jitl/quickjs-ng-wasmfile-release-sync": "0.32.0",
+		"@modelcontextprotocol/sdk": "^1.30.0",
+		"@noble/ciphers": "^2.3.0",
+		"@noble/curves": "^2.3.0",
+		"@noble/hashes": "^2.3.0",
+		"fflate": "^0.8.3",
+		"quickjs-emscripten-core": "0.32.0",
+		"typescript-compiler-api": "npm:typescript@5.9.3",
+		"zod": "^4.3.6"
+	},
+	"devDependencies": {
+		"@rowcat/authoring": "workspace:*",
+		"@rowcat/contracts": "workspace:*",
+		"@rowcat/runtime": "workspace:*",
+		"@rowcat/runtime-ai-docs": "workspace:*",
+		"@rowcat/runtime-host": "workspace:*",
+		"@rowcat/runtime-mcp": "workspace:*",
+		"@rowcat/sdk": "workspace:*",
+		"@rowcat/sync": "workspace:*",
+		"@types/node": "^22.10.2",
+		"tsdown": "^0.22.14",
+		"tsx": "^4.23.12",
+		"vitest": "^3.2.4"
+	}
+}

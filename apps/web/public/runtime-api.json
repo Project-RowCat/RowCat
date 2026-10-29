@@ -1,0 +1,1108 @@
+{
+	"apiVersion": 7,
+	"package": "@rowcat/runtime",
+	"docs": [
+		{
+			"slug": "",
+			"title": "소개",
+			"description": "크리에이터 런타임은 TypeScript와 TSX로 RowCat 작품의 화면·상태·상호작용을 직접 만드는 방법입니다.",
+			"group": "getting-started",
+			"url": "/docs/runtime",
+			"symbols": []
+		},
+		{
+			"slug": "quick-start",
+			"title": "빠른 시작",
+			"description": "런타임을 켜고 첫 화면을 만들어 미리보기까지 확인하는 가장 짧은 길입니다.",
+			"group": "getting-started",
+			"url": "/docs/runtime/quick-start",
+			"symbols": []
+		},
+		{
+			"slug": "project-structure",
+			"title": "프로젝트 구조",
+			"description": "진입 파일, 파일을 나누는 방법, 가져올 수 있는 것과 없는 것.",
+			"group": "getting-started",
+			"url": "/docs/runtime/project-structure",
+			"symbols": []
+		},
+		{
+			"slug": "preview-and-publish",
+			"title": "미리보기와 발행",
+			"description": "스튜디오 미리보기가 하는 일, 세 가지 초기화의 차이, 발행하면 무엇이 달라지는가.",
+			"group": "getting-started",
+			"url": "/docs/runtime/preview-and-publish",
+			"symbols": []
+		},
+		{
+			"slug": "concepts/components",
+			"title": "컴포넌트와 TSX",
+			"description": "런타임 컴포넌트가 무엇이고, React와 어디가 같고 어디가 다른가.",
+			"group": "concepts",
+			"url": "/docs/runtime/concepts/components",
+			"symbols": []
+		},
+		{
+			"slug": "concepts/styling",
+			"title": "스타일",
+			"description": "런타임 스타일은 CSS도 React Native 스타일시트도 아닌 자기 체계입니다. 쓸 수 있는 속성, 색을 적는 방법, 값이 바뀔 때의 전이.",
+			"group": "concepts",
+			"url": "/docs/runtime/concepts/styling",
+			"symbols": []
+		},
+		{
+			"slug": "concepts/events",
+			"title": "이벤트와 입력",
+			"description": "누름과 글 입력이 어떤 모양으로 오는가. 통제된 입력, Enter와 한글 조합, 비활성.",
+			"group": "concepts",
+			"url": "/docs/runtime/concepts/events",
+			"symbols": []
+		},
+		{
+			"slug": "concepts/state",
+			"title": "상태",
+			"description": "화면의 상태, 플레이스루의 상태, 회차를 넘는 상태 — 셋의 수명이 다르고 쓰는 훅이 다릅니다.",
+			"group": "concepts",
+			"url": "/docs/runtime/concepts/state",
+			"symbols": []
+		},
+		{
+			"slug": "concepts/generation",
+			"title": "AI 생성",
+			"description": "useGeneration()으로 RowCat의 AI를 부르는 방법, 요청의 모양, 실패의 이름, 정본 상태와 AI 글의 구분.",
+			"group": "concepts",
+			"url": "/docs/runtime/concepts/generation",
+			"symbols": []
+		},
+		{
+			"slug": "concepts/assets",
+			"title": "자산",
+			"description": "asset()으로 그림과 소리를 부르는 방법. RowCat에 올린 파일은 이름으로 부르고, 외부 HTTPS 주소는 그림에만 열려 있으며 프로젝트에 고정된 자산이어야 합니다.",
+			"group": "concepts",
+			"url": "/docs/runtime/concepts/assets",
+			"symbols": []
+		},
+		{
+			"slug": "concepts/scroll-and-focus",
+			"title": "스크롤과 초점",
+			"description": "목록을 최신으로 내리고 입력 칸에 초점을 주는 방법. 조종기, 붙이는 규칙, 부르는 자리, 순서.",
+			"group": "concepts",
+			"url": "/docs/runtime/concepts/scroll-and-focus",
+			"symbols": []
+		},
+		{
+			"slug": "guides/ai-tools",
+			"title": "AI 코딩 도구로 만들기",
+			"description": "Claude Code 같은 코딩 에이전트가 당신의 런타임 프로젝트를 직접 읽고 고치고 미리보기로 확인하게 하는 방법입니다.",
+			"group": "guides",
+			"url": "/docs/runtime/guides/ai-tools",
+			"symbols": []
+		},
+		{
+			"slug": "reference",
+			"title": "API 레퍼런스",
+			"description": "@rowcat/runtime이 내보내는 모든 이름의 지도. 무엇이 어느 페이지에 있는가.",
+			"group": "reference",
+			"url": "/docs/runtime/reference",
+			"symbols": []
+		},
+		{
+			"slug": "reference/components",
+			"title": "컴포넌트",
+			"description": "런타임이 그리는 열두 부품의 프롭과 쓰임.",
+			"group": "reference",
+			"url": "/docs/runtime/reference/components",
+			"symbols": [
+				"Audio",
+				"Button",
+				"Image",
+				"Pressable",
+				"Progress",
+				"Row",
+				"Screen",
+				"ScrollView",
+				"Stack",
+				"Text",
+				"TextArea",
+				"TextInput",
+				"View"
+			]
+		},
+		{
+			"slug": "reference/hooks",
+			"title": "훅",
+			"description": "컴포넌트 안에서 부르는 열한 훅의 시그니처와 규칙.",
+			"group": "reference",
+			"url": "/docs/runtime/reference/hooks",
+			"symbols": [
+				"useCallback",
+				"useEffect",
+				"useGeneration",
+				"useMemo",
+				"usePersistentState",
+				"useReducer",
+				"useRef",
+				"useScrollController",
+				"useState",
+				"useStoryState",
+				"useTextEntryController"
+			]
+		},
+		{
+			"slug": "reference/state",
+			"title": "상태 정의",
+			"description": "defineStoryState와 definePersistentState의 입력, 판, 마이그레이션, 한도.",
+			"group": "reference",
+			"url": "/docs/runtime/reference/state",
+			"symbols": [
+				"definePersistentState",
+				"defineStoryState"
+			]
+		},
+		{
+			"slug": "reference/generation",
+			"title": "생성",
+			"description": "useGeneration()이 돌려주는 객체와 요청·결과의 형, 한도 상수.",
+			"group": "reference",
+			"url": "/docs/runtime/reference/generation",
+			"symbols": [
+				"RUNTIME_GENERATION_LIMITS",
+				"RuntimeGeneration",
+				"RuntimeGenerationMessage",
+				"RuntimeGenerationRequest",
+				"RuntimeGenerationResult"
+			]
+		},
+		{
+			"slug": "reference/styling",
+			"title": "스타일",
+			"description": "color()와 스타일 형의 전체 목록.",
+			"group": "reference",
+			"url": "/docs/runtime/reference/styling",
+			"symbols": [
+				"RUNTIME_EASINGS",
+				"RUNTIME_TRANSITION_DEFAULT_DURATION_MS",
+				"RUNTIME_TRANSITION_DEFAULT_EASING",
+				"RUNTIME_TRANSITION_MAX_DURATION_MS",
+				"RuntimeAlign",
+				"RuntimeColor",
+				"RuntimeEasing",
+				"RuntimeJustify",
+				"RuntimeLength",
+				"RuntimeStyle",
+				"RuntimeTextStyle",
+				"RuntimeTransition",
+				"color",
+				"isRuntimeColor"
+			]
+		},
+		{
+			"slug": "reference/assets",
+			"title": "자산",
+			"description": "asset()과 AssetRef의 형. RowCat 자산 이름(그림·소리)과 정적으로 선언된 HTTPS 이미지 주소의 규칙.",
+			"group": "reference",
+			"url": "/docs/runtime/reference/assets",
+			"symbols": [
+				"AssetRef",
+				"asset"
+			]
+		},
+		{
+			"slug": "reference/errors-and-limits",
+			"title": "오류와 한도",
+			"description": "런타임이 던지는 RuntimeError, 제작자가 만날 수 있는 코드, 코드를 고쳐 풀 수 있는 한도.",
+			"group": "reference",
+			"url": "/docs/runtime/reference/errors-and-limits",
+			"symbols": [
+				"RUNTIME_ERROR_CODE",
+				"RuntimeError",
+				"RuntimeErrorCode"
+			]
+		},
+		{
+			"slug": "reference/types",
+			"title": "타입",
+			"description": "값이 아니라 형만 내보내는 이름들. 프롭·훅·노드·상태 정의의 형.",
+			"group": "reference",
+			"url": "/docs/runtime/reference/types",
+			"symbols": [
+				"AudioProps",
+				"ButtonProps",
+				"ImageProps",
+				"PersistentStateDefinition",
+				"PersistentStateInput",
+				"PersistentStateInputChecked",
+				"PersistentStateMigration",
+				"PressableProps",
+				"ProgressProps",
+				"RowProps",
+				"RuntimeApp",
+				"RuntimeChildren",
+				"RuntimeCleanup",
+				"RuntimeComponent",
+				"RuntimeElement",
+				"RuntimeNode",
+				"RuntimePressable",
+				"RuntimePrimitive",
+				"RuntimeRef",
+				"RuntimeScrollController",
+				"RuntimeScrollTo",
+				"RuntimeSetState",
+				"RuntimeStateAction",
+				"RuntimeTextEntry",
+				"RuntimeTextEntryController",
+				"RuntimeTransitionable",
+				"ScreenProps",
+				"ScrollViewProps",
+				"Serializable",
+				"SerializableShape",
+				"StackProps",
+				"StoryStateDefinition",
+				"StoryStateInput",
+				"StoryStateInputChecked",
+				"StoryStateMigration",
+				"TextAreaProps",
+				"TextInputProps",
+				"TextProps",
+				"ViewProps"
+			]
+		},
+		{
+			"slug": "reference/advanced",
+			"title": "저수준 API",
+			"description": "평범한 작품에서 부를 일이 없는 판정 함수와 상수. 있다는 사실을 적어 두는 페이지입니다.",
+			"group": "reference",
+			"url": "/docs/runtime/reference/advanced",
+			"symbols": [
+				"PERSISTENT_STATE_VERSION_MAX",
+				"RuntimeHostComponent",
+				"RuntimeHostKind",
+				"STORY_STATE_VERSION_MAX",
+				"isPersistentStateDefinition",
+				"isRuntimeElement",
+				"isRuntimeHostComponent",
+				"isSerializable",
+				"isStoryStateDefinition",
+				"runtimeHostKindOf"
+			]
+		},
+		{
+			"slug": "runtime-model/security",
+			"title": "보안과 샌드박스",
+			"description": "런타임 코드가 어디서 돌고 무엇에 닿을 수 없는가. 그리고 발행된 코드에 비밀을 적으면 안 되는 이유.",
+			"group": "runtime-model",
+			"url": "/docs/runtime/runtime-model/security",
+			"symbols": []
+		},
+		{
+			"slug": "runtime-model/supported-imports",
+			"title": "지원하는 import",
+			"description": "런타임 코드가 가져올 수 있는 모듈 셋과 그 규칙.",
+			"group": "runtime-model",
+			"url": "/docs/runtime/runtime-model/supported-imports",
+			"symbols": []
+		},
+		{
+			"slug": "runtime-model/unsupported-apis",
+			"title": "지원하지 않는 API",
+			"description": "흔히 있을 것으로 기대하지만 런타임에 없는 것들과, 대신 무엇을 쓰는가.",
+			"group": "runtime-model",
+			"url": "/docs/runtime/runtime-model/unsupported-apis",
+			"symbols": []
+		}
+	],
+	"symbols": [
+		{
+			"name": "AssetRef",
+			"kind": "interface",
+			"summary": "The interface has no url, id or kind by design.",
+			"signature": "interface AssetRef {\n\treadonly [RUNTIME_ASSET]: string;\n}",
+			"doc": "reference/assets",
+			"url": "/docs/runtime/reference/assets"
+		},
+		{
+			"name": "Audio",
+			"kind": "component",
+			"summary": "A sound.",
+			"signature": "declare const Audio: RuntimeHostComponent<AudioProps>;",
+			"doc": "reference/components",
+			"url": "/docs/runtime/reference/components"
+		},
+		{
+			"name": "AudioProps",
+			"kind": "interface",
+			"summary": "Audio: sound that is played, not drawn.",
+			"signature": "interface AudioProps {\n\t/**\n\t * Same shape as Image, but the accepted values are narrower: remote HTTPS addresses do not play\n\t * here. `asset('https://...')` still builds, but the trusted host does not resolve it to sound, so\n\t * no request is ever sent. Reason: an image is fetched once and drawn, and failures fold into a\n\t * placeholder. Sound keeps flowing, so range requests, buffering, abort and resume all become a\n\t * conversation with the remote host. A single IP-masking proxy would not fold that into one step,\n\t * and opening that surface is not a decision of this slice.\n\t */\n\tsource: AssetRef;\n\t/**\n\t * Whether sound is wanted, not whether it is playing now. Browsers block sound until the user has\n\t * interacted with the page. That is normal platform policy, not an error, so `playing={true}` does\n\t * not guarantee sound: the host remembers the wish and starts when it is allowed. Defaults to\n\t * `false`.\n\t */\n\tplaying?: boolean;\n\t/**\n\t * When the sound ends, it starts over from the beginning. Defaults to `false`; then the end is\n\t * reported by `onEnded`.\n\t */\n\tloop?: boolean;\n\t/**\n\t * Between 0 and 1, finite. Defaults to 1. Out-of-range values are rejected, not silently clamped.\n\t * Clamping `volume={5}` to 1 would make authors believe their value is used, and the\n\t * misunderstanding would surface later in computed values. Rejecting there is more honest (the\n\t * same decision as `asset()` not trimming whitespace).\n\t */\n\tvolume?: number;\n\t/** Mutes the sound. A separate axis from `volume`: it mutes while remembering the level. */\n\tmuted?: boolean;\n\t/**\n\t * Changing this value rewinds to the beginning. A name is needed because `playing` cannot express\n\t * it: on a second press of a sound effect, `playing` is already true, the commit has no change,\n\t * and nothing plays. It only rewinds; it does not change whether the sound plays. The value is a\n\t * string or number because it crosses the wire, and object identity does not survive that\n\t * boundary.\n\t */\n\trestartKey?: string | number;\n\t/**\n\t * Called when playback has finished. Not called while `loop` is set: calling it per cycle would\n\t * turn 'ended' into 'went around once', and handling attached to repeating music would run every\n\t * cycle. It does not change state: the host never sets `playing` to false on the author's behalf.\n\t * To play again, change `restartKey`.\n\t */\n\tonEnded?: () => void | Promise<void>;\n\t/**\n\t * Accepts no children, enforced by the type. Sound is played, not contained, so there is no place\n\t * to draw children. Drawing them elsewhere would split what the author wrote from the screen.\n\t */\n\tchildren?: never;\n}",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "Button",
+			"kind": "component",
+			"summary": "",
+			"signature": "declare const Button: RuntimeHostComponent<ButtonProps>;",
+			"doc": "reference/components",
+			"url": "/docs/runtime/reference/components"
+		},
+		{
+			"name": "ButtonProps",
+			"kind": "interface",
+			"summary": "",
+			"signature": "interface ButtonProps extends RuntimeChildren, RuntimePressable {\n\t/** Visual hierarchy. Adding a value means changing both renderers together. */\n\ttone?: \"primary\" | \"secondary\" | \"ghost\";\n}",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "Image",
+			"kind": "component",
+			"summary": "",
+			"signature": "declare const Image: RuntimeHostComponent<ImageProps>;",
+			"doc": "reference/components",
+			"url": "/docs/runtime/reference/components"
+		},
+		{
+			"name": "ImageProps",
+			"kind": "interface",
+			"summary": "",
+			"signature": "interface ImageProps extends RuntimeTransitionable {\n\t/**\n\t * What to draw: an asset reference, not a plain string. Passing through `asset()` is the author's\n\t * explicit declaration that the string is an image reference, and a deterministic check runs there\n\t * (see asset.ts). Plain strings are still rejected even though remote URLs are now accepted: what\n\t * widened is the input to `asset()`, not this prop's type. Which bytes a reference points to is\n\t * answered by the trusted host. This package does no lookup, authorization, or caching.\n\t */\n\tsource: AssetRef;\n\t/** Screen-reader label. Omit it for decorative images. */\n\talt?: string;\n\tstyle?: RuntimeStyle;\n\tfit?: \"cover\" | \"contain\" | \"fill\";\n}",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "PERSISTENT_STATE_VERSION_MAX",
+			"kind": "constant",
+			"summary": "",
+			"signature": "declare const PERSISTENT_STATE_VERSION_MAX = DURABLE_STATE_VERSION_MAX;",
+			"doc": "reference/advanced",
+			"url": "/docs/runtime/reference/advanced"
+		},
+		{
+			"name": "PersistentStateDefinition",
+			"kind": "interface",
+			"summary": "",
+			"signature": "interface PersistentStateDefinition<T> {\n\t/**\n\t * Brand of this lifetime.\n\t *\n\t * There is no alias such as `type PersistentStateDefinition<T> = StoryStateDefinition<T>`. With an\n\t * alias, each hook would accept the other's definition, and a screen would silently read a value\n\t * from the wrong lifetime.\n\t */\n\treadonly [RUNTIME_PERSISTENT_STATE]: true;\n\treadonly key: string;\n\treadonly version: number;\n\treadonly initial: T;\n\treadonly migrate: PersistentStateMigration<T> | null;\n}",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "PersistentStateInput",
+			"kind": "type",
+			"summary": "",
+			"signature": "type PersistentStateInput<T> = DurableStateInput<T>;",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "PersistentStateInputChecked",
+			"kind": "type",
+			"summary": "",
+			"signature": "type PersistentStateInputChecked<T> = DurableStateInputChecked<T>;",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "PersistentStateMigration",
+			"kind": "type",
+			"summary": "Persistent state: the second lifetime of the saved-state core, for long progress tied to a member and a work.",
+			"signature": "type PersistentStateMigration<T> = DurableStateMigration<T>;",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "Pressable",
+			"kind": "component",
+			"summary": "",
+			"signature": "declare const Pressable: RuntimeHostComponent<PressableProps>;",
+			"doc": "reference/components",
+			"url": "/docs/runtime/reference/components"
+		},
+		{
+			"name": "PressableProps",
+			"kind": "interface",
+			"summary": "",
+			"signature": "interface PressableProps\n\textends RuntimeChildren,\n\t\tRuntimePressable,\n\t\tRuntimeTransitionable {\n\tstyle?: RuntimeStyle;\n}",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "Progress",
+			"kind": "component",
+			"summary": "",
+			"signature": "declare const Progress: RuntimeHostComponent<ProgressProps>;",
+			"doc": "reference/components",
+			"url": "/docs/runtime/reference/components"
+		},
+		{
+			"name": "ProgressProps",
+			"kind": "interface",
+			"summary": "",
+			"signature": "interface ProgressProps {\n\t/** 0 to 1. If absent, progress is unbounded (indeterminate, an endless animation). */\n\tvalue?: number;\n\tstyle?: { width?: RuntimeLength };\n}",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "RUNTIME_EASINGS",
+			"kind": "constant",
+			"summary": "",
+			"signature": "declare const RUNTIME_EASINGS = [\n\t\"linear\",\n\t\"ease\",\n\t\"ease-in\",\n\t\"ease-out\",\n\t\"ease-in-out\",\n] as const;",
+			"doc": "reference/styling",
+			"url": "/docs/runtime/reference/styling"
+		},
+		{
+			"name": "RUNTIME_ERROR_CODE",
+			"kind": "constant",
+			"summary": "The error the runtime throws: one class, with a code.",
+			"signature": "declare const RUNTIME_ERROR_CODE = {\n\thookOutsideRender: \"runtime_hook_outside_render\",\n\thookOrderChanged: \"runtime_hook_order_changed\",\n\tstateUpdateDuringRender: \"runtime_state_update_during_render\",\n\tasyncComponentUnsupported: \"runtime_async_component_unsupported\",\n\tinvalidRuntimeNode: \"runtime_invalid_runtime_node\",\n\t/** Duplicate key among siblings (warning). The later element is matched by position instead. */\n\tduplicateKey: \"runtime_duplicate_key\",\n\t/**\n\t * The host sent a handler id that is not in the registry. This is a stale event, not a failure.\n\t */\n\thandlerNotFound: \"runtime_handler_not_found\",\n\t/** Setter called after the component unmounted. Logged as a warning and ignored. */\n\tupdateAfterUnmount: \"runtime_update_after_unmount\",\n\t/** An effect returned a promise (warning). It is not read as a cleanup function. */\n\teffectReturnedPromise: \"runtime_effect_returned_promise\",\n\t/** An effect or its cleanup threw. Diagnostic only: that effect is lost. */\n\teffectFailed: \"runtime_effect_failed\",\n\tinvalidHostProp: \"runtime_invalid_host_prop\",\n\ttreeDepthExceeded: \"runtime_tree_depth_exceeded\",\n\thostNodeLimitExceeded: \"runtime_host_node_limit_exceeded\",\n\tpatchLimitExceeded: \"runtime_patch_limit_exceeded\",\n\t/** The host did not accept the commit bundle. The previous commit remains authoritative. */\n\tcommitRejected: \"runtime_commit_rejected\",\n\t/** The host port was not installed. This is a boot-order problem, not the creator's. */\n\thostPortMissing: \"runtime_host_port_missing\",\n\trootEntryInvalid: \"runtime_root_entry_invalid\",\n\trootDisposed: \"runtime_root_disposed\",\n\thostComponentCalled: \"runtime_host_component_called\",\n\tinvalidStoryState: \"runtime_invalid_story_state\",\n\t/** `defineStoryState` was called after module evaluation ended and the registry was sealed. */\n\tstoryStateDefinitionLate: \"runtime_story_state_definition_late\",\n\t/** Two definitions share one storage key. The key is the identity of the stored value. */\n\tstoryStateDuplicateKey: \"runtime_story_state_duplicate_key\",\n\tstoryStateHookChanged: \"runtime_story_state_hook_changed\",\n\tstoryStateValueInvalid: \"runtime_story_state_value_invalid\",\n\tstoryStateLimitExceeded: \"runtime_story_state_limit_exceeded\",\n\t/** Migration threw, or the stored version is older and no migration exists. */\n\tstoryStateMigrationFailed: \"runtime_story_state_migration_failed\",\n\tstoryStateMigrationInvalid: \"runtime_story_state_migration_invalid\",\n\t/** The stored version is higher than this code's version: old code is opening new storage. */\n\tstoryStateVersionNewer: \"runtime_story_state_version_newer\",\n\tstoryStateSnapshotInvalid: \"runtime_story_state_snapshot_invalid\",\n\t/**\n\t * Persistent-state error codes. They are not shared with story state. The two lifetimes mean\n\t * different things to the player. Folding the codes together would hide which lifetime failed, and\n\t * the creator would then reset the playthrough. That cannot fix a persistent-state failure.\n\t */\n\tinvalidPersistentState: \"runtime_invalid_persistent_state\",\n\tpersistentStateDefinitionLate: \"runtime_persistent_state_definition_late\",\n\tpersistentStateDuplicateKey: \"runtime_persistent_state_duplicate_key\",\n\tpersistentStateHookChanged: \"runtime_persistent_state_hook_changed\",\n\tpersistentStateValueInvalid: \"runtime_persistent_state_value_invalid\",\n\tpersistentStateLimitExceeded: \"runtime_persistent_state_limit_exceeded\",\n\tpersistentStateMigrationFailed: \"runtime_persistent_state_migration_failed\",\n\tpersistentStateMigrationInvalid: \"runtime_persistent_state_migration_invalid\",\n\tpersistentStateVersionNewer: \"runtime_persistent_state_version_newer\",\n\tpersistentStateSnapshotInvalid: \"runtime_persistent_state_snapshot_invalid\",\n\t/** A generation was requested during render. Rendering the same tree twice would charge twice. */\n\tgenerationDuringRender: \"runtime_generation_during_render\",\n\t/**\n\t * The generation request does not match the contract (empty message, unknown role, over the\n\t * limit).\n\t */\n\tgenerationInvalidRequest: \"runtime_generatio\n/* … truncated. See the docs for the full declaration */",
+			"doc": "reference/errors-and-limits",
+			"url": "/docs/runtime/reference/errors-and-limits"
+		},
+		{
+			"name": "RUNTIME_GENERATION_LIMITS",
+			"kind": "constant",
+			"summary": "Request limits.",
+			"signature": "declare const RUNTIME_GENERATION_LIMITS = Object.freeze({\n\tmaxMessages: 100,\n\tmaxMessageCharacters: 32_768,\n\tmaxInstructionsCharacters: 32_768,\n\tmaxTotalCharacters: 262_144,\n\tmaxOutputCharacters: 16_000,\n\tdefaultOutputCharacters: 4_000,\n});",
+			"doc": "reference/generation",
+			"url": "/docs/runtime/reference/generation"
+		},
+		{
+			"name": "RUNTIME_TRANSITION_DEFAULT_DURATION_MS",
+			"kind": "constant",
+			"summary": "",
+			"signature": "declare const RUNTIME_TRANSITION_DEFAULT_DURATION_MS = 200;",
+			"doc": "reference/styling",
+			"url": "/docs/runtime/reference/styling"
+		},
+		{
+			"name": "RUNTIME_TRANSITION_DEFAULT_EASING",
+			"kind": "constant",
+			"summary": "",
+			"signature": "declare const RUNTIME_TRANSITION_DEFAULT_EASING: RuntimeEasing;",
+			"doc": "reference/styling",
+			"url": "/docs/runtime/reference/styling"
+		},
+		{
+			"name": "RUNTIME_TRANSITION_MAX_DURATION_MS",
+			"kind": "constant",
+			"summary": "The limit is 10 seconds.",
+			"signature": "declare const RUNTIME_TRANSITION_MAX_DURATION_MS = 10_000;",
+			"doc": "reference/styling",
+			"url": "/docs/runtime/reference/styling"
+		},
+		{
+			"name": "Row",
+			"kind": "component",
+			"summary": "",
+			"signature": "declare const Row: RuntimeHostComponent<RowProps>;",
+			"doc": "reference/components",
+			"url": "/docs/runtime/reference/components"
+		},
+		{
+			"name": "RowProps",
+			"kind": "interface",
+			"summary": "",
+			"signature": "interface RowProps extends RuntimeChildren, RuntimeTransitionable {\n\tgap?: number;\n\tstyle?: RuntimeStyle;\n}",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "RuntimeAlign",
+			"kind": "type",
+			"summary": "",
+			"signature": "type RuntimeAlign = \"start\" | \"center\" | \"end\" | \"stretch\";",
+			"doc": "reference/styling",
+			"url": "/docs/runtime/reference/styling"
+		},
+		{
+			"name": "RuntimeApp",
+			"kind": "type",
+			"summary": "The root of the app.",
+			"signature": "type RuntimeApp = RuntimeComponent<Record<never, never>>;",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "RuntimeChildren",
+			"kind": "interface",
+			"summary": "",
+			"signature": "interface RuntimeChildren {\n\tchildren?: RuntimeNode;\n}",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "RuntimeCleanup",
+			"kind": "type",
+			"summary": "",
+			"signature": "type RuntimeCleanup = () => void;",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "RuntimeColor",
+			"kind": "type",
+			"summary": "A value that has passed validation.",
+			"signature": "type RuntimeColor = string & { readonly [RUNTIME_COLOR]: \"color\" };",
+			"doc": "reference/styling",
+			"url": "/docs/runtime/reference/styling"
+		},
+		{
+			"name": "RuntimeComponent",
+			"kind": "type",
+			"summary": "The type of components creators write.",
+			"signature": "type RuntimeComponent<TProps = Record<never, never>> = (\n\tprops: TProps,\n) => RuntimeNode;",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "RuntimeEasing",
+			"kind": "type",
+			"summary": "The easing vocabulary is closed, with five entries.",
+			"signature": "type RuntimeEasing =\n\t| \"linear\"\n\t| \"ease\"\n\t| \"ease-in\"\n\t| \"ease-out\"\n\t| \"ease-in-out\";",
+			"doc": "reference/styling",
+			"url": "/docs/runtime/reference/styling"
+		},
+		{
+			"name": "RuntimeElement",
+			"kind": "interface",
+			"summary": "A runtime element, the only shape `jsx()` creates.",
+			"signature": "interface RuntimeElement<TType = unknown, TProps = unknown> {\n\treadonly $$typeof: typeof RUNTIME_ELEMENT;\n\treadonly type: TType;\n\treadonly props: TProps;\n\treadonly key: string | number | null;\n}",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "RuntimeError",
+			"kind": "class",
+			"summary": "",
+			"signature": "declare class RuntimeError extends Error {\n\treadonly code: RuntimeErrorCode;\n\tconstructor(code: RuntimeErrorCode, message: string);\n}",
+			"doc": "reference/errors-and-limits",
+			"url": "/docs/runtime/reference/errors-and-limits"
+		},
+		{
+			"name": "RuntimeErrorCode",
+			"kind": "type",
+			"summary": "",
+			"signature": "type RuntimeErrorCode =\n\t(typeof RUNTIME_ERROR_CODE)[keyof typeof RUNTIME_ERROR_CODE];",
+			"doc": "reference/errors-and-limits",
+			"url": "/docs/runtime/reference/errors-and-limits"
+		},
+		{
+			"name": "RuntimeGeneration",
+			"kind": "interface",
+			"summary": "One generation capability.",
+			"signature": "interface RuntimeGeneration {\n\tgenerate(request: RuntimeGenerationRequest): Promise<RuntimeGenerationResult>;\n}",
+			"doc": "reference/generation",
+			"url": "/docs/runtime/reference/generation"
+		},
+		{
+			"name": "RuntimeGenerationMessage",
+			"kind": "interface",
+			"summary": "One conversation turn.",
+			"signature": "interface RuntimeGenerationMessage {\n\trole: \"user\" | \"assistant\";\n\tcontent: string;\n}",
+			"doc": "reference/generation",
+			"url": "/docs/runtime/reference/generation"
+		},
+		{
+			"name": "RuntimeGenerationRequest",
+			"kind": "interface",
+			"summary": "The role and character this experience needs.",
+			"signature": "interface RuntimeGenerationRequest {\n\tmessages: readonly RuntimeGenerationMessage[];\n\tinstructions?: string;\n\t/**\n\t * Upper-bound hint for answer length, in characters. The host converts it to its own unit and\n\t * truncates to its own cap; tokenizers belong to the host, so this contract never says 'token'.\n\t */\n\tmaxOutputCharacters?: number;\n}",
+			"doc": "reference/generation",
+			"url": "/docs/runtime/reference/generation"
+		},
+		{
+			"name": "RuntimeGenerationResult",
+			"kind": "interface",
+			"summary": "",
+			"signature": "interface RuntimeGenerationResult {\n\ttext: string;\n}",
+			"doc": "reference/generation",
+			"url": "/docs/runtime/reference/generation"
+		},
+		{
+			"name": "RuntimeHostComponent",
+			"kind": "interface",
+			"summary": "Host primitives: what the runtime draws, not components the author assembles.",
+			"signature": "interface RuntimeHostComponent<TProps> {\n\t(props: TProps): RuntimeNode;\n\treadonly [RUNTIME_HOST]: RuntimeHostKind;\n}",
+			"doc": "reference/advanced",
+			"url": "/docs/runtime/reference/advanced"
+		},
+		{
+			"name": "RuntimeHostKind",
+			"kind": "type",
+			"summary": "The host vocabulary.",
+			"signature": "type RuntimeHostKind =\n\t| \"screen\"\n\t| \"view\"\n\t| \"stack\"\n\t| \"row\"\n\t| \"scroll\"\n\t| \"text\"\n\t| \"image\"\n\t| \"button\"\n\t| \"pressable\"\n\t| \"progress\"\n\t| \"text-input\"\n\t| \"text-area\"\n\t| \"audio\";",
+			"doc": "reference/advanced",
+			"url": "/docs/runtime/reference/advanced"
+		},
+		{
+			"name": "RuntimeJustify",
+			"kind": "type",
+			"summary": "Main-axis alignment.",
+			"signature": "type RuntimeJustify = \"start\" | \"center\" | \"end\" | \"between\" | \"around\";",
+			"doc": "reference/styling",
+			"url": "/docs/runtime/reference/styling"
+		},
+		{
+			"name": "RuntimeLength",
+			"kind": "type",
+			"summary": "Length is a number or a percentage.",
+			"signature": "type RuntimeLength = number | `${number}%`;",
+			"doc": "reference/styling",
+			"url": "/docs/runtime/reference/styling"
+		},
+		{
+			"name": "RuntimeNode",
+			"kind": "type",
+			"summary": "Children arrays are readonly so creator code cannot change an array the reconciler is still holding.",
+			"signature": "type RuntimeNode =\n\t| RuntimePrimitive\n\t| RuntimeElement\n\t| readonly RuntimeNode[];",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "RuntimePressable",
+			"kind": "interface",
+			"summary": "The shared axis for pressable things.",
+			"signature": "interface RuntimePressable {\n\tonPress?: () => void | Promise<void>;\n\tdisabled?: boolean;\n}",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "RuntimePrimitive",
+			"kind": "type",
+			"summary": "`undefined` is here as a consequence of syntax, not leniency.",
+			"signature": "type RuntimePrimitive = string | number | boolean | null | undefined;",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "RuntimeRef",
+			"kind": "interface",
+			"summary": "",
+			"signature": "interface RuntimeRef<T> {\n\tcurrent: T;\n}",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "RuntimeScrollController",
+			"kind": "interface",
+			"summary": "Controls one scroll view.",
+			"signature": "interface RuntimeScrollController {\n\tscrollToStart(): void;\n\t/**\n\t * Scroll to the end of the content. If the list has just grown, this is the end after the growth.\n\t */\n\tscrollToEnd(): void;\n\tscrollTo(options: RuntimeScrollTo): void;\n}",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "RuntimeScrollTo",
+			"kind": "interface",
+			"summary": "Argument of `scrollTo()`.",
+			"signature": "interface RuntimeScrollTo {\n\t/**\n\t * Distance from the start of the content, in the same unit as style lengths (CSS pixels on web,\n\t * points on native). The axis is set by the ScrollView's `horizontal`: top-down for vertical,\n\t * start edge for horizontal. Values beyond the content end are clamped by the platform, not by\n\t * this package.\n\t */\n\toffset: number;\n}",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "RuntimeSetState",
+			"kind": "type",
+			"summary": "",
+			"signature": "type RuntimeSetState<S> = (action: RuntimeStateAction<S>) => void;",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "RuntimeStateAction",
+			"kind": "type",
+			"summary": "The only place that knows what hooks actually do.",
+			"signature": "type RuntimeStateAction<S> = S | ((previous: S) => S);",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "RuntimeStyle",
+			"kind": "interface",
+			"summary": "`padding` is a single number, on the same rule.",
+			"signature": "interface RuntimeStyle {\n\twidth?: RuntimeLength;\n\theight?: RuntimeLength;\n\t/**\n\t * The size bounds are one set of four. `width` alone cannot express 'as wide as the content, but\n\t * never beyond a limit'. A speech bubble has that shape, and a fixed `width: 86%` makes even a\n\t * one-word line take the full width. The four are opened together because widening this axis is a\n\t * version bump. Opening them one at a time would pay the same cost four times. They have the same\n\t * names and meanings on both platforms (CSS min-width, RN minWidth). Values follow `width`: a\n\t * number or a percentage.\n\t */\n\tminWidth?: RuntimeLength;\n\tmaxWidth?: RuntimeLength;\n\tminHeight?: RuntimeLength;\n\tmaxHeight?: RuntimeLength;\n\tpadding?: number;\n\tgap?: number;\n\t/**\n\t * Opacity ranges from 0 to 1. The type cannot express the upper bound, so a runtime clamp handles\n\t * it.\n\t */\n\topacity?: number;\n\tbackgroundColor?: RuntimeColor;\n\tborderRadius?: number;\n\tjustify?: RuntimeJustify;\n\talign?: RuntimeAlign;\n\tgrow?: number;\n\t/**\n\t * This axis was missing for a while. Whether content could shrink was set entirely by each\n\t * renderer's default, and the defaults differed (CSS uses 1, Yoga uses 0). The same work squeezed\n\t * vertically on the web, so its scroll disappeared, and a long sentence in a row was cut off on\n\t * native. Both renderers now shrink only row children by default. This prop lets creators override\n\t * that default. `0` means does not shrink, which differs from not writing a value: an unwritten\n\t * value inherits the parent's main-axis default. Negative values are not accepted.\n\t */\n\tshrink?: number;\n\t/**\n\t * Horizontal offset in density-independent units. Absent means `0`. The value is a number, not a\n\t * string such as `translateX(8px)`. A string brings a grammar (units, function lists, order,\n\t * matrix) whose owner is the browser. With numeric axes the order is fixed by the renderer, so\n\t * both platforms use the same order. The move does not change layout. It only changes where the\n\t * node is drawn, so neighbors are not pushed. The intermediate states of a transition therefore\n\t * match on both platforms, which layout axes do not.\n\t */\n\ttranslateX?: number;\n\ttranslateY?: number;\n\t/**\n\t * Scale factor. Absent means `1`. Negative values are not accepted, since flipping is not part of\n\t * this vocabulary. The center is always the node's center. `transformOrigin` is not exposed\n\t * because its coordinate system differs by platform. Fixing one default lets both renderers\n\t * produce the same picture.\n\t */\n\tscale?: number;\n}",
+			"doc": "reference/styling",
+			"url": "/docs/runtime/reference/styling"
+		},
+		{
+			"name": "RuntimeTextEntry",
+			"kind": "interface",
+			"summary": "The shared axis for text entry.",
+			"signature": "interface RuntimeTextEntry extends RuntimeTransitionable {\n\tvalue: string;\n\tplaceholder?: string;\n\tdisabled?: boolean;\n\t/** Called after the user edits. It receives the whole text after the change, not a delta. */\n\tonChangeText?: (value: string) => void | Promise<void>;\n\tstyle?: RuntimeStyle;\n\ttextStyle?: RuntimeTextStyle;\n\t/**\n\t * Handle that moves focus for this input. Must come from `useTextEntryController()`. It is not a\n\t * ref: no `current`, no selection, no native handle. It opens only `focus()` and `blur()`.\n\t */\n\tcontroller?: RuntimeTextEntryController;\n}",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "RuntimeTextEntryController",
+			"kind": "interface",
+			"summary": "Controls the focus of one text input.",
+			"signature": "interface RuntimeTextEntryController {\n\t/** Gives focus here. Does nothing for an inactive input. */\n\tfocus(): void;\n\t/** Removes focus. Does nothing if focus is already elsewhere. */\n\tblur(): void;\n}",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "RuntimeTextStyle",
+			"kind": "interface",
+			"summary": "The text style does not inherit the box style.",
+			"signature": "interface RuntimeTextStyle {\n\tcolor?: RuntimeColor;\n\tfontSize?: number;\n\tfontWeight?: \"regular\" | \"medium\" | \"bold\";\n\talign?: \"start\" | \"center\" | \"end\";\n\tlines?: number;\n\topacity?: number;\n}",
+			"doc": "reference/styling",
+			"url": "/docs/runtime/reference/styling"
+		},
+		{
+			"name": "RuntimeTransition",
+			"kind": "interface",
+			"summary": "How a node's value changes when it changes.",
+			"signature": "interface RuntimeTransition {\n\t/**\n\t * Duration in milliseconds; absent means 200. `0` means no transition, and the host assigns the\n\t * value immediately. Negative, NaN, and Infinity are rejected rather than silently clamped, the\n\t * same decision `volume` makes.\n\t */\n\tduration?: number;\n\teasing?: RuntimeEasing;\n}",
+			"doc": "reference/styling",
+			"url": "/docs/runtime/reference/styling"
+		},
+		{
+			"name": "RuntimeTransitionable",
+			"kind": "interface",
+			"summary": "The shared axis for props that control how a value changes.",
+			"signature": "interface RuntimeTransitionable {\n\t/**\n\t * No transition means the value changes immediately. The first render never animates: having the\n\t * prop does not make entry an animation, since entering and leaving are not part of this design\n\t * yet. Motion happens only when the value of an already-rendered node changes.\n\t */\n\ttransition?: RuntimeTransition;\n}",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "STORY_STATE_VERSION_MAX",
+			"kind": "constant",
+			"summary": "",
+			"signature": "declare const STORY_STATE_VERSION_MAX = DURABLE_STATE_VERSION_MAX;",
+			"doc": "reference/advanced",
+			"url": "/docs/runtime/reference/advanced"
+		},
+		{
+			"name": "Screen",
+			"kind": "component",
+			"summary": "",
+			"signature": "declare const Screen: RuntimeHostComponent<ScreenProps>;",
+			"doc": "reference/components",
+			"url": "/docs/runtime/reference/components"
+		},
+		{
+			"name": "ScreenProps",
+			"kind": "interface",
+			"summary": "",
+			"signature": "interface ScreenProps extends RuntimeChildren {\n\t/** Background of the whole screen. It extends beyond the safe area. */\n\tbackground?: RuntimeColor;\n}",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "ScrollView",
+			"kind": "component",
+			"summary": "",
+			"signature": "declare const ScrollView: RuntimeHostComponent<ScrollViewProps>;",
+			"doc": "reference/components",
+			"url": "/docs/runtime/reference/components"
+		},
+		{
+			"name": "ScrollViewProps",
+			"kind": "interface",
+			"summary": "",
+			"signature": "interface ScrollViewProps\n\textends RuntimeChildren,\n\t\tRuntimeTransitionable {\n\tstyle?: RuntimeStyle;\n\thorizontal?: boolean;\n\t/**\n\t * Handle that moves this scroll. Must come from `useScrollController()`.\n\t *\n\t * Neither a DOM element nor an RN ref belongs here. The value is an opaque controller issued by\n\t * the host, and its internal integer cannot be named by the author (see the control.ts header). A\n\t * controller binds to one live node at a time. Passing the same controller to two nodes rejects\n\t * that render with `runtime_host_control_already_bound`.\n\t */\n\tcontroller?: RuntimeScrollController;\n}",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "Serializable",
+			"kind": "type",
+			"summary": "Canonical vocabulary and predicates for serializable values, shared by state.ts and internal/story-state.ts.",
+			"signature": "type Serializable =\n\t| null\n\t| boolean\n\t| number\n\t| string\n\t| readonly Serializable[]\n\t| { readonly [key: string]: Serializable };",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "SerializableShape",
+			"kind": "type",
+			"summary": "Whether a type is serializable, while still accepting interfaces.",
+			"signature": "type SerializableShape<T> = T extends null | boolean | number | string\n\t? T\n\t: T extends readonly (infer U)[]\n\t\t? readonly SerializableShape<U>[]\n\t\t: T extends (...args: never[]) => unknown\n\t\t\t? never\n\t\t\t: T extends object\n\t\t\t\t? { readonly [K in keyof T]: SerializableShape<T[K]> }\n\t\t\t\t: never;",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "Stack",
+			"kind": "component",
+			"summary": "",
+			"signature": "declare const Stack: RuntimeHostComponent<StackProps>;",
+			"doc": "reference/components",
+			"url": "/docs/runtime/reference/components"
+		},
+		{
+			"name": "StackProps",
+			"kind": "interface",
+			"summary": "",
+			"signature": "interface StackProps extends RuntimeChildren, RuntimeTransitionable {\n\tgap?: number;\n\tstyle?: RuntimeStyle;\n}",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "StoryStateDefinition",
+			"kind": "interface",
+			"summary": "",
+			"signature": "interface StoryStateDefinition<T> {\n\t/**\n\t * Brand of this lifetime. The type-level brand is what keeps it distinct from persistent\n\t * definitions.\n\t */\n\treadonly [RUNTIME_STORY_STATE]: true;\n\treadonly key: string;\n\treadonly version: number;\n\treadonly initial: T;\n\treadonly migrate: StoryStateMigration<T> | null;\n}",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "StoryStateInput",
+			"kind": "type",
+			"summary": "",
+			"signature": "type StoryStateInput<T> = DurableStateInput<T>;",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "StoryStateInputChecked",
+			"kind": "type",
+			"summary": "",
+			"signature": "type StoryStateInputChecked<T> = DurableStateInputChecked<T>;",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "StoryStateMigration",
+			"kind": "type",
+			"summary": "- Playthrough state is the first lifetime of the save-state core.",
+			"signature": "type StoryStateMigration<T> = DurableStateMigration<T>;",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "Text",
+			"kind": "component",
+			"summary": "",
+			"signature": "declare const Text: RuntimeHostComponent<TextProps>;",
+			"doc": "reference/components",
+			"url": "/docs/runtime/reference/components"
+		},
+		{
+			"name": "TextArea",
+			"kind": "component",
+			"summary": "Multi-line text input.",
+			"signature": "declare const TextArea: RuntimeHostComponent<TextAreaProps>;",
+			"doc": "reference/components",
+			"url": "/docs/runtime/reference/components"
+		},
+		{
+			"name": "TextAreaProps",
+			"kind": "interface",
+			"summary": "",
+			"signature": "interface TextAreaProps extends RuntimeTextEntry {}",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "TextInput",
+			"kind": "component",
+			"summary": "Single-line text input.",
+			"signature": "declare const TextInput: RuntimeHostComponent<TextInputProps>;",
+			"doc": "reference/components",
+			"url": "/docs/runtime/reference/components"
+		},
+		{
+			"name": "TextInputProps",
+			"kind": "interface",
+			"summary": "",
+			"signature": "interface TextInputProps extends RuntimeTextEntry {\n\t/**\n\t * Confirmed in a single-line input (Enter on web, Done on native). It is not called during IME\n\t * composition: Korean, Japanese and Chinese input use Enter to confirm characters before\n\t * composition ends, and treating that as a submit would send the in-progress text. The platform\n\t * adapter makes that judgment; this contract only states the result.\n\t */\n\tonSubmit?: () => void | Promise<void>;\n}",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "TextProps",
+			"kind": "interface",
+			"summary": "",
+			"signature": "interface TextProps extends RuntimeChildren {\n\tstyle?: RuntimeTextStyle;\n}",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "View",
+			"kind": "component",
+			"summary": "",
+			"signature": "declare const View: RuntimeHostComponent<ViewProps>;",
+			"doc": "reference/components",
+			"url": "/docs/runtime/reference/components"
+		},
+		{
+			"name": "ViewProps",
+			"kind": "interface",
+			"summary": "",
+			"signature": "interface ViewProps extends RuntimeChildren, RuntimeTransitionable {\n\tstyle?: RuntimeStyle;\n}",
+			"doc": "reference/types",
+			"url": "/docs/runtime/reference/types"
+		},
+		{
+			"name": "asset",
+			"kind": "function",
+			"summary": "Seals a string as an asset reference.",
+			"signature": "function asset(value: string): AssetRef;",
+			"doc": "reference/assets",
+			"url": "/docs/runtime/reference/assets"
+		},
+		{
+			"name": "color",
+			"kind": "function",
+			"summary": "Seals a color literal.",
+			"signature": "function color<S extends string>(\n\tvalue: S & ValidHexColor<S>,\n): RuntimeColor;",
+			"doc": "reference/styling",
+			"url": "/docs/runtime/reference/styling"
+		},
+		{
+			"name": "definePersistentState",
+			"kind": "function",
+			"summary": "Declares one persistent value.",
+			"signature": "function definePersistentState<T>(\n\tdefinition: PersistentStateInputChecked<T>,\n): PersistentStateDefinition<T>;",
+			"doc": "reference/state",
+			"url": "/docs/runtime/reference/state"
+		},
+		{
+			"name": "defineStoryState",
+			"kind": "function",
+			"summary": "Declares one story-state value, once, at module top level.",
+			"signature": "function defineStoryState<T>(\n\tdefinition: StoryStateInputChecked<T>,\n): StoryStateDefinition<T>;",
+			"doc": "reference/state",
+			"url": "/docs/runtime/reference/state"
+		},
+		{
+			"name": "isPersistentStateDefinition",
+			"kind": "function",
+			"summary": "Whether a value is a persistent-state definition.",
+			"signature": "function isPersistentStateDefinition(\n\tvalue: unknown,\n): value is PersistentStateDefinition<unknown>;",
+			"doc": "reference/advanced",
+			"url": "/docs/runtime/reference/advanced"
+		},
+		{
+			"name": "isRuntimeColor",
+			"kind": "function",
+			"summary": "Checks the value at runtime, not the type, for strings that never came from a literal.",
+			"signature": "function isRuntimeColor(value: string): value is RuntimeColor;",
+			"doc": "reference/styling",
+			"url": "/docs/runtime/reference/styling"
+		},
+		{
+			"name": "isRuntimeElement",
+			"kind": "function",
+			"summary": "Whether a value is a runtime element.",
+			"signature": "function isRuntimeElement(value: unknown): value is RuntimeElement;",
+			"doc": "reference/advanced",
+			"url": "/docs/runtime/reference/advanced"
+		},
+		{
+			"name": "isRuntimeHostComponent",
+			"kind": "function",
+			"summary": "Whether a value is a host primitive.",
+			"signature": "function isRuntimeHostComponent(\n\tvalue: unknown,\n): value is RuntimeHostComponent<unknown>;",
+			"doc": "reference/advanced",
+			"url": "/docs/runtime/reference/advanced"
+		},
+		{
+			"name": "isSerializable",
+			"kind": "function",
+			"summary": "Checks a value for serializability.",
+			"signature": "function isSerializable(value: unknown): value is Serializable;",
+			"doc": "reference/advanced",
+			"url": "/docs/runtime/reference/advanced"
+		},
+		{
+			"name": "isStoryStateDefinition",
+			"kind": "function",
+			"summary": "Whether a value is a story-state definition.",
+			"signature": "function isStoryStateDefinition(\n\tvalue: unknown,\n): value is StoryStateDefinition<unknown>;",
+			"doc": "reference/advanced",
+			"url": "/docs/runtime/reference/advanced"
+		},
+		{
+			"name": "runtimeHostKindOf",
+			"kind": "function",
+			"summary": "",
+			"signature": "function runtimeHostKindOf(value: unknown): RuntimeHostKind | null;",
+			"doc": "reference/advanced",
+			"url": "/docs/runtime/reference/advanced"
+		},
+		{
+			"name": "useCallback",
+			"kind": "hook",
+			"summary": "Same function while the dependencies are unchanged.",
+			"signature": "function useCallback<T extends (...args: never[]) => unknown>(\n\tcallback: T,\n\tdeps?: readonly unknown[],\n): T;",
+			"doc": "reference/hooks",
+			"url": "/docs/runtime/reference/hooks"
+		},
+		{
+			"name": "useEffect",
+			"kind": "hook",
+			"summary": "Runs after the render.",
+			"signature": "function useEffect(\n\t// biome-ignore lint/suspicious/noConfusingVoidType: the effect gives back a cleanup function or nothing; only this type expresses both.\n\teffect: () => void | RuntimeCleanup,\n\tdeps?: readonly unknown[],\n): void;",
+			"doc": "reference/hooks",
+			"url": "/docs/runtime/reference/hooks"
+		},
+		{
+			"name": "useGeneration",
+			"kind": "hook",
+			"summary": "The generation capability this runtime can call.",
+			"signature": "function useGeneration(): RuntimeGeneration;",
+			"doc": "reference/hooks",
+			"url": "/docs/runtime/reference/hooks"
+		},
+		{
+			"name": "useMemo",
+			"kind": "hook",
+			"summary": "Same value while the dependencies are unchanged.",
+			"signature": "function useMemo<T>(factory: () => T, deps?: readonly unknown[]): T;",
+			"doc": "reference/hooks",
+			"url": "/docs/runtime/reference/hooks"
+		},
+		{
+			"name": "usePersistentState",
+			"kind": "hook",
+			"summary": "A value remembered across a member's long progress through a work.",
+			"signature": "function usePersistentState<T>(\n\tdefinition: PersistentStateDefinition<T>,\n): [T, RuntimeSetState<T>];",
+			"doc": "reference/hooks",
+			"url": "/docs/runtime/reference/hooks"
+		},
+		{
+			"name": "useReducer",
+			"kind": "hook",
+			"summary": "",
+			"signature": "function useReducer<S, A>(\n\treducer: (state: S, action: A) => S,\n\tinitial: S,\n): [S, (action: A) => void];",
+			"doc": "reference/hooks",
+			"url": "/docs/runtime/reference/hooks"
+		},
+		{
+			"name": "useRef",
+			"kind": "hook",
+			"summary": "A slot that survives renders.",
+			"signature": "function useRef<T>(initial: T): RuntimeRef<T>;",
+			"doc": "reference/hooks",
+			"url": "/docs/runtime/reference/hooks"
+		},
+		{
+			"name": "useScrollController",
+			"kind": "hook",
+			"summary": "Handle for controlling this screen's one scroll view.",
+			"signature": "function useScrollController(): RuntimeScrollController;",
+			"doc": "reference/hooks",
+			"url": "/docs/runtime/reference/hooks"
+		},
+		{
+			"name": "useState",
+			"kind": "hook",
+			"summary": "A value the component remembers.",
+			"signature": "function useState<S>(initial: S | (() => S)): [S, RuntimeSetState<S>];",
+			"doc": "reference/hooks",
+			"url": "/docs/runtime/reference/hooks"
+		},
+		{
+			"name": "useStoryState",
+			"kind": "hook",
+			"summary": "The value this playthrough remembers.",
+			"signature": "function useStoryState<T>(\n\tdefinition: StoryStateDefinition<T>,\n): [T, RuntimeSetState<T>];",
+			"doc": "reference/hooks",
+			"url": "/docs/runtime/reference/hooks"
+		},
+		{
+			"name": "useTextEntryController",
+			"kind": "hook",
+			"summary": "Handle for controlling focus of this screen's one text input.",
+			"signature": "function useTextEntryController(): RuntimeTextEntryController;",
+			"doc": "reference/hooks",
+			"url": "/docs/runtime/reference/hooks"
+		}
+	]
+}

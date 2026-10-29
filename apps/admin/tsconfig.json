@@ -1,0 +1,40 @@
+{
+  "include": ["**/*.ts", "**/*.tsx"],
+  "compilerOptions": {
+    "target": "ES2022",
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "paths": {
+      "#/*": ["./src/*"],
+      "@rowcat/ui-web/components/*": ["../../packages/ui-web/src/components/*"],
+      "@rowcat/ui-web/hooks/*": ["../../packages/ui-web/src/hooks/*"],
+      "@rowcat/ui-web/lib/*": ["../../packages/ui-web/src/lib/*"],
+      "@rowcat/contracts": ["../../packages/contracts/src/index.ts"],
+      "@rowcat/contracts/*": ["../../packages/contracts/src/*.ts"],
+      "@rowcat/domain": ["../../packages/domain/src/index.ts"],
+      "@rowcat/domain/*": ["../../packages/domain/src/*.ts"],
+      "@rowcat/sdk": ["../../packages/sdk/src/index.ts"],
+      "@rowcat/sdk/*": ["../../packages/sdk/src/*.ts"],
+      "@rowcat/query": ["../../packages/query/src/index.ts"],
+      "@rowcat/query/*": ["../../packages/query/src/*.ts"],
+      "@rowcat/design": ["../../packages/design/src/index.ts"],
+      "@rowcat/design/*": ["../../packages/design/src/*.ts"]
+    },
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"],
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+
+    /* Linting */
+    "skipLibCheck": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true
+  }
+}
