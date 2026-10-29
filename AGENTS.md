@@ -540,6 +540,10 @@ forward" so automatic sync wakes **early**; replication is still done solely by 
 - **SSE does not advance the local cursor** (a received cursor is a hint). When unsure, **wake up** — one
   wasted pull is cheaper than a missed change. **The heartbeat is not polling** (a `: ping` comment every 20
   seconds that the client parser discards).
+- **The session is asked again at every heartbeat, and a stream lives at most 30 minutes** (`stillSignedIn`,
+  `SYNC_WAKE_MAX_LIFETIME_MS`). Checked only at open, a stream outlived a password reset, a revoke or account deletion,
+  and whoever held the old cookie kept learning when the owner was active. A failed check keeps the stream (this plane is
+  an optimization); the lifetime is what makes the client re-authenticate regardless, and it reconnects on its own.
 - **All four connection conditions must hold**: this scope is mine + the controller is trusted (holds keys) +
   automatic sync is on + online. **Look at `trusted`, not `state`** — putting `syncing` in the condition
   disconnects and reconnects on every sync.
@@ -1292,6 +1296,15 @@ verification, and above all **brings passwords into `@rowcat/contracts` and `@ro
 three each have a specific reason for failing that test, and **when that reason disappears the route
 should too.**
 
+**The library endpoints the bottom three replace are closed at the HTTP edge** (`auth/http-surface.ts`, refused in
+`app.ts` before `auth.handler`): `/list-sessions` returns every session's token, `/list-accounts` and the passkey list
+return raw rows, `/passkey/delete-passkey` skips the removal notice, and `/get-access-token` hands out provider OAuth
+tokens. Closed there and not in `hooks.before`, because our wrappers call the same operations server-side. The Expo
+plugin's `/expo-authorization-proxy` stays open — the app's browser sign-in needs it — but only toward the three
+providers' authorization endpoints: as shipped it redirected to any `https` address and signed that address's `state`
+into a cookie first (an open redirect from the API's domain, and a way to plant a state the attacker minted). A new
+provider adds its endpoint to `EXPO_PROXY_TARGETS` or its app sign-in is refused.
+
 - **`setPassword` is the only place a password crosses our contract, and that exception has a reason** —
   that endpoint is `createAuthEndpoint.serverOnly`, so it has no HTTP surface at all (passing the session
   header through to `auth.api.setPassword` is the path the library intends; not a workaround that builds a
@@ -1511,7 +1524,10 @@ POST /v2/auth/reset-password           token + new password
 - **The sender is registered only when reset is open** (`passwordResetEnabled` — mail **and** the switch below). Registered without a transport,
   `sendTransactionalMail` quietly does nothing while the screen says "sent" — that person waits forever. Unregistered,
   the library answers `RESET_PASSWORD_DISABLED` and the screen says it cannot be done here.
-- **The sender does not await the mail.** The library answers an unknown address immediately and a known one only
+- **The sender does not await the mail — and neither do the verification and email-change senders**
+  (`sendWithoutWaiting`). Sign-up, resend and email change also answer an existing or unknown address with the same
+  sentence and no mail, so awaiting SMTP there leaked the same fact through response time (email change from any one
+  account, quickly). The library answers an unknown address immediately and a known one only
   after this callback — awaiting SMTP there makes **response time** say "this address is registered" while the
   sentence stays the same. The price is that a send failure is a log line (no address, no URL), never the response.
 - **Unknown addresses get the same answer and no mail.** The screen's sentence always says *if an account exists*.
@@ -1693,6 +1709,9 @@ The only irreversible operation, so the boundaries are tighter than elsewhere. R
   creates a second implementation imitating identity verification, and above all brings passwords into the
   contracts and the SDK. The web therefore calls `authClient.deleteUser()` directly — the **only** write that
   does not go through `getRowCatClient()`.
+- **A password account confirms deletion with its password — that rule is ours, not the library's**
+  (`auth/account-deletion-policy.ts`, `hooks.before`). The library checks a password only when one is sent, so any
+  session under 24 hours deleted a password account with `{}`. Social-only accounts still rely on recent login.
 - **Server cleanup lives in `services/account/deletion.ts` alone**, and the auth account (`user`) row is deleted
   in **the same transaction** (splitting makes "the data is gone but the account is alive" representable).
 - **`story.owner` is nullable and NULL means "a story whose identity was erased by account deletion".** Only
@@ -3376,8 +3395,11 @@ Full rules in `docs/creator-runtime/input-generation.md`.
 - **The creator's `instructions` are subordinate application content** (they sit **between** the safety guards, and
   that assembly goes through the one function conversation and BYO paths use — `applyPlatformSafetyPolicy`,
   idempotent).
-- **⚠️ Generation starts only from a user interaction.** Only the `event` origin is authorized and the other seven are
-  all rejected — the fact that `useEffect` runs on every mount must not mean it is billed on every mount. The basis
+- **⚠️ Generation starts only from a user interaction.** Only the `event` origin is authorized and every other origin is
+  rejected — including **`media`**, which is `dispatchEvent` for an event the platform raised by itself (a sound reaching
+  its end). The renderer names that source at the DOM or native callback (`RuntimeEventSource`), it crosses the worker
+  and the native bridge as one optional field, and creator code cannot set it; folded into `event`, `<Audio onEnded>`
+  could loop `generate()` with nobody touching the screen. The rest of this rule is unchanged — the fact that `useEffect` runs on every mount must not mean it is billed on every mount. The basis
   for the decision is **the name the host attaches** (`RuntimeHostCallContext.origin`), which the VM cannot forge, and
   a stage inside the VM cannot answer it (a continuation after `await` is `idle` but **the execution is the same
   execution**). **Authorization comes before validation** — behind it, the reason for rejection varies with the
@@ -3588,6 +3610,12 @@ Full rules in `docs/creator-runtime/publication.md` and `player.md`.
 - **Compilation is outside the transaction and before the DB.** Before, because of the failure direction — rejected,
   nothing is written to the story row and the already-published runtime does not change by a character. Outside,
   because of time.
+- **⚠️ Compilation runs in a worker thread with a memory ceiling and a deadline** (`services/story/runtime-compile.ts`,
+  bundled as its own entry). It ran inline for a while, and type checking is unbounded: a recursive conditional type a
+  few lines long took the whole API process to "heap out of memory" from a ~1 KB source, far below every size cap.
+  Exhaustion is the source's doing and is a diagnostic (`runtime_compile_exhausted`); too many compiles at once is a 503
+  (`story_runtime_compile_busy`). Each thread is fresh and single-shot — a thread that compiled hostile source is never
+  reused. Do not move the compile back inline to save its cold start.
 - **The server does not retain authoring source** (do not create columns such as `mainTsx` or `runtimeSourceFiles` —
   source crosses once as compilation input, and the durable original stays in the device's local-first, E2EE
   authoring system).
@@ -3642,6 +3670,21 @@ Full rules in `docs/creator-runtime/publication.md` and `player.md`.
 - **Do not build a second AI stack** (target resolution, the managed gates, routing, transport and safety guards are all the
   same functions conversation uses, and **the provider's original message is replaced with ours at the very place the
   reason is attached**).
+- **All-ages is the work's rating and the viewer's entitlement together** (`resolveAllAges`, as conversations do). The
+  playback response carries the rating the server stored (`StoryPlaybackDto.adult`, absent reads as all-ages), the
+  studio and the playtest pass the draft's own, and both apps' adapters take it as a **required** argument. Deciding
+  from the viewer alone ran an all-ages work's generations under the adult guards for adult viewers — a way around the
+  adult publishing gate.
+- **Reading a thrown value has its own short budget** (`classify` in `vm/quickjs.ts`). It runs after the execution's
+  slice, where nothing interrupts, and reading can run creator code (`toJSON`, getters, proxy traps): `throw { toJSON()
+  { for (;;) {} } }` ran unbounded on the host thread, past stop and dispose, and `throw new Promise(…)` crashed a Node
+  host through a use-after-free in `dump`. Classification reads `name`/`message`/`stack` as properties and never dumps
+  an object.
+- **The host counts tree depth too** (`RuntimeHostNodeLedger.project`), as it already counted nodes and bytes: the batch
+  is a string creator code can shape. It counts ancestors below the root for what each batch attached, so for a real tree
+  it is never stricter than the reconciler.
+- **The native canvas clips** (`overflow: "hidden"` on the surface, the twin of the web's `.rc-root`): transitions may
+  translate ±100,000 and iOS draws outside bounds by default, so a story could paint over the app bar.
 - **Do not trust the artifact.** Even though the server built and validated it, the runtime host validates it again
   before execution — it crossed a network and a cache, and above all the version may have diverged. A compatibility
   failure **has its own state** (`incompatible`) and that panel does not suggest restarting (the same failure would
@@ -3822,6 +3865,12 @@ Full rules in `docs/creator-runtime/remote-assets.md`.
   the window). The process slot **queues briefly** instead of refusing — a scene change requesting many images at once
   is normal. **The unit is the member, not the runtime session** — the server cannot see a session and the proxy takes
   no story/artifact parameter (a claim would be authorization), so a member's preview and playback share one budget.
+  **A slot is held until the body has left, and a reader that stops reading is cut** (`releasingBody`'s stall
+  watchdog, `BODY_STALL_MS`, for both this proxy and `/v2/media/:id`). Released at the handler's end, a client that kept
+  its TCP window at zero kept each 10 MiB queued with no time limit, so "16 in flight" bounded nothing; there is no server
+  response timeout to fall back on. **DNS is inside the deadline and off the thread pool** — a `dns.Resolver` with its
+  own timeout, cancelled with the fetch, not `dns.lookup` (`getaddrinfo` on libuv's four threads, uncancellable: a name
+  whose server never answers starved every other pool user in the process).
   ⚠️ **Managed media (`/v2/media/:id`) still has no per-subject byte budget**: it is public-by-id (avatars), native
   audio sends no cookie, and IP is not a subject here — closing it needs a session on the asset path, which is a
   separate decision. What it has instead is identity-free: a **byte-weighted process gate**
@@ -4448,6 +4497,10 @@ Reports, enforcement, appeals (`docs/moderation/ARCHITECTURE.md`).
   request contract has **no** fields such as `ban` or `hide`, so a reporter choosing the punishment is not expressible).
 - **Actions are not edited** (a reversal has `reverseAction` leave **a new row** and fill only the original's
   `reversed_by` — there is no statement in the store that UPDATEs a kind or a reason).
+- **Closing a report has the same conflict-of-interest rules as enforcement** (`assertMayResolveReport`): never a report
+  about yourself, and a report about an operator account is an admin's to close. It was the one moderation write without
+  them — a staff member could dismiss every report about their own account and the case never reached an admin. A
+  report whose target is gone still closes (refusing it would leave reports nobody can close).
 - **`member.status` is derived from the action ledger** (every path touching an account axis calls
   `recomputeMemberStatus` in the same transaction) — with one function that takes a status and writes it verbatim,
   a call site that says "this action was reversed, so approved" inevitably appears, and that code **ignores other

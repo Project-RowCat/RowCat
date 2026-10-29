@@ -45,6 +45,18 @@ export const toArrayBuffer = (buf: Buffer): ArrayBuffer =>
 		buf.byteOffset + buf.byteLength,
 	) as ArrayBuffer;
 
+/**
+ * Ends this response's connection. Under the Node server the bindings carry the outgoing response,
+ * and destroying it frees what is still queued on the socket; returning the slot alone would leave a
+ * stalled client holding those bytes. Elsewhere (`app.request` in tests, other adapters) there is
+ * nothing to destroy, and the caller's slot accounting still runs.
+ */
+export function destroyResponse(c: Context<AppEnv>): void {
+	const outgoing = (c.env as { outgoing?: { destroy(): void } } | undefined)
+		?.outgoing;
+	outgoing?.destroy();
+}
+
 /** Read failure is `null`: empty body, broken JSON and wrong Content-Type all fold into one value, so the zod check answers `invalid_input`. */
 export const readJson = (c: Context<AppEnv>): Promise<unknown> =>
 	c.req.json().catch(() => null);

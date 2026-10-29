@@ -1,6 +1,7 @@
 import {
 	reasoningCapabilityFor,
 	reasoningEffortForRequest,
+	resolveAllAges,
 	resolveEffectiveGeneration,
 	resolveGenerationExecution,
 } from "@rowcat/chat";
@@ -51,8 +52,11 @@ import { toPreviewGenerationFailure } from "./runtime-preview-generation-failure
  *   RowCat's prohibitions and rating guard at the head, the creator's instructions in the middle
  *   (which cannot be removed or overridden), and a rating guard at the tail. A creator writing
  *   'ignore the rules above' still meets the tail guard.
- * - Adult status is decided by whether this member may view adult content, since the unpublished
- *   studio preview has no work rating. Creator status does not loosen the gate.
+ * - All-ages is decided the way a conversation decides it (`resolveAllAges`): the rating of what is
+ *   being played (the draft's own rating in the studio and the playtest, the published work's rating
+ *   from the playback response) **and** whether this member may view adult content. It was the second
+ *   alone for a while, so an all-ages work's generations ran under the adult guards for adult viewers,
+ *   which walked around the adult publishing gate. Creator status does not loosen the gate either.
  * - Streaming does not flow into the VM. The transport still streams, because stop needs it, but
  *   the adapter collects deltas into one finished text. That keeps scheduling, cancellation, state
  *   consistency and bridge traffic simple.
@@ -74,18 +78,24 @@ export type RuntimePreviewGenerationAdapter = (
 ) => Promise<PreviewGenerationResult>;
 
 /**
- * Which work's override to place on top of the global preference. `null` means no override layer
- * (studio preview). A value means a published work is being played, and the id is the address the
- * play request arrived at after passing the entitlement gate. This adapter reads preferences by
- * that id only and does not re-check the work's existence or entitlement; an override for a missing
- * work is an empty preference.
+ * What is being played.
+ *
+ * - `storyId`: which work's override to place on top of the global preference. `null` means no
+ *   override layer (studio preview, playtest). A value means a published work is being played, and
+ *   the id is the address the play request arrived at after passing the entitlement gate. This
+ *   adapter reads preferences by that id only and does not re-check the work's existence or
+ *   entitlement; an override for a missing work is an empty preference.
+ * - `adult`: that work's rating. Required, not defaulted, so no caller can forget it: a forgotten
+ *   rating read as `true` would be the bypass this field closes, and read as `false` would silently
+ *   soften every adult work.
  */
 export interface RuntimeGenerationScope {
-	storyId: string;
+	storyId: string | null;
+	adult: boolean;
 }
 
 export function useRuntimePreviewGeneration(
-	scope: RuntimeGenerationScope | null = null,
+	scope: RuntimeGenerationScope,
 ): RuntimePreviewGenerationAdapter {
 	const { store: preferences } = useGenerationScope();
 	const { store: providers } = useProviderScope();
@@ -98,7 +108,8 @@ export function useRuntimePreviewGeneration(
 	 * reasoningEffortForRequest has a per-path answer for when support cannot be confirmed.
 	 */
 	const catalog = useQuery(generationModelsQueryOptions(client));
-	const storyId = scope?.storyId ?? null;
+	const storyId = scope.storyId;
+	const adult = scope.adult;
 
 	/**
 	 * Latest values live in a ref so this callback's identity stays stable across renders. A changing
@@ -111,6 +122,7 @@ export function useRuntimePreviewGeneration(
 		client,
 		viewer,
 		storyId,
+		adult,
 		models: catalog.data ?? null,
 		catalogLoaded: catalog.isSuccess,
 	});
@@ -121,6 +133,7 @@ export function useRuntimePreviewGeneration(
 		client,
 		viewer,
 		storyId,
+		adult,
 		models: catalog.data ?? null,
 		catalogLoaded: catalog.isSuccess,
 	};
@@ -133,6 +146,7 @@ export function useRuntimePreviewGeneration(
 			client: api,
 			viewer: current,
 			storyId: overrideStoryId,
+			adult: workIsAdult,
 			models,
 			catalogLoaded,
 		} = deps.current;
@@ -163,7 +177,10 @@ export function useRuntimePreviewGeneration(
 			if (execution.status === "blocked")
 				throw new GenerationBlockedError(execution);
 
-			const allAges = !canViewAdultContent(current);
+			const allAges = resolveAllAges(
+				{ adult: workIsAdult },
+				{ adultAllowed: canViewAdultContent(current) },
+			);
 			const messages: ChatGenerationMessage[] = request.messages.map(
 				(message) => ({ role: message.role, content: message.content }),
 			);

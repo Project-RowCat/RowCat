@@ -223,6 +223,67 @@ describe("stream", () => {
 		abort.abort();
 	});
 
+	/**
+	 * The session was checked only at open, so a stream outlived a revoke, a password reset or account
+	 * deletion. It is asked again at each heartbeat now.
+	 */
+	test("ends at the next heartbeat once the session no longer stands", async () => {
+		const broker = createSyncWakeBroker();
+		const abort = new AbortController();
+		let signedIn = true;
+		const stream = await openSyncWakeStream({
+			owner: "alice",
+			signal: abort.signal,
+			broker,
+			readCursor: async () => 0,
+			heartbeatMs: 10,
+			stillSignedIn: async () => signedIn,
+		});
+		const reader = stream.getReader();
+		await readFrame(reader);
+		expect(await readFrame(reader)).toBe(": ping\n\n");
+
+		signedIn = false;
+		expect((await reader.read()).done).toBe(true);
+		expect(broker.subscriberCount("alice")).toBe(0);
+	});
+
+	test("a failed session check keeps the stream: our outage is not the session ending", async () => {
+		const broker = createSyncWakeBroker();
+		const abort = new AbortController();
+		const stream = await openSyncWakeStream({
+			owner: "alice",
+			signal: abort.signal,
+			broker,
+			readCursor: async () => 0,
+			heartbeatMs: 10,
+			stillSignedIn: async () => {
+				throw new Error("db down");
+			},
+		});
+		const reader = stream.getReader();
+		await readFrame(reader);
+		expect(await readFrame(reader)).toBe(": ping\n\n");
+		abort.abort();
+	});
+
+	test("a stream ends after its lifetime, and the client reconnects", async () => {
+		const broker = createSyncWakeBroker();
+		const abort = new AbortController();
+		const stream = await openSyncWakeStream({
+			owner: "alice",
+			signal: abort.signal,
+			broker,
+			readCursor: async () => 0,
+			heartbeatMs: 1_000,
+			maxLifetimeMs: 20,
+		});
+		const reader = stream.getReader();
+		await readFrame(reader);
+		expect((await reader.read()).done).toBe(true);
+		expect(broker.subscriberCount("alice")).toBe(0);
+	});
+
 	test("the heartbeat is a comment, not an event", async () => {
 		const broker = createSyncWakeBroker();
 		const abort = new AbortController();

@@ -581,10 +581,10 @@ export function useRuntimePreview({
 		rendererRef.current = createWebRuntimeRenderer({
 			container: element,
 			onAudioActivationChange: setAudioActivationRequired,
-			dispatchEvent: (handlerId, payload) => {
+			dispatchEvent: (handlerId, payload, source) => {
 				const generation = generationRef.current;
 				void clientRef.current?.then((client) =>
-					client.dispatchEvent(generation, handlerId, payload ?? null),
+					client.dispatchEvent(generation, handlerId, payload ?? null, source),
 				);
 			},
 			/**

@@ -117,6 +117,7 @@ export function PlaytestPage() {
 				key={draftId}
 				project={runtime.project}
 				title={draftTitleLabel(bootstrap.state.source.draft)}
+				adult={bootstrap.state.source.draft.adult}
 			/>
 		);
 

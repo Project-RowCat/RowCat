@@ -441,6 +441,51 @@ describe("resource limits", () => {
 		}
 	});
 
+	/**
+	 * Classifying a thrown value reads it, and reading an object can run creator code (`toJSON`, a
+	 * getter, a proxy trap). That reading used to happen after the slice ended, where the interrupt
+	 * handler never interrupts, so a thrown object with a looping `toJSON` ran unbounded.
+	 */
+	it.each([
+		["toJSON", "throw { toJSON() { for (;;) {} } };"],
+		["a name getter", "throw { get name() { for (;;) {} } };"],
+		["a message getter", "throw { get message() { for (;;) {} } };"],
+	])("a thrown object whose %s loops cannot outrun the budget", async (_, body) => {
+		const session = await open({
+			artifact: pocMain(`export function boom() { ${body} }`),
+			limits: { executionMs: 100 },
+		});
+		try {
+			const started = Date.now();
+			const outcome = await session.callExport("src/main.ts", "boom", []);
+			expect(outcome.ok).toBe(false);
+			expect(Date.now() - started).toBeLessThan(2_000);
+		} finally {
+			await session.dispose();
+		}
+	});
+
+	/** Dumping a promise disposed its handle; classification then used it after free, and the rejection escaped the host. */
+	it("throwing a promise is a creator error, not a host crash", async () => {
+		const session = await open({
+			artifact: pocMain(
+				"export async function boom() { await null; throw new Promise(() => {}); }\nexport function ok() { return 1; }",
+			),
+		});
+		try {
+			const outcome = await session.callExport("src/main.ts", "boom", []);
+			expect(outcome.ok).toBe(false);
+			if (outcome.ok) return;
+			expect(outcome.error).toBeInstanceOf(CreatorExecutionError);
+			expect(await session.callExport("src/main.ts", "ok", [])).toEqual({
+				ok: true,
+				value: 1,
+			});
+		} finally {
+			await session.dispose();
+		}
+	});
+
 	it("a large synchronous loop has the same budget", async () => {
 		const session = await open({
 			artifact: pocMain(

@@ -36,7 +36,9 @@ import { deleteAccountForUser } from "../services/account/deletion.ts";
 import {
 	MailDeliveryError,
 	sendTransactionalMail,
+	type TransactionalMail,
 } from "../services/mail/index.ts";
+import { enforceAccountDeletionPolicy } from "./account-deletion-policy.ts";
 import { findAuthUser } from "./auth-user.ts";
 import { createRedisAuthRateLimitStorage } from "./rate-limit-storage.ts";
 import {
@@ -85,6 +87,30 @@ const appleClientSecret = appleSignIn
  * default.
  */
 const authRateLimitRedis = getRedis();
+
+/**
+ * Sends a mail without making the response wait for it. Every sender whose response must not say
+ * whether an address is registered goes through here: sign-up and verification resend (an existing
+ * or unknown address gets the same answer and no mail), email change (an address in use gets the
+ * same answer and no mail), password reset (an unknown address gets the same answer and no mail).
+ * Awaiting SMTP in those senders made **response time** answer the question the sentence hides: the
+ * branch that sends waits a mail round trip, the one that does not returns at once.
+ *
+ * The price is the one password reset already paid: a send failure is a log line (no address, no
+ * URL, no body), never the response, so a resend button draws success even when the transport is
+ * down. `env:doctor` and the boot log are where a broken transport shows.
+ */
+function sendWithoutWaiting(mail: TransactionalMail, what: string): void {
+	void sendTransactionalMail(mail).catch((error: unknown) => {
+		const delivery = error instanceof MailDeliveryError ? error : null;
+		console.warn(`[auth] failed to send the ${what}`, {
+			errorName: error instanceof Error ? error.name : "Error",
+			code: delivery?.code ?? null,
+			responseCode: delivery?.responseCode ?? null,
+			scope: delivery?.scope ?? null,
+		});
+	});
+}
 
 export const auth = betterAuth({
 	appName: APP_NAME,
@@ -264,23 +290,30 @@ export const auth = betterAuth({
 	emailVerification: {
 		/**
 		 * Sending only; the copy is chosen by a typed event (`services/mail/templates.tsx`). No token or
-		 * URL goes in logs, so this function has no diagnostic log; failures surface as the transport's
-		 * error, which carries no address or body (`services/mail/smtp.ts`).
+		 * URL goes in logs: a failure is one line with the transport's error code, which carries no
+		 * address or body (`services/mail/smtp.ts`), and the response does not wait for it
+		 * (`sendWithoutWaiting`).
 		 *
 		 * Tokens carrying `updateTo` (step 2 of email change) also arrive here, with `user.email` already
 		 * switched to the new address by the library, so the recipient is always that value. Only the
 		 * copy forks: a new signup and someone moving addresses must not get the same sentence.
 		 */
 		sendVerificationEmail: async ({ user: target, url }) => {
-			const movingAddress = await isNewAddressVerification(
-				target.id,
-				target.email,
+			/** Not awaited, including the lookup: see `sendWithoutWaiting`. */
+			void isNewAddressVerification(target.id, target.email).then(
+				(movingAddress) =>
+					sendWithoutWaiting(
+						{
+							kind: movingAddress ? "verify-new-email" : "verify-email",
+							to: { email: target.email, name: target.name },
+							url,
+						},
+						"verification mail",
+					),
+				() => {
+					console.warn("[auth] failed to read the verification target");
+				},
 			);
-			await sendTransactionalMail({
-				kind: movingAddress ? "verify-new-email" : "verify-email",
-				to: { email: target.email, name: target.name },
-				url,
-			});
 		},
 		/**
 		 * Sending right after signup follows `requireEmailVerification`. Hardcoding `true` here would
@@ -367,20 +400,14 @@ export const auth = betterAuth({
 		...(passwordResetEnabled
 			? {
 					sendResetPassword: async ({ user: target, url }) => {
-						void sendTransactionalMail({
-							kind: "password-reset",
-							to: { email: target.email, name: target.name },
-							url,
-						}).catch((error: unknown) => {
-							const delivery =
-								error instanceof MailDeliveryError ? error : null;
-							console.warn("[auth] failed to send the password reset mail", {
-								errorName: error instanceof Error ? error.name : "Error",
-								code: delivery?.code ?? null,
-								responseCode: delivery?.responseCode ?? null,
-								scope: delivery?.scope ?? null,
-							});
-						});
+						sendWithoutWaiting(
+							{
+								kind: "password-reset",
+								to: { email: target.email, name: target.name },
+								url,
+							},
+							"password reset mail",
+						);
 					},
 				}
 			: {}),
@@ -406,8 +433,9 @@ export const auth = betterAuth({
 	 * through the Better Auth client directly (`lib/auth.ts`), the same channel sign-in and sign-out
 	 * use.
 	 *
-	 * The library verifies identity: the current password for credential accounts, recent login (24
-	 * hours by default) for social-only ones, so no fake password input. On failure the hook below
+	 * Identity: the current password for credential accounts, recent login (24 hours by default) for
+	 * social-only ones, so no fake password input. The first half is ours, not the library's — it checks
+	 * a password only when one is sent (`account-deletion-policy.ts`). On failure the hook below
 	 * never runs. `sendDeleteAccountVerification` is deliberately absent: with no sender, deletion
 	 * would stall at "verification mail sent" forever, and an account that cannot be deleted is worse
 	 * than one that can.
@@ -442,12 +470,16 @@ export const auth = betterAuth({
 		changeEmail: {
 			enabled: true,
 			sendChangeEmailConfirmation: async ({ user: target, newEmail, url }) => {
-				await sendTransactionalMail({
-					kind: "change-email-confirmation",
-					to: { email: target.email, name: target.name },
-					newEmail,
-					url,
-				});
+				/** Not awaited: an address already in use gets the same answer and no mail (`sendWithoutWaiting`). */
+				sendWithoutWaiting(
+					{
+						kind: "change-email-confirmation",
+						to: { email: target.email, name: target.name },
+						newEmail,
+						url,
+					},
+					"email change confirmation",
+				);
 			},
 			updateEmailWithoutVerification: false,
 		},
@@ -485,9 +517,13 @@ export const auth = betterAuth({
 	 *   `name` are read, and the object is not printed on failure.
 	 */
 	hooks: {
-		/** Door rules for two-factor; rationale in the `two-factor-policy.ts` header. */
+		/**
+		 * Door rules standing in front of the library: two-factor (`two-factor-policy.ts`) and account
+		 * deletion's password (`account-deletion-policy.ts`).
+		 */
 		before: createAuthMiddleware(async (ctx) => {
 			await enforceTwoFactorPolicy(ctx);
+			await enforceAccountDeletionPolicy(ctx);
 		}),
 		after: createAuthMiddleware(async (ctx) => {
 			if (ctx.path !== "/passkey/verify-registration") return;

@@ -27,7 +27,11 @@ export interface RuntimeHostCallContext {
 
 /**
  * Origin of an execution, named by the host:
- * - event: `dispatchEvent`, the only execution started by user interaction
+ * - event: `dispatchEvent` for a press or an input, the only execution started by user interaction
+ * - media: `dispatchEvent` for an event the platform raised by itself (a sound reaching its end). It
+ *   goes through the same handler path as a press but is not a press, so whatever requires an
+ *   interaction (generation) refuses it. Folded into `event`, `<Audio onEnded>` could call
+ *   `generate()` in a loop with nobody touching the screen.
  * - mount: `mountRoot`
  * - render: flushRender requested by the VM
  * - effects: flushEffects requested by the VM
@@ -37,8 +41,15 @@ export interface RuntimeHostCallContext {
  * - call: `callExport`, used by harnesses, tests, and later surfaces
  * - graph, bind: module graph evaluation and dispatcher binding, part of boot
  */
+/**
+ * What raised an event, as the trusted renderer saw it. Creator code cannot name this: the renderer
+ * decides it at the DOM or native callback, before anything crosses into the VM.
+ */
+export type RuntimeEventSource = "interaction" | "media";
+
 export type RuntimeHostCallOrigin =
 	| "event"
+	| "media"
 	| "mount"
 	| "render"
 	| "effects"

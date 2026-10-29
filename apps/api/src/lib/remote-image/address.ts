@@ -129,6 +129,17 @@ const inRange6 = (value: bigint, range: Range6): boolean => {
 const PRIVATE_IPV6: readonly Range6[] = [
 	"::/128",
 	"::1/128",
+	/**
+	 * IPv4-compatible (deprecated; `::127.0.0.1`, `::a9fe:a9fe`). Rejected whole rather than extracted:
+	 * nothing public lives there, and a stack that still routes it would reach the embedded IPv4.
+	 */
+	"::/96",
+	/** SIIT IPv4-translated (`::ffff:0:a.b.c.d`), the other IPv4-carrying form beside the mapped one. */
+	"::ffff:0:0:0/96",
+	/** Local-use NAT64 (RFC 8215): an operator's own translator, whose embedded IPv4 may be internal. */
+	"64:ff9b:1::/48",
+	/** Documentation (RFC 9637), beside `2001:db8::/32`. */
+	"3fff::/20",
 	"fc00::/7",
 	"fe80::/10",
 	"fec0::/10",

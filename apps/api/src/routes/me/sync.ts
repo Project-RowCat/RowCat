@@ -17,7 +17,10 @@ import {
 } from "@rowcat/contracts";
 import { Hono } from "hono";
 import type { AppEnv } from "../../app.ts";
-import { requireFreshSession } from "../../auth/session-id.ts";
+import {
+	requireFreshSession,
+	sessionStillValid,
+} from "../../auth/session-id.ts";
 import { ApiError, invalidInput } from "../../lib/errors.ts";
 import { requireActiveViewer, requireViewer } from "../../lib/gates.ts";
 import { checkRateLimit } from "../../lib/rate-limit/index.ts";
@@ -272,9 +275,11 @@ export const sync = new Hono<AppEnv>()
 		 * the durable cursor read, so a DB failure surfaces as a normal error envelope before the stream
 		 * opens. The other half (subscribe before read) is in the service.
 		 */
+		const headers = c.req.raw.headers;
 		const body = await openSyncWakeStream({
 			owner: viewer.id,
 			signal: c.req.raw.signal,
+			stillSignedIn: () => sessionStillValid(headers),
 		});
 		for (const [name, value] of Object.entries(SYNC_WAKE_HEADERS))
 			c.header(name, value);

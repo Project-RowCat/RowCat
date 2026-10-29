@@ -93,6 +93,8 @@ export interface Mp4Options {
 	video?: boolean;
 	/** Drops the audio track; must read as corrupt. */
 	silent?: boolean;
+	/** Empty `free` boxes between the sound track and the video track: hides the video past a walker's cap. */
+	fillerBoxes?: number;
 }
 
 export function buildM4a(options: Mp4Options = {}): Buffer {
@@ -110,6 +112,8 @@ export function buildM4a(options: Mp4Options = {}): Buffer {
 
 	const tracks: Buffer[] = [];
 	if (!options.silent) tracks.push(box("trak", box("mdia", hdlr("soun"))));
+	for (let i = 0; i < (options.fillerBoxes ?? 0); i += 1)
+		tracks.push(box("free", Buffer.alloc(0)));
 	if (options.video) tracks.push(box("trak", box("mdia", hdlr("vide"))));
 
 	const moov = box(

@@ -13,8 +13,22 @@ import * as remoteImage from "../lib/remote-image/fetch.ts";
 import { createSlotGate } from "../lib/remote-image/slots.ts";
 import { createTestMember } from "../test/auth.ts";
 import { connectTestDatabase, deleteTestUsers } from "../test/database.ts";
-import { api } from "../test/http.ts";
+import { api as request } from "../test/http.ts";
 import { __setRemoteImageSlotsForTest } from "./runtime-assets.ts";
+
+/**
+ * Every request here reads its body to the end, as a real client does. The slot is held until the
+ * bytes have left (`releasingBody`), so a test that never read a 200 would keep its slot until the
+ * stall watchdog cut it.
+ */
+const api = async (...args: Parameters<typeof request>): Promise<Response> => {
+	const response = await request(...args);
+	const body = await response.arrayBuffer();
+	return new Response(body.byteLength === 0 ? null : body, {
+		status: response.status,
+		headers: response.headers,
+	});
+};
 
 /**
  * Remote image proxy through the real Hono app (the HTTP boundary).
@@ -281,6 +295,30 @@ describe.skipIf(!hasDb)("totals", () => {
 		finish();
 		expect((await holding).status).toBe(200);
 		expect(slots.stats()).toEqual({ inFlight: 0, queued: 0 });
+	});
+
+	/**
+	 * The slot is the memory ceiling, so it is held while the image is still waiting to be sent, not
+	 * only while it is being fetched; a client that never read used to keep its bytes queued after the
+	 * slot was free again.
+	 */
+	test("the slot is held until the body has been read", async () => {
+		const { cookie } = await createTestMember(EMAIL_PREFIX);
+		const slots = createSlotGate({
+			maxInFlight: 4,
+			maxQueued: 0,
+			maxWaitMs: 50,
+		});
+		__setRemoteImageSlotsForTest(slots);
+		fetchSpy.mockImplementation(servesBytes(64 * 1024));
+
+		const unread = await request(path("https://cdn.example.com/unread.png"), {
+			cookie,
+		});
+		expect(unread.status).toBe(200);
+		expect(slots.stats().inFlight).toBe(1);
+		await unread.arrayBuffer();
+		expect(slots.stats().inFlight).toBe(0);
 	});
 
 	/**

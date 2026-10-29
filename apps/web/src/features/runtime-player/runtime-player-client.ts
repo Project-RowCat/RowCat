@@ -29,6 +29,7 @@ export interface RuntimePlayerClient {
 		generation: PlayerGeneration,
 		handlerId: number,
 		payload?: string | null,
+		source?: "interaction" | "media",
 	): void;
 	generationResult(
 		generation: PlayerGeneration,
@@ -68,8 +69,14 @@ export async function createRuntimePlayerClient(handlers: {
 	return {
 		start: (request) => send({ type: "start", ...request }),
 		stop: (generation) => send({ type: "stop", generation }),
-		dispatchEvent: (generation, handlerId, payload) =>
-			send({ type: "event", generation, handlerId, payload: payload ?? null }),
+		dispatchEvent: (generation, handlerId, payload, source) =>
+			send({
+				type: "event",
+				generation,
+				handlerId,
+				payload: payload ?? null,
+				...(source === "media" ? { source } : {}),
+			}),
 		generationResult: (generation, requestId, result) =>
 			send({ type: "generation-result", generation, requestId, result }),
 		terminate: () => {

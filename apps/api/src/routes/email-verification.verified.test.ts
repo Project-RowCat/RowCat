@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, test } from "vitest";
+import { afterAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { app } from "../app.ts";
 import { closeDb, db } from "../db/client.ts";
 import { member, user } from "../db/schema.ts";
@@ -40,7 +40,13 @@ const EMAIL_PREFIX = "email-verification-test-";
  */
 const mail = captureMail();
 const linkIn = mail.linkIn;
-const lastMailTo = (email: string) => mail.lastTo(email);
+/**
+ * The senders do not await the mail (so response time does not reveal registration; see
+ * `sendWithoutWaiting` in `auth/index.ts`), so the mailbox may still be empty when the response
+ * returns.
+ */
+const lastMailTo = (email: string) =>
+	vi.waitFor(() => mail.lastTo(email), { timeout: 2000, interval: 10 });
 
 /** Opens the verification link for real, without following the redirect, so the response itself is inspected. */
 const openLink = async (url: string): Promise<Response> =>
@@ -99,7 +105,7 @@ describe.skipIf(!databaseReady)("sign-up", () => {
 		expect(body.token).toBeNull();
 		expect(cookieFromResponse(response)).not.toContain("session");
 
-		const mail = lastMailTo(email);
+		const mail = await lastMailTo(email);
 		expect(mail.subject).toContain("verify your email");
 		expect(linkIn(mail)).toContain("/verify-email?token=");
 	});
@@ -114,6 +120,7 @@ describe.skipIf(!databaseReady)("sign-up", () => {
 	test("a duplicate sign-up does not reveal existence", async () => {
 		const taken = newEmail();
 		await signUp(taken);
+		await lastMailTo(taken);
 		mail.messages.length = 0;
 
 		const fresh = await signUp(newEmail());
@@ -147,7 +154,7 @@ describe.skipIf(!databaseReady)("verification", () => {
 		const blocked = await signIn(email);
 		expect(blocked.status).toBe(403);
 
-		const opened = await openLink(linkIn(lastMailTo(email)));
+		const opened = await openLink(linkIn(await lastMailTo(email)));
 		expect([200, 302]).toContain(opened.status);
 		expect(await verifiedFlag(email)).toBe(true);
 
@@ -185,12 +192,15 @@ describe.skipIf(!databaseReady)("verification", () => {
 			nickname: "verification",
 		});
 
+		await lastMailTo(email);
 		mail.messages.length = 0;
 		const blocked = await signIn(email);
 		expect(blocked.status).toBe(403);
-		expect(mail.messages.filter((mail) => mail.to === email)).toHaveLength(1);
+		await vi.waitFor(() =>
+			expect(mail.messages.filter((mail) => mail.to === email)).toHaveLength(1),
+		);
 
-		await openLink(linkIn(lastMailTo(email)));
+		await openLink(linkIn(await lastMailTo(email)));
 		expect(await verifiedFlag(email)).toBe(true);
 
 		const [row] = await db
@@ -204,7 +214,7 @@ describe.skipIf(!databaseReady)("verification", () => {
 	test("a damaged token does not verify", async () => {
 		const email = newEmail();
 		await signUp(email);
-		const link = linkIn(lastMailTo(email));
+		const link = linkIn(await lastMailTo(email));
 
 		// Change one character of the token so the signature breaks.
 		const tampered = link.replace(
@@ -241,7 +251,7 @@ describe.skipIf(!databaseReady)("verification", () => {
 	test("changing the callback of a valid link does not take you outside", async () => {
 		const email = newEmail();
 		await signUp(email, `${WEB_ORIGIN}/login?verified=1`);
-		const link = linkIn(lastMailTo(email));
+		const link = linkIn(await lastMailTo(email));
 
 		const tampered = new URL(link);
 		tampered.searchParams.set("callbackURL", "https://evil.example/steal");
@@ -263,13 +273,13 @@ describe.skipIf(!databaseReady)("resending", () => {
 	test("resending brings a new link", async () => {
 		const email = newEmail();
 		await signUp(email);
-		const first = linkIn(lastMailTo(email));
+		const first = linkIn(await lastMailTo(email));
 
 		mail.messages.length = 0;
 		const response = await authPost("/send-verification-email", { email });
 		expect(response.status).toBe(200);
 
-		const second = linkIn(lastMailTo(email));
+		const second = linkIn(await lastMailTo(email));
 		expect(second).toContain("/verify-email?token=");
 
 		// The old link is still valid until expiry; both verify the same address.
@@ -286,6 +296,7 @@ describe.skipIf(!databaseReady)("resending", () => {
 	test("an unknown address gets the same status code", async () => {
 		const known = newEmail();
 		await signUp(known);
+		await lastMailTo(known);
 		mail.messages.length = 0;
 
 		const unknown = newEmail();
@@ -297,6 +308,7 @@ describe.skipIf(!databaseReady)("resending", () => {
 		});
 
 		expect(unknownResponse.status).toBe(knownResponse.status);
+		await lastMailTo(known);
 		expect(mail.messages.some((mail) => mail.to === unknown)).toBe(false);
 		expect(mail.messages.some((mail) => mail.to === known)).toBe(true);
 	});
@@ -305,7 +317,7 @@ describe.skipIf(!databaseReady)("resending", () => {
 	test("a failed sign-in does not reveal the reason", async () => {
 		const email = newEmail();
 		await signUp(email);
-		await openLink(linkIn(lastMailTo(email)));
+		await openLink(linkIn(await lastMailTo(email)));
 
 		const wrongPassword = await signIn(email, "not-the-password");
 		const noSuchAccount = await signIn(newEmail(), "not-the-password");

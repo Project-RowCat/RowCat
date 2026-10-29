@@ -666,6 +666,7 @@ export async function resolveReport(options: {
 	note: string;
 }): Promise<boolean> {
 	return db.transaction(async (tx) => {
+		await assertMayResolveReport(tx, options.reportId, options.resolverId);
 		/**
 		 * The conditional `status = 'open'` UPDATE solves idempotency and races together: a retry that
 		 * lost its response updates 0 rows and returns `false` (the route maps it to 404), and of two
@@ -1173,6 +1174,64 @@ async function assertAccountActionAllowed(
 
 /** Code for the refusal above; the operations console picks its guidance text from it. */
 const MODERATION_TARGET_PRIVILEGED = "moderation_target_privileged";
+
+/**
+ * Closing a report is the one moderation write that had no conflict-of-interest rule. Enforcement,
+ * reversal and appeals all refuse an operator acting on themselves, but a staff member could dismiss
+ * every report about their own account, story or comment; the case closed and never reached an
+ * admin's open queue, with the `resolver` column the only trace. The same two rules as account
+ * actions apply here: never about yourself, and a report about an operator account is an admin's to
+ * close.
+ *
+ * A report whose target is gone (deleted story, an `ai_response` case with no member) has no one to
+ * protect, so it closes as before; refusing it would leave the queue holding reports nobody can
+ * close.
+ */
+async function assertMayResolveReport(
+	tx: Tx,
+	reportId: string,
+	resolverId: string,
+): Promise<void> {
+	const [row] = await tx
+		.select({ caseRow: moderation_case })
+		.from(moderation_report)
+		.innerJoin(
+			moderation_case,
+			eq(moderation_case.id, moderation_report.case_id),
+		)
+		.where(
+			and(
+				eq(moderation_report.id, reportId),
+				eq(moderation_report.status, "open"),
+			),
+		)
+		.limit(1);
+	/** Not open (or not there): the conditional UPDATE answers that, as before. */
+	if (!row) return;
+	let targetId: string;
+	try {
+		targetId = await resolveCaseMember(tx, row.caseRow);
+	} catch (error) {
+		if (error instanceof ApiError) return;
+		throw error;
+	}
+	if (targetId === resolverId)
+		throw forbidden(
+			"You can't review a report about yourself.",
+			MODERATION_TARGET_PRIVILEGED,
+		);
+	const roles = await tx
+		.select({ id: member.id, role: member.role })
+		.from(member)
+		.where(inArray(member.id, [resolverId, targetId]));
+	const resolverRole = roles.find((r) => r.id === resolverId)?.role ?? "user";
+	const targetRole = roles.find((r) => r.id === targetId)?.role ?? "user";
+	if (targetRole !== "user" && resolverRole !== "admin")
+		throw forbidden(
+			"Only admins can review reports about operator accounts.",
+			MODERATION_TARGET_PRIVILEGED,
+		);
+}
 
 /**
  * Nobody lifts or processes an enforcement placed on themselves; used for non-account actions

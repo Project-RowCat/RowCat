@@ -286,7 +286,10 @@ function RuntimeStudio({ draft }: { draft: StoryDraft }) {
 	 * lifetime and the generation wiring are separate concerns; merging them would make the preview
 	 * hook aware of the SDK, credentials, and the billing cache.
 	 */
-	const generation = useRuntimePreviewGeneration();
+	const generation = useRuntimePreviewGeneration({
+		storyId: null,
+		adult: draft.adult,
+	});
 	const preview = useRuntimePreview({
 		snapshot,
 		eligible: compileView.eligible,

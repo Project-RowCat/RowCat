@@ -125,8 +125,14 @@ export interface RemoteImageResponse {
 }
 
 export interface RemoteImageTransport {
-	/** Name to every address (A and AAAA); resolution failure throws. */
-	resolve(hostname: string): Promise<{ address: string; family: 4 | 6 }[]>;
+	/**
+	 * Name to every address (A and AAAA); resolution failure throws. `signal` is this fetch's deadline
+	 * and the requester leaving; a lookup still running when it fires is abandoned.
+	 */
+	resolve(
+		hostname: string,
+		signal: AbortSignal,
+	): Promise<{ address: string; family: 4 | 6 }[]>;
 	/** One GET to the vetted address; does not follow redirects. */
 	request(
 		connection: RemoteImageConnection,
@@ -252,8 +258,17 @@ export async function fetchRemoteImage(
 
 			let addresses: { address: string; family: 4 | 6 }[];
 			try {
-				addresses = await transport.resolve(target.hostname);
+				/**
+				 * The lookup is inside the deadline. It used to be awaited outside it: a name whose server
+				 * never answers held the process slot for the resolver's own timeout, on every redirect hop,
+				 * and the "10 seconds including redirects" promise did not hold.
+				 */
+				addresses = await untilAborted(
+					transport.resolve(target.hostname, controller.signal),
+					controller.signal,
+				);
 			} catch {
+				if (controller.signal.aborted) return { ok: false, reason: stopped() };
 				return { ok: false, reason: "unresolvable" };
 			}
 			if (controller.signal.aborted) return { ok: false, reason: stopped() };
@@ -351,14 +366,50 @@ export async function fetchRemoteImage(
  * is unchanged.
  */
 const nodeTransport: RemoteImageTransport = {
-	async resolve(hostname) {
-		const entries = await dns.lookup(hostname, { all: true, verbatim: true });
-		return entries
-			.filter((entry) => entry.family === 4 || entry.family === 6)
-			.map((entry) => ({
-				address: entry.address,
-				family: entry.family as 4 | 6,
-			}));
+	/**
+	 * DNS queries, not `dns.lookup`. `lookup` is `getaddrinfo` on libuv's thread pool (four threads by
+	 * default), and it cannot be cancelled: a creator's name whose server never answers held a pool
+	 * thread for the system resolver's whole timeout, so four such requests queued every other pool
+	 * user in the process behind them (Postgres and Redis reconnects, provider fetches, file I/O, image
+	 * decoding). A `Resolver` runs on the event loop with its own timeout and is cancelled with the
+	 * fetch. It reads `/etc/resolv.conf` and not `/etc/hosts`, which for public image hosts is the
+	 * right side to err on.
+	 */
+	async resolve(hostname, signal) {
+		const resolver = new dns.Resolver({
+			timeout: DNS_QUERY_TIMEOUT_MS,
+			tries: DNS_QUERY_TRIES,
+		});
+		const cancel = () => resolver.cancel();
+		signal.addEventListener("abort", cancel, { once: true });
+		try {
+			const [v4, v6] = await Promise.allSettled([
+				resolver.resolve4(hostname),
+				resolver.resolve6(hostname),
+			]);
+			const addresses = [
+				...settledAddresses(v4).map((address) => ({
+					address,
+					family: 4 as const,
+				})),
+				...settledAddresses(v6).map((address) => ({
+					address,
+					family: 6 as const,
+				})),
+			];
+			/** Both failed for a reason other than "no such record": the name did not resolve. */
+			if (
+				addresses.length === 0 &&
+				[v4, v6].some(
+					(result) =>
+						result.status === "rejected" && !isNoRecord(result.reason),
+				)
+			)
+				throw new Error("resolution failed");
+			return addresses;
+		} finally {
+			signal.removeEventListener("abort", cancel);
+		}
 	},
 	request(connection, signal) {
 		return new Promise((resolve, reject) => {
@@ -412,3 +463,35 @@ const nodeTransport: RemoteImageTransport = {
 		});
 	},
 };
+
+/** Per query, and two tries: a name that has not answered in ~4 s will not, and the fetch's 10 s also covers redirects. */
+const DNS_QUERY_TIMEOUT_MS = 2_000;
+const DNS_QUERY_TRIES = 2;
+
+const settledAddresses = (result: PromiseSettledResult<string[]>): string[] =>
+	result.status === "fulfilled" ? result.value : [];
+
+/** A name with only A or only AAAA records answers the other query with "no data"; that is not a failure. */
+const isNoRecord = (error: unknown): boolean => {
+	const code = (error as { code?: unknown } | null)?.code;
+	return code === dns.NODATA || code === dns.NOTFOUND;
+};
+
+/** Settles with `promise`, or rejects when `signal` fires first. The promise itself is abandoned, not awaited. */
+function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+	if (signal.aborted) return Promise.reject(new Error("aborted"));
+	return new Promise<T>((resolve, reject) => {
+		const onAbort = () => reject(new Error("aborted"));
+		signal.addEventListener("abort", onAbort, { once: true });
+		promise.then(
+			(value) => {
+				signal.removeEventListener("abort", onAbort);
+				resolve(value);
+			},
+			(error: unknown) => {
+				signal.removeEventListener("abort", onAbort);
+				reject(error);
+			},
+		);
+	});
+}

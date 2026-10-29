@@ -128,6 +128,11 @@ export type NativeRuntimeToVm =
 			 * integer and this string cross the bridge; native event objects go in neither direction.
 			 */
 			payload?: string;
+			/**
+			 * `media` for an event nobody pressed (a sound reaching its end). The session refuses generation
+			 * for it; absent is an interaction. Hermes decides this at the audio callback.
+			 */
+			source?: "media";
 	  }
 	| { type: "stop"; generation: NativeRuntimeGeneration };
 

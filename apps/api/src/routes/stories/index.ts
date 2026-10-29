@@ -255,6 +255,8 @@ export const stories = new Hono<AppEnv>()
 			kind: "runtime",
 			artifact: runtime.artifact,
 			capabilities: runtime.capabilities,
+			/** The rating the server injected at publication; runtime generation reads it (`StoryPlaybackDto`). */
+			adult: parseChatSeed(storyId, payload).adult,
 			/**
 			 * The logical-name table leaves only inside this response. A standalone asset manifest address
 			 * would list a private story's images without playback entitlement.

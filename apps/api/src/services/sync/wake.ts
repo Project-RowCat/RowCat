@@ -149,7 +149,24 @@ export interface SyncWakeStreamOptions {
 	/** Reads the owner's durable cursor; tests swap it to widen the race window. */
 	readCursor?: (owner: string) => Promise<number>;
 	heartbeatMs?: number;
+	/**
+	 * Whether the session that opened this stream still stands, asked at each heartbeat. The session was
+	 * checked once, at open, and a stream never ended on its own: after a password reset, a session
+	 * revoke or account deletion, whoever held the old cookie kept receiving the owner's cursor (when
+	 * they are active) indefinitely. `false` ends the stream; a failed check keeps it (this plane is an
+	 * optimization, and our own outage is not evidence the session ended).
+	 */
+	stillSignedIn?: () => Promise<boolean>;
+	/**
+	 * A stream ends after this long regardless, and the client reconnects (it already does, with backoff
+	 * that a healthy connection resets). Without it nothing bounds a stream, and shutdown waits on
+	 * every open one.
+	 */
+	maxLifetimeMs?: number;
 }
+
+/** How long one stream may live before the client is made to reconnect (`maxLifetimeMs`). */
+export const SYNC_WAKE_MAX_LIFETIME_MS = 30 * 60 * 1000;
 
 /**
  * Subscribe, then read the durable cursor, then stream; the order is the whole function. The naive
@@ -179,6 +196,8 @@ export async function openSyncWakeStream(
 		broker = syncWakeBroker,
 		readCursor = readSyncCursor,
 		heartbeatMs = SYNC_WAKE_HEARTBEAT_MS,
+		stillSignedIn,
+		maxLifetimeMs = SYNC_WAKE_MAX_LIFETIME_MS,
 	} = options;
 
 	/**
@@ -221,15 +240,19 @@ export async function openSyncWakeStream(
 	// third argument is the eviction path; `close` is defined below but called later.
 	const unsubscribe = broker.subscribe(owner, offer, () => close());
 
+	let lifetime: ReturnType<typeof setTimeout> | null = null;
+
 	const close = (): void => {
 		if (closed) return;
 		closed = true;
+		if (lifetime !== null) clearTimeout(lifetime);
 		unsubscribe();
 		wakeWaiter();
 	};
 
 	if (signal.aborted) close();
 	else signal.addEventListener("abort", close, { once: true });
+	if (!closed) lifetime = setTimeout(close, maxLifetimeMs);
 
 	// Then the durable read; on failure the stream is never opened.
 	try {
@@ -276,6 +299,11 @@ export async function openSyncWakeStream(
 					return;
 				}
 				if (pending === null) {
+					if (stillSignedIn && !(await stillSignedIn().catch(() => true))) {
+						close();
+						controller.close();
+						return;
+					}
 					controller.enqueue(HEARTBEAT_FRAME);
 					return;
 				}

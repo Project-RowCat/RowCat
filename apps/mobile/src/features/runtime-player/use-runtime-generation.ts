@@ -1,6 +1,7 @@
 import {
 	reasoningCapabilityFor,
 	reasoningEffortForRequest,
+	resolveAllAges,
 	resolveEffectiveGeneration,
 	resolveGenerationExecution,
 } from "@rowcat/chat";
@@ -87,11 +88,18 @@ export type RuntimeGenerationAdapter = (
  * the screen arrives that gap would force changes in this file too.
  */
 export interface RuntimeGenerationScope {
-	storyId: string;
+	storyId: string | null;
+	/**
+	 * The work's rating, from the playback response. Required so no caller can forget it: all-ages is
+	 * decided by this **and** the viewer's entitlement (`resolveAllAges`, as conversations do). Deciding
+	 * from the viewer alone let an all-ages work's generations run under the adult guards for adult
+	 * viewers, walking around the adult publishing gate.
+	 */
+	adult: boolean;
 }
 
 export function useRuntimeGeneration(
-	scope: RuntimeGenerationScope | null = null,
+	scope: RuntimeGenerationScope,
 ): RuntimeGenerationAdapter {
 	const { store: preferences } = useGenerationScope();
 	const { store: providers } = useProviderScope();
@@ -100,7 +108,8 @@ export function useRuntimeGeneration(
 	const viewer = useQuery(viewerQueryOptions(client)).data ?? null;
 	/** Reasoning capability comes from the catalog: the same query key as the conversation hook. */
 	const catalog = useQuery(generationModelsQueryOptions(client));
-	const storyId = scope?.storyId ?? null;
+	const storyId = scope.storyId;
+	const adult = scope.adult;
 
 	/**
 	 * Keeps the latest values in a ref so that a new function is not created on each render. If this
@@ -114,6 +123,7 @@ export function useRuntimeGeneration(
 		client,
 		viewer,
 		storyId,
+		adult,
 		models: catalog.data ?? null,
 		catalogLoaded: catalog.isSuccess,
 	});
@@ -124,6 +134,7 @@ export function useRuntimeGeneration(
 		client,
 		viewer,
 		storyId,
+		adult,
 		models: catalog.data ?? null,
 		catalogLoaded: catalog.isSuccess,
 	};
@@ -136,6 +147,7 @@ export function useRuntimeGeneration(
 			client: api,
 			viewer: current,
 			storyId: overrideStoryId,
+			adult: workIsAdult,
 			models,
 			catalogLoaded,
 		} = deps.current;
@@ -166,7 +178,10 @@ export function useRuntimeGeneration(
 			if (execution.status === "blocked")
 				throw new ChatGenerationBlockedError(execution);
 
-			const allAges = !canViewAdultContent(current);
+			const allAges = resolveAllAges(
+				{ adult: workIsAdult },
+				{ adultAllowed: canViewAdultContent(current) },
+			);
 			const generationRequest: ChatGenerationRequest = {
 				/**
 				 * **The creator runtime has no tools.** Even though the contract has a slot for them, this path

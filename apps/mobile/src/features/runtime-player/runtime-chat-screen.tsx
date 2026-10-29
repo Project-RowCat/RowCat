@@ -157,7 +157,8 @@ export function RuntimeChatScreen({ storyId }: { storyId: string }) {
 	useNativeRuntimeAudio(
 		player.session?.store ?? null,
 		resolveAudio,
-		(handler) => player.session?.dispatchEvent(handler, undefined),
+		/** A sound ending is not a press: `media` keeps it from authorizing generation. */
+		(handler) => player.session?.dispatchEvent(handler, undefined, "media"),
 	);
 
 	const library = useRuntimeConversationScope();
@@ -466,6 +467,12 @@ function statusMessage(status: string, bridge: string): string {
 
 const styles = StyleSheet.create({
 	disclosure: { gap: space.sm, paddingHorizontal: space.lg },
-	surface: { flex: 1, minHeight: 0 },
+	/**
+	 * `overflow: "hidden"` is the canvas boundary, the native twin of the web's `.rc-root`. Creator
+	 * content may translate ±100,000 and scale ×100 (`@rowcat/runtime`'s transition limits), and iOS
+	 * views draw outside their bounds by default, so without it a story could paint over the app bar
+	 * and draw a back button, title or menu that is not ours.
+	 */
+	surface: { flex: 1, minHeight: 0, overflow: "hidden" },
 	surfaceInner: { flex: 1 },
 });

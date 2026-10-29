@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../app.ts";
 import { notFound, serviceUnavailable } from "../lib/errors.ts";
-import { etagOf, notModified } from "../lib/http.ts";
+import { destroyResponse, etagOf, notModified } from "../lib/http.ts";
 import {
 	type ByteGate,
 	ByteGateUnavailableError,
@@ -197,7 +197,10 @@ export const media = new Hono<AppEnv>().get("/:mediaId", async (c) => {
 				},
 			);
 		return c.body(
-			releasingBody(chunk, release, { signal: c.req.raw.signal }),
+			releasingBody(chunk, release, {
+				signal: c.req.raw.signal,
+				onStall: () => destroyResponse(c),
+			}),
 			206,
 		);
 	}
@@ -224,5 +227,10 @@ export const media = new Hono<AppEnv>().get("/:mediaId", async (c) => {
 	 * The slot returns after the last chunk is sent, or when the receiver leaves. Stream cancel alone
 	 * cannot reveal that, so the request's `signal` is passed too (see `releasingBody`).
 	 */
-	return c.body(releasingBody(bytes, release, { signal: c.req.raw.signal }));
+	return c.body(
+		releasingBody(bytes, release, {
+			signal: c.req.raw.signal,
+			onStall: () => destroyResponse(c),
+		}),
+	);
 });

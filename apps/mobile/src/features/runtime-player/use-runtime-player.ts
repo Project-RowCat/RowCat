@@ -137,7 +137,11 @@ export function useRuntimePlayer({
 	const client = getRowCatClient();
 	const playback = useQuery(storyPlaybackQueryOptions(client, storyId));
 	const { store } = useRuntimeSaveScope();
-	const adapter = useRuntimeGeneration({ storyId });
+	const adapter = useRuntimeGeneration({
+		storyId,
+		/** Nothing runs before the playback response arrives, so `false` there is never read for a real request. */
+		adult: playback.data?.kind === "runtime" ? playback.data.adult : false,
+	});
 	const adapterRef = useRef(adapter);
 	adapterRef.current = adapter;
 

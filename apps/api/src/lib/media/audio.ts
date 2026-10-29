@@ -106,7 +106,12 @@ interface ParsedAudio {
 /** Accepted brands. `qt  ` (QuickTime) is absent because it is a video container. */
 const MP4_BRANDS = new Set(["M4A ", "M4B ", "mp42", "mp41", "isom", "iso2"]);
 
-/** Caps box count (and depth below) so hostile nesting cannot hold the walker. */
+/**
+ * Caps box count (and depth below) so hostile nesting cannot hold the walker. Reaching either cap
+ * **rejects the file**: stopping quietly and judging what was walked let a sound track, four
+ * thousand filler boxes and then a video track pass as audio, because the walker never reached the
+ * `vide` handler.
+ */
 const MP4_MAX_BOXES = 4096;
 
 /**
@@ -133,9 +138,11 @@ function readMp4(raw: Buffer): ParsedAudio | null {
 		duration: 0,
 		sound: false,
 		video: false,
+		exhausted: false,
 	};
 	walkMp4(raw, 0, raw.byteLength, 0, state);
 
+	if (state.exhausted) rejectBroken();
 	if (state.video) rejectFormat();
 	if (!state.sound) rejectBroken();
 	if (state.timescale <= 0 || state.duration <= 0) rejectBroken();
@@ -152,6 +159,8 @@ interface Mp4State {
 	duration: number;
 	sound: boolean;
 	video: boolean;
+	/** A cap was reached, so part of the file went unseen; the file is not judged on the rest. */
+	exhausted: boolean;
 }
 
 /** Boxes that hold other boxes; only these are descended into. */
@@ -172,10 +181,16 @@ function walkMp4(
 	depth: number,
 	state: Mp4State,
 ): void {
-	if (depth > MP4_MAX_DEPTH) return;
+	if (depth > MP4_MAX_DEPTH) {
+		state.exhausted = true;
+		return;
+	}
 	let at = from;
 	while (at + 8 <= to) {
-		if (++state.boxes > MP4_MAX_BOXES) return;
+		if (++state.boxes > MP4_MAX_BOXES) {
+			state.exhausted = true;
+			return;
+		}
 		let size = readU32(raw, at);
 		const type = raw.toString("latin1", at + 4, at + 8);
 		let header = 8;

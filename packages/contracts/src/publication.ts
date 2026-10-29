@@ -361,6 +361,13 @@ export const STORY_PUBLISH_ERROR_CODE = {
 	 * picture-bearing work was published, and would find out only by playing it.
 	 */
 	runtimeAssetInvalid: "story_runtime_asset_invalid",
+	/**
+	 * The server is already checking as many runtime projects as it may at once (each check runs in a
+	 * thread with its own memory ceiling, so they are counted). Nothing was published, and retrying in
+	 * a moment works; the response carries `Retry-After`. Not a diagnostic: nothing in the source is
+	 * wrong.
+	 */
+	runtimeCompileBusy: "story_runtime_compile_busy",
 } as const;
 export type StoryPublishErrorCode =
 	(typeof STORY_PUBLISH_ERROR_CODE)[keyof typeof STORY_PUBLISH_ERROR_CODE];

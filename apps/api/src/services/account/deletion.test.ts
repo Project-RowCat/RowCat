@@ -235,6 +235,27 @@ describe.skipIf(!databaseReady)("account deletion — identity check", () => {
 		).toBe(0);
 	});
 
+	/**
+	 * The library checks a password only when one is sent, so a fresh session alone used to delete a
+	 * password account. Our rule (`auth/account-deletion-policy.ts`) closes that.
+	 */
+	test("a password account is not deleted on a fresh session alone", async () => {
+		const alice = await signUp();
+
+		const response = await deleteAccount(alice.cookie);
+		expect(response.status).toBe(400);
+		expect(((await response.json()) as { code?: string }).code).toBe(
+			"INVALID_PASSWORD",
+		);
+		expect(
+			await rows(db.select().from(user).where(eq(user.id, alice.authUserId))),
+		).toBe(1);
+
+		expect(
+			(await deleteAccount(alice.cookie, { password: TEST_PASSWORD })).status,
+		).toBe(200);
+	});
+
 	test("an old session can't delete without a password", async () => {
 		const alice = await signUp();
 		await makeSocialOnly(alice.authUserId);

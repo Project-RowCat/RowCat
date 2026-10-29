@@ -16,7 +16,7 @@ import {
 	__setRateLimitStoreForTest,
 	createMemoryRateLimitStore,
 } from "../../lib/rate-limit/index.ts";
-import { createTestMember } from "../../test/auth.ts";
+import { createTestMember, TEST_PASSWORD } from "../../test/auth.ts";
 import { connectTestDatabase, deleteTestUsers } from "../../test/database.ts";
 import { WEB_ORIGIN } from "../../test/http.ts";
 
@@ -790,7 +790,7 @@ describe.skipIf(!databaseReady)("when an identity disappears", () => {
 		const deleted = await app.request("/v2/auth/delete-user", {
 			method: "POST",
 			headers: headers(alice.cookie, true),
-			body: JSON.stringify({}),
+			body: JSON.stringify({ password: TEST_PASSWORD }),
 		});
 		expect(deleted.ok).toBe(true);
 
@@ -823,7 +823,7 @@ describe.skipIf(!databaseReady)("when an identity disappears", () => {
 		const deleted = await app.request("/v2/auth/delete-user", {
 			method: "POST",
 			headers: headers(bob.cookie, true),
-			body: JSON.stringify({}),
+			body: JSON.stringify({ password: TEST_PASSWORD }),
 		});
 		expect(deleted.ok).toBe(true);
 		expect(await rowsOf(storyId)).toHaveLength(0);
@@ -1094,7 +1094,7 @@ describe.skipIf(!databaseReady)("reactions — a single like", () => {
 		const deleted = await app.request("/v2/auth/delete-user", {
 			method: "POST",
 			headers: headers(bob.cookie, true),
-			body: JSON.stringify({}),
+			body: JSON.stringify({ password: TEST_PASSWORD }),
 		});
 		expect(deleted.ok).toBe(true);
 

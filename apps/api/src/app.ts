@@ -5,10 +5,11 @@ import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { type RequestIdVariables, requestId } from "hono/request-id";
 import { secureHeaders } from "hono/secure-headers";
+import { authSurfaceRefusal } from "./auth/http-surface.ts";
 import { auth } from "./auth/index.ts";
 import type { Viewer } from "./auth/viewer.ts";
 import { corsOrigins, env, isProduction } from "./env.ts";
-import { ApiError, forbidden } from "./lib/errors.ts";
+import { ApiError, badRequest, forbidden, notFound } from "./lib/errors.ts";
 import { createCorsOriginMatcher } from "./lib/origins.ts";
 import { requestLogger } from "./lib/request-logger.ts";
 import { withViewer } from "./middleware/viewer.ts";
@@ -168,11 +169,21 @@ app.use(`${API_BASE_PATH}/auth/sign-up/*`, async (_c, next) => {
 
 /**
  * Mounted before the router: Better Auth owns its whole subtree (callbacks, state, sign-out) and
- * our routes must not intercept any of it.
+ * our routes must not intercept any of it. The one exception is what `auth/http-surface.ts` names:
+ * endpoints our own routes replace, and the Expo relay toward anything but a provider. Those are
+ * refused here, at the HTTP edge, so our server-side calls into the same operations still work.
  */
-app.on(["GET", "POST"], `${API_BASE_PATH}/auth/*`, (c) =>
-	auth.handler(c.req.raw),
-);
+app.on(["GET", "POST"], `${API_BASE_PATH}/auth/*`, (c) => {
+	const url = new URL(c.req.url);
+	const refusal = authSurfaceRefusal(
+		url.pathname.slice(`${API_BASE_PATH}/auth`.length),
+		url.searchParams,
+	);
+	if (refusal === "closed") throw notFound();
+	if (refusal === "proxy-target")
+		throw badRequest("Invalid authorizationURL", "auth_proxy_target_refused");
+	return auth.handler(c.req.raw);
+});
 
 app.use(`${API_BASE_PATH}/*`, withViewer());
 app.route(API_BASE_PATH, routes);

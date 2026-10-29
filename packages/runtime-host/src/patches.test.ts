@@ -244,3 +244,50 @@ describe("limits", () => {
 		expect(tree.size).toBe(1);
 	});
 });
+
+/**
+ * A batch is a string creator code can shape, so depth is counted on the host too, not only by the
+ * reconciler. A chain directly under the root at exactly the limit passes; one more level does not,
+ * whether it arrives in one batch or by attaching a deep subtree under an existing deep node.
+ */
+describe("depth", () => {
+	const chain = (from: number, length: number, under: number): unknown[] => {
+		const patches: unknown[] = [];
+		let parent = under;
+		for (let id = from; id < from + length; id += 1) {
+			patches.push({ op: "create", id, kind: "stack" });
+			patches.push({ op: "insert", parent, child: id, index: 0 });
+			parent = id;
+		}
+		return patches;
+	};
+	const limits = { ...DEFAULT_ROOT_LIMITS, maxTreeDepth: 8 };
+
+	it("a chain at the limit passes and one level more is refused", () => {
+		expect(validatePatchBatch(batch(chain(1, 9, 0)), limits).ok).toBe(true);
+		const over = validatePatchBatch(batch(chain(1, 10, 0)), limits);
+		expect(over.ok).toBe(false);
+		if (over.ok) return;
+		expect(over.limit).toBe(true);
+	});
+
+	it("attaching a subtree is measured against where it lands", () => {
+		const tree = new RuntimeHostNodeLedger();
+		const first = validatePatchBatch(batch(chain(1, 5, 0)), limits, { tree });
+		if (!first.ok) throw new Error(first.reason);
+		first.commit();
+		/** A detached five-node chain, then attached under node 5 (four ancestors deep): 4 + 5 > 8. */
+		const detached = chain(100, 5, 0).filter(
+			(_, index) => index !== 1,
+		) as unknown[];
+		const second = validatePatchBatch(
+			batch(
+				[...detached, { op: "insert", parent: 5, child: 100, index: 0 }],
+				2,
+			),
+			limits,
+			{ tree, expectedRevision: 2 },
+		);
+		expect(second.ok).toBe(false);
+	});
+});

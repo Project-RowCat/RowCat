@@ -47,9 +47,12 @@ import {
 export function RuntimePlaytest({
 	project,
 	title,
+	adult,
 }: {
 	project: DraftRuntimeProject;
 	title: string;
+	/** The draft's rating; generations in the test run under the same guards publication would give them. */
+	adult: boolean;
 }) {
 	const { t } = useTranslation(["playtest", "common"]);
 	const draftId = project.draftId;
@@ -65,7 +68,7 @@ export function RuntimePlaytest({
 		entry: project.entry,
 		assets: assets.items,
 	});
-	const generation = useRuntimePreviewGeneration();
+	const generation = useRuntimePreviewGeneration({ storyId: null, adult });
 	const empty = !files.loading && sources.snapshot.files.length === 0;
 	/**
 	 * Observation log: it reads the messages already flowing by, from the side. Neither the worker,

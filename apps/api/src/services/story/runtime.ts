@@ -18,12 +18,10 @@ import {
 	runtimeManagedAssetBindings,
 } from "@rowcat/runtime/asset";
 import { RUNTIME_API_VERSION } from "@rowcat/runtime/declarations";
-import {
-	compileRuntimeProject,
-	type RuntimeArtifact,
-	type RuntimeDiagnostic,
+import type {
+	RuntimeArtifact,
+	RuntimeDiagnostic,
 } from "@rowcat/runtime-compiler";
-import { nodeRuntimeEnvironment } from "@rowcat/runtime-compiler/node";
 import { eq } from "drizzle-orm";
 import { db } from "../../db/client.ts";
 import { story_runtime } from "../../db/schema.ts";
@@ -34,6 +32,7 @@ import {
 	syncStoryRuntimeAssetReferences,
 } from "../runtime-image.ts";
 import type { Tx } from "./index.ts";
+import { compileRuntimeInIsolation } from "./runtime-compile.ts";
 
 /**
  * Runtime publication: turns authored source into an executable artifact.
@@ -369,28 +368,47 @@ export interface CompiledStoryRuntime {
 /**
  * Runtime source -> artifact; does not touch the DB.
  *
+ * The compile runs in a thread of its own with a memory ceiling and a deadline
+ * (`runtime-compile.ts`): type checking is unbounded, and inline it let a kilobyte of source take
+ * the whole API down. Running out of either is the source's doing and is rejected like any other
+ * diagnostic; a busy compiler is a 503.
+ *
  * Exceptions thrown by the compiler are our failures, not the creator's. Folding them into
  * diagnostics would make a server incident look like a syntax error, so they are not caught here
  * and become a 500 with a log entry.
  */
-export function compileStoryRuntime(project: {
+export async function compileStoryRuntime(project: {
 	apiVersion: number;
 	entry: string;
 	files: readonly { path: string; content: string }[];
-}): CompiledStoryRuntime {
+}): Promise<CompiledStoryRuntime> {
 	requireValidRuntimeSource(project);
 
-	const result = compileRuntimeProject(
-		{
-			apiVersion: project.apiVersion,
-			entry: project.entry,
-			files: project.files.map((file) => ({
-				path: file.path,
-				content: file.content,
-			})),
-		},
-		nodeRuntimeEnvironment(),
-	);
+	const isolated = await compileRuntimeInIsolation({
+		apiVersion: project.apiVersion,
+		entry: project.entry,
+		files: project.files.map((file) => ({
+			path: file.path,
+			content: file.content,
+		})),
+	});
+	if (isolated.kind === "busy")
+		throw new ApiError(
+			503,
+			STORY_PUBLISH_ERROR_CODE.runtimeCompileBusy,
+			"Too many runtime projects are being checked right now. Please try again in a moment.",
+			{ retryAfterSeconds: 10 },
+		);
+	if (isolated.kind === "exhausted")
+		rejectRuntime([
+			shapeIssue(
+				"runtime_compile_exhausted",
+				isolated.reason === "memory"
+					? "Checking this project needed more memory than a publication may use. Simplify the types (deeply recursive or very large type computations are the usual cause) and try again."
+					: "Checking this project took longer than a publication may take. Simplify the types (deeply recursive or very large type computations are the usual cause) and try again.",
+			),
+		]);
+	const result = isolated.result;
 
 	if (!result.ok)
 		rejectRuntime(
@@ -458,7 +476,7 @@ export async function planStoryRuntime(
 	await requireOwnRuntimeAssets(ownerId, input.project.assets);
 	return {
 		kind: "publish",
-		compiled: compileStoryRuntime(input.project),
+		compiled: await compileStoryRuntime(input.project),
 		assets: canonicalManagedAssets(input.project.assets),
 	};
 }

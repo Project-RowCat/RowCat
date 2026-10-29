@@ -158,21 +158,57 @@ export function createByteGate(limits: ByteGateLimits): ByteGate {
 export function releasingBody(
 	bytes: Uint8Array,
 	release: () => void,
-	options: { signal?: AbortSignal; chunkBytes?: number } = {},
+	options: {
+		signal?: AbortSignal;
+		chunkBytes?: number;
+		/**
+		 * What ends a stalled response: the route passes `destroyResponse(c)`. Called once, after
+		 * `stallMs` without a pull; the slot is returned either way.
+		 */
+		onStall?: () => void;
+		stallMs?: number;
+	} = {},
 ): ReadableStream<Uint8Array> {
-	const { signal, chunkBytes = 256 * 1024 } = options;
-	/** Only the first of end, cancel and abort releases; the three really do overlap. */
+	const {
+		signal,
+		chunkBytes = 256 * 1024,
+		onStall,
+		stallMs = BODY_STALL_MS,
+	} = options;
+	let stall: ReturnType<typeof setTimeout> | null = null;
+	/** Only the first of end, cancel, abort and stall releases; the four really do overlap. */
 	let returned = false;
 	const giveBack = () => {
 		if (returned) return;
 		returned = true;
+		if (stall !== null) clearTimeout(stall);
 		signal?.removeEventListener("abort", giveBack);
 		release();
+	};
+	/**
+	 * A reader that stops reading. The server honours backpressure and has no response timeout, so a
+	 * client that keeps its TCP window at zero never ends, never cancels and never disconnects: the slot
+	 * stayed held for as long as the client liked, and thirteen such requests for a 10 MiB track pinned
+	 * the whole gate (every avatar, cover and sound in the process answered 503). Pulls are the
+	 * evidence of progress, so `stallMs` without one ends the response: a slow client on a bad network
+	 * still pulls a chunk every few seconds, and only a client that has stopped does not.
+	 */
+	const armStall = () => {
+		if (stall !== null) clearTimeout(stall);
+		stall = setTimeout(() => {
+			stall = null;
+			if (returned) return;
+			giveBack();
+			onStall?.();
+		}, stallMs);
 	};
 	if (signal?.aborted) giveBack();
 	else signal?.addEventListener("abort", giveBack, { once: true });
 	let offset = 0;
 	return new ReadableStream<Uint8Array>({
+		start() {
+			if (!returned) armStall();
+		},
 		pull(controller) {
 			if (offset >= bytes.byteLength) {
 				controller.close();
@@ -182,12 +218,16 @@ export function releasingBody(
 			const end = Math.min(bytes.byteLength, offset + chunkBytes);
 			controller.enqueue(bytes.subarray(offset, end));
 			offset = end;
+			armStall();
 		},
 		cancel() {
 			giveBack();
 		},
 	});
 }
+
+/** How long a response may go without its reader taking the next chunk (`releasingBody`). */
+export const BODY_STALL_MS = 30_000;
 
 const MiB = 1024 * 1024;
 

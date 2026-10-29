@@ -553,6 +553,8 @@ describe.skipIf(!databaseReady)("playback — the unified path", () => {
 		expect(body.version).toBe(1);
 		expect(body.capabilities).toEqual([]);
 		expect(JSON.stringify(body.artifact)).toContain("src/main.tsx");
+		/** The rating runtime generation reads (`resolveAllAges`); this work was published all-ages. */
+		expect(body.adult).toBe(false);
 	});
 
 	test("a conversation story gives the playback snapshot", async () => {

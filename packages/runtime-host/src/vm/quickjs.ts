@@ -163,6 +163,32 @@ export function createQuickJsEngine(
  */
 const MAX_ERROR_MESSAGE_CHARS = 4 * 1024;
 const MAX_ERROR_STACK_CHARS = 16 * 1024;
+
+/**
+ * How long reading a thrown value may take (`classify`). An error's `name`, `message` and `stack`
+ * read in microseconds; this exists for the value whose getters were written to never return.
+ */
+const CLASSIFY_BUDGET_MS = 25;
+
+/**
+ * Classification before any slice has run (a failure while the prelude installs) has no clock to
+ * borrow. Creator code is not running yet then, so a slice that interrupts at the first check loses
+ * nothing real.
+ */
+const CLASSIFY_WITHOUT_CLOCK: RuntimeVmSlice = {
+	deadline: 0,
+	now: () => 1,
+	isCancelled: () => true,
+};
+
+/** A thrown value that could not be read in time, or whose reading threw. */
+const UNREADABLE_FAILURE: RuntimeVmFailure = {
+	kind: "thrown",
+	name: "Error",
+	message: "",
+	stack: "",
+	hostCode: null,
+};
 const MAX_CONSOLE_LINE_CHARS = 64 * 1024;
 const clip = (value: string, max: number): string =>
 	value.length > max ? `${value.slice(0, max)}…` : value;
@@ -183,6 +209,8 @@ class QuickJsInstance implements RuntimeVmInstance {
 	private readonly memory: WasmMemory;
 	private readonly options: RuntimeVmCreateOptions;
 	private currentSlice: RuntimeVmSlice | null = null;
+	/** The most recent slice, kept after it ends only for its clock and cancellation (`classify`). */
+	private lastSlice: RuntimeVmSlice | null = null;
 	private trusted: TrustedFunctions | null = null;
 	private readonly namespaces = new Map<string, QuickJSHandle>();
 	private readonly builtinNamespaces = new Map<string, QuickJSHandle>();
@@ -238,6 +266,7 @@ class QuickJsInstance implements RuntimeVmInstance {
 
 	private slice<T>(slice: RuntimeVmSlice, fn: () => T): T {
 		this.currentSlice = slice;
+		this.lastSlice = slice;
 		try {
 			return fn();
 		} finally {
@@ -260,56 +289,87 @@ class QuickJsInstance implements RuntimeVmInstance {
 		return error;
 	}
 
-	/** Converts an error handle inside the VM into our vocabulary. The handle is released here. */
+	/**
+	 * Converts an error handle inside the VM into our vocabulary. The handle is released here.
+	 *
+	 * **Reading a thrown value can run creator code** — a `toJSON`, a getter on `name`/`message`/
+	 * `stack`, a proxy trap — and this runs after the execution's slice has ended, where the interrupt
+	 * handler never interrupts. It used to read through `context.dump`, which also calls
+	 * `JSON.stringify`, so `throw { toJSON() { for (;;) {} } }` ran unbounded on the host thread: past the
+	 * execution budget, past stop and dispose. So classification gets a slice of its own
+	 * (`CLASSIFY_BUDGET_MS`, on the clock of the slice that just ran) and reads three properties instead
+	 * of dumping the value. A read that is interrupted or throws folds to an unnamed creator error.
+	 *
+	 * Not dumping objects also closes the second defect: `dump` disposes a promise's handle itself,
+	 * after which reading or disposing that handle here was a use-after-free that escaped the scheduler
+	 * as an unhandled rejection (`throw new Promise(() => {})` killed a Node host).
+	 */
 	private classify(error: QuickJSHandle): RuntimeVmFailure {
+		const outer = this.currentSlice;
+		const basis = outer ?? this.lastSlice;
+		this.currentSlice =
+			basis === null
+				? CLASSIFY_WITHOUT_CLOCK
+				: {
+						deadline: basis.now() + CLASSIFY_BUDGET_MS,
+						now: () => basis.now(),
+						isCancelled: () => basis.isCancelled(),
+					};
 		try {
-			const dumped: unknown = this.context.dump(error);
-			if (typeof dumped !== "object" || dumped === null)
-				return {
-					kind: "thrown",
-					name: "Error",
-					message: String(dumped),
-					stack: "",
-					hostCode: null,
-				};
-			const { name, message, stack } = dumped as Record<string, unknown>;
-			/**
-			 * Creator-defined strings are clipped here. Guest code can make `name`, `message`, and `stack`
-			 * arbitrarily long. Passed through unchanged, diagnostics, UI, and logs would carry that size.
-			 */
-			const errorName = clip(typeof name === "string" ? name : "Error", 256);
-			const errorMessage = clip(
-				typeof message === "string" ? message : "",
-				MAX_ERROR_MESSAGE_CHARS,
-			);
-			if (errorName === "InternalError") {
-				if (errorMessage === "interrupted") return { kind: "interrupted" };
-				if (errorMessage.includes("out of memory")) return { kind: "memory" };
-			}
-			const hostCode = this.stringProp(error, HOST_ERROR_MARK);
-			/**
-			 * The runtime code is read only from `RuntimeError`. Creators may attach `code` to their own
-			 * errors, but that value must not be read in the runtime's vocabulary.
-			 */
-			const runtimeCode =
-				errorName === "RuntimeError"
-					? this.stringProp(error, RUNTIME_CODE_MARK)
-					: null;
+			return this.readFailure(error);
+		} catch {
+			return UNREADABLE_FAILURE;
+		} finally {
+			this.currentSlice = outer;
+			if (error.alive) error.dispose();
+		}
+	}
+
+	private readFailure(error: QuickJSHandle): RuntimeVmFailure {
+		const type = this.context.typeof(error);
+		/** Primitives carry no code to run; `dump` only reads them. */
+		if (type !== "object" && type !== "function")
 			return {
 				kind: "thrown",
-				name: errorName,
-				message: errorMessage,
-				stack: clip(
-					typeof stack === "string" ? stack : "",
-					MAX_ERROR_STACK_CHARS,
+				name: "Error",
+				message: clip(
+					String(this.context.dump(error)),
+					MAX_ERROR_MESSAGE_CHARS,
 				),
-				hostCode,
-				runtimeCode,
-				componentStack: this.stringProp(error, COMPONENT_STACK_MARK),
+				stack: "",
+				hostCode: null,
 			};
-		} finally {
-			error.dispose();
+		const name = this.stringProp(error, "name");
+		const message = this.stringProp(error, "message");
+		const stack = this.stringProp(error, "stack");
+		/**
+		 * Creator-defined strings are clipped here. Guest code can make `name`, `message`, and `stack`
+		 * arbitrarily long. Passed through unchanged, diagnostics, UI, and logs would carry that size.
+		 */
+		const errorName = clip(name ?? "Error", 256);
+		const errorMessage = clip(message ?? "", MAX_ERROR_MESSAGE_CHARS);
+		if (errorName === "InternalError") {
+			if (errorMessage === "interrupted") return { kind: "interrupted" };
+			if (errorMessage.includes("out of memory")) return { kind: "memory" };
 		}
+		const hostCode = this.stringProp(error, HOST_ERROR_MARK);
+		/**
+		 * The runtime code is read only from `RuntimeError`. Creators may attach `code` to their own
+		 * errors, but that value must not be read in the runtime's vocabulary.
+		 */
+		const runtimeCode =
+			errorName === "RuntimeError"
+				? this.stringProp(error, RUNTIME_CODE_MARK)
+				: null;
+		return {
+			kind: "thrown",
+			name: errorName,
+			message: errorMessage,
+			stack: clip(stack ?? "", MAX_ERROR_STACK_CHARS),
+			hostCode,
+			runtimeCode,
+			componentStack: this.stringProp(error, COMPONENT_STACK_MARK),
+		};
 	}
 
 	private stringProp(error: QuickJSHandle, name: string): string | null {

@@ -100,7 +100,11 @@ export function RuntimeConversation({ storyId }: { storyId: string }) {
 	 * already uses, so no second AI stack exists. It is not chat's `useChatGeneration`, which is a
 	 * turn that stores a `ChatMessage`. Runtime generation only returns text to creator code (§24).
 	 */
-	const adapter = useRuntimePreviewGeneration({ storyId });
+	const adapter = useRuntimePreviewGeneration({
+		storyId,
+		/** Until the playback response arrives nothing runs, so `false` there is never read for a real request. */
+		adult: playback.data?.kind === "runtime" ? playback.data.adult : false,
+	});
 
 	const player = useRuntimePlayer({
 		storyId,

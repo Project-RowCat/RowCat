@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, test } from "vitest";
+import { afterAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { app } from "../app.ts";
 import { closeDb, db } from "../db/client.ts";
 import { member, user } from "../db/schema.ts";
@@ -39,7 +39,19 @@ const openLink = async (url: string, cookie?: string): Promise<Response> => {
 const linkIn = mail.linkIn;
 const mailsTo = (email: string): TransactionalMessage[] =>
 	mail.messages.filter((message) => message.to === email);
-const lastMailTo = (email: string) => mail.lastTo(email);
+/**
+ * The senders do not await the mail (so response time does not reveal registration; see
+ * `sendWithoutWaiting` in `auth/index.ts`), so the mailbox may still be empty when the response
+ * returns.
+ */
+const lastMailTo = (email: string) =>
+	vi.waitFor(() => mail.lastTo(email), { timeout: 2000, interval: 10 });
+
+/**
+ * A short wait before asserting that **no** mail went out. With background sending, a wrongly sent
+ * mail would arrive after the response; checking at once would pass whatever the code did.
+ */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
 
 const newAddress = (): string => `${EMAIL_PREFIX}${newId()}@example.test`;
 
@@ -62,7 +74,7 @@ async function signUpVerified(): Promise<Account> {
 		email,
 		password: TEST_PASSWORD,
 	});
-	await openLink(linkIn(lastMailTo(email)));
+	await openLink(linkIn(await lastMailTo(email)));
 
 	const signedIn = await authPost("/sign-in/email", {
 		email,
@@ -122,21 +134,21 @@ describe.skipIf(!databaseReady)("email change", () => {
 		expect(requested.status).toBe(200);
 
 		// Step 1: the approval request goes to the current address; the new one gets nothing yet.
-		expect(mailsTo(alice.email)).toHaveLength(1);
+		await vi.waitFor(() => expect(mailsTo(alice.email)).toHaveLength(1));
 		expect(mailsTo(next)).toHaveLength(0);
-		expect(lastMailTo(alice.email).text).toContain(next);
+		expect((await lastMailTo(alice.email)).text).toContain(next);
 		expect(await emailOf(alice.authUserId)).toBe(alice.email);
 
 		// Step 2: approving sends the confirmation to the new address; the address is still unchanged.
-		const approveLink = linkIn(lastMailTo(alice.email));
+		const approveLink = linkIn(await lastMailTo(alice.email));
 		mail.reset();
 		await openLink(approveLink, alice.cookie);
 
-		expect(mailsTo(next)).toHaveLength(1);
+		await vi.waitFor(() => expect(mailsTo(next)).toHaveLength(1));
 		expect(await emailOf(alice.authUserId)).toBe(alice.email);
 
 		// Step 3: only confirming from the new address changes it.
-		await openLink(linkIn(lastMailTo(next)), alice.cookie);
+		await openLink(linkIn(await lastMailTo(next)), alice.cookie);
 		expect(await emailOf(alice.authUserId)).toBe(next);
 
 		// The new address is already verified, so sign-in works immediately.
@@ -175,8 +187,8 @@ describe.skipIf(!databaseReady)("email change", () => {
 
 		mail.reset();
 		await authPost("/change-email", { newEmail: next }, alice.cookie);
-		await openLink(linkIn(lastMailTo(alice.email)), alice.cookie);
-		await openLink(linkIn(lastMailTo(next)), alice.cookie);
+		await openLink(linkIn(await lastMailTo(alice.email)), alice.cookie);
+		await openLink(linkIn(await lastMailTo(next)), alice.cookie);
 		expect(await emailOf(alice.authUserId)).toBe(next);
 
 		// Same auth account id; no new row.
@@ -226,6 +238,7 @@ describe.skipIf(!databaseReady)("email change", () => {
 		expect(response.status).toBe(200);
 
 		// Bob gets no mail; one would itself be a detection signal.
+		await settle();
 		expect(mailsTo(bob.email)).toHaveLength(0);
 
 		// Both accounts are unchanged.
@@ -291,6 +304,7 @@ describe.skipIf(!databaseReady)("email change", () => {
 		mail.reset();
 		await authPost("/change-email", { newEmail: next }, alice.cookie);
 
+		await lastMailTo(alice.email);
 		expect(await emailOf(alice.authUserId)).toBe(alice.email);
 		expect(mailsTo(next)).toHaveLength(0);
 		expect(

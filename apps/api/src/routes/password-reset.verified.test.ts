@@ -58,7 +58,7 @@ async function signUpVerified(): Promise<{ email: string; cookie: string }> {
 		email,
 		password: TEST_PASSWORD,
 	});
-	await openLink(mail.linkIn(mail.lastTo(email)));
+	await openLink(mail.linkIn(await awaitMailTo(email)));
 	const signedIn = await authPost("/sign-in/email", {
 		email,
 		password: TEST_PASSWORD,

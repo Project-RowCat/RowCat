@@ -56,6 +56,7 @@ export {
 	type RuntimeCapabilityRegistry,
 	type RuntimeConsoleLevel,
 	type RuntimeConsoleSink,
+	type RuntimeEventSource,
 	type RuntimeHostCallContext,
 	type RuntimeHostCallOrigin,
 	type RuntimeSessionLimits,

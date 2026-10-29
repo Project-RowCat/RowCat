@@ -44,6 +44,14 @@ export const StoryPlaybackDto = z.discriminatedUnion("kind", [
 		 */
 		capabilities: z.array(z.enum(["generation"])),
 		/**
+		 * The work's rating, as the server stored it at publication (the same `adult` a chat seed
+		 * carries). Runtime generation decides all-ages from this and the viewer's entitlement together
+		 * (`resolveAllAges`, as conversations do); deciding from the viewer alone let an all-ages work's
+		 * generations run under the adult guards for adult viewers, which walked around the adult
+		 * publishing gate. Absent from older servers, and absence reads as all-ages: the safe direction.
+		 */
+		adult: z.boolean().default(false),
+		/**
 		 * Logical-name image bindings, a snapshot fixed at publish time. asset("characters/sena/smile")
 		 * resolves to { path, assetId }, and the player's resolver builds the RowCat media address from
 		 * assetId. Bindings live here rather than in the artifact because they are a publish decision,

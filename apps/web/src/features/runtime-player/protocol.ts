@@ -64,6 +64,8 @@ export type PlayerWorkerRequest =
 			generation: PlayerGeneration;
 			handlerId: number;
 			payload?: string | null;
+			/** `media` for an event nobody pressed (a sound ending); the session refuses generation for it. Absent is an interaction. */
+			source?: "media";
 	  }
 	| {
 			type: "generation-result";

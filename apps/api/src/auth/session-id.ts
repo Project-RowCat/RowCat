@@ -20,6 +20,19 @@ export async function resolveSessionId(
 }
 
 /**
+ * Whether the session behind these headers still stands, read past the cookie cache. A long-lived
+ * response asks this again later (the sync wake-up stream, at each heartbeat): the cookie cache
+ * answers from the cookie itself, which is exactly what a revoked session still carries.
+ */
+export async function sessionStillValid(headers: Headers): Promise<boolean> {
+	const session = await auth.api.getSession({
+		headers,
+		query: { disableCookieCache: true },
+	});
+	return Boolean(session?.session);
+}
+
+/**
  * Same value as Better Auth's `freshAge` (24 hours). The library enforces it only on its own
  * endpoints (session revoke, method unlink, account deletion); if ours used a different value, some
  * operations would demand a re-login and others not, with no way to explain the difference.

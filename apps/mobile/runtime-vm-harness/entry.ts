@@ -408,13 +408,11 @@ async function dispatch(
 	generation: NativeRuntimeGeneration,
 	handlerId: number,
 	payload: string | undefined,
+	source: "interaction" | "media",
 ): Promise<void> {
 	if (current === null || current.generation !== generation) return;
 	const { session } = current;
-	const outcome =
-		payload === undefined
-			? await session.dispatchEvent(handlerId)
-			: await session.dispatchEvent(handlerId, payload);
+	const outcome = await session.dispatchEvent(handlerId, payload ?? null, source);
 	if (outcome.ok) return;
 	if (await failIfDead(generation, session, outcome.error)) return;
 	/** The handler's synchronous part threw; only that event is lost and the session survives. */
@@ -495,7 +493,12 @@ function receive(json: string): void {
 			return;
 		case "event":
 			/** Events do not wait on the chain; the session's scheduler owns ordering. */
-			void dispatch(message.generation, message.handlerId, message.payload);
+			void dispatch(
+				message.generation,
+				message.handlerId,
+				message.payload,
+				message.source === "media" ? "media" : "interaction",
+			);
 			return;
 	}
 }

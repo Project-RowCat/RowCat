@@ -238,11 +238,16 @@ export function useRuntimePlayer(options: RuntimePlayerOptions): RuntimePlayer {
 		rendererRef.current = createWebRuntimeRenderer({
 			container: element,
 			onAudioActivationChange: setAudioActivationRequired,
-			dispatchEvent: (handlerId, payload) => {
+			dispatchEvent: (handlerId, payload, source) => {
 				const session = sessionRef.current;
 				if (session === null || session.generation !== generationRef.current)
 					return;
-				session.client.dispatchEvent(session.generation, handlerId, payload);
+				session.client.dispatchEvent(
+					session.generation,
+					handlerId,
+					payload,
+					source,
+				);
 			},
 			/**
 			 * The resolver comes from outside, and both branches end up as drawing.

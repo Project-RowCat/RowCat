@@ -71,6 +71,8 @@ export type PreviewWorkerRequest =
 			 * The string carried by a text input. Absent for a press; that slot is a call with no argument.
 			 */
 			payload?: string | null;
+			/** `media` for an event nobody pressed (a sound ending); the session refuses generation for it. Absent is an interaction. */
+			source?: "media";
 	  }
 	| {
 			type: "generation-result";

@@ -245,8 +245,13 @@ export class RuntimeHostNodeLedger {
 	 * unchanged. Calling the returned `commit` applies it. Computing and applying walk the same steps,
 	 * so the two cannot diverge.
 	 */
-	project(patches: readonly RuntimePatch[]): {
+	project(
+		patches: readonly RuntimePatch[],
+		maxDepth = Number.POSITIVE_INFINITY,
+	): {
 		readonly live: number;
+		/** Whether a node this batch attached would sit deeper than `maxDepth`. */
+		readonly tooDeep: boolean;
 		readonly commit: () => void;
 	} {
 		const born = new Set<number>();
@@ -311,8 +316,54 @@ export class RuntimeHostNodeLedger {
 			}
 		}
 
+		/**
+		 * Depth is checked here too, not only by the reconciler in the VM: a batch is a string the VM
+		 * hands over, and creator code can make it whatever it likes (an `Object.prototype.toJSON` reaches
+		 * the stringify the root uses). A 5,000-deep chain would then reach the renderers' layout.
+		 *
+		 * Only what this batch attached can have grown deeper, so only those subtrees are walked: their
+		 * ancestors up to the synthetic root, plus their own height. Depth counts ancestors below the root
+		 * (a child of the root is 0). The reconciler counts fibers, components included, so for a real tree
+		 * this number is never larger than the one the VM already accepted. Both walks stop once past the
+		 * limit, which also ends a walk that a cycle would make endless.
+		 */
+		let tooDeep = false;
+		if (Number.isFinite(maxDepth)) {
+			const heightWithin = (root: number, budget: number): number => {
+				let tallest = 0;
+				const stack: [number, number][] = [[root, 1]];
+				while (stack.length > 0) {
+					const [node, height] = stack.pop() as [number, number];
+					if (height > tallest) tallest = height;
+					if (tallest > budget) return tallest;
+					for (const child of childrenOf(node))
+						if (isAlive(child)) stack.push([child, height + 1]);
+				}
+				return tallest;
+			};
+			outer: for (const set of attached.values())
+				for (const child of set) {
+					if (!isAlive(child)) continue;
+					let ancestors = 0;
+					let cursor = parentOf(child);
+					while (cursor !== undefined && cursor !== 0) {
+						ancestors += 1;
+						if (ancestors > maxDepth) break;
+						cursor = parentOf(cursor);
+					}
+					if (
+						ancestors + heightWithin(child, maxDepth + 1 - ancestors) - 1 >
+						maxDepth
+					) {
+						tooDeep = true;
+						break outer;
+					}
+				}
+		}
+
 		return {
 			live: live < 0 ? 0 : live,
+			tooDeep,
 			commit: () => {
 				for (const id of born) this.alive.add(id);
 				for (const [parent, set] of detached)
@@ -398,7 +449,14 @@ export function validatePatchBatch(
 	const checked = patches as RuntimePatch[];
 	const projected = (options.tree ?? new RuntimeHostNodeLedger()).project(
 		checked,
+		limits.maxTreeDepth,
 	);
+	if (projected.tooDeep)
+		return {
+			ok: false,
+			reason: `commit would nest host nodes deeper than ${limits.maxTreeDepth}`,
+			limit: true,
+		};
 	if (projected.live > limits.maxHostNodes)
 		return {
 			ok: false,

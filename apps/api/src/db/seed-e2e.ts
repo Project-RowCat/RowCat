@@ -163,7 +163,7 @@ export default function App() {
  */
 async function seedRuntimeStory(now: Date): Promise<boolean> {
 	const title = "E2E runtime journey story";
-	const compiled = compileStoryRuntime({
+	const compiled = await compileStoryRuntime({
 		apiVersion: RUNTIME_API_VERSION,
 		entry: "src/main.tsx",
 		files: [{ path: "src/main.tsx", content: E2E_RUNTIME_SOURCE }],

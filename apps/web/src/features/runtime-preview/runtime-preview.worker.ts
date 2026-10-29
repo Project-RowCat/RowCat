@@ -13,6 +13,7 @@ import {
 	createRuntimeVmSession,
 	emptyPersistentStateSnapshot,
 	emptyStoryStateSnapshot,
+	type RuntimeEventSource,
 	type RuntimeExecutionError,
 	RuntimeGenerationError,
 	RuntimeHostError,
@@ -401,10 +402,11 @@ async function event(
 	generation: PreviewGeneration,
 	handlerId: number,
 	payload: string | null,
+	source: RuntimeEventSource,
 ): Promise<void> {
 	if (current === null || current.generation !== generation) return;
 	const { session } = current;
-	const outcome = await session.dispatchEvent(handlerId, payload);
+	const outcome = await session.dispatchEvent(handlerId, payload, source);
 	if (outcome.ok) return;
 	if (await failIfDead(generation, session, outcome.error)) return;
 	/** The handler threw synchronously. Only that event is lost; the session stays alive. */
@@ -467,6 +469,7 @@ self.addEventListener(
 					request.generation,
 					request.handlerId,
 					request.payload ?? null,
+					request.source === "media" ? "media" : "interaction",
 				);
 				return;
 			case "generation-result": {

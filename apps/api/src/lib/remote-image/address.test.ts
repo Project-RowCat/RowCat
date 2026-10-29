@@ -85,6 +85,12 @@ describe("IPv6", () => {
 		["2001:db8::1", "documentation"],
 		["2001::1", "Teredo"],
 		["100::1", "deprecated range"],
+		["::127.0.0.1", "IPv4-compatible loopback"],
+		["::a9fe:a9fe", "IPv4-compatible link-local (metadata)"],
+		["::8.8.8.8", "IPv4-compatible, even when the IPv4 is public"],
+		["::ffff:0:a00:1", "SIIT IPv4-translated"],
+		["64:ff9b:1::a00:1", "local-use NAT64"],
+		["3fff::1", "documentation (RFC 9637)"],
 	])("rejected: %s (%s)", (address) => {
 		expect(isPublicIpv6(address)).toBe(false);
 		expect(isPublicAddress(address)).toBe(false);

@@ -420,6 +420,8 @@ interface Vm {
 	line(): string;
 	dispose(): Promise<void>;
 	metrics(): unknown;
+	/** Raises the same handler the way a sound reaching its end does (`source: "media"`). */
+	raise(): Promise<void>;
 }
 
 async function boot(source: string, port: RuntimeGenerationPort): Promise<Vm> {
@@ -462,6 +464,14 @@ async function boot(source: string, port: RuntimeGenerationPort): Promise<Vm> {
 			if (!outcome.ok) throw outcome.error;
 			await quiesce();
 		},
+		raise: async () => {
+			const button = tree.findByText("Send");
+			const handler = handlerIdOf(button?.props.onPress ?? null);
+			if (handler === null) throw new Error("Send has no onPress");
+			const outcome = await session.dispatchEvent(handler, null, "media");
+			if (!outcome.ok) throw outcome.error;
+			await quiesce();
+		},
 		dispose: () => session.dispose(),
 	};
 }
@@ -482,6 +492,24 @@ describe("authorization across the VM", () => {
 				},
 			]);
 			expect(vm.metrics()).toMatchObject({ issued: 1, completed: 1 });
+		} finally {
+			await vm.dispose();
+		}
+	});
+
+	/**
+	 * The same handler raised by the platform rather than a person (`<Audio onEnded>`): it is the event
+	 * path, but nobody pressed anything, so generation refuses it. Folded into an interaction, a sound
+	 * that restarts itself on end could generate up to the session budget with no one touching the
+	 * screen.
+	 */
+	it("generation called from a media event is refused", async () => {
+		const port = recordingPort(() => "must not be called");
+		const vm = await boot(ON_PRESS, port);
+		try {
+			await vm.raise();
+			expect(vm.line()).toBe("err:runtime_generation_not_authorized");
+			expect(port.seen).toEqual([]);
 		} finally {
 			await vm.dispose();
 		}

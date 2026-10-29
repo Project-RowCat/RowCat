@@ -4,6 +4,7 @@ import {
 	CreatorExecutionError,
 	createRuntimeVmSession,
 	RUNTIME_HOST_ERROR_CODE,
+	type RuntimeEventSource,
 	type RuntimeExecutionError,
 	RuntimeGenerationError,
 	RuntimeHostError,
@@ -345,10 +346,11 @@ async function event(
 	generation: PlayerGeneration,
 	handlerId: number,
 	payload: string | null,
+	source: RuntimeEventSource,
 ): Promise<void> {
 	if (current === null || current.generation !== generation) return;
 	const { session } = current;
-	const outcome = await session.dispatchEvent(handlerId, payload);
+	const outcome = await session.dispatchEvent(handlerId, payload, source);
 	if (outcome.ok) return;
 	if (await failIfDead(generation, session, outcome.error)) return;
 	post({
@@ -392,6 +394,7 @@ self.addEventListener(
 					request.generation,
 					request.handlerId,
 					request.payload ?? null,
+					request.source === "media" ? "media" : "interaction",
 				);
 				return;
 			case "generation-result": {

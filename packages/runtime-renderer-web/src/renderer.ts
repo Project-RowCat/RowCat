@@ -290,7 +290,8 @@ export function createWebRuntimeRenderer(
 				const handler = record.handlers.get("onEnded");
 				if (handler === undefined) return;
 				if (failure !== null || disposed) return;
-				options.dispatchEvent(handler, undefined);
+				/** Not a press: the host must not treat a sound ending as someone's interaction. */
+				options.dispatchEvent(handler, undefined, "media");
 			},
 			onPendingChange: (pending) => {
 				if (pending) awaitingActivation.add(token);

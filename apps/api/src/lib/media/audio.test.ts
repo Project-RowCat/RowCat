@@ -105,6 +105,18 @@ describe("M4A", () => {
 		);
 	});
 
+	/**
+	 * The walker stops at its box cap. Judging only what it reached let a video track hidden behind
+	 * four thousand filler boxes pass as audio; reaching the cap now rejects the file.
+	 */
+	test("a video track hidden past the box cap is not accepted either", () => {
+		expect(
+			codeOf(() =>
+				validateAudio(buildM4a({ video: true, fillerBoxes: 4_100 })),
+			),
+		).toBe("media_invalid_audio");
+	});
+
 	test("no sound track means it is damaged", () => {
 		expect(codeOf(() => validateAudio(buildM4a({ silent: true })))).toBe(
 			"media_invalid_audio",

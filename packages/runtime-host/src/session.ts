@@ -22,6 +22,7 @@ import {
 	type RuntimeCapabilityRegistry,
 	type RuntimeConsoleLevel,
 	type RuntimeConsoleSink,
+	type RuntimeEventSource,
 	type RuntimeHostCallOrigin,
 	type RuntimeSessionLimits,
 } from "./capabilities.ts";
@@ -315,6 +316,8 @@ export interface RuntimeVmSession {
 	dispatchEvent(
 		handlerId: number,
 		payload?: RuntimeWireValue,
+		/** `media` for an event nobody pressed: interaction-only capabilities (generation) refuse it. */
+		source?: RuntimeEventSource,
 	): Promise<RuntimeEventOutcome>;
 	/**
 	 * Runs cleanup functions, emits a batch that removes every node, then releases the root. The
@@ -1514,6 +1517,8 @@ class Session implements RuntimeVmSession {
 	async dispatchEvent(
 		handlerId: number,
 		payload: RuntimeWireValue = null,
+		/** `media` for an event nobody pressed (`RuntimeHostCallOrigin`); interaction is the default because presses and inputs are every other caller. */
+		source: RuntimeEventSource = "interaction",
 	): Promise<RuntimeEventOutcome> {
 		this.rootMetricsCounters.eventsDispatched += 1;
 		const encoded = encodeWireValue([handlerId, payload], this.wireLimits);
@@ -1527,7 +1532,7 @@ class Session implements RuntimeVmSession {
 			};
 		const outcome = await this.submit(
 			"call",
-			"event",
+			source === "media" ? "media" : "event",
 			"userBlocking",
 			(slice) =>
 				this.vm.callBuiltinExport(

@@ -25,9 +25,17 @@ import { syncEntryValue } from "./props.ts";
 
 export type RuntimeEventPayload = string | null;
 
+/**
+ * What raised the event. `media` is a sound reaching its end: the same handler path as a press, but
+ * nobody pressed anything, and the host refuses interaction-only capabilities (generation) for it.
+ * The renderer decides this at the DOM callback; creator code has no way to name it.
+ */
+export type RuntimeEventSource = "interaction" | "media";
+
 export type RuntimeEventDispatcher = (
 	handlerId: number,
 	payload?: RuntimeEventPayload,
+	source?: RuntimeEventSource,
 ) => void;
 
 /** Legacy alias from when only presses existed. It is the same function. */

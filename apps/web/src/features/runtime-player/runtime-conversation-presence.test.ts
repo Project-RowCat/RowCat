@@ -15,6 +15,7 @@ const runtime: StoryPlaybackDto = {
 	kind: "runtime",
 	artifact: {},
 	capabilities: [],
+	adult: false,
 	managedAssets: [],
 };
 

@@ -19,6 +19,12 @@ export default defineConfig({
 		"src/index.ts",
 		"src/jobs/cli.ts",
 		"src/services/mobile-updates/cli.ts",
+		/**
+		 * The publication compile thread (`services/story/runtime-compile.ts`). It is loaded by path from
+		 * a `Worker`, not imported, so the bundler would not find it on its own; that file resolves it at
+		 * `dist/services/story/runtime-compile-worker.mjs`.
+		 */
+		"src/services/story/runtime-compile-worker.ts",
 	],
 	outDir: "dist",
 	format: "esm",

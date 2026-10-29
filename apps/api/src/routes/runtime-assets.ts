@@ -3,7 +3,8 @@ import { Hono } from "hono";
 import type { AppEnv } from "../app.ts";
 import { ApiError, badRequest } from "../lib/errors.ts";
 import { requireViewer } from "../lib/gates.ts";
-import { toArrayBuffer } from "../lib/http.ts";
+import { destroyResponse } from "../lib/http.ts";
+import { releasingBody } from "../lib/media/delivery-gate.ts";
 import { checkRateLimit, reserveRateLimit } from "../lib/rate-limit/index.ts";
 import { REMOTE_IMAGE_BUDGET } from "../lib/remote-image/budget.ts";
 import {
@@ -119,7 +120,7 @@ export const runtimeAssets = new Hono<AppEnv>().get("/remote", async (c) => {
 	let read = 0;
 	let result: Awaited<ReturnType<typeof fetchRemoteImage>>;
 	try {
-		/** Over budget is a 429 here; the `finally` returns the slot. */
+		/** Over budget is a 429 here; the `catch` returns the slot. */
 		const reservation = await reserveRateLimit(
 			"runtimeRemoteAssetBytes",
 			viewer.id,
@@ -135,11 +136,13 @@ export const runtimeAssets = new Hono<AppEnv>().get("/remote", async (c) => {
 		} finally {
 			await reservation.settle(read);
 		}
-	} finally {
+	} catch (error) {
 		releaseSlot();
+		throw error;
 	}
 
 	if (!result.ok) {
+		releaseSlot();
 		logUnavailable(result.reason);
 		throw new ApiError(502, ASSET_UNAVAILABLE, "Couldn't fetch the image.", {
 			retryAfterSeconds: UNAVAILABLE_RETRY_AFTER_SECONDS,
@@ -151,5 +154,16 @@ export const runtimeAssets = new Hono<AppEnv>().get("/remote", async (c) => {
 	/** The format the bytes declared, so the browser cannot sniff it into something else. */
 	c.header("X-Content-Type-Options", "nosniff");
 	c.header("Cache-Control", "private, max-age=3600");
-	return c.body(toArrayBuffer(result.bytes));
+	/**
+	 * The slot stays held until the bytes have left, not until the fetch is done. Returned at the
+	 * handler's end, a client that never read let each request keep its 10 MiB in the socket's queue
+	 * after the slot was free again, so the "16 in flight" ceiling bounded nothing. A reader that stops
+	 * is cut after `BODY_STALL_MS` (`releasingBody`), which also gives the slot back.
+	 */
+	return c.body(
+		releasingBody(result.bytes, releaseSlot, {
+			signal,
+			onStall: () => destroyResponse(c),
+		}),
+	);
 });

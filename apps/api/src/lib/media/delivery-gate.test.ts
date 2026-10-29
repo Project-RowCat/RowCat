@@ -196,6 +196,44 @@ describe("releasingBody — the slot returns after every byte has gone out", () 
 		expect(released).toBe(1);
 	});
 
+	/**
+	 * A reader that stops reading (a zero TCP window) never ends, cancels or disconnects. The stream
+	 * stops being pulled, and that silence is what ends it: the slot returns and the route destroys the
+	 * response.
+	 */
+	it("gives back and asks to end the response when the reader stops pulling", async () => {
+		let released = 0;
+		let stalled = 0;
+		const stream = releasingBody(Buffer.alloc(10), () => (released += 1), {
+			chunkBytes: 3,
+			stallMs: 20,
+			onStall: () => (stalled += 1),
+		});
+		const reader = stream.getReader();
+		await reader.read();
+		await new Promise((resolve) => setTimeout(resolve, 60));
+		expect(released).toBe(1);
+		expect(stalled).toBe(1);
+		await reader.cancel();
+		expect(released).toBe(1);
+	});
+
+	it("a reader that keeps pulling is never cut, however slow its pace overall", async () => {
+		let stalled = 0;
+		const stream = releasingBody(Buffer.alloc(12), () => {}, {
+			chunkBytes: 3,
+			stallMs: 40,
+			onStall: () => (stalled += 1),
+		});
+		const reader = stream.getReader();
+		for (let i = 0; i < 4; i += 1) {
+			await reader.read();
+			await new Promise((resolve) => setTimeout(resolve, 20));
+		}
+		expect(stalled).toBe(0);
+		await reader.cancel();
+	});
+
 	it("gives back right away for an already-aborted request", () => {
 		let released = 0;
 		const controller = new AbortController();

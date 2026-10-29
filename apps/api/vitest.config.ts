@@ -62,6 +62,13 @@ export default defineConfig({
 		 */
 		exclude: [...configDefaults.exclude, "src/**/*.verified.test.ts"],
 		/**
+		 * Three times the default. These tests run against real Postgres while turbo runs other packages'
+		 * suites beside them, and a runtime publication now compiles in a fresh worker thread
+		 * (`services/story/runtime-compile.ts`, about a second, more under `tsx`); a test that publishes
+		 * two or three times sat right at 5 s. A real hang still fails, at 15 s.
+		 */
+		testTimeout: 15_000,
+		/**
 		 * Parallel only when each worker has its own database. This was `false` while everything shared
 		 * one database, where parallel cleanup deletes the other side's rows; that reason still stands,
 		 * but the sharing is gone (`src/test/worker-database.ts`). Runs that could not isolate stay

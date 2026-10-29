@@ -31,6 +31,7 @@ export interface RuntimePreviewClient {
 		generation: PreviewGeneration,
 		handlerId: number,
 		payload?: string | null,
+		source?: "interaction" | "media",
 	): void;
 	generationResult(
 		generation: PreviewGeneration,
@@ -67,12 +68,13 @@ export async function createRuntimePreviewClient(handlers: {
 		resetStory: (generation) => send({ type: "reset-story", generation }),
 		resetPersistent: (generation) =>
 			send({ type: "reset-persistent", generation }),
-		dispatchEvent: (generation, handlerId, payload) =>
+		dispatchEvent: (generation, handlerId, payload, source) =>
 			send({
 				type: "event",
 				generation,
 				handlerId,
 				...(payload === undefined ? {} : { payload }),
+				...(source === "media" ? { source } : {}),
 			}),
 		generationResult: (generation, requestId, result) =>
 			send({ type: "generation-result", generation, requestId, result }),

@@ -752,7 +752,11 @@ describe("web adapter", () => {
 		const auto = build(device, stub.controller);
 
 		auto.start();
-		await new Promise((resolve) => setTimeout(resolve, 40));
+		/**
+		 * Wait for the startup run itself, not a fixed 40ms: under load it landed after `mockClear()` and
+		 * read as an automatic trigger with the toggle off.
+		 */
+		await vi.waitFor(() => expect(stub.syncNow).toHaveBeenCalled());
 		await auto.setEnabled(false);
 		stub.syncNow.mockClear();
 
@@ -779,7 +783,8 @@ describe("web adapter", () => {
 		const auto = build(device, stub.controller);
 
 		auto.start();
-		await new Promise((resolve) => setTimeout(resolve, 40));
+		/** The startup run, waited for itself (see the test above). */
+		await vi.waitFor(() => expect(stub.syncNow).toHaveBeenCalled());
 		await auto.setEnabled(false);
 		expect(await device.autoSyncPreference.isEnabled()).toBe(false);
 

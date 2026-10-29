@@ -143,8 +143,15 @@ export interface NativeRuntimeSession {
 		},
 	): void;
 	stop(): void;
-	/** One press. `t0` is recorded here. */
-	dispatchEvent(handlerId: number, payload?: string): void;
+	/**
+	 * One press, or with `source: "media"` one event the platform raised by itself (a sound ending),
+	 * which interaction-only capabilities refuse. `t0` is recorded here.
+	 */
+	dispatchEvent(
+		handlerId: number,
+		payload?: string,
+		source?: "interaction" | "media",
+	): void;
 	latency(warmup?: number): InteractionLatencySummary | null;
 	resetMetrics(): void;
 	console(): readonly NativeRuntimeConsoleLine[];
@@ -432,7 +439,7 @@ export function createNativeRuntimeSession(
 			dispatch({ type: "stop", generation });
 			transport.send({ type: "stop", generation });
 		},
-		dispatchEvent(handlerId, payload) {
+		dispatchEvent(handlerId, payload, source) {
 			if (disposed) return;
 			if (state.status !== "running" || store.failed) return;
 			recorder.begin(now());
@@ -441,6 +448,7 @@ export function createNativeRuntimeSession(
 				generation,
 				handlerId,
 				...(payload === undefined ? {} : { payload }),
+				...(source === "media" ? { source } : {}),
 			});
 		},
 		latency(warmup = 0) {

@@ -1011,6 +1011,54 @@ describe.skipIf(!databaseReady)("my moderation state", () => {
 	});
 });
 
+/**
+ * Closing a report had no conflict-of-interest rule: a staff member could dismiss every report about
+ * themselves and the case never reached an admin's queue.
+ */
+describe.skipIf(!databaseReady)("who may close a report", () => {
+	const dismiss = (cookie: string, reportId: string) =>
+		post(`/v2/moderation/reports/${reportId}/resolve`, cookie, {
+			status: "dismissed",
+			note: "not a violation",
+		});
+
+	test("staff can't close a report about themselves, and it stays open", async () => {
+		const staff = await signUpOperator("staff");
+		const reporter = await signUp();
+		const { reportId } = await reportMember(reporter, staff.memberId);
+
+		const response = await dismiss(staff.cookie, reportId);
+		expect(response.status).toBe(403);
+		expect(await response.json()).toMatchObject({
+			code: "moderation_target_privileged",
+		});
+		const detail = await get(
+			`/v2/moderation/reports/${reportId}`,
+			OPERATOR.cookie,
+		);
+		expect(await detail.json()).toMatchObject({ status: "open" });
+	});
+
+	test("a report about an operator is an admin's to close", async () => {
+		const staff = await signUpOperator("staff");
+		const otherStaff = await signUpOperator("staff");
+		const admin = await signUpOperator("admin");
+		const reporter = await signUp();
+		const { reportId } = await reportMember(reporter, otherStaff.memberId);
+
+		expect((await dismiss(staff.cookie, reportId)).status).toBe(403);
+		expect((await dismiss(admin.cookie, reportId)).status).toBe(204);
+	});
+
+	test("a report about an ordinary member closes as before", async () => {
+		const staff = await signUpOperator("staff");
+		const reporter = await signUp();
+		const target = await signUp();
+		const { reportId } = await reportMember(reporter, target.memberId);
+		expect((await dismiss(staff.cookie, reportId)).status).toBe(204);
+	});
+});
+
 describe.skipIf(!databaseReady)("account actions targeting operators", () => {
 	test("staff can't ban an admin", async () => {
 		const staff = await signUpOperator("staff");
