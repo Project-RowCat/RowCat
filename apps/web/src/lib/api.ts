@@ -5,26 +5,48 @@ import {
 } from "@rowcat/sdk";
 import { createIsomorphicFn } from "@tanstack/react-start";
 import { getRequestHeader } from "@tanstack/react-start/server";
+import { API_ORIGIN_META, runtimeMeta } from "./runtime-meta.ts";
 
 /**
  * Origin of the API this app connects to. Only the origin is chosen here. The path prefix (`/v2`)
  * comes from @rowcat/contracts and is attached by @rowcat/sdk, so a version bump should need no
  * web-side change.
  *
- * The default is the local API, and so are local `vite build` and `vite preview`, not just `vite
- * dev`. A hand-run build silently touching production data is the riskier failure. The deployment
- * image bakes in the real domain through the build argument `VITE_API_ORIGIN`
- * (apps/web/Dockerfile). To point a local build elsewhere, set it in `apps/web/.env.local`. A
- * malformed value makes `new URL` throw at module load.
+ * The value is **runtime configuration**, so one image serves every deployment. The server reads
+ * `VITE_API_ORIGIN` from its environment when the process starts and writes it into the document as
+ * `<meta name="rowcat-api-origin">` (`routes/__root.tsx`); the browser reads it back from that tag, so
+ * the two sides cannot disagree. The name keeps its `VITE_` prefix because it was a build argument
+ * first; the build-time value (`import.meta.env`) is still the fallback, which is what `vite dev` with
+ * `apps/web/.env.local` and the journey stack use.
+ *
+ * With neither, it is the local API, for `vite build` and `vite preview` too: a hand-run build
+ * silently touching production data is the riskier failure. A malformed value makes `new URL` throw
+ * at module load.
+ *
+ * A meta tag rather than an inline script: the CSP allows no inline script, and a tag is data, not
+ * code. A web worker has no document and falls back to the build-time value; none of them calls the
+ * API.
  *
  * SSR may not use this value; see `ssrBaseUrl`. That case happens in the compose stack.
  *
  * Do not add a helper such as `apiUrl(path)`. Feature code would then assemble endpoints by hand,
  * and path and query serialization would spread outside @rowcat/contracts.
  */
-// An empty build argument arrives as an empty string. `??` does not filter it out and `new URL('')`
-// throws, so `||` is used.
-const configuredOrigin = import.meta.env.VITE_API_ORIGIN?.trim() || undefined;
+// An empty value arrives as an empty string. `??` does not filter it out and `new URL('')` throws,
+// so `||` is used.
+const configuredOrigin =
+	createIsomorphicFn()
+		.server(() => process.env.VITE_API_ORIGIN?.trim() || undefined)
+		.client(() => runtimeMeta(API_ORIGIN_META))() ||
+	import.meta.env.VITE_API_ORIGIN?.trim() ||
+	undefined;
+
+/**
+ * The origin the browser calls, as written into `<meta name="rowcat-api-origin">`. Only the origin:
+ * a value with a path would otherwise reach the document as written.
+ */
+export const API_ORIGIN = new URL(configuredOrigin ?? DEVELOPMENT_API_ORIGIN)
+	.origin;
 
 /**
  * Base URL of the API (`.../v2`). It is exported because a second consumer exists: the Better Auth
@@ -36,9 +58,7 @@ const configuredOrigin = import.meta.env.VITE_API_ORIGIN?.trim() || undefined;
  * `getRowCatClient()`; a fetch built from this value inside a feature would add paths outside the
  * contract.
  */
-export const API_BASE_URL = apiBaseUrl(
-	configuredOrigin ?? DEVELOPMENT_API_ORIGIN,
-);
+export const API_BASE_URL = apiBaseUrl(API_ORIGIN);
 
 /**
  * Base URL the server-side render uses to call the API. This is a runtime value.

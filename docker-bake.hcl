@@ -11,22 +11,25 @@
 # Instead pass `--builder rowcat` when needed, or use BUILDX_BUILDER.
 
 variable "REGISTRY" {
-  # Must match compose's image: field so `compose up` picks up what `bake` built as is.
-  default = "rowcat"
+  # Must match compose's image: field (its ROWCAT_IMAGE_REGISTRY default) so `compose up` picks up
+  # what `bake` built as is, with no pull. The images carry no deployment value — web and the
+  # console take the API origin at runtime — so the same names serve local builds and releases.
+  default = "ghcr.io/project-rowcat/rowcat"
 }
 
 variable "TAG" {
   default = "latest"
 }
 
-variable "VITE_API_ORIGIN" {
-  # The API origin baked into the web **and operations console** bundles. Both apps call the same
-  # API, so there is one value. It is baked at build time and cannot be changed by a runtime
-  # environment variable. **Production and staging images must pass it here**:
-  #   VITE_API_ORIGIN=https://api.example.com docker buildx bake release --push
-  # Left empty, no arg is passed at all and the Dockerfile's ARG default (the local API,
-  # localhost:3001) stays. That is right for a local-stack image and wrong for a production one.
-  # Writing a default here as well would split the value's source in two.
+variable "EXTRA_TAG" {
+  # A second tag for the same build, e.g. `sha-<commit>` beside `latest`, so a deployment can pin
+  # the exact build it runs. Empty adds nothing.
+  default = ""
+}
+
+variable "SOURCE" {
+  # The repository URL. GHCR links a package to its repository through this label (and inherits its
+  # visibility from it). Empty adds no label — a local build has no repository to point at.
   default = ""
 }
 
@@ -49,17 +52,21 @@ function "cache_to" {
   result = CACHE == "" ? [] : ["type=registry,ref=${CACHE}:${name},mode=max"]
 }
 
+function "tags" {
+  params = [name]
+  result = EXTRA_TAG == "" ? ["${REGISTRY}/${name}:${TAG}"] : ["${REGISTRY}/${name}:${TAG}", "${REGISTRY}/${name}:${EXTRA_TAG}"]
+}
+
 target "_common" {
   # The context is always the repository root; it needs the workspace lockfile and every manifest.
-  # Once there is a remote repository, add the org.opencontainers.image.source label here
-  # (GHCR links the image to the repository through that label).
+  labels = SOURCE == "" ? {} : { "org.opencontainers.image.source" = SOURCE }
 }
 
 target "api" {
   inherits   = ["_common"]
   dockerfile = "apps/api/Dockerfile"
   target     = "runner"
-  tags       = ["${REGISTRY}/api:${TAG}"]
+  tags       = tags("api")
   cache-from = cache_from("api")
   cache-to   = cache_to("api")
   # Loads into the local daemon. Without this, the docker-container driver only builds and leaves
@@ -71,8 +78,7 @@ target "web" {
   inherits   = ["_common"]
   dockerfile = "apps/web/Dockerfile"
   target     = "runner"
-  args       = VITE_API_ORIGIN == "" ? {} : { VITE_API_ORIGIN = VITE_API_ORIGIN }
-  tags       = ["${REGISTRY}/web:${TAG}"]
+  tags       = tags("web")
   cache-from = cache_from("web")
   cache-to   = cache_to("web")
   # Loads into the local daemon. Without this, the docker-container driver only builds and leaves
@@ -84,10 +90,7 @@ target "admin" {
   inherits   = ["_common"]
   dockerfile = "apps/admin/Dockerfile"
   target     = "runner"
-  # Takes **the same arg** as web. Both apps call the same API, so there is no reason for the value
-  # to differ, and splitting it makes a staging console calling the production API representable.
-  args       = VITE_API_ORIGIN == "" ? {} : { VITE_API_ORIGIN = VITE_API_ORIGIN }
-  tags       = ["${REGISTRY}/admin:${TAG}"]
+  tags       = tags("admin")
   cache-from = cache_from("admin")
   cache-to   = cache_to("admin")
   output     = ["type=docker"]

@@ -50,7 +50,10 @@ const useSyncExternalStoreAliases = [
  * written but only counts violations. The browser logs them, and that list is the basis for
  * switching to enforcement. All other headers are enforced.
  *
- * `connect-src` covers the build-time API origin and the BYO providers. The values match
+ * `connect-src` covers the build-time API origin and the BYO providers. The deployed API origin is a
+ * runtime value now (`lib/api.ts`) and these route rules are fixed at build, so an image built without
+ * `VITE_API_ORIGIN` reports its API calls here; that is a report, not a block, and the reason to fill
+ * this from the runtime value before switching to enforcement. The values match
  * PROVIDER_CONNECT_ORIGINS in lib/generation/router.ts. This config file cannot import app source,
  * so they are repeated here.
  */

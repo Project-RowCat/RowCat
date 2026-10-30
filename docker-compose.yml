@@ -14,6 +14,12 @@ name: rowcat
 #   docker compose exec redis redis-cli
 # If a GUI client really has to connect, put ports in a gitignored docker-compose.override.yml
 # instead of this file, and always bind them to 127.0.0.1 (the committed config never opens them).
+#
+# Images: api, web and admin name the images .github/workflows/images.yml publishes. With both
+# `image` and `build` set, `docker compose up` pulls the image and builds from this checkout only
+# when it is not found — so a deployment runs without building, and `docker compose up --build`
+# runs what is in this checkout instead. The images carry no deployment value (web and the console
+# take the API origin at runtime), which is what lets one published image serve every deployment.
 
 services:
   db:
@@ -66,7 +72,7 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-    image: rowcat/api:latest
+    image: ${ROWCAT_IMAGE_REGISTRY:-ghcr.io/project-rowcat/rowcat}/api:${ROWCAT_IMAGE_TAG:-latest}
     environment:
       NODE_ENV: production
       # Binds to 0.0.0.0, not loopback, because it must be reachable from outside the container.
@@ -213,23 +219,24 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
-      # Values baked into the browser bundle, so these are **build args**, not runtime environment.
-      #
-      # An empty value means "unspecified", and the Dockerfile then folds to the local API
-      # (http://localhost:3001), so the local stack runs with no args. A production deployment writes
-      # its origin in .env. The default is not duplicated here so the value has only one source.
-      #
-      # The console origin has **no production default.** Empty just means the operations tool link on
-      # the account screen is not drawn, and nothing is sent to a guessed domain: a dead link reads as
-      # a sign the console is broken.
-      args:
-        VITE_API_ORIGIN: ${VITE_API_ORIGIN:-}
-        VITE_ADMIN_ORIGIN: ${VITE_ADMIN_ORIGIN:-}
-    image: rowcat/web:latest
+    image: ${ROWCAT_IMAGE_REGISTRY:-ghcr.io/project-rowcat/rowcat}/web:${ROWCAT_IMAGE_TAG:-latest}
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 3000
+      # What the browser calls. **Runtime values**, not build args: the server writes them into the
+      # document (`<meta>`) and the browser reads them back, so the published image serves any
+      # deployment (apps/web/src/lib/api.ts).
+      #
+      # An empty value means "unspecified" and folds to the local API (http://localhost:3001), so the
+      # local stack runs with no value. A production deployment writes its origin in .env. The default
+      # is not duplicated here so the value has only one source.
+      #
+      # The console origin has **no production default.** Empty just means the operations tool link on
+      # the account screen is not drawn, and nothing is sent to a guessed domain: a dead link reads as
+      # a sign the console is broken.
+      VITE_API_ORIGIN: ${VITE_API_ORIGIN:-}
+      VITE_ADMIN_ORIGIN: ${VITE_ADMIN_ORIGIN:-}
       # The address the server render uses to call the API, a **different axis** from the browser's
       # value (VITE_API_ORIGIN). Browsers come in through the port open on the host, but calling that
       # address from inside the web container calls itself. From a container the API's name is its
@@ -274,14 +281,13 @@ services:
     build:
       context: .
       dockerfile: apps/admin/Dockerfile
-      # Values baked into the browser bundle, so these are **build args**, not runtime environment.
-      # It takes the same value as web: both apps call the same API, and the same arg also fills the
-      # console's CSP (`connect-src`) (apps/admin/Dockerfile). Empty folds to the local API.
-      args:
-        VITE_API_ORIGIN: ${VITE_API_ORIGIN:-}
-    image: rowcat/admin:latest
-    # Serves static files only (no SSR), which is why it has no runtime environment variables.
-    # The API address is baked into the bundle by the build arg above, and the browser sends the session straight to the API.
+    image: ${ROWCAT_IMAGE_REGISTRY:-ghcr.io/project-rowcat/rowcat}/admin:${ROWCAT_IMAGE_TAG:-latest}
+    # Serves static files only (no SSR). Its one runtime value is the API origin, the same one web
+    # takes: both apps call the same API. The container writes it into index.html and the CSP
+    # (`connect-src`) when it starts (apps/admin/docker/rowcat-runtime-config.sh). Empty folds to the
+    # local API. The browser sends the session straight to the API.
+    environment:
+      VITE_API_ORIGIN: ${VITE_API_ORIGIN:-}
     ports:
       - "3002:3002"
     depends_on:

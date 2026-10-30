@@ -43,8 +43,8 @@
 | `WEB_ORIGIN` | API | 웹·운영 콘솔 오리진 CSV(CORS). 첫 항목이 정본 웹 오리진 |
 | `API_ORIGIN` | API | 공개 API 오리진(`/v2`는 코드가 붙인다) |
 | `AUTH_TRUSTED_ORIGINS` · `AUTH_COOKIE_DOMAIN` | API | 웹과 API 오리진이 다를 때 |
-| `VITE_API_ORIGIN` | web·admin 빌드 인자 | 비우면 `http://localhost:3001` — 운영 이미지는 반드시 넘긴다(admin CSP도 이 값) |
-| `VITE_ADMIN_ORIGIN` | web 빌드 인자 | 비우면 운영 도구 링크가 그려지지 않는다 |
+| `VITE_API_ORIGIN` | web·admin 런타임 환경 | 비우면 `http://localhost:3001` — 운영 배포는 반드시 채운다. 이미지에 박히지 않으므로 다시 빌드할 필요가 없다(admin CSP도 이 값) |
+| `VITE_ADMIN_ORIGIN` | web 런타임 환경 | 비우면 운영 도구 링크가 그려지지 않는다 |
 | `EXPO_PUBLIC_API_ORIGIN` · `EXPO_PUBLIC_WEB_ORIGIN` | 모바일 | 기본값이 없다 |
 | `ROWCAT_API_BASE_URL` | `rowcat-mcp` | 기본값이 없다(`setup`이 묻는다) |
 
@@ -129,6 +129,16 @@ manifest(`apps/mcp/package.json`의 `repository`·`bugs`·`homepage`)가 그 저
 없다(`docs/chat/NARRATION.md` §공개본). 그래서 대화 설정의 「서술 방식」 줄이 서지 않는다. 쓸 권리가 있는
 본문을 가진 포크는 그 절의 절차대로 스물넷 **전부**를 넣고(일부만 넣으면 검사가 막는다), 출처 고지
 (`NARRATION_CREDIT`·웹의 `narrationCredit`)를 받은 허락의 내용으로 고쳐 쓴다.
+
+## 15. 컨테이너 이미지
+
+`.github/workflows/images.yml`이 main에 푸시될 때마다 세 이미지(api·web·admin)를
+`ghcr.io/<소유자>/rowcat/<앱>`에 `latest`와 `sha-<커밋>`으로 올린다. 소유자는 워크플로가 돌아간 저장소에서
+읽으므로 포크는 자기 이름 공간에 올린다 — 바꿀 것은 `docker-compose.yml`이 기본으로 당겨 오는 이름 하나다
+(`ROWCAT_IMAGE_REGISTRY`, 또는 그 기본값과 `docker-bake.hcl`의 `REGISTRY` 기본값). 이미지에는 배포 값이 하나도
+박히지 않는다 — web과 운영 콘솔도 API 오리진을 시작할 때 환경에서 읽는다(§5) — 그래서 이미지 하나가 모든 배포에
+쓰인다. 처음 올린 뒤 GitHub의 패키지 설정에서 공개 여부를 확인한다. 배포는 `ROWCAT_IMAGE_TAG`를 `sha-<커밋>`으로
+고정해 `latest`가 발밑에서 바뀌지 않게 한다.
 
 ## 바꾸지 않아도 되는 것
 

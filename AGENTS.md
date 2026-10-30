@@ -5650,7 +5650,11 @@ page is still a plain pnpm script. **The commands themselves did not move** — 
   runs first), so that path is in its `inputs`. Without it, editing the runtime docs and rebuilding is a
   **cache hit** that ships the old copy.
 
-Docker: `docker compose up` (web, api, admin, db, redis); images via `docker buildx bake`. db and redis do not open host
+Docker: `docker compose up` (web, api, admin, db, redis) **pulls the published GHCR images** and builds only when one
+is missing (`--build` runs this checkout); images via `docker buildx bake`, published by `.github/workflows/images.yml`.
+**No image carries a deployment value** — web and the console take `VITE_API_ORIGIN` at runtime (the server writes it
+into `<meta name="rowcat-api-origin">`; the console container writes it into `index.html` and its CSP at startup), so
+do not reintroduce an origin build arg: one image per commit is what lets a deployment run without building. db and redis do not open host
 ports — to connect, run inside the container (`docker compose exec db psql -U rowcat rowcat`).
 
 **The operations console comes up with the default `up` too and opens 3002.** It sat behind a profile for a while on the

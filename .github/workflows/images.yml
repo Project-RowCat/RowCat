@@ -1,0 +1,70 @@
+# Publishes the three app images (api · web · admin) to GHCR, so a deployment can run
+# `docker compose up` without building.
+#
+# The images carry no deployment value: the API reads its whole configuration at runtime, and web and
+# the console take the API origin from their environment when they start. So one image per commit
+# serves every deployment, and a fork's run publishes to its own namespace (the owner below), never
+# to this repository's.
+#
+#   latest        the newest build of main
+#   sha-<commit>  that exact build — what a deployment pins (ROWCAT_IMAGE_TAG)
+#
+# Both architectures are built (arm64 under QEMU, which is slow — the web build dominates). The layer
+# cache lives in the same registry, one ref per app, so later runs rebuild only what changed.
+name: Images
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A newer push to main supersedes an image build that has not finished; only the newest `latest` matters.
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      # GHCR repository names must be lowercase, and the owner is not (Project-RowCat).
+      - name: Image names
+        id: names
+        run: |
+          owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          echo "registry=ghcr.io/${owner}/rowcat" >> "$GITHUB_OUTPUT"
+          echo "sha=sha-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # `files` names the bake file alone: bake also reads docker-compose.yml by default, and that file
+      # requires BETTER_AUTH_SECRET, which a build has no business holding.
+      - uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
+        with:
+          source: .
+          files: docker-bake.hcl
+          targets: release
+          push: true
+          vars: |
+            REGISTRY=${{ steps.names.outputs.registry }}
+            TAG=latest
+            EXTRA_TAG=${{ steps.names.outputs.sha }}
+            SOURCE=${{ github.server_url }}/${{ github.repository }}
+            CACHE=${{ steps.names.outputs.registry }}/cache

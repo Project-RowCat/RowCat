@@ -11,13 +11,15 @@ import {
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { RouteError, RouteNotFound } from "#/components/route-fallback.tsx";
 import { AccountThemeBridge } from "#/features/theme/account-theme-bridge.tsx";
-import { getRowCatClient } from "#/lib/api.ts";
+import { ADMIN_CONSOLE_ORIGIN } from "#/lib/admin-console.ts";
+import { API_ORIGIN, getRowCatClient } from "#/lib/api.ts";
 import { currentLocale } from "#/lib/i18n/current.ts";
 import { I18nProvider } from "#/lib/i18n/provider.tsx";
 import { LocalDataScopeProvider } from "#/lib/local-data/scope.tsx";
 import { SyncRuntimeProvider } from "#/lib/local-sync/provider.tsx";
 import { MotionProvider } from "#/lib/motion/provider.tsx";
 import { preloadViewer } from "#/lib/query/viewer-preload.ts";
+import { ADMIN_ORIGIN_META, API_ORIGIN_META } from "#/lib/runtime-meta.ts";
 import { ThemeProvider } from "#/lib/theme/provider.tsx";
 import appCss from "../styles/globals.css?url";
 
@@ -79,6 +81,15 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 			{
 				title: APP_NAME,
 			},
+			/**
+			 * Deployment values the browser reads back (`lib/runtime-meta.ts`). The server decided them
+			 * from its own environment, so one image serves any deployment; the browser re-reading the
+			 * same tag is what keeps the two sides from disagreeing.
+			 */
+			{ name: API_ORIGIN_META, content: API_ORIGIN },
+			...(ADMIN_CONSOLE_ORIGIN
+				? [{ name: ADMIN_ORIGIN_META, content: ADMIN_CONSOLE_ORIGIN }]
+				: []),
 		],
 		links: [
 			{

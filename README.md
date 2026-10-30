@@ -101,9 +101,22 @@ also sets `WEB_ORIGIN` and `API_ORIGIN` (and `AUTH_COOKIE_DOMAIN` when web and A
 With those four, `pnpm env:doctor --mode production --file <env file>` reports no release blockers and names
 every feature that stays off — see `docs/ops/CONFIGURATION.md` (최소 구성).
 
-To reach Postgres without the override, run inside the container:
-`docker compose exec db psql -U rowcat rowcat`. `docker compose up` (no service name) builds and starts the
-whole stack — web, API, console, Postgres and Redis — as containers.
+To reach Postgres from a shell without the override: `docker compose exec db psql -U rowcat rowcat`.
+
+### Running the published images
+
+Every push to `main` publishes the three app images to GHCR (`.github/workflows/images.yml`), and they
+carry no deployment value — web and the operations console take the API origin from their environment
+when they start. So a deployment needs no build:
+
+```bash
+cp .env.example .env   # set BETTER_AUTH_SECRET, and for a real domain WEB_ORIGIN, API_ORIGIN, VITE_API_ORIGIN
+docker compose up -d   # pulls api, web and admin; Postgres and Redis come along
+```
+
+`docker compose up --build` runs this checkout instead of the published images. Pin a deployment to one
+build with `ROWCAT_IMAGE_TAG=sha-<commit>`; a fork that publishes its own images points
+`ROWCAT_IMAGE_REGISTRY` at them (`docs/oss/FORKING.md` §15).
 
 ## Repository map
 

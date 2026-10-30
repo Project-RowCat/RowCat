@@ -23,7 +23,7 @@ DATABASE_URL               컴포즈가 조립한다        → 루트 예시에
 DATABASE_POOL_MAX          컴포즈가 넘기지 않는다    → 코드 기본값을 쓴다
 WEB_ORIGIN                 운영자가 정한다          → 두 예시 모두에 있다
 MANAGED_GENERATION_ACCESS  운영자가 정한다          → 두 예시 모두에 주석으로 있다(빈 값 = allowlist)
-VITE_API_ORIGIN            브라우저 번들에 박힌다    → 빌드 인자다(런타임 값이 아니다)
+VITE_API_ORIGIN            web·admin 컨테이너가 받는다 → 런타임 값이다(브라우저에는 <meta>로 건넨다)
 EXPO_PUBLIC_API_ORIGIN     모바일 번들에 박힌다      → 예시 파일이 없다(README가 적는다)
 ```
 

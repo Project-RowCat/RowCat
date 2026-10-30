@@ -9,14 +9,25 @@ import {
  * Only the origin is chosen here; `@rowcat/sdk` attaches the `/v2` prefix from `@rowcat/contracts`,
  * the same rule as `apps/web/src/lib/api.ts`.
  *
+ * - The value is runtime configuration, so one image serves any deployment: the container writes
+ *   `VITE_API_ORIGIN` into `index.html` as `<meta name="rowcat-api-origin">` when it starts
+ *   (`apps/admin/docker/rowcat-runtime-config.sh`, which fills the CSP from the same value). The
+ *   build-time value is the fallback (`vite dev`).
  * - The default is the local API: a hand-run build silently touching production is the worse
- *   failure, especially here where buttons stop conversations and lock the app. Deploy images set
- *   the real domain via the `VITE_API_ORIGIN` build arg.
+ *   failure, especially here where buttons stop conversations and lock the app.
  * - No SSR branch: this is a pure SPA, so one client per tab is enough and the browser owns
  *   cookies.
  * - No `apiUrl(path)` helper: it would let screens assemble endpoints outside the contract.
  */
-const configuredOrigin = import.meta.env.VITE_API_ORIGIN?.trim() || undefined;
+// `typeof document`: tests import this module in Node, where there is no document to read.
+const configuredOrigin =
+	(typeof document === "undefined"
+		? undefined
+		: document
+				.querySelector<HTMLMetaElement>('meta[name="rowcat-api-origin"]')
+				?.content.trim()) ||
+	import.meta.env.VITE_API_ORIGIN?.trim() ||
+	undefined;
 
 /**
  * Exported because `lib/auth.ts` needs it too. Re-reading the env var there would split the origin

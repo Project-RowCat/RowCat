@@ -56,36 +56,11 @@ COPY apps/web apps/web
 # Only the one directory that reaches users is included, not all of `docs`. The rest is architecture
 # documentation that the image has no reason to carry.
 COPY docs/public/runtime docs/public/runtime
-# These values are baked into the client bundle, so they must be given at **build time**, not at runtime.
-#
-# **The default is the local API (http://localhost:3001), not a production domain.** This repository does
-# not know any operator's domain (the same decision as @rowcat/sdk having no default origin). So the local
-# compose stack runs unchanged with no argument, and production images **must** pass their deployment's
-# origin:
-#   VITE_API_ORIGIN=https://api.example.com docker buildx bake web
-# An image built without it calls the user's browser localhost. Failing visibly on the first screen is
-# better than silently connecting to someone else's production server.
-# Placed after the install layer so that changing the value keeps the dependency cache.
-#
-# An ARG default alone is not enough, so the `:-` expansion is applied once more. compose passes **even
-# unfilled variables as empty strings** (the same reason env.ts treats "" as unspecified). Without this
-# expansion, `VITE_API_ORIGIN=` would be baked into the bundle as an empty value.
-ARG VITE_API_ORIGIN=""
-ENV VITE_API_ORIGIN=${VITE_API_ORIGIN:-http://localhost:3001}
-
-# The origin of the operations console (apps/admin). This is the target of the `Operations tools` link on the
-# account screen.
-#
-# **Unlike the value above, there is no production default.** The console usually runs on a separate host
-# (behind the corporate network or a VPN), not in this stack, so this repository has no verified domain. A
-# guessed address here would make that link silently die when the deployment moves. When it is empty the
-# link section is not drawn at all (apps/web/src/lib/admin-console.ts). A missing link means "configuration
-# is needed"; a dead link reads as the console being broken.
-#
-# A deployment that runs the console sets its domain here:
-#   docker buildx bake --set web.args.VITE_ADMIN_ORIGIN=https://admin.example.com web
-ARG VITE_ADMIN_ORIGIN=""
-ENV VITE_ADMIN_ORIGIN=${VITE_ADMIN_ORIGIN}
+# The API and console origins are **not** baked in. The server reads `VITE_API_ORIGIN` and
+# `VITE_ADMIN_ORIGIN` from its environment at runtime and hands them to the browser through `<meta>`
+# tags (apps/web/src/lib/api.ts), so one image serves any deployment. Without them the image calls the
+# local API (http://localhost:3001) — this repository knows no operator's domain, and failing visibly
+# on the first screen beats silently connecting to someone else's production server.
 RUN pnpm --filter web build
 
 # --- Runtime ------------------------------------------------------------------

@@ -788,7 +788,7 @@ export const ENVIRONMENT_INVENTORY: readonly EnvironmentVariableDefinition[] = [
 		sensitivity: "public",
 		surfaces: {
 			compose: {
-				in: "build-args",
+				in: "environment",
 				services: ["web", "admin"],
 				ownership: "operator",
 			},
@@ -800,7 +800,7 @@ export const ENVIRONMENT_INVENTORY: readonly EnvironmentVariableDefinition[] = [
 		operator: {
 			productionRelevant: true,
 			description:
-				"baked into the browser bundle — a build arg, not a runtime value. Empty means the local API (localhost:3001), so production images must fill it",
+				"the API origin the browser calls (web and console) — a runtime value the containers hand the browser, with the build-time value as fallback. Empty means the local API (localhost:3001), so production deployments must fill it",
 		},
 	},
 	{
@@ -809,7 +809,7 @@ export const ENVIRONMENT_INVENTORY: readonly EnvironmentVariableDefinition[] = [
 		sensitivity: "public",
 		surfaces: {
 			compose: {
-				in: "build-args",
+				in: "environment",
 				services: ["web"],
 				ownership: "operator",
 			},
@@ -903,6 +903,26 @@ export const ENVIRONMENT_INVENTORY: readonly EnvironmentVariableDefinition[] = [
 		surfaces: { rootExample: "documented" },
 		operator: {
 			description: "read by docker compose — does not go into a service",
+		},
+	},
+	{
+		key: "ROWCAT_IMAGE_REGISTRY",
+		group: "tooling",
+		sensitivity: "non-secret",
+		surfaces: { rootExample: "documented" },
+		operator: {
+			description:
+				"read by docker compose — which registry the three app images come from (default: the published GHCR images)",
+		},
+	},
+	{
+		key: "ROWCAT_IMAGE_TAG",
+		group: "tooling",
+		sensitivity: "non-secret",
+		surfaces: { rootExample: "documented" },
+		operator: {
+			description:
+				"read by docker compose — which image tag to run (default `latest`; pin `sha-<commit>` in a deployment)",
 		},
 	},
 	{

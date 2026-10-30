@@ -41,34 +41,29 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
 COPY packages packages
 COPY apps/admin apps/admin
 
-# Baked into the browser bundle, so it must be given at build time.
-#
-# The default is the local API, as in web: this repository knows no operator's domain, and a
-# production image must pass its origin (`VITE_API_ORIGIN=https://api.example.com docker buildx
-# bake admin`). A hand-built console image silently attaching to someone's production API is the
-# most expensive default here — its buttons stop every user's conversations and lock the app.
-#
-# `:-` because compose passes unfilled variables as empty strings; without it an empty value is
-# baked into the bundle.
-ARG VITE_API_ORIGIN=""
-ENV VITE_API_ORIGIN=${VITE_API_ORIGIN:-http://localhost:3001}
+# The API origin is not baked in: the container writes it into index.html at startup (below), so one
+# image serves any deployment.
 RUN pnpm --filter admin build
 
-# Static files only — no Node and no runtime env; the API origin is already in the bundle.
+# Static files only — no Node. The one runtime value is the API origin.
 FROM nginx:1.27-alpine AS runner
 
+# The origin used when the container is given none. It is the local API, as in web: this repository
+# knows no operator's domain, and a console silently attaching to someone's production API is the
+# most expensive default here — its buttons stop every user's conversations and lock the app. A
+# deployment sets `VITE_API_ORIGIN` on the container (compose passes it).
+ENV ROWCAT_DEFAULT_API_ORIGIN=http://localhost:3001
+
 # The config is a file because it carries three rules (SPA fallback, cache policy, header
-# inheritance) whose reasons need room that a printf here would not have.
-COPY apps/admin/nginx.conf /etc/nginx/conf.d/default.conf
-
-# CSP `connect-src` must equal the API origin the bundle calls. A literal in nginx.conf would
-# block every lookup in an image built with a different origin (the symptom is only "network
-# failure"), so the same build arg fills the `__API_ORIGIN__` placeholder — one source for the value.
-ARG VITE_API_ORIGIN=""
-RUN api_origin="${VITE_API_ORIGIN:-http://localhost:3001}" \
- && sed -i "s#__API_ORIGIN__#${api_origin}#g" /etc/nginx/conf.d/default.conf \
- && ! grep -q "__API_ORIGIN__" /etc/nginx/conf.d/default.conf
-
+# inheritance) whose reasons need room that a printf here would not have. It and index.html are kept
+# as pristine templates; `rowcat-runtime-config.sh` renders the served copies from them at startup —
+# the CSP `connect-src` and the bundle's `<meta>` from one value, so they cannot disagree (the
+# symptom of a mismatch is only "network failure").
+COPY apps/admin/nginx.conf /etc/rowcat/default.conf
 COPY --from=build /app/apps/admin/dist /usr/share/nginx/html
+RUN cp /usr/share/nginx/html/index.html /etc/rowcat/index.html \
+ && grep -q "__API_ORIGIN__" /etc/rowcat/default.conf \
+ && grep -q "</head>" /etc/rowcat/index.html
+COPY --chmod=755 apps/admin/docker/rowcat-runtime-config.sh /docker-entrypoint.d/40-rowcat-runtime-config.sh
 
 EXPOSE 3002

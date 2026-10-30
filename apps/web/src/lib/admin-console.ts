@@ -1,3 +1,6 @@
+import { createIsomorphicFn } from "@tanstack/react-start";
+import { ADMIN_ORIGIN_META, runtimeMeta } from "./runtime-meta.ts";
+
 /**
  * Origin of the operator console (`apps/admin`). It is another app's address.
  *
@@ -31,10 +34,17 @@
 const DEVELOPMENT_ADMIN_ORIGIN = "http://localhost:3002";
 
 /**
- * An empty build argument arrives as an empty string. `??` does not filter that out and `new
- * URL('')` throws, so `||` is used. `lib/api.ts` uses the same shape for the same reason.
+ * Runtime first, the same way as the API origin in `lib/api.ts`: the server reads `VITE_ADMIN_ORIGIN`
+ * from its environment and writes `<meta name="rowcat-admin-origin">`, the browser reads that tag, and
+ * the build-time value is the fallback. An empty value arrives as an empty string. `??` does not
+ * filter that out and `new URL('')` throws, so `||` is used.
  */
-const configured = import.meta.env.VITE_ADMIN_ORIGIN?.trim() || undefined;
+const configured =
+	createIsomorphicFn()
+		.server(() => process.env.VITE_ADMIN_ORIGIN?.trim() || undefined)
+		.client(() => runtimeMeta(ADMIN_ORIGIN_META))() ||
+	import.meta.env.VITE_ADMIN_ORIGIN?.trim() ||
+	undefined;
 
 /**
  * A malformed URL fails at module load, not on the first click.
