@@ -3,6 +3,7 @@
  *
  *   pnpm --filter @rowcat/desktop stage     .stage/ only — what `pnpm --filter @rowcat/desktop dev` runs
  *   pnpm --filter @rowcat/desktop package   .stage/ then the installer in out/ (this OS only)
+ *   pnpm --filter @rowcat/desktop package 2026.10.31   the same, stamped with that version
  *
  * The three servers go in as the same build outputs the container images carry — `apps/api/dist`
  * with its production dependencies, `apps/web/.output`, `apps/admin/dist` — so the installer runs
@@ -36,7 +37,17 @@ const desktop = resolve(fileURLToPath(import.meta.url), "../..");
 const repo = resolve(desktop, "../..");
 const mode = process.argv[2];
 if (mode !== "stage" && mode !== "package") {
-	console.error("usage: build-app.ts <stage|package>");
+	console.error("usage: build-app.ts <stage|package> [version]");
+	process.exit(2);
+}
+/**
+ * The installer's version. `package.json` holds a placeholder (`0.0.0`, AGENTS.md §Versioning), and a
+ * release passes its date as `YYYY.M.D` — the format electron-builder and Windows require, carrying the
+ * same date the release is named by (`.github/workflows/desktop-release.yml`).
+ */
+const version = process.argv[3];
+if (version !== undefined && !/^\d+\.\d+\.\d+$/.test(version)) {
+	console.error(`version must be MAJOR.MINOR.PATCH, got ${version}`);
 	process.exit(2);
 }
 
@@ -58,8 +69,18 @@ for (const [file, command] of Object.entries(required))
 		process.exit(1);
 	}
 
+/**
+ * `pnpm` is `pnpm.cmd` on Windows, and Node refuses to start a `.cmd` without a shell. The shell joins
+ * arguments with spaces, so each one is quoted — the staging paths sit under the checkout, and a
+ * checkout path may hold a space. Every argument is this file's own, never user input.
+ */
+const windows = process.platform === "win32";
 const run = (command: string, args: string[], cwd = repo) =>
-	execFileSync(command, args, { cwd, stdio: "inherit" });
+	execFileSync(command, windows ? args.map((arg) => `"${arg}"`) : args, {
+		cwd,
+		stdio: "inherit",
+		shell: windows,
+	});
 
 rmSync(stage, { recursive: true, force: true });
 
@@ -132,6 +153,7 @@ if (mode === "stage") {
 const config: Configuration = {
 	appId: `${APP_BUNDLE_ID}.desktop`,
 	productName: APP_NAME,
+	...(version ? { extraMetadata: { version } } : {}),
 	directories: { app, output: join(desktop, "out") },
 	/**
 	 * No asar: the Postgres binaries are executables the OS has to start from a real path, and

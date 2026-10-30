@@ -1,0 +1,223 @@
+# Builds the Windows installer of the desktop app (apps/desktop) and publishes it as a GitHub
+# release.
+#
+# ```text
+# git tag desktop-2026-10-31 && git push origin desktop-2026-10-31     ← the trigger
+#         ↓
+# plan     the tag is a real date · no release by that name yet · CI passed on this commit
+# windows  install frozen → build api · web · admin → package (version 2026.10.31) → installer
+# release  a prerelease named by the date, the installer and its SHA-256 attached
+# ```
+#
+# ## The date is the name
+#
+# A public release is called by its date (AGENTS.md §Versioning), so the tag is `desktop-<date>` and
+# the release title is the date. The installer still needs `MAJOR.MINOR.PATCH` — electron-builder and
+# Windows read nothing else — so the same date goes in as `YYYY.M.D`. That number is the build's
+# identity, never what the page calls the release. Two releases on one day are not two versions: the
+# earlier one was not ready, and the tag is moved instead.
+#
+# ## Two entries, and the difference is the event
+#
+# ```text
+# push(desktop-*)     publishes
+# workflow_dispatch   never publishes. the same gates and build; the installer is a run artifact
+# ```
+#
+# The same reasoning as mcp-publish.yml: no input value can turn a rehearsal into a release.
+#
+# ## Only a commit CI passed on
+#
+# The suite is not run here. CI (ci.yml) runs it with its real services on every commit, and this
+# release goes ahead only if that run passed on the tagged commit (scripts/ci-passed.sh).
+#
+# ## What this release is not
+#
+# * **Not signed.** Windows SmartScreen warns on the first run until a deployment signs the installer
+#   with its own certificate (apps/desktop/README.md). The release notes say how to get past it, and
+#   the release is marked as a prerelease for that reason.
+# * **Not an auto-update feed.** electron-builder writes `latest.yml` for its updater; the app has no
+#   updater, so only the installer is attached.
+# * **Windows only.** A macOS installer needs an Apple Developer ID and notarization before it opens
+#   without a warning on another Mac; it is still built locally (`pnpm --filter @rowcat/desktop package`).
+name: Desktop Release
+
+on:
+  push:
+    tags: ["desktop-*"]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch or commit to rehearse (this run never publishes)
+        type: string
+        required: false
+
+concurrency:
+  group: rowcat-desktop-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  # scripts/ci-passed.sh reads CI's runs for the commit.
+  actions: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    outputs:
+      date: ${{ steps.plan.outputs.date }}
+      version: ${{ steps.plan.outputs.version }}
+      sha: ${{ steps.plan.outputs.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+
+      # First, before anything slow: a tag that is not a date dies here.
+      - name: Release plan
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT" = push ]; then
+            date="${REF_NAME#desktop-}"
+            # `date -d` normalizes 2026-02-30 to March; only a date that survives the round trip is one.
+            if ! [[ "$date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || [ "$(date -u -d "$date" +%F 2>/dev/null)" != "$date" ]; then
+              echo "::error::The tag must be desktop-YYYY-MM-DD with a real date, got ${REF_NAME}." >&2
+              exit 1
+            fi
+          else
+            # A rehearsal is stamped with today in the product timezone.
+            date="$(TZ=Asia/Seoul date +%F)"
+          fi
+          IFS=- read -r year month day <<<"$date"
+          version="$((10#$year)).$((10#$month)).$((10#$day))"
+          {
+            echo "date=$date"
+            echo "version=$version"
+            echo "sha=$(git rev-parse HEAD)"
+          } >>"$GITHUB_OUTPUT"
+          echo "release ${date}, installer version ${version}"
+
+      # A release by that name already exists — say so now rather than after half an hour of building.
+      - name: Refuse to republish
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::A release named ${GITHUB_REF_NAME} already exists. Delete it first if this build replaces it." >&2
+            exit 1
+          fi
+
+      - name: CI passed on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci-passed.sh "$(git rev-parse HEAD)" 60
+
+  windows:
+    needs: plan
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # The runner checks text out with CRLF, and the build reads committed text it then ships — the
+      # migrations the API hashes when it applies them among it. An installer built from a different
+      # byte sequence than the one CI tested is not that commit.
+      - run: git config --global core.autocrlf false && git config --global core.eol lf
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+
+      # No `version`: the action reads `packageManager` from the root package.json.
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      # Frozen and uncached, as every release here: the installer is built from the tagged commit's
+      # lockfile. On this runner it brings Windows' own native binaries (Postgres, sharp).
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm turbo run build --filter=@rowcat/api --filter=web --filter=admin
+
+      - run: pnpm --filter @rowcat/desktop run package "${{ needs.plan.outputs.version }}"
+
+      # electron-builder names the file `RowCat Setup <version>.exe`; the release names it by the date.
+      - name: Name the installer
+        id: installer
+        env:
+          DATE: ${{ needs.plan.outputs.date }}
+        run: |
+          shopt -s nullglob
+          built=(apps/desktop/out/*.exe)
+          if [ "${#built[@]}" -ne 1 ]; then
+            echo "::error::Expected one installer in apps/desktop/out, found ${#built[@]}." >&2
+            exit 1
+          fi
+          mkdir -p release
+          name="RowCat-${DATE}-windows-x64.exe"
+          cp "${built[0]}" "release/${name}"
+          (cd release && sha256sum "$name" >"${name}.sha256")
+          ls -l release
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rowcat-desktop-windows
+          path: release/
+          retention-days: 7
+          if-no-files-found: error
+
+  release:
+    if: github.event_name == 'push'
+    needs: [plan, windows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      # The one write in this workflow: creating the release and attaching the installer.
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: rowcat-desktop-windows
+          path: release
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DATE: ${{ needs.plan.outputs.date }}
+        run: |
+          installer="RowCat-${DATE}-windows-x64.exe"
+          checksum="$(cut -d' ' -f1 "release/${installer}.sha256")"
+          cat >notes.md <<EOF
+          컴퓨터 한 대에서 RowCat을 통째로 돌리는 Windows 앱입니다. 터미널도 Docker도 필요 없습니다.
+
+          ## 설치
+
+          1. 아래 **${installer}** 를 받아 두 번 누릅니다. 설치는 내 계정에만 되고 관리자 권한을 묻지 않습니다.
+          2. **서명되지 않은 설치 파일입니다.** Windows가 「Windows의 PC 보호」를 띄우면 **추가 정보 → 실행**을 누릅니다.
+          3. 처음 열 때 1분쯤 준비합니다. 그다음에는 RowCat 창이 바로 열립니다.
+
+          대화와 초안, 데이터베이스는 이 컴퓨터의 \`%APPDATA%\\RowCat\` 아래에 남습니다. 새 버전을 설치해도 그대로입니다.
+
+          ## 확인
+
+          SHA-256: \`${checksum}\`
+
+          이 빌드는 CI가 통과한 커밋에서 GitHub Actions의 Windows 러너로 만들었습니다. 자세한 내용은 [apps/desktop/README.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/apps/desktop/README.md)에 있습니다.
+          EOF
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --prerelease \
+            --title "데스크톱 ${DATE}" \
+            --notes-file notes.md \
+            "release/${installer}" "release/${installer}.sha256"

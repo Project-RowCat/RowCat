@@ -5694,7 +5694,7 @@ remembered, **the console being missing from a deployment entirely has no sympto
 launches a browser. CI runs it on a fresh Postgres with no `apps/api/.env` (`journeys` in `ci.yml`), so a journey that
 works only on a machine with a developer's env file fails there first.
 
-**CI is the release gate.** `images.yml` and `mcp-publish.yml` publish only a commit `ci.yml` passed on
+**CI is the release gate.** `images.yml`, `mcp-publish.yml` and `desktop-release.yml` publish only a commit `ci.yml` passed on
 (`scripts/ci-passed.sh`), and `ci.yml` sets `ROWCAT_REQUIRE_TEST_SERVICES=1` so an api test that would skip for want of
 Postgres or Redis fails instead (`apps/api/src/test/required-services.ts`). Do not add a release path that skips the
 check, and do not answer a red CI with an override — fix it on a new commit.

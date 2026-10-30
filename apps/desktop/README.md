@@ -54,6 +54,22 @@ pnpm --filter @rowcat/desktop package   # 이 OS용 설치 파일 → apps/deskt
 ```
 
 설치 파일은 **그 OS에서** 만든다 — 조립할 때 이 OS의 네이티브 바이너리(sharp, Postgres)만 들어간다.
+`package` 뒤에 버전(`2026.10.31`)을 주면 설치 파일이 그 번호를 단다. 없으면 `package.json`의 자리표시자 `0.0.0`이다.
+
+## 릴리스 — Windows 설치 파일 (`.github/workflows/desktop-release.yml`)
+
+```bash
+git tag desktop-2026-10-31 && git push origin desktop-2026-10-31
+```
+
+- **이름은 날짜다.** 태그가 `desktop-<날짜>`, 릴리스 제목이 그 날짜이고, 설치 파일의 버전은 같은 날짜를
+  `YYYY.M.D`로 적은 것이다(Windows와 electron-builder는 `MAJOR.MINOR.PATCH`만 읽는다). 실재하지 않는 날짜의
+  태그는 첫 단계에서 멈춘다.
+- **CI가 통과한 커밋만 나간다**(`scripts/ci-passed.sh`). 그다음 Windows 러너가 세 앱을 빌드하고 `package`를
+  돌려, 날짜로 이름 붙인 `.exe`와 SHA-256을 **프리릴리스**에 붙인다 — 서명되지 않았기 때문이다.
+- **`workflow_dispatch`는 리허설이다.** 같은 관문과 빌드를 거치고 설치 파일을 실행 아티팩트로만 남긴다.
+  릴리스를 만드는 길은 태그 푸시 하나다.
+- 같은 날짜의 릴리스가 이미 있으면 멈춘다. 바꾸려면 그 릴리스를 지우고 태그를 옮긴다.
 
 데이터와 로그는 운영체제의 앱 폴더에 있다(macOS: `~/Library/Application Support/RowCat/deployment`,
 `~/Library/Logs/RowCat/rowcat.log`). 메뉴의 `데이터 폴더 열기`·`로그 폴더 열기`가 그곳을 연다.
@@ -74,7 +90,8 @@ pnpm --filter @rowcat/desktop package   # 이 OS용 설치 파일 → apps/deskt
 
 - **서명.** 서명하지 않은 앱은 macOS에서 "확인되지 않은 개발자", Windows에서 SmartScreen 경고가 뜬다. 비전공자는
   거기서 멈춘다. 운영자 자신의 Apple Developer ID(공증 포함)와 Windows 코드 서명 인증서가 필요하다.
-- **Windows·Linux 빌드는 실제로 돌려 보지 않았다.** 설정은 있다(`nsis`, `AppImage`).
+- **Windows 설치 파일은 CI 러너에서 만들 뿐, 실제 Windows PC에서 열어 본 기록이 아직 없다.** 첫 릴리스가 그
+  확인이다. Linux(`AppImage`)는 설정만 있다.
 - **크기.** macOS 설치 파일이 약 340MB다. 대부분 API 의존성인 `react-email`이 끌고 오는 `next`(약 290MB)다 —
   AGENTS.md가 적어 둔 대로 `@react-email/components`·`@react-email/render`로 바꾸면 컨테이너 이미지와 함께
   줄어든다.

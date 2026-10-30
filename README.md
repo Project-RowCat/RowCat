@@ -119,7 +119,8 @@ build with `ROWCAT_IMAGE_TAG=sha-<commit>`; a fork that publishes its own images
 `apps/desktop` packages the whole deployment as a desktop app — a bundled Postgres and the same three
 builds, opened in its own window on `localhost`. Build the three apps, then
 `pnpm --filter @rowcat/desktop package` writes an installer for the OS you run it on to `apps/desktop/out/`.
-It is unsigned until a deployment signs it with its own certificates (`apps/desktop/README.md`).
+It is unsigned until a deployment signs it with its own certificates (`apps/desktop/README.md`). A `desktop-<date>`
+tag publishes the Windows installer as a GitHub release (`.github/workflows/desktop-release.yml`).
 
 ## Repository map
 
