@@ -11,6 +11,7 @@ import { Link, useRouter, useRouterState } from "@tanstack/react-router";
 import { LogIn, LogOut, Settings, UserRound } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { LanguageToggle } from "#/components/app-shell/language-toggle.tsx";
 import { ModeToggle } from "#/components/app-shell/mode-toggle.tsx";
 import { signOutFailed } from "#/features/auth/auth-error.ts";
 import { NotificationBell } from "#/features/notifications/notification-bell.tsx";
@@ -140,7 +141,8 @@ export function AppHeader({
  * `Display` section, which covers the same values, so the header shortcut is a duplicate for them. A
  * guest cannot enter that screen, so removing the switch here would leave no way to change the
  * theme inside the app (the login screen is outside the shell too). This difference follows
- * **identity, not route**, so it does not conflict with "the slots never move".
+ * **identity, not route**, so it does not conflict with "the slots never move". The language switch
+ * stands beside it for the same reason (`Display` holds the language row too).
  */
 function HeaderUtilities({ utility }: { utility: ShellUtility | null }) {
 	const { t } = useTranslation("shell");
@@ -150,6 +152,7 @@ function HeaderUtilities({ utility }: { utility: ShellUtility | null }) {
 	if (!viewer)
 		return (
 			<>
+				<LanguageToggle />
 				<ModeToggle />
 				<Link
 					to="/login"

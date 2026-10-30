@@ -25,6 +25,9 @@ export const shell: Messages["shell"] = {
 		dark: "다크",
 		system: "시스템",
 	},
+	language: {
+		toggle: "언어 변경",
+	},
 	bell: {
 		label: "알림",
 		unread: "알림, 읽지 않음 {{count}}개",

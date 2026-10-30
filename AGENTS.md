@@ -160,8 +160,8 @@ canvas  = the feature's content
 - **The header's right side is three items and `ShellUtility` pins that vocabulary**: `알림`, `설정`,
   `계정`, in a fixed order regardless of route. There is one qualification: *does it call me no matter
   which screen I'm on*. Search, filters, sort and adult display belong to the discovery screen's own URL;
-  share, favorite and report belong to that canvas. **Guests have none of the three** (only `테마` and
-  `로그인`) — do not draw a disabled bell that sends you to login when pressed.
+  share, favorite and report belong to that canvas. **Guests have none of the three** (only `언어`, `테마`
+  and `로그인` — the first two because a guest cannot open the settings screen that holds them) — do not draw a disabled bell that sends you to login when pressed.
 - **The sidebar is present at the same width on every app screen** (240px from `lg`). On narrow screens
   the **same contents** move into a left drawer opened by a header trigger. Do not build two navigation IAs.
 - **Recent conversations are a switcher, with three lightweight room actions on top** (`이름 변경`,

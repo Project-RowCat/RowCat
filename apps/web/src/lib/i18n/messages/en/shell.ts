@@ -26,6 +26,9 @@ export const shell = {
 		dark: "Dark",
 		system: "System",
 	},
+	language: {
+		toggle: "Change language",
+	},
 	bell: {
 		label: "Notifications",
 		unread: "Notifications, {{count}} unread",
