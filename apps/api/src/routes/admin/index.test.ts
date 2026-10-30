@@ -809,6 +809,8 @@ describe.skipIf(!databaseReady)("audit records", () => {
 	});
 
 	test("sending an announcement leaves only the count and the reason", async () => {
+		/** Measured as an increase: a reused database keeps the previous run's broadcast rows. */
+		const before = await auditFor("admin.app-update.broadcast", "ios");
 		await send("PUT", "/v2/admin/operations/app-versions/ios", ADMIN.cookie, {
 			minVersion: "1.4.0",
 			reason: "Test",
@@ -820,7 +822,10 @@ describe.skipIf(!databaseReady)("audit records", () => {
 			{ reason: "forced release notice" },
 		);
 
-		const rows = await auditFor("admin.app-update.broadcast", "ios");
+		const seen = new Set(before.map((row) => row.id));
+		const rows = (await auditFor("admin.app-update.broadcast", "ios")).filter(
+			(row) => !seen.has(row.id),
+		);
 		expect(rows).toHaveLength(1);
 		expect(rows[0]?.operator).toBe(ADMIN.memberId);
 		expect(rows[0]?.target_type).toBe("app_version_floor");
