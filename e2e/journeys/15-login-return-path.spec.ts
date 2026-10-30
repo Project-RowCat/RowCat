@@ -7,6 +7,7 @@ import {
 	test,
 	ui,
 } from "../support/fixtures.ts";
+import { CHOSEN_LOCALE_COOKIE } from "../support/locale.ts";
 
 /**
  * Journey 15: after login, the user returns to the page they were heading to. The bug: `?redirect=`
@@ -64,9 +65,11 @@ test("a guest opening a protected address returns there after signing in", async
 	/**
 	 * Keeps the account but returns this browser to guest. If setup left the session in place, the
 	 * navigation below would reach the destination directly, pass without ever using the login form,
-	 * and show green.
+	 * and show green. The language cookie goes back right away: without it the first-visit language
+	 * window would stand over the login form.
 	 */
 	await context.clearCookies();
+	await context.addCookies([CHOSEN_LOCALE_COOKIE]);
 
 	await page.goto(PROTECTED_PATH);
 	await page.waitForURL(/\/login\?/);
@@ -96,6 +99,7 @@ test("with no destination it goes to the default place", async ({
 	const account = newAccount("return-default");
 	await createAccount(context, account);
 	await context.clearCookies();
+	await context.addCookies([CHOSEN_LOCALE_COOKIE]);
 
 	await page.goto("/login");
 	/**

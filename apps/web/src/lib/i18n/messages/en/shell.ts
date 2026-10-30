@@ -28,6 +28,9 @@ export const shell = {
 	},
 	language: {
 		toggle: "Change language",
+		firstVisitTitle: "Choose your language",
+		firstVisitDescription:
+			"You can change it any time from the language menu or Settings.",
 	},
 	bell: {
 		label: "Notifications",

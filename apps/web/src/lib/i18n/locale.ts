@@ -87,6 +87,15 @@ function acceptedTags(header: string): string[] {
 }
 
 /**
+ * Whether this browser has said which language it wants. Only a supported cookie value counts — an
+ * unsupported or malformed one is not a choice `resolveLocale` honours, so it is not one here either,
+ * and the first-visit picker asks again rather than trusting a value nothing reads.
+ */
+export function hasLocaleChoice(cookie: string | null | undefined): boolean {
+	return !!cookie && isLocale(cookieValue(cookie, LOCALE_COOKIE));
+}
+
+/**
  * The order is the rule: an explicit choice (cookie) beats what the browser advertises, and an
  * unsupported or malformed value falls through rather than stopping the search.
  */

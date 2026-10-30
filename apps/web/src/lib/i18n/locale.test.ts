@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
 	DEFAULT_LOCALE,
+	hasLocaleChoice,
 	LOCALE_COOKIE,
 	localeFromTag,
 	resolveLocale,
@@ -45,4 +46,13 @@ test("localeFromTag folds region subtags", () => {
 	expect(localeFromTag("ko-KR")).toBe("ko");
 	expect(localeFromTag("EN_us")).toBe("en");
 	expect(localeFromTag("ja")).toBeNull();
+});
+
+test("only a supported cookie value counts as a choice", () => {
+	expect(hasLocaleChoice(`a=1; ${LOCALE_COOKIE}=ko`)).toBe(true);
+	expect(hasLocaleChoice(`${LOCALE_COOKIE}=fr`)).toBe(false);
+	expect(hasLocaleChoice(`${LOCALE_COOKIE}=%E0%A4%A`)).toBe(false);
+	expect(hasLocaleChoice("a=1")).toBe(false);
+	expect(hasLocaleChoice("")).toBe(false);
+	expect(hasLocaleChoice(null)).toBe(false);
 });

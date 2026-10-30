@@ -27,6 +27,8 @@ export const shell: Messages["shell"] = {
 	},
 	language: {
 		toggle: "언어 변경",
+		firstVisitTitle: "언어를 선택하세요",
+		firstVisitDescription: "언어 메뉴나 설정에서 언제든 바꿀 수 있습니다.",
 	},
 	bell: {
 		label: "알림",

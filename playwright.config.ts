@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { CHOSEN_LOCALE_COOKIE } from "./e2e/support/locale.ts";
 import {
 	API_ORIGIN,
 	E2E_API_PORT,
@@ -51,6 +52,8 @@ export default defineConfig({
 		baseURL: WEB_ORIGIN,
 		trace: "retain-on-failure",
 		video: "retain-on-failure",
+		/** The language is already chosen, so the first-visit window does not open (support/locale.ts). */
+		storageState: { cookies: [CHOSEN_LOCALE_COOKIE], origins: [] },
 	},
 	projects: [
 		{

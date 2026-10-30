@@ -9,6 +9,7 @@ import {
 	Scripts,
 } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
+import { FirstVisitLanguage } from "#/components/first-visit-language.tsx";
 import { RouteError, RouteNotFound } from "#/components/route-fallback.tsx";
 import { AccountThemeBridge } from "#/features/theme/account-theme-bridge.tsx";
 import { ADMIN_CONSOLE_ORIGIN } from "#/lib/admin-console.ts";
@@ -163,6 +164,13 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 								 */}
 								<SyncRuntimeProvider>{children}</SyncRuntimeProvider>
 							</LocalDataScopeProvider>
+							{/*
+							 * The first-visit language question is app-wide, so it sits here once rather than in
+							 * the shell (the login, password-reset and guardian screens stand outside it and a first visit
+							 * can land on any of them). It is inside Motion because the dialog primitive opens
+							 * with Motion.
+							 */}
+							<FirstVisitLanguage />
 						</MotionProvider>
 						{/*
 						 * The toast outlet is app-wide and deliberately outside the subtree above. Screens fire
