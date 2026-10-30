@@ -22,6 +22,7 @@ import {
 	resolveWebAuthnConfig,
 	type WebAuthnConfig,
 } from "../lib/webauthn-config.ts";
+import { authSecretProblem, databaseUrlProblem } from "./deployment-secrets.ts";
 import { EnvSchema, type EnvValues } from "./env-schema.ts";
 
 /**
@@ -257,6 +258,14 @@ export function resolveEnvironment(
 			fail(
 				"production needs BETTER_AUTH_SECRET — this value is the only thing that stops session cookies from being forged",
 			);
+
+		/** Values this repository publishes for local use are not secrets in a deployment (`deployment-secrets.ts`). */
+		if (isProduction) {
+			const problem =
+				authSecretProblem(env.BETTER_AUTH_SECRET) ??
+				databaseUrlProblem(env.DATABASE_URL);
+			if (problem) fail(`production can't boot: ${problem}`);
+		}
 
 		/** The address clients must reach, e.g. https://api.example.com/v2 */
 		const publicApiUrl = new URL(API_BASE_PATH, env.API_ORIGIN).toString();

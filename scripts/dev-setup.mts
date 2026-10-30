@@ -10,10 +10,12 @@ import { resolve } from "node:path";
  *   1. the two env files (`.env` for compose, `apps/api/.env` for the API on the host)
  *   2. one BETTER_AUTH_SECRET, generated once and written into **both** — they must agree, and
  *      pasting it twice by hand is the step people got wrong
- *   3. a gitignored compose override that publishes Postgres on 127.0.0.1 only — on 5432, or the
- *      next free port when a Postgres already runs on this machine (then DATABASE_URL follows it,
- *      but only while it is still the example's value)
- *   4. Postgres up and healthy, the schema migrated, the development account seeded
+ *   3. a generated POSTGRES_PASSWORD in `.env` — compose requires it and publishes no default, so
+ *      a local stack never runs on a password the public repository knows
+ *   4. a gitignored compose override that publishes Postgres on 127.0.0.1 only — on 5432, or the
+ *      next free port when a Postgres already runs on this machine. apps/api/.env's DATABASE_URL
+ *      follows the password and the port, but only while it is still the example's value
+ *   5. Postgres up and healthy, the schema migrated, the development account seeded
  *
  * It is safe to run again. Nothing that exists is overwritten: an env file you edited stays, a
  * secret already set stays, an override you wrote stays. Two different secrets are reported, not
@@ -35,9 +37,8 @@ const ROOT_ENV = resolve(root, ".env");
 const API_ENV = resolve(root, "apps/api/.env");
 const OVERRIDE = resolve(root, "docker-compose.override.yml");
 
-const SECRET_LINE = /^BETTER_AUTH_SECRET=(.*)$/m;
-const DATABASE_URL_LINE = /^DATABASE_URL=(.*)$/m;
 const EXAMPLE_DATABASE_URL = "postgres://rowcat:rowcat@localhost:5432/rowcat";
+const OVERRIDE_PORT = /"127\.0\.0\.1:(\d+):5432"/;
 
 function step(text: string) {
 	console.log(`\n▸ ${text}`);
@@ -74,17 +75,43 @@ function relative(path: string) {
 	return path.slice(root.length + 1);
 }
 
-function readSecret(path: string): string {
-	return readFileSync(path, "utf8").match(SECRET_LINE)?.[1]?.trim() ?? "";
+const lineOf = (key: string) => new RegExp(`^${key}=(.*)$`, "m");
+
+function readValue(path: string, key: string): string {
+	return readFileSync(path, "utf8").match(lineOf(key))?.[1]?.trim() ?? "";
 }
 
-function writeSecret(path: string, secret: string) {
+function writeValue(path: string, key: string, value: string) {
 	const text = readFileSync(path, "utf8");
+	const line = lineOf(key);
 	writeFileSync(
 		path,
-		SECRET_LINE.test(text)
-			? text.replace(SECRET_LINE, `BETTER_AUTH_SECRET=${secret}`)
-			: `${text.trimEnd()}\nBETTER_AUTH_SECRET=${secret}\n`,
+		line.test(text)
+			? text.replace(line, () => `${key}=${value}`)
+			: `${text.trimEnd()}\n${key}=${value}\n`,
+	);
+}
+
+/**
+ * Points apps/api/.env at the compose database, but only while DATABASE_URL is still the example's
+ * value — an edited one is someone's own database, and rewriting it would be a guess.
+ */
+function followComposeDatabase(port: number) {
+	const current = readValue(API_ENV, "DATABASE_URL");
+	const user = readValue(ROOT_ENV, "POSTGRES_USER") || "rowcat";
+	const database = readValue(ROOT_ENV, "POSTGRES_DB") || "rowcat";
+	const password = encodeURIComponent(readValue(ROOT_ENV, "POSTGRES_PASSWORD"));
+	const target = `postgres://${encodeURIComponent(user)}:${password}@localhost:${port}/${encodeURIComponent(database)}`;
+	if (current === target) return;
+	if (current !== EXAMPLE_DATABASE_URL) {
+		note(
+			`apps/api/.env DATABASE_URL was edited — left as it is; the compose database is on port ${port} with .env's POSTGRES_* values`,
+		);
+		return;
+	}
+	writeValue(API_ENV, "DATABASE_URL", target);
+	note(
+		`apps/api/.env DATABASE_URL now points at the compose database (port ${port}, .env's password)`,
 	);
 }
 
@@ -109,8 +136,8 @@ ensureEnvFile(API_ENV, resolve(root, "apps/api/.env.example"));
 
 step("BETTER_AUTH_SECRET");
 {
-	const inRoot = readSecret(ROOT_ENV);
-	const inApi = readSecret(API_ENV);
+	const inRoot = readValue(ROOT_ENV, "BETTER_AUTH_SECRET");
+	const inApi = readValue(API_ENV, "BETTER_AUTH_SECRET");
 	if (inRoot && inApi && inRoot !== inApi) {
 		note("⚠ .env and apps/api/.env hold different secrets — left as they are.");
 		note(
@@ -120,8 +147,8 @@ step("BETTER_AUTH_SECRET");
 		note("already set in both files");
 	} else {
 		const secret = inRoot || inApi || randomBytes(32).toString("base64");
-		if (!inRoot) writeSecret(ROOT_ENV, secret);
-		if (!inApi) writeSecret(API_ENV, secret);
+		if (!inRoot) writeValue(ROOT_ENV, "BETTER_AUTH_SECRET", secret);
+		if (!inApi) writeValue(API_ENV, "BETTER_AUTH_SECRET", secret);
 		note(
 			inRoot || inApi
 				? "copied the existing secret into the file that had none"
@@ -130,14 +157,27 @@ step("BETTER_AUTH_SECRET");
 	}
 }
 
+step("POSTGRES_PASSWORD");
+if (readValue(ROOT_ENV, "POSTGRES_PASSWORD")) {
+	note("already set in .env — kept as it is");
+} else {
+	// Hex: it goes into DATABASE_URL unescaped in compose, where base64's `/` and `+` would break it.
+	writeValue(ROOT_ENV, "POSTGRES_PASSWORD", randomBytes(24).toString("hex"));
+	note("generated one and wrote it into .env");
+}
+
 if (useDocker) {
 	step("Postgres (docker compose)");
+	let port = 5432;
 	if (existsSync(OVERRIDE)) {
+		port = Number(
+			readFileSync(OVERRIDE, "utf8").match(OVERRIDE_PORT)?.[1] ?? 5432,
+		);
 		note(
 			"docker-compose.override.yml exists — kept as it is (it must publish db on the port DATABASE_URL uses)",
 		);
 	} else {
-		const port = await firstFreePort(5432);
+		port = await firstFreePort(5432);
 		writeFileSync(
 			OVERRIDE,
 			[
@@ -151,25 +191,10 @@ if (useDocker) {
 			].join("\n"),
 		);
 		note(`docker-compose.override.yml written (db on 127.0.0.1:${port})`);
-		if (port !== 5432) {
+		if (port !== 5432)
 			note("5432 is taken (a Postgres already runs on this machine?)");
-			const text = readFileSync(API_ENV, "utf8");
-			if (text.match(DATABASE_URL_LINE)?.[1]?.trim() === EXAMPLE_DATABASE_URL) {
-				writeFileSync(
-					API_ENV,
-					text.replace(
-						DATABASE_URL_LINE,
-						`DATABASE_URL=${EXAMPLE_DATABASE_URL.replace(":5432/", `:${port}/`)}`,
-					),
-				);
-				note(`apps/api/.env DATABASE_URL now points at port ${port}`);
-			} else {
-				note(
-					`apps/api/.env DATABASE_URL was edited — left as it is; point it at port ${port} to use this database`,
-				);
-			}
-		}
 	}
+	followComposeDatabase(port);
 	run(
 		"docker",
 		["compose", "up", "-d", "--wait", "db"],
@@ -177,6 +202,8 @@ if (useDocker) {
 			"Is Docker running?",
 			"If the port in docker-compose.override.yml is taken, change it there and in",
 			"DATABASE_URL in apps/api/.env.",
+			"A db volume created before keeps its old password: set POSTGRES_PASSWORD in .env to it,",
+			"or drop the local volume (docker compose down -v — deletes local data).",
 			"To use your own Postgres instead: pnpm dev:setup --no-docker",
 		],
 	);
@@ -189,7 +216,10 @@ step("Schema");
 run(
 	"pnpm",
 	["--filter", "@rowcat/api", "db:migrate"],
-	["Check that Postgres is reachable at apps/api/.env's DATABASE_URL."],
+	[
+		"Check that Postgres is reachable at apps/api/.env's DATABASE_URL.",
+		"Password refused? A db volume created before keeps the password it was created with.",
+	],
 );
 
 if (seed) {

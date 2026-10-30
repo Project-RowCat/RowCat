@@ -26,9 +26,10 @@ import { resolveEnvironment } from "./env-resolve.ts";
  * block a production release), so dropping them from the docs would be the lie.
  */
 
-/** Synthetic; RFC 2606 names and a key that exists nowhere. */
+/** Synthetic; RFC 2606 names, and a key and password that exist nowhere. */
 const MINIMAL_PRODUCTION: Record<string, string> = {
-	DATABASE_URL: "postgres://rowcat:rowcat@db.example.internal:5432/rowcat",
+	DATABASE_URL:
+		"postgres://rowcat:0d6f2b9e4a1c7e3b5f8a2d6c9e1b4f70@db.example.internal:5432/rowcat",
 	BETTER_AUTH_SECRET: "minimal-config-test-secret-0123456789abcdef",
 	API_ORIGIN: "https://api.example.com",
 	WEB_ORIGIN: "https://example.com",
@@ -148,27 +149,56 @@ function composeApiEnvironment(
 	);
 }
 
+/** Synthetic hex, the shape `openssl rand -hex 24` gives. */
+const COMPOSE_DB_PASSWORD = "3c9e1f7a2b5d8e0c4a6f9b1d3e7c2a5f8b0d4e6a9c1f3b7e";
+
+const COMPOSE_SECRETS: Record<string, string> = {
+	BETTER_AUTH_SECRET: MINIMAL_PRODUCTION.BETTER_AUTH_SECRET as string,
+	POSTGRES_PASSWORD: COMPOSE_DB_PASSWORD,
+};
+
 describe("docker compose — does the api service come up with a minimal .env", () => {
-	test("the only operator value compose requires is BETTER_AUTH_SECRET", () => {
-		expect(() => composeApiEnvironment({})).toThrow("BETTER_AUTH_SECRET");
+	/**
+	 * Both are secrets the operator generates; neither has a value this public repository could
+	 * supply (`deployment-secrets.ts`).
+	 */
+	test("compose requires exactly the session key and the database password", () => {
+		expect(() =>
+			composeApiEnvironment({ POSTGRES_PASSWORD: COMPOSE_DB_PASSWORD }),
+		).toThrow("BETTER_AUTH_SECRET");
+		expect(() =>
+			composeApiEnvironment({
+				BETTER_AUTH_SECRET: MINIMAL_PRODUCTION.BETTER_AUTH_SECRET as string,
+			}),
+		).toThrow("POSTGRES_PASSWORD");
+		expect(() => composeApiEnvironment(COMPOSE_SECRETS)).not.toThrow();
 	});
 
 	/**
 	 * Boot is the authority, not the doctor: the same `resolveEnvironment` `env.ts` calls. A local
 	 * `docker compose up` with only the secret boots (loopback origins only warn at boot).
 	 */
-	test("the api passes boot validation with just a session key", () => {
+	test("the api passes boot validation with just the two secrets", () => {
 		const resolution = resolveEnvironment(
-			composeApiEnvironment({
-				BETTER_AUTH_SECRET: MINIMAL_PRODUCTION.BETTER_AUTH_SECRET as string,
-			}),
+			composeApiEnvironment(COMPOSE_SECRETS),
 		);
 		expect(resolution.ok).toBe(true);
 	});
 
+	/** An `.env` copied from an older example still holds the old development password. */
+	test("the api refuses to boot on the old development database password", () => {
+		const resolution = resolveEnvironment(
+			composeApiEnvironment({
+				...COMPOSE_SECRETS,
+				POSTGRES_PASSWORD: "rowcat",
+			}),
+		);
+		expect(resolution.ok).toBe(false);
+	});
+
 	test("a public deployment has no release blocker once the two origins are added", () => {
 		const env = composeApiEnvironment({
-			BETTER_AUTH_SECRET: MINIMAL_PRODUCTION.BETTER_AUTH_SECRET as string,
+			...COMPOSE_SECRETS,
 			API_ORIGIN: "https://api.example.com",
 			WEB_ORIGIN: "https://example.com,https://admin.example.com",
 		});

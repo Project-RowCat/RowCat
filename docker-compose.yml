@@ -26,7 +26,10 @@ services:
     image: postgres:18-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-rowcat}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rowcat}
+      # Required, with no default: this repository is public, so any password written here is one
+      # every reader knows. The api refuses to boot in production on the old development value
+      # (apps/api/src/config/deployment-secrets.ts). Hex keeps it safe inside DATABASE_URL below.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required - openssl rand -hex 24}
       POSTGRES_DB: ${POSTGRES_DB:-rowcat}
     volumes:
       # Mounts the parent directory. 18+ images keep data under a per-major subpath
@@ -93,7 +96,7 @@ services:
       # (e.g. https://api.example.com). This file defaults to no operator's domain.
       API_ORIGIN: ${API_ORIGIN:-http://localhost:3001}
       # Inside the compose network, the service name is the host name.
-      DATABASE_URL: postgres://${POSTGRES_USER:-rowcat}:${POSTGRES_PASSWORD:-rowcat}@db:5432/${POSTGRES_DB:-rowcat}
+      DATABASE_URL: postgres://${POSTGRES_USER:-rowcat}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required - openssl rand -hex 24}@db:5432/${POSTGRES_DB:-rowcat}
       # Service name + fixed internal port, for the same reason as db (not open on the host).
       # The consumer is distributed rate limiting (`apps/api/src/lib/rate-limit/`). Left empty, the
       # limiter falls back to an in-process counter, and with two or more replicas the ceiling is

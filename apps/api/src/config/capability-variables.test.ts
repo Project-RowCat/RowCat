@@ -39,7 +39,9 @@ const PRODUCTION: Record<string, string> = {
 	NODE_ENV: "production",
 	WEB_ORIGIN: "https://example.com",
 	API_ORIGIN: "https://api.example.com",
-	BETTER_AUTH_SECRET: "synthetic",
+	DATABASE_URL:
+		"postgres://rowcat:synthetic-db-password@db.example.internal/rowcat",
+	BETTER_AUTH_SECRET: "synthetic-session-key-0123456789abcdef",
 };
 
 function emittedIds(): Set<string> {

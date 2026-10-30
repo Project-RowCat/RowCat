@@ -67,12 +67,12 @@ describe("sensitivity classification", () => {
 	 * Secrets committed with a value in an example file must be named exceptions; a commit growing
 	 * this list is itself a review subject.
 	 */
-	test("there are only two example-value exceptions", () => {
+	test("there is only one example-value exception", () => {
 		expect(
 			ENVIRONMENT_INVENTORY.filter(
 				(entry) => entry.allowsLocalExampleValue,
 			).map((entry) => entry.key),
-		).toEqual(["DATABASE_URL", "POSTGRES_PASSWORD"]);
+		).toEqual(["DATABASE_URL"]);
 	});
 });
 

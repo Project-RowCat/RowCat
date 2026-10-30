@@ -137,8 +137,8 @@ N/A          이 배포에 해당하지 않는다
 세지 않는다(`apps/api/src/config/minimal-config.test.ts`가 값으로 고정한다).
 
 ```text
-DATABASE_URL         Postgres. 컴포즈는 POSTGRES_*로 스스로 조립한다
-BETTER_AUTH_SECRET   비면 프로덕션 부팅이 막힌다(세션 쿠키 위조를 막는 유일한 장치)
+DATABASE_URL         Postgres. 컴포즈는 POSTGRES_*로 스스로 조립한다(POSTGRES_PASSWORD는 기본값이 없다)
+BETTER_AUTH_SECRET   비거나 32자보다 짧으면 프로덕션 부팅이 막힌다(세션 쿠키 위조를 막는 유일한 장치)
 WEB_ORIGIN           브라우저 오리진(CSV). 루프백뿐이면 운영 release blocker다 — 운영 콘솔 오리진도 함께 적는다
 API_ORIGIN           공개 API 주소. 콜백과 절대 URL의 근거다 — 비우면 http://localhost:3001로 접힌다
 ```
@@ -148,10 +148,50 @@ API_ORIGIN           공개 API 주소. 콜백과 절대 URL의 근거다 — �
 (`example.com` ↔ `api.example.com`) `AUTH_COOKIE_DOMAIN=.example.com`도 사실상 필요하다 —
 진단은 이 경우를 `degraded`로 말한다.
 
-**`docker compose up`이 운영자에게 요구하는 값은 `BETTER_AUTH_SECRET` 하나다**(`:?`). 데이터베이스
-주소는 컴포즈가 조립하고, 두 오리진은 루프백으로 접혀 로컬 스택은 그대로 뜬다(부팅은 경고만 한다).
+**`docker compose up`이 운영자에게 요구하는 값은 `BETTER_AUTH_SECRET`과 `POSTGRES_PASSWORD` 둘이다**(`:?`).
+둘 다 운영자가 생성하는 시크릿이고, 공개 저장소가 대신 적어 줄 수 있는 값이 아니다(아래 「개발 기본값은
+운영 시크릿이 아니다」). 데이터베이스 주소는 컴포즈가 그 비밀번호로 조립하고, 두 오리진은 루프백으로 접혀 로컬 스택은 그대로 뜬다(부팅은 경고만 한다).
 공개 도메인에 세울 때 `.env`에 `WEB_ORIGIN`·`API_ORIGIN`을 더한다. 컴포즈는 `REDIS_URL`과
 `BACKGROUND_JOBS_ENABLED=on`을 스스로 채우므로 아래 표의 앞 두 줄은 컴포즈 밖 배포의 이야기다.
+
+### 개발 기본값은 운영 시크릿이 아니다
+
+이 저장소는 공개돼 있으므로 로컬용으로 적어 둔 값은 누구나 읽는 자격 증명이다. 그런 값으로 뜬 배포는
+아무 증상 없이 잘 돈다 — 세션 키는 여전히 쿠키에 서명하고 데이터베이스는 여전히 답한다. 잃은 것은
+비밀뿐이고 그 사실은 어디에도 드러나지 않는다. 그래서 프로덕션 부팅이 그 상태를 거부한다
+(`apps/api/src/config/deployment-secrets.ts`, `env:doctor --mode production`도 같은 함수를 지난다):
+
+```text
+BETTER_AUTH_SECRET   32자 미만 · 이 저장소가 테스트용으로 적은 값      → 부팅 거부
+DATABASE_URL         비밀번호가 개발용 `rowcat`                         → 부팅 거부
+                     (DATABASE_URL이 아예 없으면 스키마 기본값이 바로 그 값이다)
+```
+
+강도 점수나 엔트로피 추정은 하지 않는다 — 길이 하한과 "이 저장소가 공개한 값"은 사실이지만, 강도 점수는
+추측이고 좋은 키를 거절하는 추측은 운영자에게 검사가 통과할 때까지 키를 늘리는 법을 가르친다. 개발·테스트
+실행은 묻지 않는다(로컬은 이 값들을 일부러 쓴다). `pnpm dev:setup`은 `POSTGRES_PASSWORD`를 생성해 `.env`에
+적고 `apps/api/.env`의 `DATABASE_URL`을 거기에 맞춘다.
+
+생성은 이렇게 한다. 비밀번호를 16진수로 만드는 이유는 `DATABASE_URL` 안에 이스케이프 없이 들어가야 해서다
+(base64의 `/`·`+`는 URL을 깨뜨린다):
+
+```bash
+openssl rand -base64 32   # BETTER_AUTH_SECRET
+openssl rand -hex 24      # POSTGRES_PASSWORD
+```
+
+**이미 떠 있는 데이터베이스는 만들어질 때의 비밀번호를 유지한다.** Postgres 이미지는 `POSTGRES_PASSWORD`를
+볼륨이 처음 만들어질 때만 읽으므로 `.env`만 바꾸면 API가 접속하지 못한다. 예전 예시의 `rowcat`으로 떠 있던
+배포는 역할의 비밀번호를 먼저 바꾸고 `.env`를 맞춘 뒤 API를 다시 띄운다:
+
+```bash
+NEW=$(openssl rand -hex 24)
+docker compose exec db psql -U rowcat -d rowcat -c "ALTER ROLE rowcat WITH PASSWORD '$NEW'"
+# .env의 POSTGRES_PASSWORD를 $NEW로 바꾼 뒤
+docker compose up -d api
+```
+
+`BETTER_AUTH_SECRET`을 바꾸면 기존 세션이 모두 풀리고(다시 로그인), 첫 실행 설정 코드도 바뀐다.
 
 그 넷만으로 꺼져 있는 것:
 

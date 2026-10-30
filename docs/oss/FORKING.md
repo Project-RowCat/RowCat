@@ -57,7 +57,9 @@
 - Kakao: `KAKAO_REST_API_KEY`(REST API 키 — Admin 키가 아니다), 콘솔에서 보안을 켰다면
   `KAKAO_CLIENT_SECRET`. Redirect URI와 플랫폼 > Web 도메인에 `<API_ORIGIN>`.
 - 로그인 정보가 그 제공자에게 간다 — 배포가 게시하는 개인정보처리방침이 그 사실을 적기 전에는 비워 둔다.
-- `BETTER_AUTH_SECRET` — `openssl rand -base64 32`.
+- `BETTER_AUTH_SECRET` — `openssl rand -base64 32`(32자 미만이면 프로덕션 부팅이 막힌다).
+- `POSTGRES_PASSWORD` — `openssl rand -hex 24`. 컴포즈에 기본값이 없고, 개발용 `rowcat`이면 프로덕션 부팅이 막힌다
+  (`docs/ops/CONFIGURATION.md` 「개발 기본값은 운영 시크릿이 아니다」).
 
 ## 7. 메일
 

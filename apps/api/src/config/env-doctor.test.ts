@@ -26,7 +26,7 @@ const MINIMAL: Record<string, string> = {
 
 /** All synthetic; none exist anywhere real. */
 const SECRETS = {
-	BETTER_AUTH_SECRET: "super-secret-auth-value",
+	BETTER_AUTH_SECRET: "super-secret-auth-value-0123456789abcdef",
 	OPENROUTER_API_KEY: "sk-rowcat-secret",
 	SMTP_PASSWORD: "smtp-secret-password",
 	PORTONE_V2_API_SECRET: "portone-secret",

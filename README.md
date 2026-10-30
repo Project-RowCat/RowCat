@@ -51,7 +51,8 @@ pnpm dev:all     # web, API and the operations console together
 
 `pnpm dev:setup` is safe to run again — it never overwrites a file or a secret that already exists. It
 creates `.env` (read by docker compose) and `apps/api/.env` (read by the API on the host) from their
-examples, generates one `BETTER_AUTH_SECRET` into both, and writes a gitignored
+examples, generates one `BETTER_AUTH_SECRET` into both and a `POSTGRES_PASSWORD` into `.env` (with
+`DATABASE_URL` in `apps/api/.env` following it), and writes a gitignored
 `docker-compose.override.yml` that publishes Postgres on loopback only — on 5432, or the next free port
 when a Postgres already runs on this machine (then `DATABASE_URL` follows it). `--no-docker` uses your own
 Postgres instead (whatever `DATABASE_URL` in `apps/api/.env` points at); `--no-seed` skips the development
@@ -99,9 +100,15 @@ carry no deployment value — web and the operations console take the API origin
 when they start. So a deployment needs no build:
 
 ```bash
-cp .env.example .env   # set BETTER_AUTH_SECRET, and for a real domain WEB_ORIGIN, API_ORIGIN, VITE_API_ORIGIN
+cp .env.example .env   # set BETTER_AUTH_SECRET and POSTGRES_PASSWORD, and for a real domain WEB_ORIGIN, API_ORIGIN, VITE_API_ORIGIN
 docker compose up -d   # pulls api, web and admin; Postgres and Redis come along
 ```
+
+Both secrets are generated, never copied: `openssl rand -base64 32` for `BETTER_AUTH_SECRET`, `openssl rand
+-hex 24` for `POSTGRES_PASSWORD` (hex goes into the database URL unescaped). Compose will not start without
+them, and the API refuses to boot in production on a short session key or on the old example password
+`rowcat` — a database first created with that password needs `ALTER ROLE` before the upgrade
+(`docs/ops/CONFIGURATION.md`, 개발 기본값은 운영 시크릿이 아니다).
 
 `docker compose up --build` runs this checkout instead of the published images. Pin a deployment to one
 build with `ROWCAT_IMAGE_TAG=sha-<commit>`; a fork that publishes its own images points

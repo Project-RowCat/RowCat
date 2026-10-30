@@ -70,9 +70,10 @@ export interface EnvironmentVariableDefinition {
 
 	/**
 	 * A secret that may be committed with a value in an example file. Named exceptions only
-	 * (`DATABASE_URL`, `POSTGRES_PASSWORD`), and the checker verifies the value is a loopback
-	 * connection string or exactly the compose default — anything else is a new credential, not a
-	 * placeholder.
+	 * (`DATABASE_URL`, for the API run directly against a local database), and the checker verifies
+	 * the value is a loopback connection string or exactly the compose default — anything else is a
+	 * new credential, not a placeholder. `POSTGRES_PASSWORD` left this list when compose stopped
+	 * defaulting it: the compose stack is the deployment, so its example carries an empty slot.
 	 */
 	allowsLocalExampleValue?: true;
 
@@ -209,12 +210,15 @@ export const ENVIRONMENT_INVENTORY: readonly EnvironmentVariableDefinition[] = [
 		key: "POSTGRES_PASSWORD",
 		group: "database",
 		sensitivity: "secret",
-		allowsLocalExampleValue: true,
 		surfaces: {
 			compose: { in: "environment", services: ["db"], ownership: "operator" },
 			rootExample: "documented",
 		},
-		operator: { productionRelevant: true },
+		operator: {
+			productionRelevant: true,
+			description:
+				"required by compose, no default — generate it (openssl rand -hex 24)",
+		},
 	},
 	{
 		key: "POSTGRES_DB",
