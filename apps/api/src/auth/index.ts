@@ -40,6 +40,7 @@ import {
 } from "../services/mail/index.ts";
 import { enforceAccountDeletionPolicy } from "./account-deletion-policy.ts";
 import { findAuthUser } from "./auth-user.ts";
+import { localSignInPlugin } from "./local-sign-in.ts";
 import { createRedisAuthRateLimitStorage } from "./rate-limit-storage.ts";
 import {
 	withAppleAuthOrigin,
@@ -187,6 +188,12 @@ export const auth = betterAuth({
 		 *   code works once; ten new ones can be generated with the password, which kills the old ones.
 		 *   Plaintext appears only in those two responses.
 		 */
+		/**
+		 * The local owner's password-less sign-in (`local-sign-in.ts`). Harmless on a deployment that
+		 * was set up with an account: with no local owner it answers 404, and `app.ts` refuses it before
+		 * the library for any request that is not from this computer.
+		 */
+		localSignInPlugin(),
 		twoFactorPlugin({
 			issuer: APP_NAME,
 			skipVerificationOnEnable: false,

@@ -268,14 +268,20 @@ export function AdminShell() {
 						{viewer?.role}
 					</Badge>
 					<ThemeToggle />
-					<Button
-						variant="ghost"
-						size="icon-sm"
-						aria-label="Sign out"
-						onClick={signOut}
-					>
-						<LogOut className="size-4" />
-					</Button>
+					{/*
+					 * Not for the local owner: the login screen signs this computer straight back in, so the
+					 * button would only bounce (`lib/auth.ts`).
+					 */}
+					{viewer?.localOwner ? null : (
+						<Button
+							variant="ghost"
+							size="icon-sm"
+							aria-label="Sign out"
+							onClick={signOut}
+						>
+							<LogOut className="size-4" />
+						</Button>
+					)}
 				</div>
 			</header>
 

@@ -8,6 +8,7 @@ export * from "./conversation-library.ts";
 export * from "./creator-analytics.ts";
 export * from "./creator-comments.ts";
 export * from "./gallery-filter-state.ts";
+export * from "./local-owner.ts";
 export * from "./membership.ts";
 export * from "./mobile-update-access.ts";
 export * from "./notification.ts";

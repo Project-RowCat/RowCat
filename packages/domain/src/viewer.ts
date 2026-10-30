@@ -70,6 +70,11 @@ export interface Viewer {
 	 * isAdultEligible ignore this value.
 	 */
 	adultRecheckRequired: boolean;
+	/**
+	 * The deployment's local owner — the account this computer is signed in as without a password.
+	 * The server decides it; screens only drop what has no meaning for it (signing out).
+	 */
+	localOwner: boolean;
 }
 
 /**

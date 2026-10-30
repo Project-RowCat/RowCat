@@ -1,3 +1,5 @@
+import { LOCAL_SIGN_IN_AUTH_PATH } from "@rowcat/contracts";
+
 /**
  * What of Better Auth's HTTP surface this deployment leaves open. The library mounts every endpoint
  * its plugins define under `/v2/auth/*`; most are the doors the apps really use, and a few are
@@ -19,6 +21,10 @@
  * /passkey/update-passkey         PATCH our passkey route — same row, narrower answer
  * /passkey/delete-passkey         DELETE our passkey route — the only place the removal notice is sent
  * ```
+ *
+ * The local owner's password-less sign-in (`/local-sign-in`, `local-sign-in.ts`) is closed to every
+ * request that is not provably from this computer (`lib/local-request.ts`). It is closed here, with
+ * the same 404 as the list above, because the library's handler sees no socket and cannot decide it.
  *
  * The Expo plugin's authorization relay stays open (the app's browser sign-in needs it) but only toward
  * the three providers' authorization endpoints. Left as the library ships it, the relay redirects to any
@@ -42,6 +48,8 @@ const CLOSED_PATHS: ReadonlySet<string> = new Set([
 ]);
 
 const EXPO_PROXY_PATH = "/expo-authorization-proxy";
+
+const LOCAL_ONLY_PATH = LOCAL_SIGN_IN_AUTH_PATH.toLowerCase();
 
 /**
  * The authorization endpoints Better Auth builds for the three providers this repository configures
@@ -74,14 +82,17 @@ const normalize = (path: string): string => {
 export type AuthSurfaceRefusal = "closed" | "proxy-target";
 
 /**
- * `path` is the part after `/v2/auth`; `search` is the query string the request carries.
+ * `path` is the part after `/v2/auth`; `search` is the query string the request carries; `isLocal`
+ * answers whether the request is from this computer, asked only for the one path that needs it.
  */
 export function authSurfaceRefusal(
 	path: string,
 	search: URLSearchParams,
+	isLocal: () => boolean,
 ): AuthSurfaceRefusal | null {
 	const normalized = normalize(path);
 	if (CLOSED_PATHS.has(normalized)) return "closed";
+	if (normalized === LOCAL_ONLY_PATH && !isLocal()) return "closed";
 	if (normalized === EXPO_PROXY_PATH && !expoProxyTargetAllowed(search))
 		return "proxy-target";
 	return null;

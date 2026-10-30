@@ -26,6 +26,7 @@ const ALICE: Viewer = {
 	ageStatus: "standard",
 	membershipGate: null,
 	adultRecheckRequired: false,
+	localOwner: false,
 };
 
 const inputs = (patch: Partial<SessionInputs> = {}): SessionInputs => ({

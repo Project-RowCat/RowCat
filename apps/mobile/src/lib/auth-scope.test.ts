@@ -49,6 +49,7 @@ const viewerOf = (id: string, nickname: string): Viewer => ({
 	ageStatus: "standard",
 	membershipGate: null,
 	adultRecheckRequired: false,
+	localOwner: false,
 });
 
 /**

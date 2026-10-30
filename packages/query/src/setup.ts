@@ -1,4 +1,4 @@
-import type { SetupStatusDto } from "@rowcat/contracts";
+import type { SetupClaimLocalRequest, SetupStatusDto } from "@rowcat/contracts";
 import type { RowCatClient } from "@rowcat/sdk";
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { VIEWER_QUERY_KEY } from "./viewer.ts";
@@ -36,6 +36,38 @@ export function setupClaimMutationOptions(
 	return {
 		mutationKey: ["setup", "claim"] as const,
 		mutationFn: (code: string) => client.setup.claim(code),
+		onSuccess: async () => {
+			await Promise.all([
+				queryClient.invalidateQueries({ queryKey: SETUP_STATUS_QUERY_KEY }),
+				queryClient.invalidateQueries({
+					queryKey: VIEWER_QUERY_KEY,
+					exact: true,
+				}),
+			]);
+		},
+	};
+}
+
+/**
+ * The local claim, then the local sign-in, as one operation. The claim creates the member but sets no
+ * session (that is Better Auth's door, `local-sign-in`); this layer does not know Better Auth, so the
+ * app hands the sign-in in. If the sign-in fails the claim still happened — setup is closed and the
+ * next page load on this computer signs in — so the failure is reported, not undone.
+ *
+ * On success the status and the viewer cell move, as with the account claim.
+ */
+export function setupClaimLocalMutationOptions(
+	client: RowCatClient,
+	queryClient: QueryClient,
+	signIn: () => Promise<void>,
+) {
+	return {
+		mutationKey: ["setup", "claim-local"] as const,
+		mutationFn: async (input: SetupClaimLocalRequest) => {
+			const claimed = await client.setup.claimLocal(input);
+			await signIn();
+			return claimed;
+		},
 		onSuccess: async () => {
 			await Promise.all([
 				queryClient.invalidateQueries({ queryKey: SETUP_STATUS_QUERY_KEY }),

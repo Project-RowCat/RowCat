@@ -34,6 +34,7 @@ const VIEWER: Viewer = {
 	adult: false,
 	showAdult: false,
 	adultRecheckRequired: false,
+	localOwner: false,
 	ageStatus: "standard",
 	membershipGate: null,
 };

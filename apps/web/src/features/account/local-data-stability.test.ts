@@ -50,6 +50,7 @@ const VIEWER: Viewer = {
 	adult: true,
 	showAdult: false,
 	adultRecheckRequired: false,
+	localOwner: false,
 	ageStatus: "standard",
 	membershipGate: null,
 };

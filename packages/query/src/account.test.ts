@@ -40,6 +40,7 @@ const VIEWER: Viewer = {
 	ageStatus: "standard",
 	membershipGate: null,
 	adultRecheckRequired: false,
+	localOwner: false,
 };
 
 const ACCOUNT: AccountDetails = {

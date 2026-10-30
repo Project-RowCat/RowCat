@@ -1,0 +1,2 @@
+ALTER TABLE "deployment_setup" ADD COLUMN "local_owner_id" text;--> statement-breakpoint
+ALTER TABLE "deployment_setup" ADD CONSTRAINT "deployment_setup_local_owner_id_member_id_fk" FOREIGN KEY ("local_owner_id") REFERENCES "public"."member"("id") ON DELETE set null ON UPDATE no action;

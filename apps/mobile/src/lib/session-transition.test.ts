@@ -42,6 +42,7 @@ const ALICE: Viewer = {
 	ageStatus: "standard",
 	membershipGate: null,
 	adultRecheckRequired: false,
+	localOwner: false,
 };
 
 const BOB: Viewer = { ...ALICE, id: "member-bob", nickname: "Bob" };

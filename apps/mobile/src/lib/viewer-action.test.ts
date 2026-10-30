@@ -23,6 +23,7 @@ const APPROVED: Viewer = {
 	ageStatus: "standard",
 	membershipGate: null,
 	adultRecheckRequired: false,
+	localOwner: false,
 };
 
 const session = (state: SessionState): SessionState => state;

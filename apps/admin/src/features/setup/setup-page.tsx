@@ -1,9 +1,15 @@
-import { PASSWORD_LENGTH, type SetupClaimResponse } from "@rowcat/contracts";
+import {
+	NICKNAME_LIMITS,
+	PASSWORD_LENGTH,
+	type SetupClaimLocalRequest,
+	type SetupClaimResponse,
+} from "@rowcat/contracts";
 import { APP_NAME, normalizeSetupCode } from "@rowcat/domain";
 import {
 	adminDeploymentReadinessQueryOptions,
 	resetAdminState,
 	SETUP_STATUS_QUERY_KEY,
+	setupClaimLocalMutationOptions,
 	setupClaimMutationOptions,
 	setupStatusQueryOptions,
 	VIEWER_QUERY_KEY,
@@ -28,7 +34,7 @@ import {
 } from "#/components/states.tsx";
 import { SIGN_OUT_FAILED } from "#/features/auth/auth-error.ts";
 import { getRowCatClient } from "#/lib/api.ts";
-import { authClient } from "#/lib/auth.ts";
+import { authClient, onThisComputer, requestLocalSignIn } from "#/lib/auth.ts";
 import { useAdminQuery } from "#/lib/query/use-admin-query.ts";
 import { showErrorToast } from "#/lib/toast.ts";
 import { ReadinessList } from "./readiness-list.tsx";
@@ -36,6 +42,7 @@ import {
 	isSetupClosedError,
 	resolveSetupView,
 	setupClaimErrorMessage,
+	setupClaimLocalErrorMessage,
 } from "./setup-view.ts";
 
 /**
@@ -48,14 +55,22 @@ import {
  *
  * The account is made through Better Auth's ordinary sign-up, never by this page or the API's setup
  * route; the setup route only changes the role of an account that already exists.
+ *
+ * **On the computer the API runs on, the first offer is to skip accounts entirely** (the local owner,
+ * `@rowcat/contracts`'s `deployment-setup.ts`): a name and the code, and this computer is signed in from
+ * then on. It is offered only at a loopback address — anywhere else the server would refuse it — and
+ * the account path stays one press away for a deployment other people will sign in to.
  */
 export function SetupPage() {
 	const client = getRowCatClient();
 	const statusQuery = useAdminQuery(setupStatusQueryOptions(client));
 	const viewerQuery = useAdminQuery(viewerQueryOptions(client));
 	/** Owned here, not by the code form: the status refetch its success triggers unmounts that form. */
-	const claim = useMutation(
-		setupClaimMutationOptions(client, useQueryClient()),
+	const queryClient = useQueryClient();
+	const claim = useMutation(setupClaimMutationOptions(client, queryClient));
+	/** Owned here for the same reason: its success closes setup and redraws this page. */
+	const claimLocal = useMutation(
+		setupClaimLocalMutationOptions(client, queryClient, requestLocalSignIn),
 	);
 
 	const view = resolveSetupView({
@@ -64,7 +79,12 @@ export function SetupPage() {
 		viewer: viewerQuery.data,
 		viewerPending: viewerQuery.isPending,
 		viewerFailed: viewerQuery.isError,
-		claim: claim.isSuccess ? "succeeded" : claim.isPending ? "pending" : "idle",
+		claim:
+			claim.isSuccess || claimLocal.isSuccess
+				? "succeeded"
+				: claim.isPending
+					? "pending"
+					: "idle",
 	});
 
 	switch (view.step) {
@@ -93,7 +113,7 @@ export function SetupPage() {
 		case "closed":
 			return <ClosedStep operator={view.operator} />;
 		case "account":
-			return <AccountStep />;
+			return <AccountStep claimLocal={claimLocal} />;
 		case "code":
 			return <CodeStep nickname={view.nickname} claim={claim} />;
 		case "done":
@@ -156,8 +176,39 @@ function ClosedStep({ operator }: { operator: boolean }) {
 	);
 }
 
-function AccountStep() {
+function AccountStep({
+	claimLocal,
+}: {
+	claimLocal: UseMutationResult<
+		SetupClaimResponse,
+		Error,
+		SetupClaimLocalRequest
+	>;
+}) {
 	const queryClient = useQueryClient();
+	const [withAccount, setWithAccount] = useState(false);
+
+	if (onThisComputer() && !withAccount)
+		return (
+			<Frame
+				title={`Set up ${APP_NAME}`}
+				description="Use it on this computer without signing in. You become the administrator, and this computer stays signed in."
+			>
+				<LocalSetupForm claim={claimLocal} />
+				<p className="text-center text-muted-foreground text-sm">
+					Will other people sign in to this deployment?{" "}
+					<button
+						type="button"
+						onClick={() => setWithAccount(true)}
+						className="text-foreground underline underline-offset-4"
+						disabled={claimLocal.isPending}
+					>
+						Create an administrator account
+					</button>
+				</p>
+			</Frame>
+		);
+
 	return (
 		<Frame
 			step="Step 1 of 2"
@@ -183,6 +234,100 @@ function AccountStep() {
 				</Link>
 			</p>
 		</Frame>
+	);
+}
+
+/**
+ * The local owner: a name (there is no sign-up to have asked for one, and it is what comments and
+ * profiles show) and the setup code. The server creates the account, the page signs this computer in,
+ * and the done step follows — the mutation is the page's, so this form unmounting on success loses
+ * nothing.
+ */
+function LocalSetupForm({
+	claim,
+}: {
+	claim: UseMutationResult<SetupClaimResponse, Error, SetupClaimLocalRequest>;
+}) {
+	const queryClient = useQueryClient();
+	const nameId = useId();
+	const codeId = useId();
+	const hintId = useId();
+	const [nickname, setNickname] = useState("");
+	const [code, setCode] = useState("");
+
+	const ready =
+		nickname.trim().length >= NICKNAME_LIMITS.min &&
+		normalizeSetupCode(code) !== null;
+
+	const onSubmit = (event: FormEvent) => {
+		event.preventDefault();
+		if (!ready || claim.isPending) return;
+		claim.mutate(
+			{ code, nickname: nickname.trim() },
+			{
+				onError: (error) => {
+					if (isSetupClosedError(error))
+						void queryClient.invalidateQueries({
+							queryKey: SETUP_STATUS_QUERY_KEY,
+						});
+				},
+			},
+		);
+	};
+
+	const failure =
+		claim.error && !isSetupClosedError(claim.error)
+			? setupClaimLocalErrorMessage(claim.error)
+			: null;
+
+	return (
+		<form onSubmit={onSubmit} className="space-y-4">
+			<div className="space-y-1.5">
+				<Label htmlFor={nameId}>Your name</Label>
+				<Input
+					id={nameId}
+					autoComplete="nickname"
+					required
+					maxLength={NICKNAME_LIMITS.max}
+					value={nickname}
+					onChange={(event) => setNickname(event.target.value)}
+					disabled={claim.isPending}
+				/>
+			</div>
+			<div className="space-y-1.5">
+				<Label htmlFor={codeId}>Setup code</Label>
+				<Input
+					id={codeId}
+					value={code}
+					onChange={(event) => setCode(event.target.value)}
+					placeholder="XXXX-XXXX-XXXX"
+					autoComplete="off"
+					autoCapitalize="characters"
+					spellCheck={false}
+					className="font-mono uppercase tracking-wider"
+					aria-describedby={hintId}
+					aria-invalid={failure ? true : undefined}
+					disabled={claim.isPending}
+				/>
+				<p id={hintId} className="text-muted-foreground text-xs">
+					The API prints it when it starts — the{" "}
+					<code className="font-mono">[setup]</code> line of its log, such as
+					the terminal running <code className="font-mono">pnpm dev:api</code>.
+				</p>
+			</div>
+			{failure ? (
+				<p role="alert" className="text-destructive text-sm">
+					{failure}
+				</p>
+			) : null}
+			<Button
+				type="submit"
+				className="w-full"
+				disabled={!ready || claim.isPending}
+			>
+				{claim.isPending ? "Setting up…" : "Use without signing in"}
+			</Button>
+		</form>
 	);
 }
 

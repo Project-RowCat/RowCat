@@ -4,7 +4,7 @@ import {
 	SETUP_CODE_SOURCE_BYTES,
 	setupCodeFromBytes,
 } from "@rowcat/domain";
-import { eq } from "drizzle-orm";
+import { eq, isNotNull } from "drizzle-orm";
 import { db } from "../../db/client.ts";
 import { deployment_setup, member } from "../../db/schema.ts";
 import { env } from "../../env.ts";
@@ -27,11 +27,12 @@ import { recordAudit } from "../admin/audit.ts";
  * product clears it.
  *
  * What it does not do: it takes no role and no member from the request (the grant is always `admin`,
- * always to the session's member), it creates no account (sign-up stays Better Auth's), and it does
- * not reopen when the last admin leaves. That recovery is a database operation on purpose.
+ * always to the session's member), it creates no account (sign-up stays Better Auth's — the one
+ * exception is the local owner, `local-owner.ts`, which exists precisely because there is no sign-up),
+ * and it does not reopen when the last admin leaves. That recovery is a database operation on purpose.
  */
 
-const SETUP_ROW_ID = "deployment";
+export const SETUP_ROW_ID = "deployment";
 
 /**
  * Domain separation for the HMAC: the session secret also signs cookies, and a value derived under
@@ -56,6 +57,12 @@ function sameCode(a: string, b: string): boolean {
 	const left = Buffer.from(a);
 	const right = Buffer.from(b);
 	return left.length === right.length && timingSafeEqual(left, right);
+}
+
+/** Whether `code` (as typed) is the code this salt derives. Shared by both claims so they cannot disagree. */
+export function setupCodeMatches(salt: string, code: string): boolean {
+	const normalized = normalizeSetupCode(code);
+	return !!normalized && sameCode(normalized, deriveSetupCode(salt));
 }
 
 export type SetupBootState = { open: false } | { open: true; code: string };
@@ -132,7 +139,6 @@ export async function claimDeploymentSetup(input: {
 	memberId: string;
 	code: string;
 }): Promise<SetupClaimOutcome> {
-	const normalized = normalizeSetupCode(input.code);
 	return db.transaction(async (tx) => {
 		const [row] = await tx
 			.select({
@@ -143,8 +149,7 @@ export async function claimDeploymentSetup(input: {
 			.where(eq(deployment_setup.id, SETUP_ROW_ID))
 			.for("update");
 		if (!row || row.completedAt) return "closed";
-		if (!normalized || !sameCode(normalized, deriveSetupCode(row.salt)))
-			return "invalid";
+		if (!setupCodeMatches(row.salt, input.code)) return "invalid";
 
 		const [current] = await tx
 			.select({ role: member.role })
@@ -173,4 +178,34 @@ export async function claimDeploymentSetup(input: {
 		});
 		return "claimed";
 	});
+}
+
+/**
+ * The local owner, if this deployment was set up for use without signing in (`local-owner.ts`).
+ * Both ids, because the sign-in door needs the auth account and everything else needs the member.
+ *
+ * Read per request rather than cached: it is one primary-key row, and a cache would keep handing out
+ * sessions for a moment after the owner's account was deleted.
+ */
+export async function readLocalOwner(): Promise<{
+	memberId: string;
+	userId: string;
+} | null> {
+	const [row] = await db
+		.select({ memberId: member.id, userId: member.user_id })
+		.from(deployment_setup)
+		.innerJoin(member, eq(member.id, deployment_setup.local_owner_id))
+		.where(eq(deployment_setup.id, SETUP_ROW_ID))
+		.limit(1);
+	return row ?? null;
+}
+
+/** Whether a local owner exists — the deployment fact `runtime-config` carries. */
+export async function hasLocalOwner(): Promise<boolean> {
+	const [row] = await db
+		.select({ id: deployment_setup.id })
+		.from(deployment_setup)
+		.where(isNotNull(deployment_setup.local_owner_id))
+		.limit(1);
+	return !!row;
 }

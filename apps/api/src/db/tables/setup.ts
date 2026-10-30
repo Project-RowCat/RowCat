@@ -32,4 +32,16 @@ export const deployment_setup = pgTable("deployment_setup", {
 	completed_by: text("completed_by").references(() => member.id, {
 		onDelete: "set null",
 	}),
+	/**
+	 * The member a browser on this computer is signed in as without a password, when setup was claimed
+	 * with "use without signing in" (`services/setup/local-owner.ts`). NULL means this deployment has
+	 * no such member and the local sign-in door answers 404.
+	 *
+	 * Written in the claim's transaction and never by anything else, so the choice cannot be made
+	 * later on a deployment that already has members. `set null` because deleting that account ends
+	 * the arrangement rather than the setup record.
+	 */
+	local_owner_id: text("local_owner_id").references(() => member.id, {
+		onDelete: "set null",
+	}),
 });

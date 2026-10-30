@@ -50,7 +50,13 @@ export type RateLimitSubjectKind =
 	/** RowCat member id resolved from the session; no path lets the request body supply it. */
 	| "member"
 	/** Verified guardian consent request row id; an arbitrary path token cannot become it. */
-	| "guardian-consent-request";
+	| "guardian-consent-request"
+	/**
+	 * The deployment itself, one counter for everyone. Only for a door that has no member yet and
+	 * opens only to requests from this computer (`claim-local`): there is no identity to count by, and
+	 * every caller it admits is the same machine anyway.
+	 */
+	| "deployment";
 
 /**
  * What to do when the counter store cannot be read. Living in the policy is the point: per-route
@@ -373,6 +379,19 @@ export const RATE_LIMIT_POLICIES = {
 	 * a subject here), and every attempt counts, right or wrong. Fail-open: the code's entropy stands
 	 * whether or not the counter does, and setup is used once per deployment.
 	 */
+	/**
+	 * The local claim has no member to count by (it creates one), so it counts the deployment: ten wrong
+	 * codes in ten minutes from this computer, then wait. Same numbers as the account claim.
+	 */
+	setupClaimLocal: {
+		name: "setup-claim-local",
+		max: 10,
+		windowMs: 10 * 60_000,
+		subject: "deployment",
+		onStoreFailure: "allow",
+		code: SETUP_ERROR_CODE.rateLimited,
+		message: "Too many setup attempts. Please try again in a few minutes.",
+	},
 	setupClaim: {
 		name: "setup-claim",
 		max: 10,

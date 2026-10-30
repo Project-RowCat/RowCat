@@ -1,5 +1,5 @@
 import { formatSetupCode } from "@rowcat/domain";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
 	afterAll,
 	beforeAll,
@@ -10,7 +10,12 @@ import {
 } from "vitest";
 import { app } from "../app.ts";
 import { closeDb, db } from "../db/client.ts";
-import { admin_audit_log, deployment_setup, member } from "../db/schema.ts";
+import {
+	admin_audit_log,
+	deployment_setup,
+	member,
+	user,
+} from "../db/schema.ts";
 import {
 	deriveSetupCode,
 	prepareDeploymentSetup,
@@ -79,6 +84,55 @@ async function openSetup(): Promise<void> {
 	await db.insert(deployment_setup).values({ id: ROW_ID, salt: SALT });
 }
 
+/**
+ * The socket a request arrived on. `app.request` passes none, which the local check reads as "not this
+ * computer"; these give it one the way the Node adapter does.
+ */
+const LOOPBACK = { incoming: { socket: { remoteAddress: "127.0.0.1" } } };
+const BRIDGE = { incoming: { socket: { remoteAddress: "172.17.0.1" } } };
+const LOCAL_HOST = "localhost:3001";
+
+/**
+ * Local owners this file created, by member id. Their addresses are generated (`…@local-owner.invalid`)
+ * so the email-prefix cleanup cannot find them, and sweeping every local owner would take a
+ * developer's own when the suite runs on the shared database.
+ */
+const localOwners: string[] = [];
+
+const claimLocal = (
+	body: unknown,
+	socket: object = LOOPBACK,
+	extraHeaders: Record<string, string> = {},
+) =>
+	app.request(
+		"/v2/setup/claim-local",
+		{
+			method: "POST",
+			headers: { ...headers(null, true), Host: LOCAL_HOST, ...extraHeaders },
+			body: JSON.stringify(body),
+		},
+		socket,
+	);
+
+const localSignIn = (socket: object = LOOPBACK) =>
+	app.request(
+		"/v2/auth/local-sign-in",
+		{
+			method: "POST",
+			/** As the browser sends it: Better Auth refuses a POST without a JSON body (415). */
+			headers: { ...headers(null, true), Host: LOCAL_HOST },
+			body: "{}",
+		},
+		socket,
+	);
+
+/** `name=value` pairs of the response's cookies, ready to send back. */
+const cookiesOf = (response: Response) =>
+	response.headers
+		.getSetCookie()
+		.map((cookie) => cookie.split(";")[0])
+		.join("; ");
+
 beforeAll(async () => {
 	if (!databaseReady) return;
 	[original] = await db.select().from(deployment_setup);
@@ -94,6 +148,16 @@ afterAll(async () => {
 		/** Restored before the members go, so `completed_by` is still valid if it pointed at one of them. */
 		if (original) await db.insert(deployment_setup).values(original);
 		await deleteTestUsers(EMAIL_PREFIX);
+		if (localOwners.length > 0) {
+			await db
+				.delete(admin_audit_log)
+				.where(inArray(admin_audit_log.operator, localOwners));
+			const owners = db
+				.select({ id: member.user_id })
+				.from(member)
+				.where(inArray(member.id, localOwners));
+			await db.delete(user).where(inArray(user.id, owners));
+		}
 	}
 	await closeDb();
 });
@@ -239,6 +303,104 @@ describe.skipIf(!databaseReady)("first-run setup — claim", () => {
 		expect(limited.status).toBe(429);
 		expect(await codeOf(limited)).toBe("setup_rate_limited");
 		expect(await roleOf(guesser.memberId)).toBe("user");
+	});
+});
+
+describe.skipIf(!databaseReady)("first-run setup — without signing in", () => {
+	const code = () => formatSetupCode(deriveSetupCode(SALT));
+
+	test("only from this computer, and the code still decides", async () => {
+		const remote = await claimLocal({ code: code(), nickname: "Me" }, BRIDGE);
+		expect(remote.status).toBe(403);
+		expect(await codeOf(remote)).toBe("setup_local_unavailable");
+
+		/** A reverse proxy on the same machine makes the socket loopback; its headers give it away. */
+		const proxied = await claimLocal(
+			{ code: code(), nickname: "Me" },
+			LOOPBACK,
+			{ "X-Forwarded-For": "203.0.113.7" },
+		);
+		expect(proxied.status).toBe(403);
+		expect(await codeOf(proxied)).toBe("setup_local_unavailable");
+
+		const wrong = await claimLocal({ code: "0000-0000-0000", nickname: "Me" });
+		expect(wrong.status).toBe(403);
+		expect(await codeOf(wrong)).toBe("setup_code_invalid");
+
+		expect(await (await get("/v2/setup", null)).json()).toEqual({
+			open: true,
+		});
+		expect((await localSignIn()).status).toBe(404);
+	});
+
+	test("the body is the code and a name, nothing else", async () => {
+		const response = await claimLocal({
+			code: code(),
+			nickname: "Me",
+			role: "staff",
+		});
+		expect(response.status).toBe(400);
+		const blank = await claimLocal({ code: code(), nickname: "   " });
+		expect(blank.status).toBe(400);
+	});
+
+	test("creates the owner as admin, closes setup, and signs this computer in", async () => {
+		const response = await claimLocal({ code: code(), nickname: "  Me  " });
+		expect(response.status).toBe(200);
+		const { memberId } = (await response.json()) as { memberId: string };
+		localOwners.push(memberId);
+
+		const [owner] = await db
+			.select({
+				role: member.role,
+				nickname: member.nickname,
+				email: user.email,
+			})
+			.from(member)
+			.innerJoin(user, eq(user.id, member.user_id))
+			.where(eq(member.id, memberId));
+		expect(owner?.role).toBe("admin");
+		expect(owner?.nickname).toBe("Me");
+		expect(owner?.email).toMatch(/@local-owner\.invalid$/);
+
+		const [row] = await db.select().from(deployment_setup);
+		expect(row?.completed_by).toBe(memberId);
+		expect(row?.local_owner_id).toBe(memberId);
+
+		const config = (await (await get("/v2/runtime-config", null)).json()) as {
+			localSignIn: boolean;
+		};
+		expect(config.localSignIn).toBe(true);
+
+		/** Elsewhere the door does not exist; here it hands out the owner's session. */
+		expect((await localSignIn(BRIDGE)).status).toBe(404);
+		const signedIn = await localSignIn();
+		expect(signedIn.status).toBe(200);
+		const me = await get("/v2/me", cookiesOf(signedIn));
+		expect(await me.json()).toMatchObject({
+			id: memberId,
+			role: "admin",
+			localOwner: true,
+		});
+
+		/** Setup is closed for both claims now. */
+		const again = await claimLocal({ code: code(), nickname: "Me" });
+		expect(again.status).toBe(409);
+		const someone = await signUp();
+		expect((await claim(someone.cookie, code())).status).toBe(409);
+		expect(await (await get("/v2/me", someone.cookie)).json()).toMatchObject({
+			localOwner: false,
+		});
+	});
+
+	test("a setup claimed with an account has no local sign-in", async () => {
+		const admin = await signUp();
+		expect((await claim(admin.cookie, code())).status).toBe(200);
+		expect((await localSignIn()).status).toBe(404);
+		const config = (await (await get("/v2/runtime-config", null)).json()) as {
+			localSignIn: boolean;
+		};
+		expect(config.localSignIn).toBe(false);
 	});
 });
 

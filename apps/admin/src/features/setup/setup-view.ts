@@ -86,5 +86,21 @@ export function setupClaimErrorMessage(error: unknown): string {
 	}
 }
 
+/**
+ * The local claim's failures. Two are its own: a request the server judged not to be from its
+ * computer, and a claim that went through but whose sign-in did not — setup is finished then, and the
+ * next load on this computer signs in, so the sentence says to reload rather than to try again.
+ */
+export function setupClaimLocalErrorMessage(error: unknown): string {
+	if (error instanceof Error && error.name === "LocalSignInError")
+		return "Setup is finished, but signing this computer in didn't work. Reload the page.";
+	if (
+		isRowCatApiError(error) &&
+		error.code === SETUP_ERROR_CODE.localUnavailable
+	)
+		return "Using it without signing in can only be set up on the computer the API runs on. Create an administrator account instead.";
+	return setupClaimErrorMessage(error);
+}
+
 export const isSetupClosedError = (error: unknown): boolean =>
 	isRowCatApiError(error) && error.code === SETUP_ERROR_CODE.closed;

@@ -28,6 +28,7 @@ const ALICE: Viewer = {
 	ageStatus: "standard",
 	membershipGate: null,
 	adultRecheckRequired: false,
+	localOwner: false,
 };
 
 const comment = (authorId: string): VisibleStoryComment => ({

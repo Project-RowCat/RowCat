@@ -280,6 +280,16 @@ export const RuntimeConfigDto = z.object({
 	 * with the rest of this response, it is not authorization; the server rejects again.
 	 */
 	passwordReset: z.boolean().default(false),
+	/**
+	 * Whether this deployment was set up for use without signing in (it has a local owner,
+	 * `deployment-setup.ts`). A guest browser on this computer then asks `/v2/auth/local-sign-in` for
+	 * a session instead of showing the login form.
+	 *
+	 * A deployment fact, identical for everyone, so it stays cacheable like the rest of this
+	 * response. Whether *this* request is from the computer is not here — that is decided per request
+	 * by the sign-in door itself, and a browser elsewhere that tries is answered 404.
+	 */
+	localSignIn: z.boolean().default(false),
 });
 export type RuntimeConfigDto = z.infer<typeof RuntimeConfigDto>;
 

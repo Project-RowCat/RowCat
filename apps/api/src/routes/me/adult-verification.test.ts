@@ -42,6 +42,7 @@ const VIEWER_KEYS = [
 	"adultRecheckRequired",
 	"ageStatus",
 	"id",
+	"localOwner",
 	"membershipGate",
 	"nickname",
 	"role",

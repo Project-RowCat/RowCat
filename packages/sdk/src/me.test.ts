@@ -55,6 +55,7 @@ const VIEWER = {
 	ageStatus: "standard",
 	membershipGate: null,
 	adultRecheckRequired: false,
+	localOwner: false,
 };
 
 const ACCOUNT = {

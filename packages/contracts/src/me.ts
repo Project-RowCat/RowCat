@@ -73,6 +73,14 @@ export const ViewerDto = z.object({
 	 * close viewing).
 	 */
 	adultRecheckRequired: z.boolean().default(false),
+	/**
+	 * This member is the deployment's local owner (`deployment-setup.ts`): the account a computer's
+	 * browser is signed in as without a password. Screens read it to drop what cannot mean anything
+	 * for that account — signing out, which the next page load undoes.
+	 *
+	 * `.default(false)` for the same rollout reason as above: an older server has no local owner.
+	 */
+	localOwner: z.boolean().default(false),
 });
 export type ViewerDto = z.infer<typeof ViewerDto>;
 

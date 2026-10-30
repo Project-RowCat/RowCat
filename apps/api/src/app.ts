@@ -8,9 +8,10 @@ import { secureHeaders } from "hono/secure-headers";
 import { authSurfaceRefusal } from "./auth/http-surface.ts";
 import { auth } from "./auth/index.ts";
 import type { Viewer } from "./auth/viewer.ts";
-import { corsOrigins, env, isProduction } from "./env.ts";
+import { env, isProduction } from "./env.ts";
+import { allowOrigin } from "./lib/allowed-origin.ts";
 import { ApiError, badRequest, forbidden, notFound } from "./lib/errors.ts";
-import { createCorsOriginMatcher } from "./lib/origins.ts";
+import { isLocalHonoRequest } from "./lib/local-request.ts";
 import { requestLogger } from "./lib/request-logger.ts";
 import { withViewer } from "./middleware/viewer.ts";
 import { routes } from "./routes/index.ts";
@@ -22,12 +23,6 @@ export type AppEnv = {
 		viewer: () => Promise<Viewer | null>;
 	};
 };
-
-/**
- * Passed as a function rather than an array so rejections get logged; the allow decision is the
- * same. The browser console alone gives the server side no way to see why an origin was refused.
- */
-const allowOrigin = createCorsOriginMatcher(corsOrigins);
 
 export const app = new Hono<AppEnv>();
 
@@ -170,7 +165,8 @@ app.use(`${API_BASE_PATH}/auth/sign-up/*`, async (_c, next) => {
 /**
  * Mounted before the router: Better Auth owns its whole subtree (callbacks, state, sign-out) and
  * our routes must not intercept any of it. The one exception is what `auth/http-surface.ts` names:
- * endpoints our own routes replace, and the Expo relay toward anything but a provider. Those are
+ * endpoints our own routes replace, the Expo relay toward anything but a provider, and the local
+ * owner's sign-in from anywhere but this computer. Those are
  * refused here, at the HTTP edge, so our server-side calls into the same operations still work.
  */
 app.on(["GET", "POST"], `${API_BASE_PATH}/auth/*`, (c) => {
@@ -178,6 +174,7 @@ app.on(["GET", "POST"], `${API_BASE_PATH}/auth/*`, (c) => {
 	const refusal = authSurfaceRefusal(
 		url.pathname.slice(`${API_BASE_PATH}/auth`.length),
 		url.searchParams,
+		() => isLocalHonoRequest(c, allowOrigin),
 	);
 	if (refusal === "closed") throw notFound();
 	if (refusal === "proxy-target")

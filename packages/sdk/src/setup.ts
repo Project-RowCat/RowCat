@@ -1,4 +1,5 @@
 import {
+	SetupClaimLocalRequest,
 	SetupClaimRequest,
 	SetupClaimResponse,
 	SetupStatusDto,
@@ -20,6 +21,16 @@ import { invalidResponse } from "./errors.ts";
 export interface SetupApi {
 	status(options?: RequestOptions): Promise<SetupStatusDto>;
 	claim(code: string, options?: RequestOptions): Promise<SetupClaimResponse>;
+	/**
+	 * Set up for use without signing in: the server creates the local owner and makes it admin. It
+	 * opens only to a request from the computer the API runs on (`setup_local_unavailable` otherwise),
+	 * and it does not sign in — the caller asks Better Auth's `local-sign-in` for the session next, the
+	 * same door every later page load uses.
+	 */
+	claimLocal(
+		input: SetupClaimLocalRequest,
+		options?: RequestOptions,
+	): Promise<SetupClaimResponse>;
 }
 
 export function createSetupApi({ requestJson }: RowCatTransport): SetupApi {
@@ -44,6 +55,18 @@ export function createSetupApi({ requestJson }: RowCatTransport): SetupApi {
 			});
 			const parsed = SetupClaimResponse.safeParse(json);
 			if (!parsed.success) throw invalidResponse("POST /setup/claim");
+			return parsed.data;
+		},
+
+		async claimLocal(input, options) {
+			const json = await requestJson({
+				method: "POST",
+				path: "/setup/claim-local",
+				body: SetupClaimLocalRequest.parse(input),
+				signal: options?.signal,
+			});
+			const parsed = SetupClaimResponse.safeParse(json);
+			if (!parsed.success) throw invalidResponse("POST /setup/claim-local");
 			return parsed.data;
 		},
 	};

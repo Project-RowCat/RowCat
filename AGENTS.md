@@ -5018,6 +5018,23 @@ then      deployment_setup.completed_at is set — /v2/setup answers { open: fal
   status draws nothing, never an invitation to set up a deployment that has run for months.
 - **Appointing more operators is still the seed script.** Do not grow this into a role-management screen; that would be a
   promotion path that never closes.
+- **On one computer, setup can skip accounts — the local owner** (`POST /v2/setup/claim-local`,
+  `services/setup/local-owner.ts`, `auth/local-sign-in.ts`). A name and the code, and the server creates a member with
+  **no password and an undeliverable address** (`…@local-owner.invalid`), makes it admin, closes setup and records it as
+  `deployment_setup.local_owner_id`. From then on a guest browser on that computer asks `POST /v2/auth/local-sign-in`
+  and gets that member's session (web: `components/local-sign-in.tsx`; console: the login screen). **It is an ordinary
+  member** — local DB scope, sync namespace, BYO keys and every gate stay keyed on the member id; do not grow a
+  member-less "guest owner".
+- **"This computer" is one decision, `lib/local-request.ts`**: a loopback socket, a loopback `Host`, no
+  `Forwarded`/`X-Forwarded-*`/`X-Real-IP`, and an allowed `Origin`. Both doors ask it — the sign-in at the HTTP edge
+  (`auth/http-surface.ts`, because the library's handler sees no socket) and the claim in its route. A remote request
+  gets the same 404 as a deployment with no local owner. **`docker compose` never qualifies** (the peer is a bridge
+  address), which is right: that deployment is reached over a network and sets up with an account. Do not loosen a row
+  of that table to make a proxied setup work.
+- **The choice exists only at setup.** No switch turns it on later — on a running deployment with members, it would hand
+  the admin role to whoever sits at the server. `runtime-config.localSignIn` says the deployment has an owner (a
+  deployment fact, cacheable); whether *this* request is local is never in a response. The owner sees **no sign-out**
+  (web header, console) because the next page load signs it straight back in; `ViewerDto.localOwner` is what hides it.
 
 ### Audit records
 

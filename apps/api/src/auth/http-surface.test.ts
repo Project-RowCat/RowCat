@@ -14,6 +14,9 @@ afterAll(async () => {
 	await closeDb();
 });
 
+/** Every case below but the local-only one is decided without asking where the request came from. */
+const remote = () => false;
+
 const proxy = (authorizationURL: string) =>
 	new URLSearchParams({ authorizationURL });
 
@@ -32,7 +35,9 @@ describe("which library endpoints stay closed", () => {
 		"/passkey/list-user-passkeys",
 		"/passkey/delete-passkey",
 	])("%s is closed", (path) => {
-		expect(authSurfaceRefusal(path, new URLSearchParams())).toBe("closed");
+		expect(authSurfaceRefusal(path, new URLSearchParams(), remote)).toBe(
+			"closed",
+		);
 	});
 
 	test.each([
@@ -41,7 +46,34 @@ describe("which library endpoints stay closed", () => {
 		"/change-password",
 		"/delete-user",
 	])("%s stays open", (path) => {
-		expect(authSurfaceRefusal(path, new URLSearchParams())).toBeNull();
+		expect(authSurfaceRefusal(path, new URLSearchParams(), remote)).toBeNull();
+	});
+});
+
+describe("the local owner's sign-in opens only to this computer", () => {
+	test.each([
+		"/local-sign-in",
+		"/local-sign-in/",
+		"//LOCAL-SIGN-IN",
+	])("%s is closed to a remote request", (path) => {
+		expect(authSurfaceRefusal(path, new URLSearchParams(), remote)).toBe(
+			"closed",
+		);
+	});
+
+	test("a local request reaches the library", () => {
+		expect(
+			authSurfaceRefusal("/local-sign-in", new URLSearchParams(), () => true),
+		).toBeNull();
+	});
+
+	test("other paths never ask where the request came from", () => {
+		const asked = { count: 0 };
+		authSurfaceRefusal("/sign-in/email", new URLSearchParams(), () => {
+			asked.count += 1;
+			return true;
+		});
+		expect(asked.count).toBe(0);
 	});
 });
 
@@ -51,6 +83,7 @@ describe("the Expo authorization relay goes only to a provider", () => {
 			authSurfaceRefusal(
 				"/expo-authorization-proxy",
 				proxy(`${target}?client_id=x&state=s`),
+				remote,
 			),
 		).toBeNull();
 	});
@@ -63,14 +96,18 @@ describe("the Expo authorization relay goes only to a provider", () => {
 		"http://accounts.google.com/o/oauth2/v2/auth?state=s",
 		"not a url",
 	])("%s is refused", (target) => {
-		expect(authSurfaceRefusal("/expo-authorization-proxy", proxy(target))).toBe(
-			"proxy-target",
-		);
+		expect(
+			authSurfaceRefusal("/expo-authorization-proxy", proxy(target), remote),
+		).toBe("proxy-target");
 	});
 
 	test("a relay request with no target is refused", () => {
 		expect(
-			authSurfaceRefusal("/expo-authorization-proxy", new URLSearchParams()),
+			authSurfaceRefusal(
+				"/expo-authorization-proxy",
+				new URLSearchParams(),
+				remote,
+			),
 		).toBe("proxy-target");
 	});
 });

@@ -10,6 +10,7 @@ import {
 } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { FirstVisitLanguage } from "#/components/first-visit-language.tsx";
+import { LocalSignIn } from "#/components/local-sign-in.tsx";
 import { RouteError, RouteNotFound } from "#/components/route-fallback.tsx";
 import { AccountThemeBridge } from "#/features/theme/account-theme-bridge.tsx";
 import { ADMIN_CONSOLE_ORIGIN } from "#/lib/admin-console.ts";
@@ -171,6 +172,11 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 							 * with Motion.
 							 */}
 							<FirstVisitLanguage />
+							{/*
+							 * Signs this computer in as the local owner when the deployment was set up without
+							 * accounts. App-wide for the same reason: the first page a browser opens can be any.
+							 */}
+							<LocalSignIn />
 						</MotionProvider>
 						{/*
 						 * The toast outlet is app-wide and deliberately outside the subtree above. Screens fire

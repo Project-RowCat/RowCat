@@ -9,6 +9,7 @@ import {
 import { and, eq, isNull, max, type SQL, sql } from "drizzle-orm";
 import { db } from "../db/client.ts";
 import {
+	deployment_setup,
 	guardian_consent,
 	identity_verification,
 	member,
@@ -62,6 +63,8 @@ export interface Viewer {
 	 * `ADULT_REVERIFICATION_ENABLED` is off, and the query is not run at all.
 	 */
 	adultRecheckRequired: boolean;
+	/** The deployment's local owner (`services/setup/local-owner.ts`) — signed in without a password. */
+	localOwner: boolean;
 }
 
 /**
@@ -94,7 +97,12 @@ const VIEWER_COLUMNS = {
 	 * consented and nobody revoked it".
 	 */
 	guardianConsentId: guardian_consent.id,
+	/** The setup row's id when this member is its local owner, NULL otherwise — only presence is read. */
+	localOwnerOf: deployment_setup.id,
 };
+
+/** Left-joined like consent: one primary-key row, and almost every member has no match. */
+const LOCAL_OWNER = eq(deployment_setup.local_owner_id, member.id);
 
 /**
  * Join condition for a valid consent: consented and not revoked. No expiry by design — the link
@@ -145,6 +153,7 @@ async function selectViewerRow(where: SQL): Promise<ViewerRow | undefined> {
 			.select(VIEWER_COLUMNS)
 			.from(member)
 			.leftJoin(guardian_consent, ACTIVE_CONSENT)
+			.leftJoin(deployment_setup, LOCAL_OWNER)
 			.where(where)
 			.limit(1);
 		return row ? { ...row, lastAdultVerifiedAt: null } : undefined;
@@ -156,6 +165,7 @@ async function selectViewerRow(where: SQL): Promise<ViewerRow | undefined> {
 		})
 		.from(member)
 		.leftJoin(guardian_consent, ACTIVE_CONSENT)
+		.leftJoin(deployment_setup, LOCAL_OWNER)
 		.leftJoinLateral(LAST_ADULT_VERIFICATION, sql`true`)
 		.where(where)
 		.limit(1);
@@ -179,6 +189,7 @@ type ViewerRow = {
 	storedAgeStatus: string;
 	ageThresholdDate: string | null;
 	guardianConsentId: string | null;
+	localOwnerOf: string | null;
 	/** Always `null` when the re-verification switch is off (not queried). */
 	lastAdultVerifiedAt: Date | null;
 };
@@ -214,6 +225,7 @@ function toViewer(row: ViewerRow, now = new Date()): Viewer {
 			row.verified &&
 			row.adult &&
 			adultRecheckDue({ lastAdultVerifiedAt: row.lastAdultVerifiedAt, now }),
+		localOwner: row.localOwnerOf !== null,
 	};
 }
 
@@ -327,4 +339,5 @@ export const toViewerDto = (v: Viewer): ViewerDto => ({
 	ageStatus: v.ageStatus,
 	membershipGate: v.membershipGate,
 	adultRecheckRequired: v.adultRecheckRequired,
+	localOwner: v.localOwner,
 });

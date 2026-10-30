@@ -183,7 +183,11 @@ function HeaderUtilities({ utility }: { utility: ShellUtility | null }) {
 			 */}
 			<NotificationBell here={utility === "notifications"} />
 			<SettingsAction utility={utility} />
-			<ViewerMenu nickname={viewer.nickname} utility={utility} />
+			<ViewerMenu
+				nickname={viewer.nickname}
+				utility={utility}
+				canSignOut={!viewer.localOwner}
+			/>
 		</>
 	);
 }
@@ -268,9 +272,15 @@ function SettingsAction({ utility }: { utility: ShellUtility | null }) {
 function ViewerMenu({
 	nickname,
 	utility,
+	canSignOut,
 }: {
 	nickname: string;
 	utility: ShellUtility | null;
+	/**
+	 * False for the local owner: this computer signs that account straight back in on the next page
+	 * load, so the item would look broken rather than sign anyone out.
+	 */
+	canSignOut: boolean;
 }) {
 	const { t } = useTranslation("shell");
 	const queryClient = useQueryClient();
@@ -306,44 +316,46 @@ function ViewerMenu({
 					<UserRound aria-hidden="true" />
 					{t("header.account")}
 				</DropdownMenuItem>
-				<DropdownMenuItem
-					disabled={pending}
-					onClick={async () => {
-						setPending(true);
-						try {
-							// Do not clear the cookie by hand. It is HttpOnly and cannot be read, and expiry has to be
-							// handled by whoever issued the session (Better Auth).
-							await authClient.signOut();
-							/**
-							 * Clear the server-held state explicitly. Gallery results depend on the viewer (their own
-							 * private works, adult display, blocks), so without this the logged-out screen would keep a
-							 * list fetched while signed in.
-							 *
-							 * **Local data and device preferences are not cleared.** Signing out means "stop viewing
-							 * this on this browser", not "discard my conversations and settings". Signing in again to
-							 * the same account brings them back. Recent conversations disappear from the sidebar because
-							 * the scope closes, not because they were deleted (`local-data/scope.tsx`).
-							 */
-							await resetViewerState(queryClient);
-							// Also re-sync the route loader data to the new session, so the user is never left needing a
-							// refresh.
-							await router.invalidate();
-						} catch {
-							/**
-							 * **This failure has no place to show.** The menu has already closed and there is no screen
-							 * to return to, so if sign-out fails while nothing is displayed, nothing appears to have
-							 * happened, and the person leaves believing they signed out. On a shared browser that
-							 * misunderstanding is expensive.
-							 */
-							showErrorToast(signOutFailed());
-						} finally {
-							setPending(false);
-						}
-					}}
-				>
-					<LogOut aria-hidden="true" />
-					{t("header.signOut")}
-				</DropdownMenuItem>
+				{canSignOut ? (
+					<DropdownMenuItem
+						disabled={pending}
+						onClick={async () => {
+							setPending(true);
+							try {
+								// Do not clear the cookie by hand. It is HttpOnly and cannot be read, and expiry has to be
+								// handled by whoever issued the session (Better Auth).
+								await authClient.signOut();
+								/**
+								 * Clear the server-held state explicitly. Gallery results depend on the viewer (their own
+								 * private works, adult display, blocks), so without this the logged-out screen would keep a
+								 * list fetched while signed in.
+								 *
+								 * **Local data and device preferences are not cleared.** Signing out means "stop viewing
+								 * this on this browser", not "discard my conversations and settings". Signing in again to
+								 * the same account brings them back. Recent conversations disappear from the sidebar because
+								 * the scope closes, not because they were deleted (`local-data/scope.tsx`).
+								 */
+								await resetViewerState(queryClient);
+								// Also re-sync the route loader data to the new session, so the user is never left needing a
+								// refresh.
+								await router.invalidate();
+							} catch {
+								/**
+								 * **This failure has no place to show.** The menu has already closed and there is no screen
+								 * to return to, so if sign-out fails while nothing is displayed, nothing appears to have
+								 * happened, and the person leaves believing they signed out. On a shared browser that
+								 * misunderstanding is expensive.
+								 */
+								showErrorToast(signOutFailed());
+							} finally {
+								setPending(false);
+							}
+						}}
+					>
+						<LogOut aria-hidden="true" />
+						{t("header.signOut")}
+					</DropdownMenuItem>
+				) : null}
 			</DropdownMenuContent>
 		</DropdownMenu>
 	);

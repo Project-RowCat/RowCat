@@ -18,6 +18,7 @@ import { ops_app_version_floor, ops_feature_flag } from "../db/schema.ts";
 import { passwordResetEnabled } from "../env.ts";
 import { ApiError } from "../lib/errors.ts";
 import { recordAudit } from "./admin/audit.ts";
+import { hasLocalOwner } from "./setup/index.ts";
 
 /**
  * Remote operations settings: feature switches (`ops_feature_flag`) and the minimum app version
@@ -415,6 +416,8 @@ export async function readRuntimeConfig(): Promise<RuntimeConfigDto> {
 		minAppVersion: { ios: floorOf("ios"), android: floorOf("android") },
 		updateMessage: message,
 		passwordReset: passwordResetEnabled,
+		/** Unreadable answers "no local owner": the login form stays, which is never wrong. */
+		localSignIn: await hasLocalOwner().catch(() => false),
 	};
 }
 

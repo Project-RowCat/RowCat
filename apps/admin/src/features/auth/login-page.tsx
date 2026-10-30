@@ -1,14 +1,18 @@
 import { APP_NAME } from "@rowcat/domain";
-import { setupStatusQueryOptions, viewerQueryOptions } from "@rowcat/query";
+import {
+	runtimeConfigQueryOptions,
+	setupStatusQueryOptions,
+	viewerQueryOptions,
+} from "@rowcat/query";
 import { Button } from "@rowcat/ui-web/components/button";
 import { Input } from "@rowcat/ui-web/components/input";
 import { Label } from "@rowcat/ui-web/components/label";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { ShieldCheck } from "lucide-react";
-import { type FormEvent, useId, useState } from "react";
+import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { getRowCatClient } from "#/lib/api.ts";
-import { authClient } from "#/lib/auth.ts";
+import { authClient, onThisComputer, requestLocalSignIn } from "#/lib/auth.ts";
 import { useAdminQuery } from "#/lib/query/use-admin-query.ts";
 
 /**
@@ -62,6 +66,34 @@ export function LoginPage() {
 	const setupStatus = useAdminQuery(setupStatusQueryOptions(getRowCatClient()));
 	const [pending, setPending] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+
+	/**
+	 * A deployment set up to be used without signing in (`lib/auth.ts`): on this computer the
+	 * form is not needed, so this screen asks for the local owner's session once and moves on. Once,
+	 * because a refusal is an answer — the form below stays, and an operator account still signs in.
+	 *
+	 * Read with `fetchQuery` inside the effect rather than a screen query: nothing on this screen draws
+	 * the value, and a failed read simply leaves the form.
+	 */
+	const localTried = useRef(false);
+	useEffect(() => {
+		if (localTried.current || !onThisComputer()) return;
+		localTried.current = true;
+		void queryClient
+			.fetchQuery(runtimeConfigQueryOptions(getRowCatClient()))
+			.then(async (config) => {
+				if (!config.localSignIn) return;
+				setPending(true);
+				await requestLocalSignIn();
+				queryClient.clear();
+				await queryClient
+					.fetchQuery(viewerQueryOptions(getRowCatClient()))
+					.catch(() => null);
+				navigate({ to: safeReturnPath(search.redirect), replace: true });
+			})
+			.catch(() => {})
+			.finally(() => setPending(false));
+	}, [queryClient, navigate, search.redirect]);
 
 	const onSubmit = async (event: FormEvent) => {
 		event.preventDefault();
