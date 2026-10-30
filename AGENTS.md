@@ -5606,7 +5606,10 @@ page is still a plain pnpm script. **The commands themselves did not move** — 
   6.1s there). It lives in the root script, not per package: fifteen packages have no vitest config,
   and a config added later would replace the default silently. Two packages still state the same
   budget themselves: `runtime-host` (slow even alone) and `api` (its script chains two runs and the
-  flag reaches only the second).
+  flag reaches only the second). **No flag widens vitest's 60s worker RPC**, which fails when a file
+  of synchronous cases never lets the event loop turn (`Timeout calling "onTaskUpdate"` with every
+  test green) — a package like that yields between cases in its own setup file
+  (`runtime-compiler/vitest.setup.ts`).
 - **`web#build` reads outside its package** (`docs/public/runtime/**` — the `gen:*` steps its build
   runs first), so that path is in its `inputs`. Without it, editing the runtime docs and rebuilding is a
   **cache hit** that ships the old copy.

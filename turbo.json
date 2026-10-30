@@ -136,6 +136,11 @@
 		 * by the runtime's own execution budget, and no assertion passes because of it. Two packages
 		 * still state the same budget in their own config: `runtime-host`, whose cases are slow even
 		 * alone, and `api`, whose script chains two `vitest run`s so the flag reaches only the second.
+		 *
+		 * One limit no flag reaches: vitest's worker reports progress over an RPC that fails after
+		 * 60 s if the worker's event loop never turns, and a file of synchronous cases never lets it.
+		 * A package whose cases are all synchronous yields between them in its own setup file
+		 * (`runtime-compiler/vitest.setup.ts`).
 		 */
 		"test": {
 			"dependsOn": ["topo"],
