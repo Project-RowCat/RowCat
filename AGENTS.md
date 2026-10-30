@@ -80,7 +80,7 @@ the `packageManager` field in the root `package.json` (`pnpm@10.34.5`) — do no
 | `docs/settings/ARCHITECTURE.md` | Settings, preferences, prompt caching |
 | `docs/moderation/` · `docs/profile/` · `docs/membership/` | Reports, enforcement, appeals / public profiles, relations / age, guardian consent |
 | `docs/notifications/` · `docs/updates/` · `docs/jobs/` | The two notification planes / update notes / background jobs |
-| `docs/ops/` | `RATE-LIMITING.md` · `CONFIGURATION.md` |
+| `docs/ops/` | `RATE-LIMITING.md` · `CONFIGURATION.md` · `CLEAN-INSTALL.md` (fresh-clone production install and first admin, run before a release) |
 | `docs/ota/` | Self-hosted mobile OTA — `ARCHITECTURE.md` (trust model, runtime generation, rollout, rollback) · `OPERATIONS.md` (publish, canary, pause, rollback, new runtime, key rotation) |
 
 ## Layer rules
@@ -4994,8 +4994,9 @@ console   /setup   create an account (Better Auth sign-up) or sign in → enter 
 then      deployment_setup.completed_at is set — /v2/setup answers { open: false } forever
 ```
 
-- **Why it exists.** The production API image ships `dist/` only, and `db:seed:moderator` is not in it — a deployment
-  brought up with `docker compose up` had no way to appoint its first operator short of editing `member.role` in psql.
+- **Why it exists.** The production API image used to ship without `db:seed:moderator` — a deployment brought up with
+  `docker compose up` had no way to appoint its first operator short of editing `member.role` in psql. The image now
+  carries it (`dist/db/seed-moderator.mjs`), but a first admin should not need a shell in the container.
 - **The code is the authority, and the log is its only channel.** It is `HMAC(BETTER_AUTH_SECRET, label ‖ salt)` with a
   per-database salt: every replica and restart prints the same value, nothing stores the plaintext, and neither a leaked
   database nor the secret alone computes it. Presenting it proves the caller can read the server's log, which is the
@@ -5598,6 +5599,7 @@ pnpm --filter @rowcat/api db:studio
 pnpm --filter @rowcat/api db:seed:play     # local seed (playback payload)
 pnpm --filter @rowcat/api db:seed:dev-user # dev account (dev@rowcat.test / rowcat-dev)
 pnpm --filter @rowcat/api db:seed:moderator <email> [user|staff|admin]
+docker compose exec api node dist/db/seed-moderator.mjs <email> [user|staff|admin]   # the same, in the deployment image
 pnpm --filter @rowcat/api guardian:revoke <email>
 pnpm --filter @rowcat/api email:dev                                  # mail copy preview (:3005)
 pnpm --filter @rowcat/api jobs:list

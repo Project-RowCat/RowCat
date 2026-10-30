@@ -11,10 +11,10 @@ import { z } from "zod";
  *
  * ## Why a promotion path exists at all
  *
- * Roles otherwise change only on the server (`db:seed:moderator`), and the production API image
- * does not carry that script: a deployment brought up with `docker compose up` had no way to get
- * its first operator short of editing `member.role` in psql. The claim is the one exception, and it
- * is narrow on purpose:
+ * Roles otherwise change only on the server (`db:seed:moderator`, which the production API image
+ * now carries as `dist/db/seed-moderator.mjs`). A deployment brought up with `docker compose up` had
+ * no way to get its first operator short of editing `member.role` in psql, and a first admin should
+ * not need a shell in the container. The claim is the one exception, and it is narrow on purpose:
  *
  * - the code is printed only to the API's own log, so presenting it proves the caller can read the
  *   server, which is the same authority the seed script assumes;

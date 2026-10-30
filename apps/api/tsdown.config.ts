@@ -20,6 +20,12 @@ export default defineConfig({
 		"src/jobs/cli.ts",
 		"src/services/mobile-updates/cli.ts",
 		/**
+		 * The standing promotion path (`db:seed:moderator`). First-run setup appoints one admin and closes;
+		 * every operator after that is appointed here, and a compose deployment can only reach it inside
+		 * the container (the database publishes no port): `node dist/db/seed-moderator.mjs`.
+		 */
+		"src/db/seed-moderator.ts",
+		/**
 		 * The publication compile thread (`services/story/runtime-compile.ts`). It is loaded by path from
 		 * a `Worker`, not imported, so the bundler would not find it on its own; that file resolves it at
 		 * `dist/services/story/runtime-compile-worker.mjs`.

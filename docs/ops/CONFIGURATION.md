@@ -236,7 +236,13 @@ pnpm env:doctor --mode production --file .env
   관리자를 세운 배포를 올려도 경로가 열리지 않는다.
 - **마지막 관리자를 잃어도 다시 열리지 않는다.** 되살리는 길은 데이터베이스다 —
   `DELETE FROM deployment_setup;` 뒤에 API를 재시작하면 새 salt로 새 코드가 찍힌다(관리자가 남아 있으면 그
-  부팅에서 다시 닫힌다). 운영자를 더 세우는 것은 여전히 `db:seed:moderator`다.
+  부팅에서 다시 닫힌다). 운영자를 더 세우는 것은 여전히 `db:seed:moderator`다 — 배포 이미지에도 들어 있다:
+
+  ```bash
+  docker compose exec api node dist/db/seed-moderator.mjs <email> [user|staff|admin]
+  ```
+
+  계정은 먼저 가입하고 한 번 로그인해 있어야 한다(멤버 행은 첫 요청에서 생긴다).
 - **콘솔의 준비 상태는 `env:doctor`에서 값을 뺀 것이다.** 능력·상태·변수 이름만 내보내고 `summary`·`detail`
   (호스트·오리진·Services ID)은 통째로 버린다. 구체적인 값과 각 상태의 뜻은 여전히 `pnpm env:doctor`가 말한다.
   admin만 본다.

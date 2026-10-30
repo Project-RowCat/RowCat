@@ -442,9 +442,14 @@ function DoneStep() {
 			<p className="text-muted-foreground text-xs">
 				To appoint more operators, run{" "}
 				<code className="font-mono">
-					db:seed:moderator &lt;email&gt; [staff|admin]
+					docker compose exec api node dist/db/seed-moderator.mjs &lt;email&gt;
+					[staff|admin]
 				</code>{" "}
-				on the server. The same list stays under Operations.
+				on the server (from a checkout:{" "}
+				<code className="font-mono">
+					pnpm --filter @rowcat/api db:seed:moderator
+				</code>
+				). The same list stays under Operations.
 			</p>
 			<Button className="w-full" onClick={() => navigate({ to: "/" })}>
 				Open the console

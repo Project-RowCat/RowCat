@@ -7,14 +7,16 @@ import { member, user } from "./schema.ts";
  * Grants an operations role: the standing promotion path, run on the server. The product API's only
  * one is first-run setup (`services/setup/`), which appoints the first admin and then closes.
  *
- * Not bundled into the production image (`tsdown.config.ts` builds the server and two CLIs), which is
- * why first-run setup exists: a `docker compose up` deployment runs this from a checkout pointed at its
- * database, or not at all.
+ * Bundled into the production image (`tsdown.config.ts`) beside the jobs and OTA CLIs. It once was
+ * not, and a `docker compose up` deployment then had no way to run it at all: the compose database
+ * publishes no port, so "from a checkout pointed at its database" needed an override nobody had. The
+ * setup screen still told the new admin to run it.
  *
  * ```bash
  * pnpm --filter @rowcat/api db:seed:moderator dev@rowcat.test         # staff
  * pnpm --filter @rowcat/api db:seed:moderator dev@rowcat.test admin   # admin
  * pnpm --filter @rowcat/api db:seed:moderator dev@rowcat.test user    # revert
+ * docker compose exec api node dist/db/seed-moderator.mjs dev@rowcat.test staff   # the deployment image
  * ```
  *
  * ## Why a script and not an API
