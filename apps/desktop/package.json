@@ -1,0 +1,27 @@
+{
+  "name": "@rowcat/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx scripts/build-app.ts stage && electron .",
+    "stage": "tsx scripts/build-app.ts stage",
+    "package": "tsx scripts/build-app.ts package",
+    "stack": "tsx scripts/run-stack.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "embedded-postgres": "18.4.0-beta.17"
+  },
+  "devDependencies": {
+    "@rowcat/domain": "workspace:*",
+    "@types/node": "^22.10.2",
+    "electron": "45.1.0",
+    "electron-builder": "26.18.0",
+    "tsdown": "^0.22.14",
+    "tsx": "^4.23.12"
+  },
+  "main": "dist/main.mjs",
+  "description": "RowCat on one computer — the whole deployment in a desktop app",
+  "license": "AGPL-3.0-only"
+}

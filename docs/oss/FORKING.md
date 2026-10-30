@@ -142,6 +142,12 @@ manifest(`apps/mcp/package.json`의 `repository`·`bugs`·`homepage`)가 그 저
 쓰인다. 처음 올린 뒤 GitHub의 패키지 설정에서 공개 여부를 확인한다. 배포는 `ROWCAT_IMAGE_TAG`를 `sha-<커밋>`으로
 고정해 `latest`가 발밑에서 바뀌지 않게 한다.
 
+## 16. 데스크톱 설치 파일
+
+`apps/desktop`은 앱 id(`APP_BUNDLE_ID` + `.desktop`)와 이름(`APP_NAME`)을 §1에서 가져오므로 바꿀 자리가 따로 없다.
+배포하려면 서명이 필요하다 — macOS는 운영자의 Developer ID 인증서와 공증, Windows는 코드 서명 인증서. 서명하지 않은
+설치 파일은 열 때 경고가 뜬다(`apps/desktop/README.md`).
+
 ## 바꾸지 않아도 되는 것
 
 | 자리 | 이유 |

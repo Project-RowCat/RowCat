@@ -63,6 +63,7 @@ the `packageManager` field in the root `package.json` (`pnpm@10.34.5`) — do no
 | `apps/web/src/features/docs` | Public docs screens (`/docs/runtime/*`). Pulls in neither compiler nor VM |
 | `packages/runtime-ai-docs` | The **AI-readable corpus** — public docs + an API reference extracted from `@rowcat/runtime`'s own source. Generated and committed |
 | `packages/runtime-mcp` | The MCP tool layer — meaning, validation, limits, preview sessions. **Pure core**, no transport |
+| `apps/desktop` | The **one-computer installer** (Electron). Runs a bundled Postgres plus the API, web and console **build outputs unchanged** on `localhost` ports fixed at first run (`apps/desktop/README.md`) |
 | `apps/mcp` | The npm package `@rowcat/mcp`, whose `bin` is **`rowcat-mcp`** — the stdio MCP server and the **headless RowCat device** that reaches the creator's E2EE drafts. Package name and command name are different values and documentation keeps them apart |
 | `apps/mcp/README.md` ↔ `DEVELOPMENT.md` | **The first one ships.** `files` is `dist` · `README.md` · `LICENSE`, so the README is read on npm by people who do not have this repository — workspace commands, workflow names and release procedure belong to `DEVELOPMENT.md`, which is not packed |
 | `apps/web/src/features/conversation/conversation-viewport.tsx` | The **neutral geometry** shared by conversation rooms and runtime playback |
@@ -107,6 +108,7 @@ at greater length.
 | `runtime-renderer-native` | `runtime` (color decision), `runtime-host` (**only the `patches` subpath**), React and React Native (peer) | `apps/mobile`, authoring, compiler, the web renderer, `ui-native`, `ui-web`, SDK, query, Dexie, SQLite, Node, network, JSX prop spreading |
 | `runtime-ai-docs` | `runtime` (declarations), TypeScript **only in `source/api.ts`**, `node:fs` **only under `source/`** | `apps/*`, the compiler, the VM, React, DOM, network. Writing product prose in code — every sentence comes from the markdown |
 | `runtime-mcp` | `authoring`, `runtime-compiler`, `runtime-host`, `runtime-ai-docs`, zod; QuickJS and `node:*` **only in `node/host.ts`** | `apps/*`, `sdk`, `query`, `sync`, DB drivers, shells, `fetch`, `eval`. A second compiler, a second VM, a second authoring store |
+| `apps/desktop` | `domain` (identity only), `embedded-postgres`, Electron | Every other workspace package, `apps/*` source. **A desktop code path inside the API** — the servers run as published builds with environment variables, nothing else |
 | `apps/mcp` | `runtime-mcp`, `authoring`, `sdk`, `sync`, `contracts`, the MCP SDK | `apps/web`, `apps/api`, DB drivers, shells. Writing files anywhere but its own config; anything on **stdout** (that stream is JSON-RPC) |
 | `ui-web` | `design` | Feature code, API calls, `ui-native` |
 | `ui-native` | `design`, `@rn-primitives/*`, `lucide-react-native` | Feature code, API calls, `ui-web`, DOM libraries, product vocabulary (`Story`, `Viewer`, …) |
@@ -5579,6 +5581,7 @@ pnpm dev          # web(:3000)
 pnpm dev:api      # api(:3001)
 pnpm dev:admin    # the operations console(:3002) — the API's WEB_ORIGIN must contain this origin
 pnpm dev:all      # the three above at once (turbo, streamed logs)
+pnpm --filter @rowcat/desktop package  # one-computer installer for this OS → apps/desktop/out/ (build the three apps first)
 pnpm dev:setup    # fresh clone → env files, one shared secret, Postgres in Docker, schema, dev account (idempotent)
 pnpm check        # biome (lint + format) + environment configuration drift check
 pnpm env:check    # do the schema, inventory, compose and example files agree (no secrets · for CI)

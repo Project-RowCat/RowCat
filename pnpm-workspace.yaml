@@ -5,3 +5,9 @@ packages:
 allowBuilds:
   esbuild: true
   lightningcss: true
+  # The desktop app's bundled Postgres: the postinstall only recreates the library symlinks npm
+  # cannot ship (native/pg-symlinks.json). Without it the server dies on a missing libicu.
+  "@embedded-postgres/darwin-arm64": true
+  "@embedded-postgres/darwin-x64": true
+  "@embedded-postgres/windows-x64": true
+  "@embedded-postgres/linux-x64": true

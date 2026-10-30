@@ -114,6 +114,13 @@ them, and the API refuses to boot in production on a short session key or on the
 build with `ROWCAT_IMAGE_TAG=sha-<commit>`; a fork that publishes its own images points
 `ROWCAT_IMAGE_REGISTRY` at them (`docs/oss/FORKING.md` §15).
 
+### On one computer, without Docker
+
+`apps/desktop` packages the whole deployment as a desktop app — a bundled Postgres and the same three
+builds, opened in its own window on `localhost`. Build the three apps, then
+`pnpm --filter @rowcat/desktop package` writes an installer for the OS you run it on to `apps/desktop/out/`.
+It is unsigned until a deployment signs it with its own certificates (`apps/desktop/README.md`).
+
 ## Repository map
 
 pnpm workspaces (`apps/*`, `packages/*`), TypeScript strict, Biome, Turborepo for task ordering.
@@ -125,6 +132,7 @@ pnpm workspaces (`apps/*`, `packages/*`), TypeScript strict, Biome, Turborepo fo
 | `apps/admin` | Operations console (Vite SPA, no SSR) |
 | `apps/mobile` | Expo native client — SQLite, SecureStore, self-hosted OTA |
 | `apps/mcp` | `@rowcat/mcp`, the stdio MCP server (`rowcat-mcp`) |
+| `apps/desktop` | One-computer installer (Electron): bundled Postgres + the three builds |
 | `packages/contracts` · `domain` · `sdk` · `query` | Wire shapes (zod) · product model · API client · TanStack Query policy |
 | `packages/chat` · `authoring` · `markdown` | Pure rules for conversations, story drafts and message bodies |
 | `packages/sync` | The sync protocol: envelope crypto, keyring, HLC, engine |

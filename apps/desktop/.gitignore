@@ -1,0 +1,5 @@
+# Assembled resources and the main bundle (scripts/build-app.ts), and installers.
+.stage
+out
+# scripts/run-stack.ts keeps its database here, apart from an installed app's data.
+.desktop-data
