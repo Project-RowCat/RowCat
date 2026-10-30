@@ -5587,6 +5587,7 @@ pnpm format       # biome format --write
 pnpm typecheck    # turbo: workspace tsc --noEmit + the journey (e2e) project
 pnpm test         # turbo: vitest across the workspace
 pnpm test:e2e     # browser journeys (Playwright) — brings the stack up itself
+pnpm test:compose # the production compose stack booted and set up, then thrown away (scripts/compose-smoke.sh)
 pnpm build        # turbo: the five apps' bundles
 
 pnpm runtime:declarations      # @rowcat/runtime source → the artifact tooling reads (committed)
@@ -5607,7 +5608,6 @@ pnpm llms:check                # do those three match the corpus
 pnpm runtime:public-beta:check # the six drift checks + the eight runtime packages' tests (orchestration only)
 ```
 
-pnpm test:compose # the production compose stack booted and set up, then thrown away (scripts/compose-smoke.sh)
 Per app:
 
 ```bash
