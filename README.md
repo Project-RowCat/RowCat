@@ -45,33 +45,22 @@ and Docker with Compose.
 
 ```bash
 pnpm install
-
-# 1. Configuration. Both files need BETTER_AUTH_SECRET (openssl rand -base64 32):
-#    the root .env is read by docker compose, apps/api/.env by the API you run on the host.
-cp .env.example .env
-cp apps/api/.env.example apps/api/.env
-#    apps/api/.env already points DATABASE_URL at postgres://rowcat:rowcat@localhost:5432/rowcat.
-
-# 2. Postgres. The committed compose file does not publish db or redis ports to the host, so add a
-#    local, gitignored override that binds Postgres to loopback only:
-cat > docker-compose.override.yml <<'EOF'
-services:
-  db:
-    ports:
-      - "127.0.0.1:5432:5432"
-EOF
-docker compose up -d db
-
-# 3. Schema and a development account.
-pnpm --filter @rowcat/api db:migrate
-pnpm --filter @rowcat/api db:seed:dev-user
-
-# 4. See what this configuration turns on (add --mode production to see release blockers).
-pnpm env:doctor --file apps/api/.env
-
-# 5. Run web, API and the operations console together.
-pnpm dev:all
+pnpm dev:setup   # env files, one shared secret, Postgres in Docker, schema, a development account
+pnpm dev:all     # web, API and the operations console together
 ```
+
+`pnpm dev:setup` is safe to run again — it never overwrites a file or a secret that already exists. It
+creates `.env` (read by docker compose) and `apps/api/.env` (read by the API on the host) from their
+examples, generates one `BETTER_AUTH_SECRET` into both, and writes a gitignored
+`docker-compose.override.yml` that publishes Postgres on loopback only — on 5432, or the next free port
+when a Postgres already runs on this machine (then `DATABASE_URL` follows it). `--no-docker` uses your own
+Postgres instead (whatever `DATABASE_URL` in `apps/api/.env` points at); `--no-seed` skips the development
+account. To see what this configuration turns on: `pnpm env:doctor --file apps/api/.env` (add
+`--mode production` to see release blockers).
+
+**Or open it in a Dev Container** (`.devcontainer/`): the container runs the same `pnpm dev:setup` when it
+is created, with Postgres in Docker inside it. Use a fresh clone ("Clone Repository in Container Volume" or
+a Codespace opened in the desktop editor).
 
 | Port | Service |
 | --- | --- |
@@ -183,7 +172,9 @@ RowCat은 이용자가 이야기를 발행해 갤러리에 올리고, 그 이야
 - 구성: 이야기 갤러리, 기기 로컬 우선 + 종단간 암호화 동기화되는 대화와 초안, 관리형(운영자 키)과
   BYO(이용자 키) 두 갈래의 AI 생성, QuickJS/WASM 샌드박스에서 크리에이터 TSX를 실행하는 런타임,
   웹·Expo 모바일·운영 콘솔·MCP 서버.
-- 빠른 시작: 위 「Quick start」 그대로다. 로컬 최소 구성은 Postgres와 `BETTER_AUTH_SECRET` 하나이고(운영 배포는
+- 빠른 시작: `pnpm install && pnpm dev:setup && pnpm dev:all`. `dev:setup`이 env 파일 둘, 공유 시크릿, Docker의
+  Postgres, 스키마, 개발 계정까지 만든다. 배포는 GHCR에 올라간 이미지를 `docker compose up -d`로 당겨 쓴다.
+  로컬 최소 구성은 Postgres와 `BETTER_AUTH_SECRET` 하나이고(운영 배포는
   `WEB_ORIGIN`·`API_ORIGIN`까지 넷 — `docs/ops/CONFIGURATION.md` 「최소 구성」),
   `db:seed:dev-user`가 만드는 `dev@rowcat.test` / `rowcat-dev` 계정으로 로그인한다.
 - 설계 근거: `AGENTS.md`가 색인이고, `docs/`와 각 파일 머리 주석이 이유를 적는다(`docs/`는 한국어,

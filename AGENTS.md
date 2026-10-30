@@ -5561,6 +5561,7 @@ pnpm dev          # web(:3000)
 pnpm dev:api      # api(:3001)
 pnpm dev:admin    # the operations console(:3002) — the API's WEB_ORIGIN must contain this origin
 pnpm dev:all      # the three above at once (turbo, streamed logs)
+pnpm dev:setup    # fresh clone → env files, one shared secret, Postgres in Docker, schema, dev account (idempotent)
 pnpm check        # biome (lint + format) + environment configuration drift check
 pnpm env:check    # do the schema, inventory, compose and example files agree (no secrets · for CI)
 pnpm env:doctor   # what works with this configuration (--mode production · --file · --json)

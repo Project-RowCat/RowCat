@@ -1,0 +1,39 @@
+// A ready-to-run development environment: open the repository in a Dev Container (VS Code or any
+// editor that speaks the spec) and the container ends exactly where `pnpm dev:setup` leaves a
+// laptop — env files, one shared secret, Postgres migrated, the development account seeded. Then:
+//
+//   pnpm dev:all
+//
+// Postgres runs in Docker *inside* this container (docker-in-docker), from the same compose file the
+// laptop path uses, so there is one setup procedure, not two.
+//
+// Open a fresh clone ("Clone Repository in Container Volume", or a Codespace) rather than a checkout
+// that already ran `pnpm install` on the host: node_modules then holds the host's native binaries.
+//
+// The ports reach the browser as localhost through the editor's forwarding, which is what the default
+// origins expect. Codespaces opened in a *browser* forward to per-port https hosts instead; that needs
+// WEB_ORIGIN, API_ORIGIN and VITE_API_ORIGIN set to those hosts (docs/ops/CONFIGURATION.md) — open the
+// Codespace in the desktop editor to skip that.
+{
+	"name": "RowCat",
+	// Node 24: inside the supported range (22+, CI's floor) and the newest line that still ships npm's
+	// global install path this uses for pnpm. The images build on their own Node (26).
+	"image": "mcr.microsoft.com/devcontainers/javascript-node:24-trixie",
+	"features": {
+		"ghcr.io/devcontainers/features/docker-in-docker:2": {}
+	},
+	// pnpm at exactly the root package.json's packageManager, the same way the Dockerfiles install it —
+	// writing the version here again would let the two drift.
+	"postCreateCommand": "npm i -g \"$(node -p \"require('./package.json').packageManager\")\" && pnpm install && pnpm dev:setup",
+	"forwardPorts": [3000, 3001, 3002],
+	"portsAttributes": {
+		"3000": { "label": "web" },
+		"3001": { "label": "API" },
+		"3002": { "label": "operations console" }
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": ["biomejs.biome"]
+		}
+	}
+}
