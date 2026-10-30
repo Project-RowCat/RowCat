@@ -1,5 +1,6 @@
 import { availableParallelism } from "node:os";
 import pg from "pg";
+import { failIfServiceRequired } from "./required-services.ts";
 
 /**
  * Database isolation so API tests can run in parallel per file.
@@ -77,8 +78,12 @@ export async function provisionWorkerDatabases(
 
 	try {
 		await client.connect();
-	} catch {
-		// No Postgres: tests skip instead of failing (`database.ts`).
+	} catch (error) {
+		// No Postgres: tests skip instead of failing (`database.ts`), unless this run requires it.
+		failIfServiceRequired(
+			"Postgres",
+			`it couldn't be reached — ${String(error)}`,
+		);
 		return null;
 	}
 
@@ -96,6 +101,11 @@ export async function provisionWorkerDatabases(
 		}
 		return urls;
 	} catch (error) {
+		/** A required run asks for isolation too: folding to sequential hides a role without CREATEDB. */
+		failIfServiceRequired(
+			"A per-worker Postgres database",
+			`it couldn't be created — ${String(error)}`,
+		);
 		console.warn(
 			`[api.test] couldn't create a per-worker database, so running sequentially on the shared database — ${String(error)}`,
 		);

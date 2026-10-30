@@ -6,6 +6,9 @@
 그 종류였다: 설정 완료 화면은 `db:seed:moderator`를 시켰는데 배포 이미지에는 그 스크립트가 없었다.
 
 릴리스 전에 한 번, 그리고 `docker-compose.yml`·Dockerfile·`tsdown.config.ts`·첫 실행 설정을 바꾼 뒤에 돌린다.
+아래 확인 목록의 대부분은 `scripts/compose-smoke.sh`(`pnpm test:compose`)가 자동으로 하고 CI의 `compose` 잡이 매
+커밋 돌린다 — 이미지는 그 잡이 통과한 커밋만 게시된다. 브라우저로 콘솔 `/setup` 화면을 직접 거치는 것(4번)은
+스크립트가 API로 대신하므로 릴리스 전 한 번은 손으로 본다.
 
 ## 격리
 

@@ -9,8 +9,9 @@
 # apps/mcp/package.json  version = 0.1.0-alpha.2      ← the source of truth for the version
 # git tag mcp-v0.1.0-alpha.2 && git push origin ...   ← the trigger
 #         ↓
-# this workflow: agree on the version → install frozen → check · typecheck
-#                → build → pack + isolated install → clean tree → pnpm publish --tag next
+# this workflow: agree on the version → install frozen → CI passed on this commit
+#                → check · typecheck → build → pack + isolated install → clean tree
+#                → pnpm publish --tag next
 # ```
 #
 # ## Two entries, and the difference is the event — not an input
@@ -82,6 +83,8 @@ permissions:
   # Trusted publishing mints npm credentials from this token. Nothing else here
   # needs a write scope — this workflow creates no release, tag or commit.
   id-token: write
+  # scripts/ci-passed.sh reads CI's runs for the tagged commit.
+  actions: read
 
 jobs:
   publish:
@@ -146,15 +149,18 @@ jobs:
       # (`pnpm check` runs runtime:declarations / sandbox / harness / docs / llms).
       # A release that skips these is a release nobody checked.
       #
-      # ⚠️ `pnpm test` is deliberately **not** here, and the price is stated rather
-      # than hidden: this workflow does not prove the suite passes. What it does
-      # prove — the tree type-checks, the generated artifacts are not stale, and
-      # the packed tarball actually runs outside the repository — is the part that
-      # is specific to shipping. The reason the suite is out is that the QuickJS
-      # files fail under CI concurrency while passing individually, so as a release
-      # gate it goes red for reasons that have nothing to do with the release, and
-      # a gate people learn to re-run is a gate nobody reads. Run `pnpm test`
-      # before tagging; put it back here the day that flakiness is fixed.
+      # The suite is not run here, and it is still a gate: CI (ci.yml) runs it with
+      # its real services on every commit, and this release proceeds only if that
+      # run passed on the tagged commit — waiting for it when the tag was pushed
+      # right behind the commit. A second, lighter copy of the suite here would be
+      # the copy that drifts. What this file adds is what is specific to shipping:
+      # the tree type-checks, the generated artifacts are not stale, and the packed
+      # tarball actually runs outside the repository.
+      - name: CI passed on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci-passed.sh "$(git rev-parse HEAD)" 60
+
       - run: pnpm check
       - run: pnpm typecheck
 

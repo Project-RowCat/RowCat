@@ -30,6 +30,7 @@
     "mobile:runtime:check": "pnpm --silent --filter @rowcat/mobile ota runtime:check",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
+    "test:compose": "bash scripts/compose-smoke.sh",
     "runtime-vm:harness": "pnpm --filter @rowcat/mobile runtime-vm:harness",
     "runtime-vm:harness:check": "pnpm --filter @rowcat/mobile runtime-vm:harness:check",
     "runtime-docs": "pnpm --filter web gen:runtime-docs",

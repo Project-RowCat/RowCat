@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "vitest";
+import { failIfServiceRequired } from "../../test/required-services.ts";
 import { createMemoryRateLimitStore } from "./memory-store.ts";
 import { createRedisRateLimitStore } from "./redis-store.ts";
 import type { RateLimitStore } from "./store.ts";
@@ -46,6 +47,10 @@ async function connectRedis() {
 
 redisClient = await connectRedis();
 if (!redisClient) {
+	failIfServiceRequired(
+		"Redis",
+		"REDIS_TEST_URL is unset or the server did not answer",
+	);
 	console.warn(
 		"[rate-limit.test] couldn't connect to Redis, so the adapter integration check is skipped — set REDIS_TEST_URL to run it",
 	);

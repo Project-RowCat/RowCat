@@ -1,14 +1,19 @@
-# Public CI, the only one in the repository.
+# Public CI, the only one in the repository — and the gate both release workflows read.
 #
-# It does exactly what AGENTS.md's "When you finish" says: check → typecheck → test.
-# It uses no secrets at all, so a fork's PR gets the same verdict.
+#   verify     AGENTS.md's "When you finish": check → typecheck → test, against real Postgres and Redis
+#   journeys   the browser journeys (e2e/, Playwright) on the real API, web and generation stub
+#   compose    the production compose stack built from this commit, booted and set up
+#              (scripts/compose-smoke.sh — docs/ops/CLEAN-INSTALL.md as a script)
 #
-# What is not here, and why:
+# images.yml and mcp-publish.yml publish only a commit this workflow passed on
+# (scripts/ci-passed.sh), so every job here is a release gate, not advice.
+#
+# A skipped test is not a passed one. The api suite skips what it cannot reach so a laptop without
+# Postgres or Redis still runs it; here ROWCAT_REQUIRE_TEST_SERVICES=1 turns each of those skips into
+# a failure that names the service (apps/api/src/test/required-services.ts).
+#
+# It uses no secrets at all, so a fork's PR gets the same verdict. What is not here, and why:
 #   mobile native builds · OTA · store submission   need signing keys and accounts (docs/ota/)
-#   browser journeys (e2e/, Playwright)             a layer that needs the API, web and generation stub up.
-#                                                   Runs locally with `pnpm test:e2e`
-#   Redis                                           api tests run with REDIS_URL empty (vitest.config.ts).
-#                                                   Only the two adapter files run when REDIS_TEST_URL is set, and skip otherwise
 name: CI
 
 on:
@@ -45,6 +50,19 @@ jobs:
           --health-timeout 5s
           --health-retries 20
 
+      # The two adapter files that talk to a real Redis (`lib/rate-limit/store-contract.test.ts`,
+      # `lib/cache/redis-store.test.ts`). The product path stays on REDIS_URL="" in tests
+      # (vitest.config.ts) — this is only for those two.
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -69,8 +87,8 @@ jobs:
 
       - run: pnpm typecheck
 
-      # api tests skip, rather than fail, when they can't reach the database, and without CREATEDB they
-      # quietly fold to sequential runs. Both end green, so this asks first, before the tests.
+      # ROWCAT_REQUIRE_TEST_SERVICES (below) would fail the suite on either miss too; asking first gives
+      # the clearer message, before twenty minutes of tests.
       - name: Postgres is reachable with CREATEDB
         env:
           DATABASE_URL: postgres://rowcat:rowcat@127.0.0.1:5432/rowcat
@@ -81,8 +99,73 @@ jobs:
             exit 1
           fi
 
-      # DATABASE_URL reaches only @rowcat/api#test (turbo.json: only that task is envMode loose).
-      # The value equals the default but is written anyway: the shell value beating the file and the default is CI's path.
+      # These reach only @rowcat/api#test (turbo.json: only that task is envMode loose).
+      # DATABASE_URL equals the default but is written anyway: the shell value beating the file and the default is CI's path.
       - run: pnpm test
         env:
           DATABASE_URL: postgres://rowcat:rowcat@127.0.0.1:5432/rowcat
+          REDIS_TEST_URL: redis://127.0.0.1:6379
+          ROWCAT_REQUIRE_TEST_SERVICES: "1"
+
+  journeys:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    # A fresh database: the journey API migrates on boot and seeds its fixture stories itself
+    # (e2e/support/global-setup.ts).
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: rowcat
+          POSTGRES_PASSWORD: rowcat
+          POSTGRES_DB: rowcat
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rowcat -d rowcat"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The version comes from the lockfile's @playwright/test; only Chromium is used (playwright.config.ts).
+      - run: pnpm exec playwright install --with-deps chromium
+
+      # There is no apps/api/.env here, so the journey API runs on this value and the code defaults —
+      # which is also the check that the journeys need nothing from a developer's machine.
+      - run: pnpm test:e2e
+        env:
+          DATABASE_URL: postgres://rowcat:rowcat@127.0.0.1:5432/rowcat
+
+      - if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: journeys-test-results
+          path: test-results/
+          retention-days: 7
+
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      # Builds api, web and admin from this commit (never the published `latest`), boots the stack
+      # with generated secrets, claims first-run setup, and tears everything down.
+      - run: bash scripts/compose-smoke.sh --build

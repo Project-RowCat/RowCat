@@ -5590,6 +5590,7 @@ pnpm llms:check                # do those three match the corpus
 pnpm runtime:public-beta:check # the six drift checks + the eight runtime packages' tests (orchestration only)
 ```
 
+pnpm test:compose # the production compose stack booted and set up, then thrown away (scripts/compose-smoke.sh)
 Per app:
 
 ```bash
@@ -5670,7 +5671,13 @@ remembered, **the console being missing from a deployment entirely has no sympto
 ### Browser journeys — e2e/
 
 **The layer that runs the product's complete lifecycles on the real stack**, and the only place in this repository that
-launches a browser.
+launches a browser. CI runs it on a fresh Postgres with no `apps/api/.env` (`journeys` in `ci.yml`), so a journey that
+works only on a machine with a developer's env file fails there first.
+
+**CI is the release gate.** `images.yml` and `mcp-publish.yml` publish only a commit `ci.yml` passed on
+(`scripts/ci-passed.sh`), and `ci.yml` sets `ROWCAT_REQUIRE_TEST_SERVICES=1` so an api test that would skip for want of
+Postgres or Redis fails instead (`apps/api/src/test/required-services.ts`). Do not add a release path that skips the
+check, and do not answer a red CI with an override — fix it on a new commit.
 
 ```text
 3021  the journey API          the product API as-is + journey deployment settings + the outside world blocked

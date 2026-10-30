@@ -1,5 +1,6 @@
 import type Redis from "ioredis";
 import { afterAll, describe, expect, test, vi } from "vitest";
+import { failIfServiceRequired } from "../../test/required-services.ts";
 import { createRedisCacheStore } from "./redis-store.ts";
 
 /**
@@ -117,6 +118,11 @@ async function connectRedis() {
 }
 
 const redisClient = await connectRedis();
+if (!redisClient)
+	failIfServiceRequired(
+		"Redis",
+		"REDIS_TEST_URL is unset or the server did not answer",
+	);
 
 afterAll(async () => {
 	if (redisClient) await redisClient.quit().catch(() => {});

@@ -2,12 +2,14 @@ import { eq, inArray, like } from "drizzle-orm";
 import { db, pingDb } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
 import { admin_audit_log, member, story, user } from "../db/schema.ts";
+import { failIfServiceRequired } from "./required-services.ts";
 
 /**
  * Setup and cleanup for tests that talk to a real Postgres.
  *
  * With no DB the tests skip instead of failing (`vitest.config.ts` header), so changes unrelated to
- * the auth schema do not force a local Postgres. Repeating this decision per file would eventually
+ * the auth schema do not force a local Postgres — except in runs that require their services
+ * (`required-services.ts`, set by CI), where the same miss fails the file. Repeating this decision per file would eventually
  * miss the migration in one of them, and that failure would not name configuration as the cause.
  */
 export async function connectTestDatabase(): Promise<boolean> {
@@ -16,6 +18,10 @@ export async function connectTestDatabase(): Promise<boolean> {
 		await runMigrations();
 		return true;
 	} catch (error) {
+		failIfServiceRequired(
+			"Postgres",
+			`it couldn't be reached or migrated — ${String(error)}`,
+		);
 		console.warn(
 			`[api.test] skipping because Postgres couldn't be reached — ${String(error)}`,
 		);

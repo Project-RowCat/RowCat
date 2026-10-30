@@ -93,8 +93,13 @@ export default defineConfig({
 			 * An earlier entry point forwarded external payment calls to a fake provider. Payments were
 			 * removed and the API no longer makes outbound calls mid-journey (the stub receives generation),
 			 * so that entry point was removed too.
+			 *
+			 * `node --import tsx`, not `pnpm exec tsx`, the same way the stub starts. Under the standalone
+			 * pnpm build (`@pnpm/exe`), `pnpm exec` reads `--env-file-if-exists` as its own flag and exits 9
+			 * when there is no `apps/api/.env` — which is every CI run, so the journeys could only start on a
+			 * machine that had one.
 			 */
-			command: "pnpm exec tsx --env-file-if-exists=.env src/index.ts",
+			command: "node --env-file-if-exists=.env --import tsx src/index.ts",
 			/** Playwright resolves `cwd` relative to this config file's location. */
 			cwd: "apps/api",
 			port: E2E_API_PORT,

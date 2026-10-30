@@ -49,6 +49,11 @@ pnpm check && pnpm typecheck && pnpm test
 - The API tests need a reachable Postgres (they skip without one) and create one database per test worker,
   so the database user needs `CREATEDB`. The default Compose user has it.
 - If you change something a browser journey covers, `pnpm test:e2e` runs the Playwright suite.
+- If you change the images, `docker-compose.yml` or first-run setup, `pnpm test:compose --build` builds the
+  production stack from your checkout, boots it, claims first-run setup and tears it down (it needs ports
+  3000-3002 free and leaves nothing behind).
+- CI runs all of it — the suite with real Postgres and Redis (a test that skips for want of a service fails
+  there), the journeys and the compose smoke — and the image and npm releases publish only a commit CI passed on.
 
 ## Commits
 

@@ -203,9 +203,24 @@ test("running the preview draws the counter, and pressing it reflects VM state i
 	 * Monaco markers). Reaching that requires the editor and type service to load, which takes time.
 	 * That wait is expressed as the button becoming enabled.
 	 */
+	/**
+	 * Pressed until the preview leaves its idle state, and only while it is still idle. The paste starts
+	 * a new check, and eligibility can read enabled → disabled → enabled around it (the debounced runtime
+	 * analysis and Monaco's own markers each flip it), so a single press can land on the disabled moment
+	 * and be dropped — a person sees that and presses again. Pressing only while idle means a run that
+	 * did start is never pressed twice. A single press failed one of two full local runs.
+	 */
 	const run = runButton;
-	await expect(run).toBeEnabled({ timeout: 60_000 });
-	await run.click();
+	const idle = page
+		.getByRole("region", { name: "Runtime preview" })
+		.getByText("Not run yet", { exact: true });
+	await expect(async () => {
+		if (await idle.isVisible()) {
+			await expect(run).toBeEnabled({ timeout: 5_000 });
+			await run.click({ timeout: 2_000 });
+		}
+		await expect(idle).toBeHidden({ timeout: 5_000 });
+	}).toPass({ timeout: 60_000 });
 
 	/**
 	 * The worker loads the compiler (TypeScript) and WASM for the first time, which is slow on a dev

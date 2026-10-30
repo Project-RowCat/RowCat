@@ -145,7 +145,9 @@ pnpm check && pnpm typecheck && pnpm test
 
 `pnpm check` runs Biome plus the drift checks for configuration and generated artifacts. The API tests use
 a real Postgres (each test worker creates its own database) and skip when none is reachable.
-`pnpm test:e2e` runs the Playwright browser journeys and starts the stack it needs.
+`pnpm test:e2e` runs the Playwright browser journeys and starts the stack it needs. `pnpm test:compose`
+boots the production compose stack, claims first-run setup and tears it down (`--build` to build this
+checkout first). CI runs all three, and images and npm releases publish only a commit CI passed on.
 
 ## License
 
