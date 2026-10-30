@@ -94,11 +94,17 @@ function securityHeaders(): Record<string, string> {
  * lands right after the creator presses Run preview, and the reloaded page comes back without the
  * run. Listing them here moves that discovery to startup. The production build does not read this
  * list.
+ *
+ * The studio's own TypeScript worker (`monaco-ts.worker.ts`) is the same case: on an empty cache its
+ * two Monaco imports were discovered after Run preview and reloaded the page mid-run (the CI journey
+ * caught it; a developer's warm `.vite` cache never shows it).
  */
 const previewWorkerDependencies = [
 	"typescript-compiler-api",
 	"quickjs-emscripten-core",
 	"@jitl/quickjs-ng-wasmfile-release-sync",
+	"monaco-editor/internal/common/initialize",
+	"monaco-editor/languages/features/typescript/tsWorker",
 ];
 
 const config = defineConfig({
