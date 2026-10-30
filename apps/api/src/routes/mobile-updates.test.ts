@@ -213,10 +213,20 @@ describe.skipIf(!ready)("rollout and state", () => {
 		const a = await publish({ platform, channel });
 		const b = await publish({ platform, channel }, 10);
 
-		const clients = Array.from({ length: 80 }, installation);
-		const inside = clients.filter((client) => isInRollout(b, client, 10));
-		const outside = clients.filter((client) => !isInRollout(b, client, 10));
-		expect(inside.length).toBeGreaterThan(0);
+		/**
+		 * Drawn until each side has the three installations the test uses. A fixed sample of 80 left
+		 * the 10% side empty once in CI (0.9^80 ≈ 1 in 4,600): what is under test is how the server
+		 * treats each side, not how the hash spreads them.
+		 */
+		const inside: string[] = [];
+		const outside: string[] = [];
+		for (let drawn = 0; drawn < 2_000; drawn++) {
+			if (inside.length >= 3 && outside.length >= 3) break;
+			const client = installation();
+			(isInRollout(b, client, 10) ? inside : outside).push(client);
+		}
+		expect(inside.length).toBeGreaterThanOrEqual(3);
+		expect(outside.length).toBeGreaterThanOrEqual(3);
 
 		for (const client of inside.slice(0, 3))
 			for (let launch = 0; launch < 3; launch++)
