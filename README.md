@@ -5,7 +5,7 @@ played them as AI conversations, or as small programs written against a sandboxe
 hosted service has been shut down. **This repository is the code**, released so anyone can read it, learn
 from it, or run their own deployment under a different name. There is no hosted instance behind it.
 
-[한국어 요약](#한국어-요약)
+[한국어](README.ko.md)
 
 ## What is in here
 
@@ -179,25 +179,3 @@ that carries the name, the app identity and operator-specific settings.
 - [SECURITY.md](SECURITY.md) — report vulnerabilities privately, not in public issues
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 - [docs/oss/FORKING.md](docs/oss/FORKING.md) — running your own deployment
-
-## 한국어 요약
-
-RowCat은 이용자가 이야기를 발행해 갤러리에 올리고, 그 이야기를 AI 대화나 샌드박스 안에서 도는 작은
-프로그램으로 즐기던 UGC 서비스였다. 호스팅 서비스는 종료되었고, 이 저장소는 **그 코드**다 — 돌고 있는
-인스턴스는 없다.
-
-- 구성: 이야기 갤러리, 기기 로컬 우선 + 종단간 암호화 동기화되는 대화와 초안, 관리형(운영자 키)과
-  BYO(이용자 키) 두 갈래의 AI 생성, QuickJS/WASM 샌드박스에서 크리에이터 TSX를 실행하는 런타임,
-  웹·Expo 모바일·운영 콘솔·MCP 서버.
-- 빠른 시작: `pnpm install && pnpm dev:setup && pnpm dev:all`. `dev:setup`이 env 파일 둘, 공유 시크릿, Docker의
-  Postgres, 스키마, 개발 계정까지 만든다. 배포는 GHCR에 올라간 이미지를 `docker compose up -d`로 당겨 쓴다.
-  로컬 최소 구성은 Postgres와 `BETTER_AUTH_SECRET` 하나이고(운영 배포는
-  `WEB_ORIGIN`·`API_ORIGIN`까지 넷 — `docs/ops/CONFIGURATION.md` 「최소 구성」),
-  `db:seed:dev-user`가 만드는 `dev@rowcat.test` / `rowcat-dev` 계정으로 로그인한다.
-- 설계 근거: `AGENTS.md`가 색인이고, `docs/`와 각 파일 머리 주석이 이유를 적는다(`docs/`는 한국어,
-  `AGENTS.md`와 코드 주석은 영어).
-- 검증: `pnpm check && pnpm typecheck && pnpm test`
-- 라이선스: 저장소는 AGPL-3.0-only, 런타임 계열 일곱 패키지와 `contracts`는 Apache-2.0(`NOTICE` 참고).
-- 이름: 코드는 라이선스대로 쓰되 "RowCat"이라는 이름은 이 프로젝트에 남는다. 포크는 다른 이름으로
-  배포한다 — 바꿀 자리는 `docs/oss/FORKING.md`.
-- 기여는 `CONTRIBUTING.md`(DCO 서명 필요), 취약점 제보는 `SECURITY.md`.
