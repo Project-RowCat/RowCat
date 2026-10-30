@@ -1,14 +1,15 @@
 import { APP_NAME } from "@rowcat/domain";
-import { viewerQueryOptions } from "@rowcat/query";
+import { setupStatusQueryOptions, viewerQueryOptions } from "@rowcat/query";
 import { Button } from "@rowcat/ui-web/components/button";
 import { Input } from "@rowcat/ui-web/components/input";
 import { Label } from "@rowcat/ui-web/components/label";
 import { useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { ShieldCheck } from "lucide-react";
 import { type FormEvent, useId, useState } from "react";
 import { getRowCatClient } from "#/lib/api.ts";
 import { authClient } from "#/lib/auth.ts";
+import { useAdminQuery } from "#/lib/query/use-admin-query.ts";
 
 /**
  * Operator sign-in, the only screen outside the shell.
@@ -58,6 +59,7 @@ export function LoginPage() {
 
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
+	const setupStatus = useAdminQuery(setupStatusQueryOptions(getRowCatClient()));
 	const [pending, setPending] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
@@ -163,6 +165,23 @@ export function LoginPage() {
 				<Button type="submit" className="w-full" disabled={pending}>
 					{pending ? "Signing in…" : "Sign in"}
 				</Button>
+
+				{/**
+				 * A fresh deployment has no operator to sign in as. Only the open state draws this line; a
+				 * failed or pending status draws nothing, since a login screen that briefly invites setup on a
+				 * deployment run for months reads as if it was reset.
+				 */}
+				{setupStatus.data?.open ? (
+					<p className="text-center text-muted-foreground text-sm">
+						First run?{" "}
+						<Link
+							to="/setup"
+							className="text-foreground underline underline-offset-4"
+						>
+							Set up this deployment
+						</Link>
+					</p>
+				) : null}
 			</form>
 		</div>
 	);

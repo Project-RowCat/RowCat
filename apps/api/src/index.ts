@@ -5,12 +5,19 @@ import { runMigrations } from "./db/migrate.ts";
 import { env, publicApiUrl } from "./env.ts";
 import { startBackgroundJobs } from "./jobs/scheduler.ts";
 import { closeRateLimit } from "./lib/rate-limit/index.ts";
+import { announceDeploymentSetup } from "./services/setup/announce.ts";
 
 /**
  * Listen only after migrations finish. Reversed, requests arriving while the schema is still old
  * hit missing columns, and that failure shows for a few seconds after deploy and never reproduces.
  */
 await runMigrations();
+
+/**
+ * Before listening, so `/v2/setup` never answers from a row this boot has not reconciled yet (a
+ * deployment upgraded with an admin already in place must read as closed from the first request).
+ */
+await announceDeploymentSetup();
 
 const server = serve(
 	{ fetch: app.fetch, hostname: env.HOST, port: env.PORT },

@@ -15,6 +15,7 @@ export * from "./notification-attention.ts";
 export * from "./profile.ts";
 export * from "./profile-actions.ts";
 export * from "./profile-pins.ts";
+export * from "./setup-code.ts";
 export * from "./social.ts";
 export * from "./story.ts";
 export * from "./time-window.ts";

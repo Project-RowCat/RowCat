@@ -18,6 +18,7 @@ import {
 } from "./notifications.ts";
 import { createOpsApi, type OpsApi } from "./ops.ts";
 import { createPushApi, type PushApi } from "./push.ts";
+import { createSetupApi, type SetupApi } from "./setup.ts";
 import { createSocialApi, type SocialApi } from "./social.ts";
 import { createStoriesApi, type StoriesApi } from "./stories.ts";
 import { createSyncApi, type SyncApi } from "./sync.ts";
@@ -179,6 +180,11 @@ export interface RowCatClient {
 	 * of their bundles.
 	 */
 	ops: OpsApi;
+	/**
+	 * First-run setup: status and the one claim that makes the first admin. Used only by `apps/admin`,
+	 * and kept off `admin` because its callers do not hold an operator role yet.
+	 */
+	setup: SetupApi;
 	/**
 	 * Ops console, used only by `apps/admin`.
 	 *
@@ -415,6 +421,7 @@ export function createRowCatClient(options: RowCatClientOptions): RowCatClient {
 	return {
 		stories: createStoriesApi(transport),
 		ops: createOpsApi(transport),
+		setup: createSetupApi(transport),
 		admin: createAdminApi(transport),
 		comments: createCommentsApi(transport),
 		creators: createCreatorsApi(transport),

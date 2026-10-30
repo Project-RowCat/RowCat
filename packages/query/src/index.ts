@@ -22,6 +22,7 @@ export * from "./notifications.ts";
 export * from "./profile.ts";
 export * from "./publication.ts";
 export * from "./runtime-config.ts";
+export * from "./setup.ts";
 export * from "./social.ts";
 export * from "./story.ts";
 export * from "./story-cover.ts";

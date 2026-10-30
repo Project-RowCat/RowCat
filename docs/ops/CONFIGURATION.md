@@ -178,6 +178,29 @@ API_ORIGIN           공개 API 주소. 콜백과 절대 URL의 근거다 — �
 pnpm env:doctor --mode production --file .env
 ```
 
+## 첫 실행 — 첫 관리자와 콘솔의 준비 상태
+
+설정이 떠도 운영자가 없으면 운영 콘솔은 403만 그린다. 첫 관리자는 콘솔의 `/setup`에서 세운다.
+
+```text
+1. API가 뜰 때 관리자가 없으면 로그에 설정 코드를 찍는다   [setup] … enter: XXXX-XXXX-XXXX
+     docker compose logs api | grep "\[setup\]"
+2. 콘솔 /setup 에서 계정을 만들거나 로그인한다             Better Auth의 일반 가입이다
+3. 코드를 넣으면 그 계정이 admin 이 되고 설정이 닫힌다      다시 열리지 않는다
+4. 끝 화면이 이 배포의 능력별 상태와 켜는 변수 이름을 보인다  같은 목록이 운영 화면에도 있다
+```
+
+- **코드는 API 로그에만 있다.** `HMAC(BETTER_AUTH_SECRET, 데이터베이스마다의 salt)`라서 복제본·재시작마다 같은
+  값이 찍히고 평문은 어디에도 저장되지 않는다. `BETTER_AUTH_SECRET`을 바꾸면 코드도 바뀐다.
+- **이미 관리자가 있는 배포는 부팅에서 닫힌다** — 이 기능이 들어오기 전에 `db:seed:moderator`나 psql로
+  관리자를 세운 배포를 올려도 경로가 열리지 않는다.
+- **마지막 관리자를 잃어도 다시 열리지 않는다.** 되살리는 길은 데이터베이스다 —
+  `DELETE FROM deployment_setup;` 뒤에 API를 재시작하면 새 salt로 새 코드가 찍힌다(관리자가 남아 있으면 그
+  부팅에서 다시 닫힌다). 운영자를 더 세우는 것은 여전히 `db:seed:moderator`다.
+- **콘솔의 준비 상태는 `env:doctor`에서 값을 뺀 것이다.** 능력·상태·변수 이름만 내보내고 `summary`·`detail`
+  (호스트·오리진·Services ID)은 통째로 버린다. 구체적인 값과 각 상태의 뜻은 여전히 `pnpm env:doctor`가 말한다.
+  admin만 본다.
+
 ## 이 도구들이 증명하지 못하는 것
 
 ```text

@@ -19,6 +19,7 @@ import { QueuePage } from "#/features/moderation/queue-page.tsx";
 import { ReportDetailPage } from "#/features/moderation/report-detail-page.tsx";
 import { OperationsPage } from "#/features/operations/operations-page.tsx";
 import { OverviewPage } from "#/features/overview/overview-page.tsx";
+import { SetupPage } from "#/features/setup/setup-page.tsx";
 import { StoriesPage } from "#/features/stories/stories-page.tsx";
 import { StoryDetailPage } from "#/features/stories/story-detail-page.tsx";
 
@@ -70,14 +71,18 @@ const str = (value: unknown): string | undefined =>
 	typeof value === "string" && value !== "" ? value : undefined;
 
 /**
- * Only login sits outside the shell; inside, the operator gate would stand in front of the login
- * screen and form a loop.
+ * Login and first-run setup sit outside the shell; inside, the operator gate would stand in front of
+ * them — a loop for login, and for setup a wall in front of the one screen whose visitor cannot be an
+ * operator yet. Setup draws nothing privileged on its own: every request it makes is authorized by the
+ * server like any other.
  */
+const OUTSIDE_SHELL = new Set(["/login", "/setup"]);
+
 function RootLayout() {
 	const pathname = useRouterState({
 		select: (state) => state.location.pathname,
 	});
-	if (pathname === "/login") return <Outlet />;
+	if (OUTSIDE_SHELL.has(pathname)) return <Outlet />;
 	return <AdminShell />;
 }
 
@@ -97,6 +102,12 @@ const loginRoute = createRoute({
 	validateSearch: (search: Record<string, unknown>): AdminSearch => ({
 		redirect: str(search.redirect),
 	}),
+});
+
+const setupRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/setup",
+	component: SetupPage,
 });
 
 const overviewRoute = createRoute({
@@ -229,6 +240,7 @@ const auditRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
 	loginRoute,
+	setupRoute,
 	overviewRoute,
 	queueRoute,
 	appealsRoute,

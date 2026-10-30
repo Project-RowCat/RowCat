@@ -11,6 +11,7 @@ import {
 	adminAppUpdateBroadcastStatusesQueryOptions,
 	adminAppVersionFloorsQueryOptions,
 	adminBroadcastAppUpdateMutationOptions,
+	adminDeploymentReadinessQueryOptions,
 	adminFeatureFlagsQueryOptions,
 	adminSetAppVersionFloorMutationOptions,
 	adminSetFeatureFlagMutationOptions,
@@ -32,6 +33,7 @@ import { useId, useState } from "react";
 import { ConfirmDialog } from "#/components/confirm-dialog.tsx";
 import { PageHeader } from "#/components/page-header.tsx";
 import { QueryState } from "#/components/states.tsx";
+import { ReadinessList } from "#/features/setup/readiness-list.tsx";
 import { getRowCatClient } from "#/lib/api.ts";
 import { formatDateTime } from "#/lib/format.ts";
 import { PageEnter } from "#/lib/motion/page-transition.tsx";
@@ -222,6 +224,29 @@ function AppUpdateNoticeRow({
 	);
 }
 
+/**
+ * What this deployment has turned on — the same list first-run setup ends with. Admin only, like its
+ * endpoint: staff run moderation, and a map of which defences are off is not theirs to need. Mounted
+ * only for admins so staff never send a request that always answers 403.
+ */
+function DeploymentReadinessCard() {
+	const readinessQuery = useAdminQuery(
+		adminDeploymentReadinessQueryOptions(getRowCatClient()),
+	);
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle className="text-sm">Deployment readiness</CardTitle>
+			</CardHeader>
+			<CardContent>
+				<QueryState query={readinessQuery} loadingRows={6}>
+					{(data) => <ReadinessList data={data} />}
+				</QueryState>
+			</CardContent>
+		</Card>
+	);
+}
+
 export function OperationsPage() {
 	const client = getRowCatClient();
 	const queryClient = useQueryClient();
@@ -271,6 +296,8 @@ export function OperationsPage() {
 					Changes require the admin role. You can read the current state.
 				</p>
 			) : null}
+
+			{canEdit ? <DeploymentReadinessCard /> : null}
 
 			<Card>
 				<CardHeader>

@@ -13,6 +13,7 @@ import { moderation } from "./moderation.ts";
 import { reports } from "./reports.ts";
 import { runtimeAssets } from "./runtime-assets.ts";
 import { runtimeConfig } from "./runtime-config.ts";
+import { setup } from "./setup.ts";
 import { blocks, favorites, follows } from "./social.ts";
 import { stories } from "./stories/index.ts";
 
@@ -31,6 +32,13 @@ export const routes = new Hono<AppEnv>()
 	 * identity and internal reasons.
 	 */
 	.route("/runtime-config", runtimeConfig)
+	/**
+	 * First-run setup: the one route that makes someone an admin, gated by a code printed only to this
+	 * process's log and closed for good once used (`services/setup/index.ts`). Not under `/me` — that
+	 * prefix is the member's own state, and a role write there is exactly what stays forbidden — and
+	 * not under `/admin`, whose callers already hold the role this grants.
+	 */
+	.route("/setup", setup)
 	/**
 	 * Remote image proxy for the creator runtime; requires a session.
 	 *

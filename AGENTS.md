@@ -4509,10 +4509,11 @@ Reports, enforcement, appeals (`docs/moderation/ARCHITECTURE.md`).
   `public` publishes work they had made private). `updated_at` is untouched too.
 - **Comment deletion is `DELETE ... RETURNING`** (the deleted value and the audit snapshot come from one statement, so
   "read after deleting" is not expressible, and it is **one transaction** with the action record).
-- **The role is `member.role` and there is no promotion path in the product API** (the only way to change it is
-  `db:seed:moderator` — a role patch under `/me` is the day anyone can make themselves an operator). **The operations
-  gate is `requireModeratorViewer` alone** (standing on top of `requireActiveViewer` — a suspended operator does not
-  get in).
+- **The role is `member.role` and the product API has exactly one promotion path: first-run setup** (`POST
+  /v2/setup/claim`, `### First-run setup` under the operations console). Everything else changes roles through
+  `db:seed:moderator` on the server — a role patch under `/me` is the day anyone can make themselves an operator, and
+  that stays true. **The operations gate is `requireModeratorViewer` alone** (standing on top of
+  `requireActiveViewer` — a suspended operator does not get in).
 - **Capability restrictions are only three — `comment.write`, `social.write`, `story.publish` — and a real route checks
   each.** `chat.generate` is **deliberately absent**: BYO generation does not pass through our server, so a restriction
   is defeated by one line of their own key, and in that state "generation is restricted" is a sentence that is not true.
@@ -4981,6 +4982,41 @@ query policy and the design system (`apps/admin/README.md` and the file headers)
   and is not read when it does differ either. Which environment you are in is stated by **the overview's service card.**
 - **`vite.config.ts` `dedupe`s React.** This app pulls workspace packages in from source, so Vite's pre-bundling creates a
   second React copy and then `Invalid hook call` fires — **the symptom is nasty because the screen renders.**
+
+### First-run setup — the first admin, and what the deployment turned on
+
+**The one promotion path in the product API, and it closes for good once used** (`services/setup/index.ts`,
+`packages/contracts/src/deployment-setup.ts`, console `/setup`).
+
+```text
+boot      migrations → prepareDeploymentSetup → the API log prints `[setup] … enter: XXXX-XXXX-XXXX` → listen
+console   /setup   create an account (Better Auth sign-up) or sign in → enter the code → this member is admin
+then      deployment_setup.completed_at is set — /v2/setup answers { open: false } forever
+```
+
+- **Why it exists.** The production API image ships `dist/` only, and `db:seed:moderator` is not in it — a deployment
+  brought up with `docker compose up` had no way to appoint its first operator short of editing `member.role` in psql.
+- **The code is the authority, and the log is its only channel.** It is `HMAC(BETTER_AUTH_SECRET, label ‖ salt)` with a
+  per-database salt: every replica and restart prints the same value, nothing stores the plaintext, and neither a leaked
+  database nor the secret alone computes it. Presenting it proves the caller can read the server's log, which is the
+  authority the seed script assumes. `services/setup/announce.ts` is the **one** file allowed to log it
+  (`no-secret-logging.test.ts` scans the rest of the path, the dev mail transport's exception shape).
+- **The request is the code and nothing else** (`SetupClaimRequest`, `.strict()`). The grant is always `admin`, always to
+  the session's member — a body that could say `{ role }` or `{ memberId }` would be the role-patch API this repository
+  refuses. It creates no account either; sign-up stays Better Auth's.
+- **Single use is a column, not a check of who is admin.** The claim locks the row, writes the role, `completed_at` and
+  one audit row (`admin.setup.claim`) in one transaction. A deployment whose boot finds an admin already in place closes
+  setup then (`completed_by` NULL), so upgrading never opens a path a running deployment did not need. **Losing the last
+  admin does not reopen it** — recovery is `DELETE FROM deployment_setup` and a restart, a database operation on purpose.
+- **Readiness is the doctor's capabilities without values** (`GET /v2/admin/deployment/readiness`, admin only). `env:doctor`
+  stays a process because its `summary`/`detail` carry hosts, origins and Services IDs; this projection drops both whole
+  (an allowlist, not a scrub) and adds the variable names from `config/capability-variables.ts`, whose test fails when the
+  doctor grows a capability without a row. Shown at the end of setup and on Operations.
+- **`/setup` sits outside the shell like `/login`** (the shell's gate would stand in front of the one visitor who cannot be
+  an operator yet). The login screen and the forbidden screen link to it only while the status says open — a failed
+  status draws nothing, never an invitation to set up a deployment that has run for months.
+- **Appointing more operators is still the seed script.** Do not grow this into a role-management screen; that would be a
+  promotion path that never closes.
 
 ### Audit records
 

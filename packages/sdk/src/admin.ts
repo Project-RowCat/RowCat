@@ -22,6 +22,7 @@ import {
 	AppVersionFloorsDto,
 	AuditLogPage,
 	type AuditLogQuery,
+	DeploymentReadinessDto,
 	FeatureFlagDto,
 	type FeatureFlagKey,
 	type FeatureFlagSetRequest,
@@ -103,6 +104,11 @@ export interface AdminApi {
 		input: AdminStoryDeleteRequest,
 		options?: RequestOptions,
 	): Promise<AdminStoryDeleteResponse>;
+
+	/** What this deployment can do: capability states and variable names (admin only). */
+	deploymentReadiness(
+		options?: RequestOptions,
+	): Promise<DeploymentReadinessDto>;
 
 	featureFlags(options?: RequestOptions): Promise<FeatureFlagsDto>;
 	setFeatureFlag(
@@ -281,6 +287,18 @@ export function createAdminApi(transport: RowCatTransport): AdminApi {
 			});
 			const parsed = AdminStoryDeleteResponse.safeParse(json);
 			if (!parsed.success) throw invalidResponse("/admin/stories/:id/delete");
+			return parsed.data;
+		},
+
+		async deploymentReadiness(options) {
+			const json = await requestJson({
+				method: "GET",
+				path: "/admin/deployment/readiness",
+				signal: options?.signal,
+			});
+			/** `.strict()`: a server that starts sending the doctor's `detail` is refused here, not drawn. */
+			const parsed = DeploymentReadinessDto.safeParse(json);
+			if (!parsed.success) throw invalidResponse("/admin/deployment/readiness");
 			return parsed.data;
 		},
 

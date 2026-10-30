@@ -28,8 +28,9 @@ export interface Viewer {
 	status: string;
 	/**
 	 * Operator role, `user | staff | admin`. A separate axis from `status`: a suspended operator keeps
-	 * the role but cannot use operations tools (gates check both). No product API changes it; seed and
-	 * ops scripts write the column. It never appears in public responses (`PublicProfileDto`,
+	 * the role but cannot use operations tools (gates check both). Seed and ops scripts write the column;
+	 * the only product route that does is the single-use first-run setup claim (`services/setup/`). It
+	 * never appears in public responses (`PublicProfileDto`,
 	 * `StoryDto.creator`, `StoryCommentDto.author`).
 	 */
 	role: string;

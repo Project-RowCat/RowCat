@@ -22,6 +22,7 @@ import {
 	type AppVersionFloorsDto,
 	type AuditLogPage,
 	AuditLogQuery,
+	type DeploymentReadinessDto,
 	type FeatureFlagDto,
 	FeatureFlagKey,
 	FeatureFlagSetRequest,
@@ -40,6 +41,7 @@ import {
 	readAppUpdateBroadcastStatuses,
 } from "../../services/admin/app-update-notice.ts";
 import { listAuditLog, recordReadAudit } from "../../services/admin/audit.ts";
+import { readDeploymentReadiness } from "../../services/admin/deployment-readiness.ts";
 import { setManagedGenerationAsAdmin } from "../../services/admin/managed-generation.ts";
 import {
 	listAdminMembers,
@@ -269,6 +271,18 @@ export const admin = new Hono<AppEnv>()
 			reason: parsed.data.reason,
 		});
 		const body: AdminStoryDeleteResponse = { outcome };
+		noStore(c);
+		return c.json(body);
+	})
+
+	/**
+	 * What this deployment can do, as states and variable names (`env:doctor`'s capabilities with
+	 * `summary`/`detail` dropped). Admin only: staff run moderation and have no use for a map of which
+	 * defences are off. Not audited — it changes nothing and carries no member data.
+	 */
+	.get("/deployment/readiness", async (c) => {
+		requireAdminViewer(await getViewer(c));
+		const body: DeploymentReadinessDto = readDeploymentReadiness();
 		noStore(c);
 		return c.json(body);
 	})

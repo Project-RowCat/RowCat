@@ -145,6 +145,13 @@ const RISKY = [
 	"devicetoken",
 	"accesstoken",
 	"access_token",
+	/**
+	 * First-run setup. The code makes whoever holds it an admin, and the salt plus the session secret
+	 * derives it. `services/setup/announce.ts` prints the code on purpose and is the one file left out
+	 * of the scan.
+	 */
+	"setupcode",
+	"salt",
 ];
 
 /** Calls that send values out through logging or serialization. */
@@ -379,6 +386,15 @@ function sourceFiles(): string[] {
 	 * tokens and guardian identity are all in `RISKY`.
 	 */
 	walk(join(REPO, "apps", "api", "src", "jobs"));
+	/**
+	 * First-run setup: the claim compares the one value that grants admin. `announce.ts` is excluded on
+	 * purpose — printing the code to this process's log is how the operator receives it, the same
+	 * exception as the dev mail transport. The console's setup screen is scanned too (the code is
+	 * typed there).
+	 */
+	files.push(join(REPO, "apps", "api", "src", "services", "setup", "index.ts"));
+	files.push(join(REPO, "apps", "api", "src", "routes", "setup.ts"));
+	walk(join(REPO, "apps", "admin", "src", "features", "setup"));
 
 	return files;
 }

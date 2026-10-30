@@ -6,6 +6,7 @@ export * from "./comments.ts";
 export * from "./creator-analytics.ts";
 export * from "./creator-comments.ts";
 export * from "./creator-work.ts";
+export * from "./deployment-setup.ts";
 export * from "./gallery.ts";
 export * from "./http.ts";
 export * from "./identity.ts";

@@ -22,7 +22,9 @@ import { renderDoctorJson, renderDoctorText } from "./env-doctor-render.ts";
  * ```
  *
  * A process, not a route: `GET /v2/admin/config/doctor` would be an address that exports config
- * state guarded by one session — the same reason manual job runs are a CLI (`jobs/cli.ts`).
+ * state guarded by one session — the same reason manual job runs are a CLI (`jobs/cli.ts`). The
+ * console's readiness list (`services/admin/deployment-readiness.ts`) is the narrow exception: the
+ * same report with `summary` and `detail` dropped whole, so only states and variable names leave.
  *
  * Imports no boot code (`env.ts`, `db/client.ts`, `app.ts`, `jobs/*`); passing through it would run
  * migrations, start schedulers or `process.exit(1)` exactly when diagnosis is needed. Guarded by

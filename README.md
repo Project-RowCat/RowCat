@@ -79,6 +79,13 @@ pnpm dev:all
 | 3001 | API (`/v2`) |
 | 3002 | Operations console |
 
+**The first administrator comes from the operations console.** While a deployment has no admin, the API
+prints a one-time setup code each time it starts (`docker compose logs api | grep "\[setup\]"`, or the
+terminal running `pnpm dev:api`). Open `/setup` in the console (`http://localhost:3002/setup` locally),
+create or sign in to the account that will run the deployment, and enter the code. That account becomes
+`admin`, setup closes for good, and the page ends with what the deployment has turned on and which
+variables turn on the rest. A deployment that already has an admin when it boots never opens setup.
+
 `db:seed:dev-user` creates `dev@rowcat.test` with password `rowcat-dev` (pass an email and password as
 arguments to choose others). It marks the email as verified, opens the identity and adult gates, and puts
 the account on the managed-generation allowlist. It refuses to run with `NODE_ENV=production`.

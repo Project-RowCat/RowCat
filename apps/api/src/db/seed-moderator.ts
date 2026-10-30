@@ -4,7 +4,12 @@ import { db } from "./client.ts";
 import { member, user } from "./schema.ts";
 
 /**
- * Grants an operations role: the only promotion path outside the product API.
+ * Grants an operations role: the standing promotion path, run on the server. The product API's only
+ * one is first-run setup (`services/setup/`), which appoints the first admin and then closes.
+ *
+ * Not bundled into the production image (`tsdown.config.ts` builds the server and two CLIs), which is
+ * why first-run setup exists: a `docker compose up` deployment runs this from a checkout pointed at its
+ * database, or not at all.
  *
  * ```bash
  * pnpm --filter @rowcat/api db:seed:moderator dev@rowcat.test         # staff

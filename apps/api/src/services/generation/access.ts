@@ -23,8 +23,8 @@ import { ApiError } from "../../lib/errors.ts";
  *
  * **Why staff and admin are always allowed**: if operators had to put their own row on the list to
  * test their own deployment, the first thing that operation leaves in the audit would be "lent the
- * key to myself". Roles already have no promotion path in the product API (seed and ops scripts write
- * them), so this opens no new door.
+ * key to myself". Roles have no open promotion path in the product API (seed and ops scripts write
+ * them; first-run setup grants one admin and closes), so this opens no new door.
  *
  * BYO generation does not go through this decision: that request never reaches our server, and the
  * key it uses is not the operator's. That is why the refusal copy says "connect your own key".

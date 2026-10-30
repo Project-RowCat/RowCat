@@ -33,9 +33,11 @@ export const member = pgTable(
 		/**
 		 * Operations role: user | staff | admin, owned by the product. It lives here rather than on
 		 * Better Auth's `user` because adapter-owned tables can silently lose or rename product
-		 * authorization columns on upgrade. Default is `user` and no product API changes it: promotion is
-		 * done by seed/ops scripts writing this column directly, since any role patch under `/me` would
-		 * let anyone make themselves an operator. A separate axis from `status`: a suspended operator
+		 * authorization columns on upgrade. Default is `user`: promotion is done by seed/ops scripts
+		 * writing this column directly, since any role patch under `/me` would let anyone make themselves
+		 * an operator. The one product route that writes it is first-run setup, which grants `admin` once
+		 * per deployment to whoever holds the code from the API's log (`services/setup/`). A separate axis
+		 * from `status`: a suspended operator
 		 * cannot use the console (the gate checks both) but keeps the role.
 		 */
 		role: text("role").notNull().default("user"),

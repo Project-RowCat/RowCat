@@ -28,6 +28,7 @@ export * from "./ndjson.ts";
 export * from "./notifications.ts";
 export * from "./ops.ts";
 export * from "./push.ts";
+export * from "./setup.ts";
 export * from "./social.ts";
 export * from "./sse.ts";
 export * from "./stories.ts";

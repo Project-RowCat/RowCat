@@ -1,5 +1,9 @@
 import { APP_NAME } from "@rowcat/domain";
-import { resetAdminState, viewerQueryOptions } from "@rowcat/query";
+import {
+	resetAdminState,
+	setupStatusQueryOptions,
+	viewerQueryOptions,
+} from "@rowcat/query";
 import { Badge } from "@rowcat/ui-web/components/badge";
 import { Button } from "@rowcat/ui-web/components/button";
 import { useQueryClient } from "@tanstack/react-query";
@@ -113,6 +117,40 @@ function ThemeToggle() {
  * work, when what they need is a role grant they cannot give themselves.
  */
 function ForbiddenScreen({ onSignOut }: { onSignOut: () => void }) {
+	/**
+	 * On a fresh deployment there is no admin to ask, so "ask an admin" is a dead end. While setup is
+	 * open the way forward is the setup page; a failed or pending status keeps the ordinary sentence.
+	 */
+	const setupStatus = useAdminQuery(setupStatusQueryOptions(getRowCatClient()));
+	if (setupStatus.data?.open)
+		return (
+			<div className="flex min-h-dvh items-center justify-center p-6">
+				<div className="w-full max-w-md space-y-4 text-center">
+					<ShieldAlert
+						className="mx-auto size-8 text-muted-foreground"
+						aria-hidden
+					/>
+					<div>
+						<h1 className="font-semibold text-lg">
+							This deployment has no administrator yet
+						</h1>
+						<p className="mt-1 text-muted-foreground text-sm">
+							Finish first-run setup with the code from the API's log to make
+							this account the administrator.
+						</p>
+					</div>
+					<div className="flex flex-wrap justify-center gap-2">
+						<Button nativeButton={false} render={<Link to="/setup" />}>
+							Set up this deployment
+						</Button>
+						<Button variant="outline" onClick={onSignOut}>
+							Sign in with another account
+						</Button>
+					</div>
+				</div>
+			</div>
+		);
+
 	return (
 		<div className="flex min-h-dvh items-center justify-center p-6">
 			<div className="w-full max-w-md space-y-4 text-center">

@@ -4,6 +4,7 @@ import {
 	CHAT_ERROR_CODE,
 	GUARDIAN_ERROR_CODE,
 	REPORT_ERROR_CODE,
+	SETUP_ERROR_CODE,
 	STORY_COMMENT_ERROR_CODE,
 	STORY_PLAY_START_ERROR_CODE,
 	SYNC_ERROR_CODE,
@@ -364,6 +365,22 @@ export const RATE_LIMIT_POLICIES = {
 		onStoreFailure: "allow",
 		code: "runtime_asset_rate_limited",
 		message: "Too many images were received. Please try again in a moment.",
+	},
+
+	/**
+	 * First-run setup claim. The code carries 60 bits, so this is not what keeps it from being guessed;
+	 * it keeps a script from spending the claim route's lock in a loop. Subject is the member (IP is not
+	 * a subject here), and every attempt counts, right or wrong. Fail-open: the code's entropy stands
+	 * whether or not the counter does, and setup is used once per deployment.
+	 */
+	setupClaim: {
+		name: "setup-claim",
+		max: 10,
+		windowMs: 10 * 60_000,
+		subject: "member",
+		onStoreFailure: "allow",
+		code: SETUP_ERROR_CODE.rateLimited,
+		message: "Too many setup attempts. Please try again in a few minutes.",
 	},
 } as const satisfies Record<string, RateLimitPolicy>;
 

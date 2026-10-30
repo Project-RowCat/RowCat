@@ -15,6 +15,7 @@ export * from "./tables/ops.ts";
 export * from "./tables/passkey.ts";
 export * from "./tables/profile.ts";
 export * from "./tables/push.ts";
+export * from "./tables/setup.ts";
 export * from "./tables/social.ts";
 export * from "./tables/story.ts";
 export * from "./tables/story-media.ts";

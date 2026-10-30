@@ -309,7 +309,7 @@ function infraCapabilities(
 		{
 			id: "backgroundJobs",
 			group: "infra",
-			label: "periodic jobs",
+			label: "Periodic jobs",
 			status: jobs ? "ready" : mode === "production" ? "degraded" : "disabled",
 			summary: jobs
 				? `on · daily jobs at ${String(config.backgroundJobsDailyAt.hour).padStart(2, "0")}:${String(config.backgroundJobsDailyAt.minute).padStart(2, "0")} ${config.backgroundJobsTimeZone}`
@@ -576,7 +576,7 @@ function generationCapability(
 	return {
 		id: "managedGeneration",
 		group: "generation",
-		label: "managed generation",
+		label: "Managed generation",
 		status: !config.chatProviderEnabled
 			? "disabled"
 			: openInProduction

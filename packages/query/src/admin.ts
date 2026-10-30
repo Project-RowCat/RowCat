@@ -19,6 +19,7 @@ import type {
 	AppVersionFloorsDto,
 	AuditLogPage,
 	AuditLogQuery,
+	DeploymentReadinessDto,
 	FeatureFlagKey,
 	FeatureFlagSetRequest,
 	FeatureFlagsDto,
@@ -225,6 +226,23 @@ export function adminDeleteStoryMutationOptions(
 		},
 	};
 }
+
+export const ADMIN_DEPLOYMENT_READINESS_QUERY_KEY = [
+	"admin",
+	"deployment",
+	"readiness",
+] as const;
+
+/**
+ * Deployment readiness. Config does not change while the API runs, so the value is good until the
+ * next deploy; a long `staleTime` only saves the request, and the screen still refetches on mount.
+ */
+export const adminDeploymentReadinessQueryOptions = (client: RowCatClient) =>
+	queryOptions<DeploymentReadinessDto>({
+		queryKey: ADMIN_DEPLOYMENT_READINESS_QUERY_KEY,
+		queryFn: ({ signal }) => client.admin.deploymentReadiness({ signal }),
+		staleTime: 60_000,
+	});
 
 export const ADMIN_FEATURES_QUERY_KEY = ["admin", "ops", "features"] as const;
 export const ADMIN_APP_VERSIONS_QUERY_KEY = [
