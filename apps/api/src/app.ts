@@ -1,5 +1,6 @@
+import { getConnInfo } from "@hono/node-server/conninfo";
 import { API_BASE_PATH, type ApiErrorBody } from "@rowcat/contracts/http";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
@@ -8,10 +9,22 @@ import { secureHeaders } from "hono/secure-headers";
 import { authSurfaceRefusal } from "./auth/http-surface.ts";
 import { auth } from "./auth/index.ts";
 import type { Viewer } from "./auth/viewer.ts";
-import { env, isProduction } from "./env.ts";
+import {
+	authIpHeader,
+	authTrustedProxies,
+	env,
+	isProduction,
+	localOwnerEnabled,
+} from "./env.ts";
 import { allowOrigin } from "./lib/allowed-origin.ts";
+import {
+	AUTH_CLIENT_IP_HEADER,
+	forwardedFromUnlistedPeer,
+	resolveClientIp,
+	trustedProxyMatcher,
+} from "./lib/client-ip.ts";
 import { ApiError, badRequest, forbidden, notFound } from "./lib/errors.ts";
-import { isLocalHonoRequest } from "./lib/local-request.ts";
+import { localOwnerDoorOpenFor } from "./lib/local-request.ts";
 import { requestLogger } from "./lib/request-logger.ts";
 import { withViewer } from "./middleware/viewer.ts";
 import { routes } from "./routes/index.ts";
@@ -174,13 +187,54 @@ app.on(["GET", "POST"], `${API_BASE_PATH}/auth/*`, (c) => {
 	const refusal = authSurfaceRefusal(
 		url.pathname.slice(`${API_BASE_PATH}/auth`.length),
 		url.searchParams,
-		() => isLocalHonoRequest(c, allowOrigin),
+		() =>
+			localOwnerDoorOpenFor(c, {
+				enabled: localOwnerEnabled,
+				isAllowedOrigin: allowOrigin,
+			}),
 	);
 	if (refusal === "closed") throw notFound();
 	if (refusal === "proxy-target")
 		throw badRequest("Invalid authorizationURL", "auth_proxy_target_refused");
-	return auth.handler(c.req.raw);
+	return auth.handler(withAuthClientIp(c));
 });
+
+const authClientIpBasis = {
+	trustedProxies: authTrustedProxies,
+	ipHeader: authIpHeader,
+};
+const isTrustedProxy = trustedProxyMatcher(authTrustedProxies);
+let unlistedProxyWarned = false;
+
+/**
+ * The request Better Auth sees, carrying the one client address its limiter may count by
+ * (`lib/client-ip.ts`). Whatever the client sent under that header name is dropped first; a request
+ * with no socket (an in-process test) carries none, which is the library's shared bucket.
+ */
+function withAuthClientIp(c: Context<AppEnv>): Request {
+	let remoteAddress: string | undefined;
+	try {
+		remoteAddress = getConnInfo(c).remote.address;
+	} catch {
+		remoteAddress = undefined;
+	}
+	const facts = { remoteAddress, header: (name: string) => c.req.header(name) };
+	const ip = resolveClientIp(facts, authClientIpBasis, isTrustedProxy);
+	if (
+		!unlistedProxyWarned &&
+		forwardedFromUnlistedPeer(facts, authClientIpBasis, isTrustedProxy)
+	) {
+		unlistedProxyWarned = true;
+		/** Once per process and without addresses: the fix is configuration, and one line names it. */
+		console.warn(
+			"[auth] a request with forwarding headers came from a connection outside AUTH_TRUSTED_PROXIES. If a proxy stands in front of the API, list the hop that connects to it (a host proxy, a docker bridge range), or every visitor shares that hop's sign-in bucket",
+		);
+	}
+	const headers = new Headers(c.req.raw.headers);
+	headers.delete(AUTH_CLIENT_IP_HEADER);
+	if (ip !== null) headers.set(AUTH_CLIENT_IP_HEADER, ip);
+	return new Request(c.req.raw, { headers });
+}
 
 app.use(`${API_BASE_PATH}/*`, withViewer());
 app.route(API_BASE_PATH, routes);

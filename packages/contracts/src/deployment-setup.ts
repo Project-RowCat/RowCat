@@ -5,7 +5,7 @@ import { NICKNAME_LIMITS } from "./me.ts";
  * First-run setup and deployment readiness.
  *
  * ```text
- * GET  /v2/setup                          { open }      anyone — one bit, no state of the deployment
+ * GET  /v2/setup                          { open, localOwner }   anyone — two deployment facts, nothing else
  * POST /v2/setup/claim                    { code }      a signed-in member — becomes the first admin
  * POST /v2/setup/claim-local              { code }      this computer only — creates the local owner (admin)
  * POST /v2/auth/local-sign-in             —             this computer only — a session for the local owner
@@ -28,18 +28,21 @@ import { NICKNAME_LIMITS } from "./me.ts";
  *
  * ## The local owner — a deployment used without signing in
 
-A deployment that runs on one person's computer (the desktop app, `pnpm dev`) can be set up without an
+A deployment that runs on one person's computer (the desktop app, or `pnpm dev` with `LOCAL_OWNER_ENABLED=on`) can be set up without an
 account: `claim-local` makes the server create one member with no email address and no password, and
 from then on a browser on that computer is signed in as it by `local-sign-in`. The member is an
 ordinary member in every other respect — its id scopes the local database and the sync namespace like
 anyone's — so nothing downstream learns a second kind of identity.
 
-Both doors open only for a request that is provably from this computer (`apps/api/src/lib/local-request.ts`:
-a loopback socket, a loopback `Host`, no forwarding headers). That is the whole of the authority: a
-deployment reachable from anywhere else answers them 404, whatever its configuration. The choice is made
-once, at setup, and recorded on the setup row; there is no switch that turns it on later, because the
-same choice made on a running multi-member deployment would hand its operator role to whoever sits at
-the server.
+Both doors open only on a deployment that says it is one person's computer (`LOCAL_OWNER_ENABLED=on`,
+which the one-computer installer sets) **and** for a request from this computer
+(`apps/api/src/lib/local-request.ts`: a loopback socket, a loopback `Host`, no forwarding headers, a
+loopback allowed `Origin`). The request rows alone are not proof: a client that is not a browser writes
+`Host` and `Origin` itself, so they rest on the socket, and any forwarder on the same machine that adds
+no header (`socat`, an SSH tunnel, `ngrok tcp`, nginx with a bare `proxy_pass`) makes a remote request
+loopback. A server deployment therefore leaves the switch off and sets up with an account. The choice
+of owner is made once, at setup, and recorded on the setup row; the switch only says whether the doors
+exist, and no switch hands the admin role to whoever sits at a running multi-member deployment.
 
 ## Why readiness carries no values
  *
@@ -65,7 +68,16 @@ export const SETUP_ERROR_CODE = {
 export type SetupErrorCode =
 	(typeof SETUP_ERROR_CODE)[keyof typeof SETUP_ERROR_CODE];
 
-export const SetupStatusDto = z.object({ open: z.boolean() });
+/**
+ * `localOwner` is whether this deployment allows the no-account setup at all (`LOCAL_OWNER_ENABLED`,
+ * which the one-computer installer sets). It is a deployment fact, not an answer about the request:
+ * the console still offers that path only at a loopback address, and the server still decides each
+ * request. Absent reads as no — an older server then shows the account path, which always works.
+ */
+export const SetupStatusDto = z.object({
+	open: z.boolean(),
+	localOwner: z.boolean().default(false),
+});
 export type SetupStatusDto = z.infer<typeof SetupStatusDto>;
 
 /**

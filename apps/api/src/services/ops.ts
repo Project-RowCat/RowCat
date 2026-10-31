@@ -15,7 +15,7 @@ import {
 import { eq } from "drizzle-orm";
 import { db } from "../db/client.ts";
 import { ops_app_version_floor, ops_feature_flag } from "../db/schema.ts";
-import { passwordResetEnabled } from "../env.ts";
+import { localOwnerEnabled, passwordResetEnabled } from "../env.ts";
 import { ApiError } from "../lib/errors.ts";
 import { recordAudit } from "./admin/audit.ts";
 import { hasLocalOwner } from "./setup/index.ts";
@@ -416,8 +416,13 @@ export async function readRuntimeConfig(): Promise<RuntimeConfigDto> {
 		minAppVersion: { ios: floorOf("ios"), android: floorOf("android") },
 		updateMessage: message,
 		passwordReset: passwordResetEnabled,
-		/** Unreadable answers "no local owner": the login form stays, which is never wrong. */
-		localSignIn: await hasLocalOwner().catch(() => false),
+		/**
+		 * Unreadable answers "no local owner": the login form stays, which is never wrong. A deployment
+		 * that has not turned the local owner on says no even if a setup row still names one — its
+		 * sign-in door answers 404, and a screen that tried it would only draw a failure.
+		 */
+		localSignIn:
+			localOwnerEnabled && (await hasLocalOwner().catch(() => false)),
 	};
 }
 

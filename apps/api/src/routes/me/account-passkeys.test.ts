@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, describe, expect, test } from "vitest";
 import { closeDb, db } from "../../db/client.ts";
-import { passkey, user } from "../../db/schema.ts";
+import { passkey, session, user } from "../../db/schema.ts";
 import { newId } from "../../lib/id.ts";
 import { createTestMember } from "../../test/auth.ts";
 import { connectTestDatabase, deleteTestUsers } from "../../test/database.ts";
@@ -207,6 +207,37 @@ describe.skipIf(!databaseReady)("passkey ownership", () => {
 		expect((await response.json()) as { code: string }).toMatchObject({
 			code: "passkey_not_found",
 		});
+	});
+});
+
+/**
+ * Deleting removes a way in, so it needs a recent sign-in, as registration does: a stolen cookie of
+ * any age must not be able to strip the owner's passkeys. `createdAt` is pushed back because 24
+ * hours cannot be waited out, and it is the value the freshness check reads.
+ */
+describe.skipIf(!databaseReady)("passkey deletion and an old session", () => {
+	test("an old session cannot delete a passkey, and nothing changes", async () => {
+		const alice = await signUp();
+		const key = await seedPasskey(alice.authUserId, "Alice's iPhone");
+		await db
+			.update(session)
+			.set({ createdAt: new Date(Date.now() - 1000 * 60 * 60 * 48) })
+			.where(eq(session.userId, alice.authUserId));
+
+		const response = await apiPost(
+			"/me/account/passkeys/delete",
+			{ id: key.id },
+			alice.cookie,
+		);
+		expect(response.status).toBe(403);
+		expect((await response.json()) as { code: string }).toMatchObject({
+			code: "recent_login_required",
+		});
+		const rows = await db
+			.select({ id: passkey.id })
+			.from(passkey)
+			.where(eq(passkey.id, key.id));
+		expect(rows).toHaveLength(1);
 	});
 });
 

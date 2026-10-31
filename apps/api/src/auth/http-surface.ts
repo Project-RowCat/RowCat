@@ -20,6 +20,11 @@ import { LOCAL_SIGN_IN_AUTH_PATH } from "@rowcat/contracts";
  * /passkey/list-user-passkeys     GET /v2/me/account/passkeys — the raw rows carry public keys and counters
  * /passkey/update-passkey         PATCH our passkey route — same row, narrower answer
  * /passkey/delete-passkey         DELETE our passkey route — the only place the removal notice is sent
+ * /verify-password                nothing calls it; `scope: "server"` is metadata the router ignores, so it
+ *                                 was a password oracle for any session at the default 100 per 10 s
+ * /update-session                 nothing calls it; a write door the day the session table grows a field
+ * /two-factor/send-otp · verify-otp   OTP is not configured (the mail vocabulary is closed); a door that
+ *                                 would open silently the day someone adds `otpOptions`
  * ```
  *
  * The local owner's password-less sign-in (`/local-sign-in`, `local-sign-in.ts`) is closed to every
@@ -28,8 +33,14 @@ import { LOCAL_SIGN_IN_AUTH_PATH } from "@rowcat/contracts";
  *
  * The Expo plugin's authorization relay stays open (the app's browser sign-in needs it) but only toward
  * the three providers' authorization endpoints. Left as the library ships it, the relay redirects to any
- * `https` address and signs whatever `state` that address carries into a cookie first: an open redirect
- * from the API's own domain, and a way to plant a state the attacker minted for their own sign-in.
+ * `https` address and signs whatever `state` that address carries into a cookie first — an open redirect
+ * from the API's own domain. The allowlist closes that redirect.
+ *
+ * **It does not decide who minted the state it relays**, and nothing at this edge can: a genuine app
+ * sign-in is an anonymous GET carrying only values anyone can reproduce. The native sign-in hands its
+ * session to the app over the `rowcat://` scheme, and a custom scheme is not proof of which app receives
+ * it. Making that hand-off verified (an https App Link / Universal Link, or a one-time code the app
+ * redeems) is an open mobile decision (`docs/oss/SECURITY-REVIEW.md`), not something this file decides.
  */
 
 const CLOSED_PATHS: ReadonlySet<string> = new Set([
@@ -45,6 +56,10 @@ const CLOSED_PATHS: ReadonlySet<string> = new Set([
 	"/passkey/list-user-passkeys",
 	"/passkey/update-passkey",
 	"/passkey/delete-passkey",
+	"/verify-password",
+	"/update-session",
+	"/two-factor/send-otp",
+	"/two-factor/verify-otp",
 ]);
 
 const EXPO_PROXY_PATH = "/expo-authorization-proxy";

@@ -204,4 +204,41 @@ describe.skipIf(!databaseReady)("password reset", () => {
 		await new Promise((resolve) => setTimeout(resolve, 50));
 		expect(mail.messages).toHaveLength(0);
 	});
+
+	/**
+	 * The native scheme is a trusted origin for sign-in, and it admits the whole scheme — so without
+	 * `password-reset-policy.ts` this request passed, and the victim's genuine mail carried a link
+	 * that handed its token to whichever app claims `rowcat://`.
+	 */
+	test.each([
+		"rowcat://steal",
+		"rowcat:///reset-password",
+		"rowcat:steal",
+	])("a native-scheme return address %s is refused and no mail goes out", async (target) => {
+		const { email } = await signUpVerified();
+		mail.reset();
+
+		const hostile = await authPost("/request-password-reset", {
+			email,
+			redirectTo: target,
+		});
+		expect(hostile.status).toBe(403);
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		expect(mail.messages).toHaveLength(0);
+	});
+
+	test("a link rewritten to a native scheme does not hand out its token", async () => {
+		const { email } = await signUpVerified();
+		mail.reset();
+		await authPost("/request-password-reset", {
+			email,
+			redirectTo: RESET_RETURN,
+		});
+		const link = new URL(mail.linkIn(await awaitMailTo(email)));
+		link.searchParams.set("callbackURL", "rowcat://steal");
+
+		const opened = await openLink(link.toString());
+		expect(opened.status).toBe(403);
+		expect(opened.headers.get("location")).toBeNull();
+	});
 });

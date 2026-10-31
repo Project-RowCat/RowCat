@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { isLocalRequest, isLoopbackAddress } from "./local-request.ts";
+import {
+	isLocalRequest,
+	isLoopbackAddress,
+	localOwnerDoorOpen,
+} from "./local-request.ts";
 
 const ALLOWED = "http://localhost:3000";
 
@@ -92,5 +96,45 @@ describe("isLocalRequest", () => {
 		expect(isLocalRequest(facts({ headers: { origin: undefined } }))).toBe(
 			false,
 		);
+	});
+
+	/**
+	 * A server whose `WEB_ORIGIN` is public: a non-browser client relayed through a same-host proxy
+	 * that adds no header (nginx's bare `proxy_pass` sends `Host: 127.0.0.1:<port>`) copies that public
+	 * origin. It is allowed, but it does not name this computer.
+	 */
+	test("an allowed origin that is not on this computer is not", () => {
+		const PUBLIC = "https://app.example.com";
+		expect(
+			isLocalRequest({
+				...facts({
+					headers: { host: "127.0.0.1:3001", origin: PUBLIC },
+				}),
+				isAllowedOrigin: (origin: string) => origin === PUBLIC,
+			}),
+		).toBe(false);
+	});
+
+	test("a loopback origin outside the allowlist is not", () => {
+		expect(
+			isLocalRequest(facts({ headers: { origin: "http://localhost:9999" } })),
+		).toBe(false);
+	});
+});
+
+describe("localOwnerDoorOpen", () => {
+	/**
+	 * Every request row passes, and the deployment has not said it is one person's computer. That is
+	 * every server deployment: its request rows cannot tell a same-host relay from a browser here.
+	 */
+	test("is shut on a deployment that has not turned the local owner on", () => {
+		expect(localOwnerDoorOpen(false, facts())).toBe(false);
+	});
+
+	test("opens only when the deployment and the request both say so", () => {
+		expect(localOwnerDoorOpen(true, facts())).toBe(true);
+		expect(
+			localOwnerDoorOpen(true, facts({ remoteAddress: "172.17.0.1" })),
+		).toBe(false);
 	});
 });

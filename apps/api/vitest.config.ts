@@ -139,6 +139,12 @@ export default defineConfig({
 			 */
 			MEMBERSHIP_AGE_GATE: "",
 			/**
+			 * The local owner's doors exist, as on the one-computer installer, so the setup and sign-in tests
+			 * reach the request rows they are about. Off — the default every server deployment runs — is a
+			 * pure decision (`localOwnerDoorOpen` in `lib/local-request.ts`) and is tested there.
+			 */
+			LOCAL_OWNER_ENABLED: "on",
+			/**
 			 * Native push transport stays on because the delivery state machine sits behind it; off,
 			 * sending, receipts, retries and expiry are all no-ops with nothing to test. No request actually
 			 * goes out: delivery tests spy on `fetch` and answer with a stub, and other tests never call the

@@ -7,11 +7,12 @@ import {
 } from "@rowcat/contracts";
 import { Hono } from "hono";
 import type { AppEnv } from "../app.ts";
+import { localOwnerEnabled } from "../env.ts";
 import { allowOrigin } from "../lib/allowed-origin.ts";
 import { ApiError, forbidden, invalidInput } from "../lib/errors.ts";
 import { requireActiveViewer } from "../lib/gates.ts";
 import { noStore, readJson } from "../lib/http.ts";
-import { isLocalHonoRequest } from "../lib/local-request.ts";
+import { localOwnerDoorOpenFor } from "../lib/local-request.ts";
 import { checkRateLimit } from "../lib/rate-limit/index.ts";
 import { getViewer } from "../middleware/viewer.ts";
 import {
@@ -69,7 +70,12 @@ export const setup = new Hono<AppEnv>()
 
 	.post("/claim-local", async (c) => {
 		/** Before the counter: a remote caller is not a guess at the code, and must not use up this computer's tries. */
-		if (!isLocalHonoRequest(c, allowOrigin))
+		if (
+			!localOwnerDoorOpenFor(c, {
+				enabled: localOwnerEnabled,
+				isAllowedOrigin: allowOrigin,
+			})
+		)
 			throw forbidden(
 				"Using it without signing in can only be set up on the computer it runs on. Set it up with an account instead.",
 				SETUP_ERROR_CODE.localUnavailable,

@@ -1,6 +1,7 @@
 import type { AccountPasskeyDto } from "@rowcat/contracts";
 import { findAuthUser } from "../../auth/auth-user.ts";
 import { auth } from "../../auth/index.ts";
+import { requireFreshSession } from "../../auth/session-id.ts";
 import { badRequest, notFound, unauthorized } from "../../lib/errors.ts";
 import { sendTransactionalMail } from "../mail/index.ts";
 
@@ -130,11 +131,16 @@ export async function renameAccountPasskey(
  * A notice failure does not undo the deletion: it cannot be undone (credentials do not come back),
  * and mail reduces delay rather than guaranteeing correctness, the same call the registration
  * notice made.
+ *
+ * **It requires a recent sign-in, as registration does.** Deleting a passkey removes a way in, and
+ * the library guards it with a plain session — a stolen cookie of any age could strip an owner's
+ * passkeys one by one, each notice arriving after the fact.
  */
 export async function deleteAccountPasskey(
 	headers: Headers,
 	id: string,
 ): Promise<AccountPasskeyDto[]> {
+	await requireFreshSession(headers);
 	const session = await auth.api.getSession({ headers });
 	if (!session?.user) throw unauthorized();
 

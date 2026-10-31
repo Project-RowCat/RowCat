@@ -18,8 +18,6 @@ import {
 import {
 	appleSignIn,
 	appleSignInEnabled,
-	authIpHeader,
-	authTrustedProxies,
 	emailVerificationRequired,
 	env,
 	googleEnabled,
@@ -31,6 +29,7 @@ import {
 	webauthnConfig,
 } from "../env.ts";
 import { createAppleClientSecretSigner } from "../lib/apple-signin-config.ts";
+import { AUTH_CLIENT_IP_HEADER } from "../lib/client-ip.ts";
 import { getRedis } from "../lib/redis.ts";
 import { deleteAccountForUser } from "../services/account/deletion.ts";
 import {
@@ -41,6 +40,7 @@ import {
 import { enforceAccountDeletionPolicy } from "./account-deletion-policy.ts";
 import { findAuthUser } from "./auth-user.ts";
 import { localSignInPlugin } from "./local-sign-in.ts";
+import { enforcePasswordResetTarget } from "./password-reset-policy.ts";
 import { createRedisAuthRateLimitStorage } from "./rate-limit-storage.ts";
 import {
 	withAppleAuthOrigin,
@@ -525,10 +525,12 @@ export const auth = betterAuth({
 	 */
 	hooks: {
 		/**
-		 * Door rules standing in front of the library: two-factor (`two-factor-policy.ts`) and account
-		 * deletion's password (`account-deletion-policy.ts`).
+		 * Door rules standing in front of the library: two-factor (`two-factor-policy.ts`), account
+		 * deletion's password (`account-deletion-policy.ts`) and where a reset link may land
+		 * (`password-reset-policy.ts`).
 		 */
 		before: createAuthMiddleware(async (ctx) => {
+			enforcePasswordResetTarget(ctx);
 			await enforceTwoFactorPolicy(ctx);
 			await enforceAccountDeletionPolicy(ctx);
 		}),
@@ -557,13 +559,14 @@ export const auth = betterAuth({
 	 * Limiter for sign-in, signup and password change, and the only limiter on this path:
 	 * `lib/rate-limit` deliberately skips unauthenticated endpoints because there is no trustworthy
 	 * IP. It was once unconfigured: on only in production, counting in memory (per replica, forgotten
-	 * on restart), and reading `X-Forwarded-For` with no trusted proxy. One value was trusted outright
-	 * (bypassable with a header) and two or more folded to `null`, so everyone shared one
-	 * `no-trusted-ip` bucket and a single attacker could cap the whole deployment's sign-in at 3 per
-	 * 10 seconds.
+	 * on restart), and reading `X-Forwarded-For` straight from the client. One value was trusted
+	 * outright (a fresh bucket per forged header, so password guessing was unlimited) and an absent or
+	 * multi-value header folded to `null`, so everyone shared one `no-trusted-ip` bucket and a single
+	 * client could cap the whole deployment's sign-in at 3 per 10 seconds.
 	 *
-	 * Rules (window and cap per path) are the library defaults. Only the storage (Redis when present)
-	 * and the IP basis (`AUTH_TRUSTED_PROXIES`, `AUTH_IP_HEADER` in `env-schema.ts`) are ours.
+	 * Rules (window and cap per path) are the library defaults. The storage (Redis when present) and
+	 * the address are ours: `app.ts` resolves it from the socket and the deployment's proxy list
+	 * (`lib/client-ip.ts`) and hands it over in one header, which is the only one the library reads.
 	 */
 	rateLimit: {
 		enabled: isProduction,
@@ -578,14 +581,13 @@ export const auth = betterAuth({
 		updateAge: 60 * 60 * 24,
 	},
 	advanced: {
-		/** See `rateLimit` above; this is the basis for reading the client IP behind a proxy. */
+		/**
+		 * See `rateLimit` above. The address is already decided when the request arrives, so the
+		 * library reads that one header and is given no proxy list: with one, it would walk the single
+		 * value we set and drop it whenever the client happens to sit inside a trusted range.
+		 */
 		ipAddress: {
-			...(authIpHeader
-				? { ipAddressHeaders: [authIpHeader, "x-forwarded-for"] }
-				: {}),
-			...(authTrustedProxies.length > 0
-				? { trustedProxies: authTrustedProxies }
-				: {}),
+			ipAddressHeaders: [AUTH_CLIENT_IP_HEADER],
 		},
 		/**
 		 * Origin check is enabled explicitly, though it is the default, for verifiability. Left empty,

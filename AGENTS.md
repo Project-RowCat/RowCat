@@ -1301,11 +1301,16 @@ should too.**
 **The library endpoints the bottom three replace are closed at the HTTP edge** (`auth/http-surface.ts`, refused in
 `app.ts` before `auth.handler`): `/list-sessions` returns every session's token, `/list-accounts` and the passkey list
 return raw rows, `/passkey/delete-passkey` skips the removal notice, and `/get-access-token` hands out provider OAuth
-tokens. Closed there and not in `hooks.before`, because our wrappers call the same operations server-side. The Expo
+tokens. Four more nothing calls are closed with them: `/verify-password` (its `scope: "server"` is metadata the router
+ignores, so it was a password oracle at the default limit), `/update-session`, and the unconfigured OTP pair
+`/two-factor/send-otp` · `verify-otp` (never by prefix — `verify-totp` and `verify-backup-code` are the sign-in
+challenge). Closed there and not in `hooks.before`, because our wrappers call the same operations server-side. The Expo
 plugin's `/expo-authorization-proxy` stays open — the app's browser sign-in needs it — but only toward the three
-providers' authorization endpoints: as shipped it redirected to any `https` address and signed that address's `state`
-into a cookie first (an open redirect from the API's domain, and a way to plant a state the attacker minted). A new
-provider adds its endpoint to `EXPO_PROXY_TARGETS` or its app sign-in is refused.
+providers' authorization endpoints: as shipped it redirected to any `https` address (an open redirect from the API's
+domain). ⚠️ **That allowlist does not decide who minted the state it relays**, and the session then reaches the app over
+the bare `rowcat://` scheme, which is not proof of which app receives it — making that hand-off verified is an open
+mobile decision (`docs/oss/SECURITY-REVIEW.md`). A new provider adds its endpoint to `EXPO_PROXY_TARGETS` or its app
+sign-in is refused.
 
 - **`setPassword` is the only place a password crosses our contract, and that exception has a reason** —
   that endpoint is `createAuthEndpoint.serverOnly`, so it has no HTTP surface at all (passing the session
@@ -1348,7 +1353,12 @@ provider adds its endpoint to `EXPO_PROXY_TARGETS` or its app sign-in is refused
   password or cut off someone else's device is not a sanction but a dead end.
 - **Do not turn off Better Auth's fresh-session requirement.** Session listing and method unlinking require
   `freshAge` (24 hours by default) while our session lifetime is 30 days, so **for anyone signed in for a
-  while this is the normal path.** It is tempting to disable, but the same value guards identity verification
+  while this is the normal path.** **Setting a password and deleting a passkey require it too, and that is ours**
+  (`requireFreshSession` in `setAccountPassword` / `deleteAccountPasskey`; the library asks only for a session). Each
+  adds or removes a way in: without it a stolen cookie of any age on a social-only account set a password, signed in
+  with it for a fresh session, and from there unlinked the owner's provider. For a while a test pinned the opposite
+  ("a long-signed-in passwordless account must still be able to create one"); the price that rule avoided is one more
+  social sign-in. It is tempting to disable, but the same value guards identity verification
   for **account deletion**. Instead we draw that state not as an error but as **the next thing to do**
   (`recent_login_required`).
 - **The current session is not revoked through this path** — that is signing out and has its own path. There
@@ -1533,6 +1543,12 @@ POST /v2/auth/reset-password           token + new password
   after this callback — awaiting SMTP there makes **response time** say "this address is registered" while the
   sentence stays the same. The price is that a send failure is a log line (no address, no URL), never the response.
 - **Unknown addresses get the same answer and no mail.** The screen's sentence always says *if an account exists*.
+- **The reset link lands on a web page and nowhere else** (`auth/password-reset-policy.ts`, `hooks.before`):
+  `redirectTo` on the request and `callbackURL` on the link must be `http(s)` or a relative path. The library checks
+  them against `trustedOrigins`, and that list holds `rowcat://`, which admits **the whole scheme** — so an
+  unauthenticated request could have mailed a genuine reset link whose token went to whichever app claims the scheme.
+  The app never uses either endpoint (it opens the web's `/reset-password`), so the native entry stays for sign-in,
+  linking and verification and leaves reset alone. Refused before the handler, so no mail goes out.
   Never mail "this address is not registered" — it lands with the address owner, who asked for nothing.
 - **Reset revokes every session — the opposite of change** (`revokeSessionsOnPasswordReset`). Whoever resets does not
   know the current password, and whoever does may already hold a session; a reset that leaves it alive adds a door
@@ -5027,15 +5043,23 @@ then      deployment_setup.completed_at is set — /v2/setup answers { open: fal
   and gets that member's session (web: `components/local-sign-in.tsx`; console: the login screen). **It is an ordinary
   member** — local DB scope, sync namespace, BYO keys and every gate stay keyed on the member id; do not grow a
   member-less "guest owner".
-- **"This computer" is one decision, `lib/local-request.ts`**: a loopback socket, a loopback `Host`, no
-  `Forwarded`/`X-Forwarded-*`/`X-Real-IP`, and an allowed `Origin`. Both doors ask it — the sign-in at the HTTP edge
-  (`auth/http-surface.ts`, because the library's handler sees no socket) and the claim in its route. A remote request
-  gets the same 404 as a deployment with no local owner. **`docker compose` never qualifies** (the peer is a bridge
-  address), which is right: that deployment is reached over a network and sets up with an account. Do not loosen a row
-  of that table to make a proxied setup work.
-- **The choice exists only at setup.** No switch turns it on later — on a running deployment with members, it would hand
-  the admin role to whoever sits at the server. `runtime-config.localSignIn` says the deployment has an owner (a
-  deployment fact, cacheable); whether *this* request is local is never in a response. The owner sees **no sign-out**
+- **The doors exist only where the deployment says it is one computer — `LOCAL_OWNER_ENABLED=on`, which only
+  `apps/desktop/src/stack.ts` sets.** Then **"this computer" is one decision, `lib/local-request.ts`**
+  (`localOwnerDoorOpen`): a loopback socket, a loopback `Host`, no `Forwarded`/`X-Forwarded-*`/`X-Real-IP`, and an
+  allowed `Origin` **on a loopback host**. Both doors ask it — the sign-in at the HTTP edge (`auth/http-surface.ts`,
+  because the library's handler sees no socket) and the claim in its route. A refused sign-in gets the same 404 as a
+  deployment with no local owner; a refused claim gets 403 `setup_local_unavailable`, which tells the console to offer
+  the account path. ⚠️ **The request rows stop browsers, not programs**: a non-browser client writes
+  `Host` and `Origin` itself, so they rest on the socket, and any same-host relay that adds no header (`socat`, an SSH
+  tunnel, `ngrok tcp`, nginx with a bare `proxy_pass`) makes a remote request loopback. That is why the switch exists
+  and is off on servers; on the installer the README says relaying its ports hands out the owner's session.
+  **`docker compose` never qualifies** (no switch, and the peer is a bridge address). Do not loosen a row of that table
+  to make a proxied setup work.
+- **The choice of owner exists only at setup.** The switch says whether the doors exist, not who the owner is — no
+  switch turns a running deployment with members into one where whoever sits at the server is its administrator.
+  `GET /v2/setup` carries `localOwner` (the switch) so the console offers that path only where it can work, and
+  `runtime-config.localSignIn` says the switch is on **and** the deployment has an owner (deployment facts, cacheable);
+  whether *this* request is local is never in a response. The owner sees **no sign-out**
   (web header, console) because the next page load signs it straight back in; `ViewerDto.localOwner` is what hides it.
 
 ### Audit records
@@ -5380,6 +5404,12 @@ something the user did not start      nothing       auto-sync · prefetch · per
   managed routing failure both folded into the generic sentence and both offered a retry that could not work.
   A local save failure is the same axis (`ChatPersistenceError`) — folded, the screen says the response was not
   received, and **that sentence is false**.
+- **That limiter's address is decided from the socket, not read from the client** (`lib/client-ip.ts`, applied in
+  `app.ts` before `auth.handler`; the library reads only the one header we set). Left to the library it read
+  `X-Forwarded-For` from the client: one forged value was a fresh bucket per request (unlimited password guessing) and
+  an absent one folded everyone into one bucket (one client locks out sign-in). Forwarding headers are believed only
+  from a peer in `AUTH_TRUSTED_PROXIES`; `AUTH_IP_HEADER` alone keeps its old meaning (believed from any peer) and
+  warns that the port must be reachable only through that proxy.
   ⚠️ **The ladder also answers the turn where nothing failed.** A turn that ended normally with no body is discarded
   by the save rule and left unanswered (`resolveGenerationOutcome`), and `unanswered` is read in exactly one place —
   this ladder — whose first line used to be `if (!error) return null`. So that turn drew **nothing at all** on either

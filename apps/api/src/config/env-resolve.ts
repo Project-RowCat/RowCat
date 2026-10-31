@@ -78,10 +78,12 @@ export interface ResolvedEnvironment {
 	trustedOrigins: string[];
 	/** True when `AUTH_TRUSTED_ORIGINS` is empty and the CORS list is reused. */
 	trustedOriginsDerived: boolean;
-	/** Proxy IPs/CIDRs the login limiter trusts. Empty means only single-value headers are trusted. */
+	/** Proxy IPs/CIDRs the login limiter trusts. Empty means the socket peer is the client. */
 	authTrustedProxies: string[];
-	/** Client-IP header the proxy overwrites; `null` means `X-Forwarded-For`. */
+	/** Client-IP header the proxy overwrites; `null` means none (`lib/client-ip.ts` decides). */
 	authIpHeader: string | null;
+	/** Whether the local owner's two doors open at all (`LOCAL_OWNER_ENABLED=on`). */
+	localOwnerEnabled: boolean;
 
 	googleEnabled: boolean;
 	/** Sign in with Apple config; `null` leaves that method off. */
@@ -318,8 +320,14 @@ export function resolveEnvironment(
 			authIpHeader === null
 		)
 			warnings.push(
-				"AUTH_TRUSTED_PROXIES and AUTH_IP_HEADER are both empty — behind a proxy the sign-in and sign-up limiters are bypassed by one X-Forwarded-For line (one value) or everyone shares one bucket (two or more values)",
+				"AUTH_TRUSTED_PROXIES and AUTH_IP_HEADER are both empty — the sign-in and sign-up limiters count by the connecting address. Behind a proxy or CDN that address is the proxy, so every visitor shares one bucket: list the proxy in AUTH_TRUSTED_PROXIES",
 			);
+		if (authIpHeader !== null && authTrustedProxies.length === 0)
+			warnings.push(
+				`AUTH_IP_HEADER=${authIpHeader} with no AUTH_TRUSTED_PROXIES — that header is believed from any connection, so the API port must be reachable only through the proxy that sets it. List the proxy in AUTH_TRUSTED_PROXIES to believe it only from there`,
+			);
+
+		const localOwnerEnabled = env.LOCAL_OWNER_ENABLED === "on";
 
 		/** Social login turns on only when **both** credentials are present. */
 		const googleEnabled = Boolean(
@@ -525,6 +533,7 @@ export function resolveEnvironment(
 				trustedOriginsDerived,
 				authTrustedProxies,
 				authIpHeader,
+				localOwnerEnabled,
 				googleEnabled,
 				appleSignIn,
 				kakaoEnabled,

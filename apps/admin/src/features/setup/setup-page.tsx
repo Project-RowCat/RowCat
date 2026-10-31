@@ -58,8 +58,9 @@ import {
  *
  * **On the computer the API runs on, the first offer is to skip accounts entirely** (the local owner,
  * `@rowcat/contracts`'s `deployment-setup.ts`): a name and the code, and this computer is signed in from
- * then on. It is offered only at a loopback address — anywhere else the server would refuse it — and
- * the account path stays one press away for a deployment other people will sign in to.
+ * then on. It is offered only when the deployment allows it (the one-computer installer turns that on)
+ * and at a loopback address — anywhere else the server would refuse it — and the account path stays
+ * one press away for a deployment other people will sign in to.
  */
 export function SetupPage() {
 	const client = getRowCatClient();
@@ -113,7 +114,12 @@ export function SetupPage() {
 		case "closed":
 			return <ClosedStep operator={view.operator} />;
 		case "account":
-			return <AccountStep claimLocal={claimLocal} />;
+			return (
+				<AccountStep
+					claimLocal={claimLocal}
+					localOwner={statusQuery.data?.localOwner ?? false}
+				/>
+			);
 		case "code":
 			return <CodeStep nickname={view.nickname} claim={claim} />;
 		case "done":
@@ -178,17 +184,20 @@ function ClosedStep({ operator }: { operator: boolean }) {
 
 function AccountStep({
 	claimLocal,
+	localOwner,
 }: {
 	claimLocal: UseMutationResult<
 		SetupClaimResponse,
 		Error,
 		SetupClaimLocalRequest
 	>;
+	/** The deployment allows a local owner at all (`SetupStatusDto.localOwner`); a server says no. */
+	localOwner: boolean;
 }) {
 	const queryClient = useQueryClient();
 	const [withAccount, setWithAccount] = useState(false);
 
-	if (onThisComputer() && !withAccount)
+	if (localOwner && onThisComputer() && !withAccount)
 		return (
 			<Frame
 				title={`Set up ${APP_NAME}`}

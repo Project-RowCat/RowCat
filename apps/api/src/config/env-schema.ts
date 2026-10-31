@@ -107,19 +107,32 @@ export const EnvSchema = z.object({
 	 */
 	AUTH_COOKIE_DOMAIN: z.string().default(""),
 	/**
-	 * How the login/signup limiters read the client IP. One of the two must be set for the limiter to
-	 * work behind a proxy.
+	 * How the login/signup limiters find the client address (`lib/client-ip.ts`). With both empty it
+	 * is the connecting socket, which is right when the API is reached directly; behind a proxy every
+	 * visitor arrives from the proxy and shares its bucket, so one of the two is needed there.
 	 *
-	 * Better Auth defaults to `X-Forwarded-For`. Without trusted proxies, a single-value header is
-	 * trusted as-is (bypassable with one header line) and a multi-value one yields IP `null` (everyone
-	 * shares one bucket, so one attacker can lock out the whole deployment's logins).
-	 *
-	 * `AUTH_TRUSTED_PROXIES` is CDN/load balancer IPs or CIDRs (CSV); the chain is walked from the
-	 * right and the first untrusted hop is the client. `AUTH_IP_HEADER` is a single header the proxy
-	 * **overwrites** (e.g. `cf-connecting-ip`) and is checked first. Both empty warns in production.
+	 * `AUTH_TRUSTED_PROXIES` is CDN/load balancer IPs or CIDRs (CSV). Forwarding headers are believed
+	 * only from a connection in this list; `X-Forwarded-For` is walked from the right and the first
+	 * untrusted hop is the client. `AUTH_IP_HEADER` is a single header the proxy **overwrites** (e.g.
+	 * `cf-connecting-ip`) and is checked first; set alone it is believed from any connection, so the
+	 * API port must then be reachable only through that proxy. Both empty warns in production.
 	 */
 	AUTH_TRUSTED_PROXIES: z.string().default(""),
 	AUTH_IP_HEADER: z.string().default(""),
+	/**
+	 * Whether this deployment may have a local owner: the administrator created at first setup with
+	 * no account, whom a browser on the same computer is then signed in as (`POST /v2/setup/claim-local`,
+	 * `POST /v2/auth/local-sign-in`). Only `"on"` opens those two doors; otherwise the claim answers 403
+	 * `setup_local_unavailable` (the console then offers the account path) and the sign-in answers 404.
+	 *
+	 * The one-computer installer sets it (`apps/desktop/src/stack.ts`); a server deployment leaves it
+	 * empty. The doors also ask whether the request is from this computer (`lib/local-request.ts`), but
+	 * that answer rests on the TCP peer being loopback, and anything on the same machine that relays
+	 * remote traffic without announcing itself — `socat`, an SSH tunnel, `ngrok tcp`, nginx with a bare
+	 * `proxy_pass` — makes every remote request loopback. On a server that is a normal shape, so the
+	 * deployment states the fact instead of the request proving it.
+	 */
+	LOCAL_OWNER_ENABLED: z.string().default(""),
 	GOOGLE_CLIENT_ID: z.string().default(""),
 	GOOGLE_CLIENT_SECRET: z.string().default(""),
 	/*

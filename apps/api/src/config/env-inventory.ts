@@ -365,6 +365,20 @@ export const ENVIRONMENT_INVENTORY: readonly EnvironmentVariableDefinition[] = [
 		operator: { productionRelevant: true },
 	},
 	{
+		/**
+		 * Not in compose: a compose deployment is reached over a network, its peer is never loopback, and
+		 * it sets up with an account. The one-computer installer passes it directly.
+		 */
+		key: "LOCAL_OWNER_ENABLED",
+		group: "auth",
+		sensitivity: "non-secret",
+		surfaces: {
+			apiRuntime: true,
+			rootExample: "absent",
+			apiExample: "documented",
+		},
+	},
+	{
 		key: "GOOGLE_CLIENT_ID",
 		group: "auth",
 		sensitivity: "public",

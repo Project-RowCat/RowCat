@@ -109,6 +109,12 @@ export async function startStack(options: {
 				BETTER_AUTH_SECRET: settings.authSecret,
 				API_ORIGIN: origins.api,
 				WEB_ORIGIN: `${origins.web},${origins.console}`,
+				/**
+				 * This installation is one person's computer, so first setup may skip accounts (the
+				 * local owner). A server deployment leaves it off: its doors would otherwise trust any
+				 * same-host relay as "this computer" (`apps/api/src/lib/local-request.ts`).
+				 */
+				LOCAL_OWNER_ENABLED: "on",
 			},
 			(line) => {
 				log("api", line);

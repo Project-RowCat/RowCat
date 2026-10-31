@@ -673,27 +673,29 @@ describe.skipIf(!databaseReady)("old session", () => {
 	});
 
 	/**
-	 * Setting a password still works. That path requires an authoritative session, not a fresh one;
-	 * the asymmetry is the library's and we neither imitate nor match it. Adding a freshness check to
-	 * match would stop a passwordless account from creating one just because it has been signed in for
-	 * a long time.
+	 * Setting a password needs a recent sign-in too, though the library asks only for a session. A
+	 * password is a new permanent way in: without the check, a stolen cookie of any age on a
+	 * social-only account sets one, signs in with it for a fresh session, and from there unlinks the
+	 * owner's provider. The cost is one more social sign-in for someone signed in longer than a day.
 	 */
-	test("setting a password does not require freshness", async () => {
+	test("setting a password requires a recent sign-in, and nothing is written", async () => {
 		const erin = await signUp();
 		await linkGoogle(erin.authUserId);
 		await dropCredential(erin.authUserId);
 		await makeStale(erin.authUserId);
 
-		expect(
-			(
-				await apiPost(
-					"/me/account/password",
-					{ newPassword: "stale-session-secret" },
-					erin.cookie,
-				)
-			).status,
-		).toBe(200);
-		expect((await signIn(erin.email, "stale-session-secret")).status).toBe(200);
+		const response = await apiPost(
+			"/me/account/password",
+			{ newPassword: "stale-session-secret" },
+			erin.cookie,
+		);
+		expect(response.status).toBe(403);
+		expect((await response.json()) as { code: string }).toMatchObject({
+			code: "recent_login_required",
+		});
+		expect((await signIn(erin.email, "stale-session-secret")).status).not.toBe(
+			200,
+		);
 	});
 });
 

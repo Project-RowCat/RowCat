@@ -75,6 +75,11 @@ export const trustedOrigins = config.trustedOrigins;
 /** IP basis of the login limiter: trusted proxy list and the header the proxy overwrites (`env-schema.ts`). */
 export const authTrustedProxies = config.authTrustedProxies;
 export const authIpHeader = config.authIpHeader;
+/**
+ * Whether the local owner's doors open at all (`LOCAL_OWNER_ENABLED=on`, set by the one-computer
+ * installer). Each door still asks whether the request is from this computer.
+ */
+export const localOwnerEnabled = config.localOwnerEnabled;
 
 /** Google sign-in turns on only when both credentials are present; a half configuration is a runtime 500. */
 export const googleEnabled = config.googleEnabled;

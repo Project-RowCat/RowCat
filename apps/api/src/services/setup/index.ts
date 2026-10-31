@@ -7,7 +7,7 @@ import {
 import { eq, isNotNull } from "drizzle-orm";
 import { db } from "../../db/client.ts";
 import { deployment_setup, member } from "../../db/schema.ts";
-import { env } from "../../env.ts";
+import { env, localOwnerEnabled } from "../../env.ts";
 import { recordAudit } from "../admin/audit.ts";
 
 /**
@@ -115,13 +115,19 @@ export async function prepareDeploymentSetup(): Promise<SetupBootState> {
  * Open means the row exists and was never completed. No row is closed: without a salt there is no
  * code anyone could hold, and saying "open" would draw a form that can only fail.
  */
-export async function readSetupStatus(): Promise<{ open: boolean }> {
+export async function readSetupStatus(): Promise<{
+	open: boolean;
+	localOwner: boolean;
+}> {
 	const [row] = await db
 		.select({ completedAt: deployment_setup.completed_at })
 		.from(deployment_setup)
 		.where(eq(deployment_setup.id, SETUP_ROW_ID))
 		.limit(1);
-	return { open: !!row && row.completedAt === null };
+	return {
+		open: !!row && row.completedAt === null,
+		localOwner: localOwnerEnabled,
+	};
 }
 
 export type SetupClaimOutcome = "claimed" | "closed" | "invalid";

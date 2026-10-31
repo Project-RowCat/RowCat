@@ -594,14 +594,31 @@ describe("the IP basis of the sign-in limiter", () => {
 				warning.includes("AUTH_TRUSTED_PROXIES"),
 			),
 		).toBe(true);
-		const withHeader = report({
+		const withBoth = report({
 			...PRODUCTION,
 			AUTH_IP_HEADER: "cf-connecting-ip",
+			AUTH_TRUSTED_PROXIES: "10.0.0.0/8",
 		});
 		expect(
-			withHeader.warnings.some((warning) =>
+			withBoth.warnings.some((warning) =>
 				warning.includes("AUTH_TRUSTED_PROXIES"),
 			),
+		).toBe(false);
+	});
+
+	/**
+	 * A header alone is believed from any connection (`lib/client-ip.ts`), so it is safe only when the
+	 * port is reachable through that proxy alone; the warning says so rather than the "both empty" one.
+	 */
+	test("a header with no proxy list warns that it is believed from anyone", () => {
+		const built = report({ ...PRODUCTION, AUTH_IP_HEADER: "cf-connecting-ip" });
+		expect(
+			built.warnings.some((warning) =>
+				warning.includes("believed from any connection"),
+			),
+		).toBe(true);
+		expect(
+			built.warnings.some((warning) => warning.includes("both empty")),
 		).toBe(false);
 	});
 });

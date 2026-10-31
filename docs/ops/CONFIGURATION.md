@@ -207,7 +207,10 @@ docker compose up -d api
 관리형 생성          OPENROUTER_API_KEY 없음 → 관리형 생성만 503, BYO는 이 서버를 지나지 않으므로 그대로 된다
 연령 게이트          MEMBERSHIP_AGE_GATE 없음 → 연령을 묻지 않는다
 모바일 OTA 발행      OTA_CI_* 없음 → 콘솔은 읽기·비율·중지·재개, 발행·되돌림은 CLI
-로그인 리미터 IP     AUTH_TRUSTED_PROXIES·AUTH_IP_HEADER 없음 → 프록시 뒤라면 경고(부팅은 한다)
+로그인 리미터 IP     AUTH_TRUSTED_PROXIES·AUTH_IP_HEADER 없음 → 접속한 소켓 주소로 센다. 프록시 뒤라면 모두가
+                     프록시 하나의 버킷을 나눠 쓰므로 경고(부팅은 한다)
+로컬 소유자          LOCAL_OWNER_ENABLED 없음 → 계정 없는 첫 설정은 403(setup_local_unavailable), 그 로그인은 404.
+                     켜는 곳은 데스크톱 설치본뿐이다
 ```
 
 미디어 저장소는 이 표에 없다 — 바이트는 Postgres(`media_blob`)에 들어가고 설정할 변수가 없다.
@@ -217,6 +220,23 @@ docker compose up -d api
 ```bash
 pnpm env:doctor --mode production --file .env
 ```
+
+### 프록시 뒤 — 로그인 리미터가 세는 주소
+
+로그인·가입 리미터는 클라이언트가 보낸 헤더가 아니라 **API에 연결한 소켓**에서 주소를 정한다(`lib/client-ip.ts`).
+전달 헤더(`X-Forwarded-For`, `AUTH_IP_HEADER`)는 연결한 쪽이 `AUTH_TRUSTED_PROXIES`에 있을 때만 믿는다.
+
+```text
+API 포트에 직접 닿는다              둘 다 비운다 — 연결한 주소가 곧 클라이언트
+CDN → API                          CDN의 대역을 AUTH_TRUSTED_PROXIES에
+CDN → 호스트 nginx → API            CDN 대역과 **nginx의 주소**(compose면 도커 브리지 대역, 예: 172.16.0.0/12) 둘 다
+AUTH_IP_HEADER만                    어느 연결에서 와도 믿는다 — API 포트가 그 프록시로만 닿을 때만 쓴다
+```
+
+⚠ **예전 설정에서 바뀐 점.** 2026-10-31 전에는 연결한 쪽을 보지 않고 `X-Forwarded-For`를 오른쪽부터 걸었으므로
+CDN 대역만 적어도 됐다. 이제 API에 **실제로 연결하는 홉**(호스트 프록시, 도커 브리지, 터널)이 목록에 없으면 모든
+방문자가 그 홉 하나로 세어져 로그인 버킷을 나눠 쓴다. 그 모양이 보이면 API가 한 번 경고한다
+(`[auth] a request with forwarding headers came from a connection outside AUTH_TRUSTED_PROXIES`).
 
 ## 첫 실행 — 첫 관리자와 콘솔의 준비 상태
 

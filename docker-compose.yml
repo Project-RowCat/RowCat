@@ -124,8 +124,10 @@ services:
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET is required - openssl rand -base64 32}
       AUTH_TRUSTED_ORIGINS: ${AUTH_TRUSTED_ORIGINS:-}
       AUTH_COOKIE_DOMAIN: ${AUTH_COOKIE_DOMAIN:-}
-      # What the sign-in limiter reads the client IP from. Behind a CDN/LB one of the two is required
-      # (without it, one header line bypasses the limit or everyone shares one bucket); see env-schema.ts.
+      # How the sign-in limiter finds the client. Both empty: the connecting address (right when this port
+      # is reached directly). Behind a CDN/LB/host proxy, list the hop that connects to the API in
+      # AUTH_TRUSTED_PROXIES, or every visitor shares the proxy's bucket. AUTH_IP_HEADER alone is believed
+      # from any connection, so this port must then be reachable only through that proxy; see env-schema.ts.
       AUTH_TRUSTED_PROXIES: ${AUTH_TRUSTED_PROXIES:-}
       AUTH_IP_HEADER: ${AUTH_IP_HEADER:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}

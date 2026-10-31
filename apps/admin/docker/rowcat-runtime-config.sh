@@ -15,8 +15,10 @@ origin="${VITE_API_ORIGIN:-$ROWCAT_DEFAULT_API_ORIGIN}"
 
 # The value lands in HTML and an nginx directive. An origin is scheme, host and an optional port —
 # anything else (a path, a quote, a space) is refused rather than escaped, and the container stops
-# instead of serving a console that calls the wrong place.
-if ! printf '%s' "$origin" | grep -Eq '^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?$'; then
+# instead of serving a console that calls the wrong place. grep matches line by line, so a value
+# with a newline would pass on its first line alone; it is refused before grep sees it.
+if [ "$(printf '%s' "$origin" | wc -l)" -ne 0 ] ||
+	! printf '%s' "$origin" | grep -Eq '^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?$'; then
 	echo "rowcat-admin: VITE_API_ORIGIN must be an origin like https://api.example.com (got: $origin)" >&2
 	exit 1
 fi

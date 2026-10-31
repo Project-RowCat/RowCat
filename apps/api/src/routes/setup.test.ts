@@ -166,7 +166,8 @@ describe.skipIf(!databaseReady)("first-run setup — status", () => {
 	test("open while the row is not completed, closed after", async () => {
 		const open = await get("/v2/setup", null);
 		expect(open.status).toBe(200);
-		expect(await open.json()).toEqual({ open: true });
+		/** `localOwner` is the deployment's switch, on in this suite's env (`vitest.config.ts`). */
+		expect(await open.json()).toEqual({ open: true, localOwner: true });
 		/** Changes once, in one request; a shared cache holding `open: true` would draw a form that can only fail. */
 		expect(open.headers.get("cache-control")).toBe("private, no-cache");
 
@@ -176,6 +177,7 @@ describe.skipIf(!databaseReady)("first-run setup — status", () => {
 			.where(eq(deployment_setup.id, ROW_ID));
 		expect(await (await get("/v2/setup", null)).json()).toEqual({
 			open: false,
+			localOwner: true,
 		});
 	});
 
@@ -183,6 +185,7 @@ describe.skipIf(!databaseReady)("first-run setup — status", () => {
 		await db.delete(deployment_setup).where(ownRow);
 		expect(await (await get("/v2/setup", null)).json()).toEqual({
 			open: false,
+			localOwner: true,
 		});
 	});
 
@@ -224,6 +227,7 @@ describe.skipIf(!databaseReady)("first-run setup — claim", () => {
 		expect(await roleOf(someone.memberId)).toBe("user");
 		expect(await (await get("/v2/setup", null)).json()).toEqual({
 			open: true,
+			localOwner: true,
 		});
 	});
 
@@ -329,6 +333,7 @@ describe.skipIf(!databaseReady)("first-run setup — without signing in", () => 
 
 		expect(await (await get("/v2/setup", null)).json()).toEqual({
 			open: true,
+			localOwner: true,
 		});
 		expect((await localSignIn()).status).toBe(404);
 	});

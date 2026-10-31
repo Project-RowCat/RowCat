@@ -6,6 +6,7 @@ import type {
 import { PASSWORD_LENGTH } from "@rowcat/contracts";
 import { canDisconnectLoginMethod } from "@rowcat/domain";
 import { auth } from "../../auth/index.ts";
+import { requireFreshSession } from "../../auth/session-id.ts";
 import { badRequest, forbidden, unauthorized } from "../../lib/errors.ts";
 
 /**
@@ -224,11 +225,19 @@ async function callAuth<T>(run: () => Promise<T>): Promise<T> {
  * logged; this function's argument is plaintext. The existing-password check is left to the library
  * (`PASSWORD_ALREADY_SET`) because a check before the write leaves a window for another device to
  * set one; the decision belongs where the write is.
+ *
+ * **It requires a recent sign-in, which the library does not.** A password is a new permanent way
+ * in, the same capability passkey registration is fresh-gated for: without the check, a stolen
+ * cookie of any age on a social-only account sets a password, signs in with it for a fresh session,
+ * and from there unlinks the owner's provider, deletes their passkeys and enables two-factor — the
+ * owner is locked out of their own account. The cost is one more social sign-in for someone who has
+ * been signed in longer than a day, the same step unlinking already asks for.
  */
 export async function setAccountPassword(
 	headers: Headers,
 	newPassword: string,
 ): Promise<AccountDetailsDto> {
+	await requireFreshSession(headers);
 	try {
 		await callAuth(() =>
 			auth.api.setPassword({ headers, body: { newPassword } }),
