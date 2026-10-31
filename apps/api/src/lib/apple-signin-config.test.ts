@@ -20,7 +20,7 @@ const p256 = () =>
 	});
 
 const filled = (privateKey: string) => ({
-	clientId: "com.projectrowcat.web",
+	clientId: "com.example.web",
 	teamId: "ABCDE12345",
 	keyId: "KEY1234567",
 	privateKey,
@@ -163,7 +163,7 @@ describe("createAppleClientSecretSigner", () => {
 		expect(header.alg).toBe("ES256");
 		expect(header.kid).toBe("KEY1234567");
 		expect(payload.iss).toBe("ABCDE12345");
-		expect(payload.sub).toBe("com.projectrowcat.web");
+		expect(payload.sub).toBe("com.example.web");
 		expect(payload.aud).toBe("https://appleid.apple.com");
 		expect(payload.exp).toBeGreaterThan(payload.iat);
 	});

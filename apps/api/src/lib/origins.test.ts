@@ -58,11 +58,11 @@ describe("createCorsOriginMatcher", () => {
 		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 		const match = createCorsOriginMatcher(allowed);
 
-		match("https://project-rowcat.dev");
-		match("https://project-rowcat.dev");
+		match("https://not-allowed.example");
+		match("https://not-allowed.example");
 
 		expect(warn).toHaveBeenCalledTimes(1);
-		expect(warn.mock.calls[0]?.[0]).toContain("https://project-rowcat.dev");
+		expect(warn.mock.calls[0]?.[0]).toContain("https://not-allowed.example");
 		warn.mockRestore();
 	});
 

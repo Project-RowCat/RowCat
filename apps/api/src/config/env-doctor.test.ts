@@ -486,7 +486,7 @@ describe("no secret in the output", () => {
 		IDENTITY_VERIFICATION_PROVIDER: "portone",
 		PORTONE_STORE_ID: "store-abc",
 		PORTONE_IDENTITY_CHANNEL_KEY: "channel-abc",
-		APPLE_SIGN_IN_CLIENT_ID: "com.projectrowcat.web",
+		APPLE_SIGN_IN_CLIENT_ID: "com.example.web",
 		APPLE_SIGN_IN_TEAM_ID: "ABCDE12345",
 		APPLE_SIGN_IN_KEY_ID: "KEYID12345",
 		MEMBERSHIP_AGE_GATE: "on",
@@ -536,7 +536,7 @@ describe("no secret in the output", () => {
 		});
 		const text = renderDoctorText(built);
 		expect(text).toContain("https://admin.example.com");
-		expect(text).toContain("com.projectrowcat.web");
+		expect(text).toContain("com.example.web");
 	});
 
 	test("not in the output for an invalid config either", () => {

@@ -26,9 +26,12 @@ const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 /**
  * The string to find, assembled **so that the value never appears verbatim in this file**. Written
  * out, the check would catch itself, and once that line went on the allowlist anything in this file would pass.
+ *
+ * Any top-level domain, not only the one the service ran on: a test fixture once used the same name
+ * under another TLD as its "rejected origin", which is a real, registrable host and the same identity.
  */
 const OPERATOR_DOMAIN = new RegExp(
-	`${["project", "rowcat"].join("-")}\\.com`,
+	`${["project", "rowcat"].join("-")}\\.[a-z]{2,}\\b`,
 	"i",
 );
 

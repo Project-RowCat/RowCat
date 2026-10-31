@@ -1580,7 +1580,7 @@ POST /v2/auth/reset-password           token + new password
   and takes the verification origin from the `Origin` header — both wrong wherever web and API sit on different
   hosts. **If rpID does not
   cover the origin, boot is blocked** (`lib/webauthn-config.ts` — the suffix comparison **also checks the dot
-  boundary**: with `endsWith` alone, `evil-rowcat.com` passes for `rowcat.com`). When they are mismatched the
+  boundary**: with `endsWith` alone, `evil-example.com` passes for `example.com`). When they are mismatched the
   symptom is not an error but the browser refusing registration, and nothing appears in the server log.
 - **Passkeys do not create accounts** (`registration.requireSession` at its default). That default incidentally
   buys one more thing — the plugin requires a **fresh session** to issue registration options, which is what

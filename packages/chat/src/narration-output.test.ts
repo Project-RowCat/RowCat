@@ -13,23 +13,29 @@ import {
  * The real pack body cannot be checked here, because this package does not depend on
  * @rowcat/prompt-packs (weight). That comparison lives at the app assembly point,
  * apps/web/src/test/prompt-pack-parity.test.ts.
+ *
+ * The fixture lines are written for this test, not copied from a pack: the public release carries
+ * no pack text at any commit (docs/chat/NARRATION.md). Only the block names the code itself matches
+ * (`Character Database`, `RELATION DATABASE`, `NARRATIVE NAVIGATOR`, `Logic`) are the pack's.
  */
 
 describe("stripping lines that instruct a character status table", () => {
 	it("only lines with that vocabulary disappear and the rest stays", () => {
 		const body = [
 			"# OUTPUT STRUCTURE",
-			"- All tracking blocks (status displays, relation databases, persona-defined blocks) appear below story output",
-			"- Images NOT consecutive",
-			"`Status 1 → Logic → Story → Character Database (if present, RELATION DATABASE)`",
-			"- Position: BEFORE memory block. After Relation Database",
+			"- Put every tracking block, relation databases included, under the story",
+			"- Never put two images in a row",
+			"`Order: status, Logic, story, then the Character Database (RELATION DATABASE)`",
+			"- Sits ahead of the memory block and follows the Relation Database",
 			"- 마지막 줄",
 		].join("\n");
 
 		expect(stripCastTrackingLines(body)).toBe(
-			["# OUTPUT STRUCTURE", "- Images NOT consecutive", "- 마지막 줄"].join(
-				"\n",
-			),
+			[
+				"# OUTPUT STRUCTURE",
+				"- Never put two images in a row",
+				"- 마지막 줄",
+			].join("\n"),
 		);
 	});
 
@@ -38,21 +44,22 @@ describe("stripping lines that instruct a character status table", () => {
 		for (const line of [
 			"<details><summary>Character Database</summary>",
 			"# RELATION DATABASE",
-			"After Relation Database",
+			"follows the Relation Database",
 			"relation databases",
 		])
 			expect(stripCastTrackingLines(`앞\n${line}\n뒤`)).toBe("앞\n뒤");
 	});
 
 	it("the original when nothing matches", () => {
-		const body = "# NARRATIVE NAVIGATOR\n- Position: TOP of every response";
+		const body =
+			"# NARRATIVE NAVIGATOR\n- Draw this table at the top of each reply";
 		expect(stripCastTrackingLines(body)).toBe(body);
 	});
 
 	it("leaves lines describing the `Logic` block alone", () => {
 		const body = [
 			"<details><summary>Logic</summary>",
-			"- Treat as persistent database: update values as needed",
+			"- Keep it as a running database and update it every turn",
 			"</details>",
 		].join("\n");
 		expect(stripCastTrackingLines(body)).toBe(body);
@@ -90,8 +97,8 @@ describe("output policy", () => {
 describe("body + policy", () => {
 	const body = [
 		"# NARRATIVE NAVIGATOR",
-		"- Position: TOP of every response",
-		"- All tracking blocks (status displays, relation databases) appear below story output",
+		"- Draw this table at the top of each reply",
+		"- Put every tracking block, relation databases included, under the story",
 	].join("\n");
 
 	it("the policy stands **after** the body: before it, recency would override it", () => {
@@ -104,7 +111,7 @@ describe("body + policy", () => {
 
 	it("with character cards off, narrowing and the prohibition apply **together**", () => {
 		const applied = applyNarrationOutputPolicy(body, { castTracking: false });
-		expect(applied).not.toContain("appear below story output");
+		expect(applied).not.toContain("under the story");
 		expect(applied).toContain("사용하지 않습니다");
 	});
 

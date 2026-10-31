@@ -43,6 +43,14 @@ docker-compose.override.yml
 *.local
 .dev.vars
 .dev.vars.*
+# Other files that hold credentials by convention. None is used by this repository; the rules exist
+# so a token written by a tool (`npm login`, direnv, `eas credentials`, a Firebase console download)
+# does not reach a public commit through `git add -A`.
+.npmrc
+.envrc
+credentials.json
+google-services.json
+GoogleService-Info.plist
 
 # test / coverage
 coverage

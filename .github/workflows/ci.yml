@@ -4,6 +4,7 @@
 #   journeys   the browser journeys (e2e/, Playwright) on the real API, web and generation stub
 #   compose    the production compose stack built from this commit, booted and set up
 #              (scripts/compose-smoke.sh — docs/ops/CLEAN-INSTALL.md as a script)
+#   secrets    gitleaks over every commit's added lines, against .gitleaksignore
 #
 # images.yml and mcp-publish.yml publish only a commit this workflow passed on
 # (scripts/ci-passed.sh), so every job here is a release gate, not advice.
@@ -169,3 +170,27 @@ jobs:
       # Builds api, web and admin from this commit (never the published `latest`), boots the stack
       # with generated secrets, claims first-run setup, and tears everything down.
       - run: bash scripts/compose-smoke.sh --build
+
+  # Every commit's added lines, across the whole history this checkout has, through gitleaks. The
+  # allowlist is .gitleaksignore: one line per value a person checked, pinned to its line number, so a
+  # line that moves or a new value is reported again. For a while the scan was a command in that file's
+  # header and nothing ran it; the allowlist went stale without anyone noticing
+  # (docs/oss/DISCLOSURE-AUDIT.md).
+  #
+  # The image is pinned by digest, has no network, and sees the checkout read-only. safe.directory is
+  # set because the container's user does not own the runner's checkout.
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - run: >-
+          docker run --rm --network none
+          -v "$PWD:/repo:ro" -w /repo
+          -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/repo
+          zricethezav/gitleaks:v8.21.2@sha256:0e99e8821643ea5b235718642b93bb32486af9c8162c8b8731f7cbdc951a7f46
+          detect --source . --redact --exit-code 1

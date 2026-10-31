@@ -29,8 +29,8 @@ const originHost = (origin: string): string => new URL(origin).hostname;
 
 /**
  * Whether the rpID is usable for that host. WebAuthn requires the rpID to equal the origin host or
- * be a registrable suffix of it. Plain `endsWith` would let `evil-rowcat.com` pass for
- * `rowcat.com`, so the dot boundary is checked too; that one character is half this function's
+ * be a registrable suffix of it. Plain `endsWith` would let `evil-example.com` pass for
+ * `example.com`, so the dot boundary is checked too; that one character is half this function's
  * reason to exist.
  */
 export const rpIdCoversHost = (rpId: string, host: string): boolean =>
