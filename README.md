@@ -120,7 +120,8 @@ build with `ROWCAT_IMAGE_TAG=sha-<commit>`; a fork that publishes its own images
 builds, opened in its own window on `localhost`. Build the three apps, then
 `pnpm --filter @rowcat/desktop package` writes an installer for the OS you run it on to `apps/desktop/out/`.
 It is unsigned until a deployment signs it with its own certificates (`apps/desktop/README.md`). A `desktop-<date>`
-tag publishes the Windows installer as a GitHub release (`.github/workflows/desktop-release.yml`).
+tag publishes the Windows installer as a GitHub release (`.github/workflows/desktop-release.yml`), and installed
+Windows copies update themselves from those releases.
 
 ## Repository map
 

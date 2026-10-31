@@ -108,7 +108,7 @@ docker compose up -d   # api, web, admin을 받아 오고 Postgres와 Redis도 �
 자기 창에서 연다. 세 앱을 빌드한 뒤 `pnpm --filter @rowcat/desktop package`를 실행하면, 그 명령을 돌린 OS용
 설치 파일이 `apps/desktop/out/`에 생긴다. 배포하는 쪽이 자기 인증서로 서명하기 전까지는 서명되지 않은
 설치 파일이다(`apps/desktop/README.md`). `desktop-<날짜>` 태그를 푸시하면 Windows 설치 파일이 GitHub 릴리스로
-나간다(`.github/workflows/desktop-release.yml`).
+나가고(`.github/workflows/desktop-release.yml`), 설치된 Windows 앱은 그 릴리스로 스스로 업데이트한다.
 
 ## 저장소 지도
 

@@ -63,7 +63,7 @@ the `packageManager` field in the root `package.json` (`pnpm@10.34.5`) — do no
 | `apps/web/src/features/docs` | Public docs screens (`/docs/runtime/*`). Pulls in neither compiler nor VM |
 | `packages/runtime-ai-docs` | The **AI-readable corpus** — public docs + an API reference extracted from `@rowcat/runtime`'s own source. Generated and committed |
 | `packages/runtime-mcp` | The MCP tool layer — meaning, validation, limits, preview sessions. **Pure core**, no transport |
-| `apps/desktop` | The **one-computer installer** (Electron). Runs a bundled Postgres plus the API, web and console **build outputs unchanged** on `localhost` ports fixed at first run (`apps/desktop/README.md`) |
+| `apps/desktop` | The **one-computer installer** (Electron). Runs a bundled Postgres plus the API, web and console **build outputs unchanged** on `localhost` ports fixed at first run, and **replaces itself** with newer GitHub releases on Windows (`apps/desktop/README.md`) |
 | `apps/mcp` | The npm package `@rowcat/mcp`, whose `bin` is **`rowcat-mcp`** — the stdio MCP server and the **headless RowCat device** that reaches the creator's E2EE drafts. Package name and command name are different values and documentation keeps them apart |
 | `apps/mcp/README.md` ↔ `DEVELOPMENT.md` | **The first one ships.** `files` is `dist` · `README.md` · `LICENSE`, so the README is read on npm by people who do not have this repository — workspace commands, workflow names and release procedure belong to `DEVELOPMENT.md`, which is not packed |
 | `apps/web/src/features/conversation/conversation-viewport.tsx` | The **neutral geometry** shared by conversation rooms and runtime playback |
@@ -108,7 +108,7 @@ at greater length.
 | `runtime-renderer-native` | `runtime` (color decision), `runtime-host` (**only the `patches` subpath**), React and React Native (peer) | `apps/mobile`, authoring, compiler, the web renderer, `ui-native`, `ui-web`, SDK, query, Dexie, SQLite, Node, network, JSX prop spreading |
 | `runtime-ai-docs` | `runtime` (declarations), TypeScript **only in `source/api.ts`**, `node:fs` **only under `source/`** | `apps/*`, the compiler, the VM, React, DOM, network. Writing product prose in code — every sentence comes from the markdown |
 | `runtime-mcp` | `authoring`, `runtime-compiler`, `runtime-host`, `runtime-ai-docs`, zod; QuickJS and `node:*` **only in `node/host.ts`** | `apps/*`, `sdk`, `query`, `sync`, DB drivers, shells, `fetch`, `eval`. A second compiler, a second VM, a second authoring store |
-| `apps/desktop` | `domain` (identity only), `embedded-postgres`, Electron | Every other workspace package, `apps/*` source. **A desktop code path inside the API** — the servers run as published builds with environment variables, nothing else |
+| `apps/desktop` | `domain` (identity only), `embedded-postgres`, Electron, `electron-updater` (**only in `src/updater.ts`**) | Every other workspace package, `apps/*` source. **A desktop code path inside the API** — the servers run as published builds with environment variables, nothing else |
 | `apps/mcp` | `runtime-mcp`, `authoring`, `sdk`, `sync`, `contracts`, the MCP SDK | `apps/web`, `apps/api`, DB drivers, shells. Writing files anywhere but its own config; anything on **stdout** (that stream is JSON-RPC) |
 | `ui-web` | `design` | Feature code, API calls, `ui-native` |
 | `ui-native` | `design`, `@rn-primitives/*`, `lucide-react-native` | Feature code, API calls, `ui-web`, DOM libraries, product vocabulary (`Story`, `Viewer`, …) |
@@ -341,7 +341,8 @@ CDN           mobile-updates/assets/sha256/<hex>   immutable — the app downloa
   downloaded update runs on the **next cold start** — never mid-generation, mid-playback.
 - **Three "updates", never merged**: an OTA release, an **update note** (repository-authored, ships *inside* the
   JS bundle; the publisher only checks it exists), and **`app_update`** (the native floor rose). OTA publishing
-  never sends `app_update`.
+  never sends `app_update`. The desktop installer replacing itself and a web tab moving to a new build are two more
+  mechanisms, and neither touches any of these three (`## New code reaching what is already open`).
 - **The admin console expresses intent; CI produces code** (`/mobile-updates`, `docs/ota/ARCHITECTURE.md`
   §운영 제어면). Read, rollout, pause and resume go through the **same** `transitionRelease` the CLI uses (operator id
   from the session on the event row + one `admin_audit_log` row pointing at it, same transaction). `새 OTA 릴리스` and
@@ -1542,13 +1543,13 @@ POST /v2/auth/reset-password           token + new password
   account, quickly). The library answers an unknown address immediately and a known one only
   after this callback — awaiting SMTP there makes **response time** say "this address is registered" while the
   sentence stays the same. The price is that a send failure is a log line (no address, no URL), never the response.
-- **Unknown addresses get the same answer and no mail.** The screen's sentence always says *if an account exists*.
 - **The reset link lands on a web page and nowhere else** (`auth/password-reset-policy.ts`, `hooks.before`):
   `redirectTo` on the request and `callbackURL` on the link must be `http(s)` or a relative path. The library checks
   them against `trustedOrigins`, and that list holds `rowcat://`, which admits **the whole scheme** — so an
   unauthenticated request could have mailed a genuine reset link whose token went to whichever app claims the scheme.
   The app never uses either endpoint (it opens the web's `/reset-password`), so the native entry stays for sign-in,
   linking and verification and leaves reset alone. Refused before the handler, so no mail goes out.
+- **Unknown addresses get the same answer and no mail.** The screen's sentence always says *if an account exists*.
   Never mail "this address is not registered" — it lands with the address owner, who asked for nothing.
 - **Reset revokes every session — the opposite of change** (`revokeSessionsOnPasswordReset`). Whoever resets does not
   know the current password, and whoever does may already hold a session; a reset that leaves it alive adds a door
@@ -5172,6 +5173,84 @@ update note     here is what changed in this release
 Merged, **raising the floor becomes writing release notes**, and conversely shipping release notes requires locking the
 app.
 
+## New code reaching what is already open — desktop self-update, web build freshness
+
+**Two mechanisms that move a running copy onto newer code by themselves**, and both are deliberately silent. They
+are not an OTA release, not an update note and not `app_update` — none of the three is read, written or announced.
+
+```text
+desktop   apps/desktop/src/updater.ts        electron-updater over this repository's GitHub releases
+web       apps/web/src/lib/build-freshness/  BUILD_ID in the bundle ↔ /rowcat-build.json on the server
+```
+
+### Desktop — the installer replaces itself
+
+- **The feed is the repository the release ran in** (`GITHUB_REPOSITORY`, written into `app-update.yml` at
+  packaging by `scripts/build-app.ts`). No owner or repo literal exists anywhere — a fork's installers follow the
+  fork's releases. An installer packaged on a developer's computer has no feed and does not update itself; that is
+  the off state, not a failure.
+- **Windows only, and Linux as an AppImage** (`selfUpdateSupported`). macOS cannot: Squirrel.Mac installs only a
+  signed app. Do not "enable" it before the app is signed — the download succeeds and the install fails.
+- **Ask at launch and when the window comes forward, at most every 6 hours** (`updateCheckDue`). There is no timer.
+- **Download in the background, install on the next quit.** No dialog, notification or banner — a native box is
+  modal and on macOS refuses quit, and quitting already installs. The menu gains `다시 시작해서 업데이트`; only the
+  menu's `업데이트 확인…` answers in a box, because the person pressed it and is waiting.
+- **A launch that failed asks before it gives up** (up to 3 minutes for a download, then `업데이트하고 다시 시작` in
+  the error box). The next release is exactly what may fix a broken one; a copy that asked only after a successful
+  start would stay broken until someone found the release page.
+- **The servers stop before the installer starts.** The NSIS installer kills every process running from the install
+  folder by force, Postgres included. Installing now is `stack.stop()` then `quitAndInstall`; installing on quit
+  rides `before-quit` → `stack.stop()` → `app.exit(0)`, which still emits `quit` (where the updater spawns it).
+  **Every further quit is held until that stop has finished** (`stopped` in `main.ts`) — a second quit while the
+  servers stop would otherwise reach `quit` early and start the installer over a Postgres still shutting down.
+- **Never downgrade** (`allowDowngrade` false). The data folder has been migrated forward by the newer build.
+  ⚠️ **An `embedded-postgres` major bump cannot ship through this path** until the app upgrades its data folder —
+  the new binaries refuse the old cluster, and every updated copy fails to start.
+- **The release attaches the installer under the name electron-builder gave it** (`windowsInstallerName`) plus
+  `latest.yml` and the blockmap. `latest.yml` points at the installer by name, so a rename is a 404 for every copy.
+  The blockmap pays off from a copy's second update on; the first is a full download, because the updater finds
+  the old blockmap by swapping the version inside the URL and these URLs carry the date.
+- **A release that went out is never replaced.** Updates are accepted only when the version is higher, and the
+  version is the date — a rebuild under the same date reaches no one who took the first. Fix as the next date.
+- **Copies find their update through `/releases/latest`**, so desktop releases are published as full releases
+  marked `--latest` (unsigned is said in the notes, not by the prerelease flag). Prereleases stay off in the updater
+  on purpose: with them on it reads the first entry of `releases.atom`, and that feed lists **bare tags** — the
+  `mcp-v*` tag the npm publish pushes would become every copy's target. `channel` is not the fix either (it skips
+  every tag that is not semver, which is all of ours). So **`desktop-release.yml` must stay the only workflow that
+  publishes GitHub releases**: whichever release is "latest" is what every installed copy downloads. A release
+  another process needs as a file drop (the iOS submit example) is a **draft** (`docs/ota/example-workflows.md`).
+
+### Web — a tab left open across a deployment
+
+- **The switch rides a navigation the person already made.** A stale tab's next move **to another path** becomes a
+  document load; nothing reloads on focus, on a timer or mid-screen (not mid-generation, not mid-playback, not with a
+  composer half written). That rule is `navigationLeavesScreen`.
+- **Same-path navigations stay client renders** — a search change, a tab in the address, and above all a token
+  stripped from the address with `replace` (password reset holds its only copy in state; a document load loses it).
+  So does a navigation that carries history `state` (a document load drops it; the gallery's origin marker rides
+  there).
+- **Work that only an unmount finishes holds the switch** (`useHoldBuildSwitch`): a reply still streaming (saved
+  as truncated on unmount), the draft editor (its last edits flush on unmount) and runtime playback (its final save
+  flushes on leaving). A document load tears the page down with no unmount, and a write started in `pagehide` is not
+  promised to commit. A new screen with that kind of work takes a hold; the switch then happens one navigation
+  later.
+- **The document load goes through the router's `reloadDocument`**, never `location.assign`, because that path runs
+  the history blockers: the draft editor's leave guard stops it exactly as it stops a client navigation.
+- **The build id is one random value per `vite build`, not the commit** (no `.git` in the image build, and an env
+  value would be one more deployment knob). It is compared only for equality and never shown — a rollback is just
+  as much another build. `/rowcat-build.json` is outside `/assets/` and `no-store` everywhere; a proxy caching it
+  hides every deployment.
+- **Asking happens on navigation, focus, visibility and reconnect, folded to once per 5 minutes, and each ask times
+  out after 3 seconds** (a held request would stall every later ask and the route error retry) — never a timer,
+  and never at page load (the document was just served by the serving build; the router's hydration navigation would
+  otherwise spend a request on every load). A
+  failed lazy chunk (`vite:preloadError`) asks at once but **does not reload**: it fires for hover preloads too, and
+  the screen that really failed has its own way back (`RouteError`'s retry reloads when a newer build is serving).
+- **No banner, toast or "new version" button.** The shell has no slot for one (`ShellUtility` is three items), and
+  asking the person to reload makes them decide something that already has a free answer.
+- **The admin console is not covered** — one bundle with no lazy chunks, `index.html` is `no-store`, and an open tab
+  keeps the old bundle until it is reloaded.
+
 ## Update notes
 
 **The writing that announces what changed in this release** (`docs/updates/ARCHITECTURE.md`).
@@ -5345,6 +5424,12 @@ index.ts         checkRateLimit · reserveRateLimit                            t
 - **IP is not in the subject vocabulary — that absence is the rule.** This deployment has no authoritative way to extract
   an IP, and a limiter built on a forgeable header **blocks only honest users.** So **unauthenticated endpoints are not
   this layer's subjects** (sign-in and signup are covered by Better Auth's own limiter).
+- **That limiter's address is decided from the socket, not read from the client** (`lib/client-ip.ts`, applied in
+  `app.ts` before `auth.handler`; the library reads only the one header we set). Left to the library it read
+  `X-Forwarded-For` from the client: one forged value was a fresh bucket per request (unlimited password guessing) and
+  an absent one folded everyone into one bucket (one client locks out sign-in). Forwarding headers are believed only
+  from a peer in `AUTH_TRUSTED_PROXIES`; `AUTH_IP_HEADER` alone keeps its old meaning (believed from any peer) and
+  warns that the port must be reachable only through that proxy.
 - **The policy owns the answer when the store is down** (`allow` ↔ `deny`). `deny` is **a 503, not a 429** — it is not
   something the client did, so folded into 429 the user reads that they went too fast and keeps reading it while no amount
   of waiting helps.
@@ -5404,12 +5489,6 @@ something the user did not start      nothing       auto-sync · prefetch · per
   managed routing failure both folded into the generic sentence and both offered a retry that could not work.
   A local save failure is the same axis (`ChatPersistenceError`) — folded, the screen says the response was not
   received, and **that sentence is false**.
-- **That limiter's address is decided from the socket, not read from the client** (`lib/client-ip.ts`, applied in
-  `app.ts` before `auth.handler`; the library reads only the one header we set). Left to the library it read
-  `X-Forwarded-For` from the client: one forged value was a fresh bucket per request (unlimited password guessing) and
-  an absent one folded everyone into one bucket (one client locks out sign-in). Forwarding headers are believed only
-  from a peer in `AUTH_TRUSTED_PROXIES`; `AUTH_IP_HEADER` alone keeps its old meaning (believed from any peer) and
-  warns that the port must be reachable only through that proxy.
   ⚠️ **The ladder also answers the turn where nothing failed.** A turn that ended normally with no body is discarded
   by the save rule and left unanswered (`resolveGenerationOutcome`), and `unanswered` is read in exactly one place —
   this ladder — whose first line used to be `if (!error) return null`. So that turn drew **nothing at all** on either
