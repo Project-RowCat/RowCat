@@ -10,6 +10,7 @@ import {
 	shell,
 } from "electron";
 import { PortsBusyError, type RunningStack, startStack } from "./stack.ts";
+import { createUpdater, type DesktopUpdater } from "./updater.ts";
 
 /**
  * The desktop shell: start the deployment on this computer, show it in a window, stop it on quit.
@@ -42,6 +43,16 @@ const logFile = join(app.getPath("logs"), "rowcat.log");
 
 let stack: RunningStack | null = null;
 let mainWindow: BrowserWindow | null = null;
+let updater: DesktopUpdater | null = null;
+/** Set once the servers start stopping — by a quit, or by installing an update. Never cleared. */
+let stopping = false;
+/**
+ * Set once that stop has finished. Between the two, every further quit is held: a second quit (the
+ * window closed while 「설치하고 있습니다」 shows, 종료, a SIGTERM) would otherwise run to `quit`, and
+ * that is where a downloaded update spawns its installer — which force-kills the Postgres still
+ * shutting down.
+ */
+let stopped = false;
 
 function log(source: string, line: string): void {
 	// Lines can carry the setup code; this file sits in the user's own log folder, which is the
@@ -73,14 +84,27 @@ function artifacts() {
 	};
 }
 
-const WAITING_PAGE = `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html>
+/** A page drawn while there is no server to show — starting up, or installing a new version. */
+function statusPage(message: string): string {
+	return `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html>
 <html lang="ko"><meta charset="utf-8"><title>RowCat</title>
 <style>
 :root{color-scheme:light dark}
 body{margin:0;height:100vh;display:grid;place-items:center;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:Canvas;color:CanvasText}
 p{margin:0;opacity:.7}
 </style>
-<body><main><h1 style="font-size:20px;margin:0 0 6px">RowCat</h1><p>준비하고 있습니다… 처음에는 1분쯤 걸릴 수 있습니다.</p></main></body></html>`)}`;
+<body><main><h1 style="font-size:20px;margin:0 0 6px">RowCat</h1><p>${message}</p></main></body></html>`)}`;
+}
+
+const WAITING_PAGE = statusPage(
+	"준비하고 있습니다… 처음에는 1분쯤 걸릴 수 있습니다.",
+);
+const CHECKING_PAGE = statusPage(
+	"시작하지 못했습니다. 새 버전이 있는지 확인하고 있습니다…",
+);
+const UPDATING_PAGE = statusPage(
+	"새 버전을 설치하고 있습니다… 끝나면 RowCat이 다시 열립니다.",
+);
 
 function isLocal(url: string): boolean {
 	try {
@@ -158,6 +182,92 @@ async function showSetupCode(running: RunningStack): Promise<void> {
 	if (response === 0) openWindow(`${running.origins.console}/setup`);
 }
 
+/** The menu's part for the installed release: its date, and what the updater can do now. */
+function updateMenu(): MenuItemConstructorOptions[] {
+	if (!updater) return [];
+	const date = updater.installedDate();
+	const state = updater.state();
+	const version: MenuItemConstructorOptions[] = date
+		? [{ label: `버전 ${date}`, enabled: false }]
+		: [];
+	if (state.kind === "off")
+		return version.length ? [...version, { type: "separator" }] : [];
+	const action: MenuItemConstructorOptions =
+		state.kind === "ready"
+			? {
+					label: `다시 시작해서 업데이트 (${state.date})`,
+					click: () => void restartToUpdate(),
+				}
+			: state.kind === "downloading"
+				? { label: `새 버전 받는 중 (${state.date})…`, enabled: false }
+				: {
+						label: "업데이트 확인…",
+						enabled: state.kind === "idle",
+						click: () => void checkForUpdate(),
+					};
+	return [...version, action, { type: "separator" }];
+}
+
+async function checkForUpdate(): Promise<void> {
+	if (!updater) return;
+	const result = await updater.checkNow();
+	const options: Electron.MessageBoxOptions =
+		result.kind === "failed"
+			? {
+					type: "warning",
+					message: "업데이트를 확인하지 못했습니다",
+					detail: `인터넷 연결을 확인한 뒤 다시 시도해 주세요. 자세한 내용은 로그 폴더의 rowcat.log에 있습니다.`,
+				}
+			: result.kind === "current"
+				? {
+						type: "info",
+						message: "최신 버전입니다",
+						detail: result.date
+							? `설치된 버전: ${result.date}`
+							: "이 설치 파일은 릴리스에서 받은 것이 아닙니다.",
+					}
+				: result.kind === "downloading"
+					? {
+							type: "info",
+							message: `새 버전(${result.date})을 받고 있습니다`,
+							detail:
+								"다 받으면 RowCat 메뉴에 「다시 시작해서 업데이트」가 생깁니다. 그대로 두어도 앱을 끌 때 설치됩니다.",
+						}
+					: {
+							type: "info",
+							message: `새 버전(${result.date})이 준비되어 있습니다`,
+							detail:
+								"RowCat 메뉴의 「다시 시작해서 업데이트」를 누르거나, 앱을 끄면 설치됩니다.",
+						};
+	if (mainWindow) await dialog.showMessageBox(mainWindow, options);
+	else await dialog.showMessageBox(options);
+}
+
+/**
+ * Installing now: the servers stop first, then the installer starts. The NSIS installer ends every
+ * process running from the install folder by force, Postgres among them, so it must find none.
+ */
+async function restartToUpdate(): Promise<void> {
+	if (!updater || stopping) return;
+	stopping = true;
+	buildMenu(null);
+	if (mainWindow) void mainWindow.loadURL(UPDATING_PAGE);
+	try {
+		await stack?.stop();
+	} catch (error) {
+		log(
+			"desktop",
+			`stop before update failed: ${error instanceof Error ? error.message : String(error)}`,
+		);
+	}
+	stack = null;
+	stopped = true;
+	updater.installAndRestart();
+	// `quitAndInstall` quits only once the installer has started; if it could not, the app still ends —
+	// its servers are already down, and the next launch tries the update again.
+	setTimeout(() => app.exit(0), 10_000).unref();
+}
+
 function buildMenu(running: RunningStack | null): void {
 	const rowcat: MenuItemConstructorOptions[] = running
 		? [
@@ -184,6 +294,7 @@ function buildMenu(running: RunningStack | null): void {
 			label: APP_NAME,
 			submenu: [
 				...rowcat,
+				...updateMenu(),
 				{
 					label: "데이터 폴더 열기",
 					click: () => void shell.openPath(dataDir),
@@ -204,8 +315,44 @@ function buildMenu(running: RunningStack | null): void {
 	Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+/** How long a failed launch waits for a newer release to download before it gives up. */
+const FAILED_LAUNCH_UPDATE_WAIT_MS = 3 * 60 * 1000;
+
+/**
+ * A launch that failed asks the feed before it gives up: the next release is exactly what may fix
+ * it, and a copy that asked only after a successful start would stay broken until someone found the
+ * release page. Ports held by another program are not that kind of failure, so they skip this.
+ * `startStack` has already stopped whatever it started, so the installer finds nothing running.
+ */
+async function offerUpdateAfterFailure(): Promise<boolean> {
+	if (!updater || updater.state().kind === "off") return false;
+	if (mainWindow) void mainWindow.loadURL(CHECKING_PAGE);
+	if (!(await updater.whenReady(FAILED_LAUNCH_UPDATE_WAIT_MS))) return false;
+	const state = updater.state();
+	const date = state.kind === "ready" ? state.date : "";
+	const { response } = await dialog.showMessageBox({
+		type: "error",
+		buttons: ["업데이트하고 다시 시작", "닫기"],
+		defaultId: 0,
+		cancelId: 1,
+		message: "RowCat을 시작하지 못했습니다",
+		detail: `새 버전(${date})을 받아 두었습니다. 이 문제가 새 버전에서 고쳐졌을 수 있습니다.\n\n자세한 내용은 로그 폴더의 rowcat.log에 있습니다.\n${logFile}`,
+	});
+	if (response !== 0) {
+		// Exits 0 so the downloaded update still installs on this quit.
+		app.exit(0);
+		return true;
+	}
+	stopping = true;
+	stopped = true;
+	updater.installAndRestart();
+	setTimeout(() => app.exit(0), 10_000).unref();
+	return true;
+}
+
 async function launch(): Promise<void> {
 	mkdirSync(app.getPath("logs"), { recursive: true });
+	updater = createUpdater({ log, onChange: () => buildMenu(stack) });
 	buildMenu(null);
 	openWindow(WAITING_PAGE);
 	try {
@@ -215,6 +362,8 @@ async function launch(): Promise<void> {
 			"desktop",
 			`launch failed: ${error instanceof Error ? error.stack : String(error)}`,
 		);
+		if (!(error instanceof PortsBusyError) && (await offerUpdateAfterFailure()))
+			return;
 		await dialog.showMessageBox({
 			type: "error",
 			message: "RowCat을 시작하지 못했습니다",
@@ -234,6 +383,12 @@ async function launch(): Promise<void> {
 	 * any member. The menu holds it for whoever wants the console.
 	 */
 	openWindow(stack.origins.web);
+	/**
+	 * Asked once the servers are up, and again when the window comes forward, at most every few hours
+	 * (`update-policy.ts`) — there is no timer. A launch that failed asks on its own path above.
+	 */
+	updater?.checkInBackground();
+	app.on("browser-window-focus", () => updater?.checkInBackground());
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -264,12 +419,22 @@ if (!app.requestSingleInstanceLock()) {
 	/**
 	 * Quitting waits for the servers and Postgres to stop. Killed mid-write, Postgres recovers from
 	 * its WAL on the next start, but the API's in-flight requests would be cut with no answer.
+	 *
+	 * `app.exit(0)` skips `will-quit` but still emits `quit`, and that is where a downloaded update
+	 * starts its installer — after the servers are down, which is the order it needs.
 	 */
-	let stopping = false;
 	app.on("before-quit", (event) => {
-		if (!stack || stopping) return;
+		if (stopping) {
+			// A quit while the servers are still stopping waits for that stop (see `stopped`).
+			if (!stopped) event.preventDefault();
+			return;
+		}
+		if (!stack) return;
 		event.preventDefault();
 		stopping = true;
-		void stack.stop().finally(() => app.exit(0));
+		void stack.stop().finally(() => {
+			stopped = true;
+			app.exit(0);
+		});
 	});
 }

@@ -6,7 +6,8 @@
 #         ↓
 # plan     the tag is a real date · no release by that name yet · CI passed on this commit
 # windows  install frozen → build api · web · admin → package (version 2026.10.31) → installer
-# release  a prerelease named by the date, the installer and its SHA-256 attached
+# release  the repository's latest release, named by the date: the installer, its SHA-256, and the
+#          update feed (latest.yml + the installer's blockmap) that installed copies read
 # ```
 #
 # ## The date is the name
@@ -14,8 +15,12 @@
 # A public release is called by its date (AGENTS.md §Versioning), so the tag is `desktop-<date>` and
 # the release title is the date. The installer still needs `MAJOR.MINOR.PATCH` — electron-builder and
 # Windows read nothing else — so the same date goes in as `YYYY.M.D`. That number is the build's
-# identity, never what the page calls the release. Two releases on one day are not two versions: the
-# earlier one was not ready, and the tag is moved instead.
+# identity, never what the page calls the release.
+#
+# **A release that went out is never replaced.** Installed copies update themselves to it, and an
+# update is accepted only when its version is higher — a rebuild under the same date would reach no one
+# who already took the first. A fix ships as the next date. So there is still one release per day; the
+# tag is moved only for a release whose run failed before publishing.
 #
 # ## Two entries, and the difference is the event
 #
@@ -34,10 +39,28 @@
 # ## What this release is not
 #
 # * **Not signed.** Windows SmartScreen warns on the first run until a deployment signs the installer
-#   with its own certificate (apps/desktop/README.md). The release notes say how to get past it, and
-#   the release is marked as a prerelease for that reason.
-# * **Not an auto-update feed.** electron-builder writes `latest.yml` for its updater; the app has no
-#   updater, so only the installer is attached.
+#   with its own certificate (apps/desktop/README.md). The release notes say how to get past it. It is
+#   still published as a full release, not a prerelease: installed copies find their update through
+#   `/releases/latest`, which never answers with a prerelease (see the update feed below).
+#
+# ## The update feed
+#
+# Installed copies ask this repository's releases for a newer one (apps/desktop/src/updater.ts). The
+# feed is the repository this workflow runs in — `GITHUB_REPOSITORY`, written into the installer's
+# `app-update.yml` at packaging — so a fork's installers follow the fork's releases with nothing to edit.
+# electron-builder writes `latest.yml` and the blockmap beside the installer; all three are attached
+# under the names it gave them, because `latest.yml` points at the installer by name and a renamed file
+# is a 404 for every copy that tries to update.
+#
+# Copies find the release through `github.com/<repo>/releases/latest` — the newest published release
+# that is not a draft or a prerelease — and read that release's `latest.yml`. That is why this release
+# is marked `--latest`, and why **this must stay the only workflow that publishes releases here**:
+# whichever release is "latest" becomes every installed copy's update target, whatever its tag. (The
+# releases feed `releases.atom` is not used because it also lists bare tags, such as `mcp-v*`.)
+#
+# The blockmap makes differential downloads possible from a copy's second update on. The first one is
+# a full download: the updater finds the old blockmap by swapping the version inside the download URL,
+# and these URLs carry the date (`2026-11-01`), not the version (`2026.11.1`).
 # * **Windows only.** A macOS installer needs an Apple Developer ID and notarization before it opens
 #   without a warning on another Mac; it is still built locally (`pnpm --filter @rowcat/desktop package`).
 name: Desktop Release
@@ -109,7 +132,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "::error::A release named ${GITHUB_REF_NAME} already exists. Delete it first if this build replaces it." >&2
+            echo "::error::A release named ${GITHUB_REF_NAME} already exists. Installed copies may already have taken it; ship the fix as the next date." >&2
             exit 1
           fi
 
@@ -151,23 +174,35 @@ jobs:
 
       - run: pnpm --filter @rowcat/desktop run package "${{ needs.plan.outputs.version }}"
 
-      # electron-builder names the file `RowCat Setup <version>.exe`; the release names it by the date.
-      - name: Name the installer
-        id: installer
+      # The installer is attached under the name electron-builder gave it (scripts/build-app.ts names
+      # it by the date): `latest.yml` points at that name, so a rename breaks every update. What is
+      # checked here is what an installed copy will read — a feed for this repository, this version,
+      # and a file that exists.
+      - name: Collect the release files
         env:
-          DATE: ${{ needs.plan.outputs.date }}
+          VERSION: ${{ needs.plan.outputs.version }}
         run: |
           shopt -s nullglob
-          built=(apps/desktop/out/*.exe)
+          cd apps/desktop/out
+          built=(*.exe)
           if [ "${#built[@]}" -ne 1 ]; then
             echo "::error::Expected one installer in apps/desktop/out, found ${#built[@]}." >&2
             exit 1
           fi
-          mkdir -p release
-          name="RowCat-${DATE}-windows-x64.exe"
-          cp "${built[0]}" "release/${name}"
-          (cd release && sha256sum "$name" >"${name}.sha256")
-          ls -l release
+          installer="${built[0]}"
+          for file in latest.yml "${installer}.blockmap" win-unpacked/resources/app-update.yml; do
+            [ -f "$file" ] || { echo "::error::${file} was not written; installed copies could not update." >&2; exit 1; }
+          done
+          grep -qx "version: ${VERSION}" latest.yml || { echo "::error::latest.yml does not carry version ${VERSION}." >&2; exit 1; }
+          grep -qx "path: ${installer}" latest.yml || { echo "::error::latest.yml does not point at ${installer}." >&2; exit 1; }
+          owner="${GITHUB_REPOSITORY%%/*}"
+          repo="${GITHUB_REPOSITORY#*/}"
+          grep -qx "owner: ${owner}" win-unpacked/resources/app-update.yml && grep -qx "repo: ${repo}" win-unpacked/resources/app-update.yml \
+            || { echo "::error::app-update.yml does not name ${GITHUB_REPOSITORY}." >&2; exit 1; }
+          mkdir -p ../../../release
+          cp "$installer" "${installer}.blockmap" latest.yml ../../../release/
+          (cd ../../../release && sha256sum "$installer" >"${installer}.sha256")
+          ls -l ../../../release
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -195,7 +230,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DATE: ${{ needs.plan.outputs.date }}
         run: |
-          installer="RowCat-${DATE}-windows-x64.exe"
+          installer="$(cd release && ls *.exe)"
           checksum="$(cut -d' ' -f1 "release/${installer}.sha256")"
           cat >notes.md <<EOF
           컴퓨터 한 대에서 RowCat을 통째로 돌리는 Windows 앱입니다. 터미널도 Docker도 필요 없습니다.
@@ -208,6 +243,10 @@ jobs:
 
           대화와 초안, 데이터베이스는 이 컴퓨터의 \`%APPDATA%\\RowCat\` 아래에 남습니다. 새 버전을 설치해도 그대로입니다.
 
+          ## 업데이트
+
+          설치한 앱은 새 릴리스를 스스로 받습니다. 다 받으면 앱을 끌 때 설치되고, RowCat 메뉴의 **다시 시작해서 업데이트**로 바로 설치할 수도 있습니다. RowCat 메뉴에 **업데이트 확인**이 없는 버전을 쓰고 있다면, 이번 한 번은 이 설치 파일을 직접 받아 설치합니다.
+
           ## 확인
 
           SHA-256: \`${checksum}\`
@@ -217,7 +256,8 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
-            --prerelease \
+            --latest \
             --title "데스크톱 ${DATE}" \
             --notes-file notes.md \
-            "release/${installer}" "release/${installer}.sha256"
+            "release/${installer}" "release/${installer}.sha256" \
+            "release/${installer}.blockmap" "release/latest.yml"

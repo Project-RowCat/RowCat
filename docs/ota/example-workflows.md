@@ -292,6 +292,11 @@ jobs:
 ubuntu에서 돈다). IPA의 출처는 둘이다: GitHub 릴리스 자산으로 올려 둔 IPA(`release-tag`, EAS 불필요)와 EAS 빌드
 산출물(`build-id`, 비우면 마지막으로 끝난 iOS 스토어 빌드 — `EXPO_TOKEN` 필요).
 
+⚠️ **전달용 릴리스는 초안(draft)으로 만든다**(`gh release create <태그> --draft RowCat.ipa`). 데스크톱 앱이 있는
+저장소에서는 공개된 릴리스가 「최신」이 되는 순간 설치된 모든 데스크톱 앱의 업데이트 대상이 된다
+(`apps/desktop/README.md`). 초안은 그 자리에 오르지 않고, 워크플로의 토큰으로는 그대로 받을 수 있다. 같은 이유로
+지우는 단계는 업로드가 실패해도 돈다.
+
 ⚠️ 이 워크플로는 **기록이지 관문이 아니다.** 누가 올렸는지는 `workflow_dispatch`의 실행자가 남기지만, 그 IPA를
 지은 커밋이 무엇을 통과했는지는 아무것도 확인하지 않는다. 그 스크립트는 `GITHUB_ACTIONS`가 아닌 곳에서의
 업로드를 `--acknowledge-ungated "<사유>"` 없이 거절한다.
@@ -403,7 +408,7 @@ jobs:
           fi
 
       - name: Delete transfer release
-        if: inputs.release-tag != ''
+        if: always() && inputs.release-tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release delete "${{ inputs.release-tag }}" --cleanup-tag --yes

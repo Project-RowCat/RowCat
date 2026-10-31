@@ -32,6 +32,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { APP_BUNDLE_ID, APP_NAME } from "@rowcat/domain";
 import { build, type Configuration } from "electron-builder";
+import { updateFeedFrom, windowsInstallerName } from "../src/update-policy.ts";
 
 const desktop = resolve(fileURLToPath(import.meta.url), "../..");
 const repo = resolve(desktop, "../..");
@@ -150,6 +151,18 @@ if (mode === "stage") {
 	process.exit(0);
 }
 
+/**
+ * The update feed the installer will ask: the repository the release workflow runs in. Outside
+ * GitHub Actions there is none, so a locally packaged installer gets no `app-update.yml` and does not
+ * update itself (`src/update-policy.ts`).
+ */
+const feed = updateFeedFrom(process.env.GITHUB_REPOSITORY);
+console.log(
+	feed
+		? `update feed: github.com/${feed.owner}/${feed.repo} releases`
+		: "update feed: none (GITHUB_REPOSITORY unset) — this installer will not update itself",
+);
+
 const config: Configuration = {
 	appId: `${APP_BUNDLE_ID}.desktop`,
 	productName: APP_NAME,
@@ -178,8 +191,20 @@ const config: Configuration = {
 	},
 	mac: { target: ["dmg"], category: "public.app-category.entertainment", identity: null },
 	win: { target: ["nsis"] },
-	nsis: { oneClick: true, perMachine: false },
+	nsis: {
+		oneClick: true,
+		perMachine: false,
+		// The name the release attaches and `latest.yml` points at — the release must not rename it.
+		...(version ? { artifactName: windowsInstallerName(APP_NAME, version) } : {}),
+	},
 	linux: { target: ["AppImage"] },
-	publish: null,
+	/**
+	 * A publish config is what makes electron-builder write `app-update.yml` into the app and
+	 * `latest.yml` beside the installer. It never uploads: `publish: "never"` below, because a tag
+	 * push would otherwise make it publish on its own — the release workflow attaches the files.
+	 */
+	publish: feed
+		? [{ provider: "github", owner: feed.owner, repo: feed.repo, releaseType: "release" }]
+		: null,
 };
-await build({ config });
+await build({ config, publish: "never" });

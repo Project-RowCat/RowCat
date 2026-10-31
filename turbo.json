@@ -148,6 +148,18 @@
 		},
 
 		/*
+		 * The desktop suite reads files outside its package: `src/boundaries.test.ts` checks that the
+		 * release workflow is the only one that publishes GitHub releases (installed copies update to
+		 * whichever release is latest). Without listing the workflows, adding a second publisher is a
+		 * **cache hit** that replays the old pass.
+		 */
+		"@rowcat/desktop#test": {
+			"dependsOn": ["topo"],
+			"outputs": [],
+			"inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.github/workflows/**"]
+		},
+
+		/*
 		 * ⚠️ Only this suite is uncached: **half its input lives outside the repository.**
 		 *
 		 * These tests use a real Postgres and skip, rather than fail, when there is no database

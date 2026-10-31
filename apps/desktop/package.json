@@ -8,9 +8,11 @@
     "stage": "tsx scripts/build-app.ts stage",
     "package": "tsx scripts/build-app.ts package",
     "stack": "tsx scripts/run-stack.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
+    "electron-updater": "6.8.10",
     "embedded-postgres": "18.4.0-beta.17"
   },
   "devDependencies": {
@@ -19,7 +21,8 @@
     "electron": "45.1.0",
     "electron-builder": "26.18.0",
     "tsdown": "^0.22.14",
-    "tsx": "^4.23.12"
+    "tsx": "^4.23.12",
+    "vitest": "^3.2.4"
   },
   "main": "dist/main.mjs",
   "description": "RowCat on one computer — the whole deployment in a desktop app",

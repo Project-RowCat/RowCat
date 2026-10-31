@@ -148,6 +148,12 @@ manifest(`apps/mcp/package.json`의 `repository`·`bugs`·`homepage`)가 그 저
 배포하려면 서명이 필요하다 — macOS는 운영자의 Developer ID 인증서와 공증, Windows는 코드 서명 인증서. 서명하지 않은
 설치 파일은 열 때 경고가 뜬다(`apps/desktop/README.md`).
 
+설치된 앱의 자동 업데이트도 고칠 곳이 없다. 업데이트 피드는 릴리스 워크플로가 도는 저장소(`GITHUB_REPOSITORY`)라서,
+포크가 `desktop-<날짜>` 태그로 낸 설치 파일은 포크의 릴리스를 따라간다. 원래 저장소에서 받은 설치 파일은 계속 원래
+저장소를 따라가므로, 포크의 사용자는 포크의 설치 파일을 처음 한 번 직접 설치한다. 그 저장소에서 GitHub 릴리스를
+내는 워크플로는 `desktop-release.yml` 하나여야 한다 — 업데이터는 태그를 가리지 않고 저장소의 「최신」 릴리스를
+받는다.
+
 ## 바꾸지 않아도 되는 것
 
 | 자리 | 이유 |
