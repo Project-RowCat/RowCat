@@ -10,6 +10,7 @@ import {
 import { Spinner } from "@rowcat/ui-web/components/spinner";
 import { useBlocker } from "@tanstack/react-router";
 import { useCallback, useState } from "react";
+import { useHoldBuildSwitch } from "#/lib/build-freshness/hold.ts";
 import { DIALOG_VIEWPORT_BOUND } from "#/lib/dialog-geometry.ts";
 import { draftLeaveCopy, shouldBlockLeave } from "./leave.ts";
 import type { DraftAutosave } from "./use-autosave.ts";
@@ -31,6 +32,13 @@ import type { DraftAutosave } from "./use-autosave.ts";
  *   labels inside this component would make the condition impossible to test without rendering.
  */
 export function DraftLeaveGuard({ autosave }: { autosave: DraftAutosave }) {
+	/**
+	 * The editor's last edits are flushed when it unmounts, in a document that stays alive; a document
+	 * load would leave only the `pagehide` flush, which the browser need not finish. So a stale tab
+	 * leaves the editor as a client navigation (lib/build-freshness/). It lives here because this
+	 * guard is the one piece of the editor that exists for leaving.
+	 */
+	useHoldBuildSwitch(true);
 	const [retrying, setRetrying] = useState(false);
 	const [retryFailed, setRetryFailed] = useState(false);
 

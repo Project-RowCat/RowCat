@@ -11,6 +11,7 @@ import {
 import { Link, useRouter } from "@tanstack/react-router";
 import { FileQuestion, TriangleAlert } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { buildFreshness } from "#/lib/build-freshness/index.ts";
 import { syncBrowserOnline } from "#/lib/query/panel-retry.ts";
 
 /**
@@ -120,7 +121,16 @@ export function RouteError({
 					<div className="flex flex-wrap items-center justify-center gap-2">
 						<Button
 							size="sm"
-							onClick={() => {
+							onClick={async () => {
+								/*
+								 * A screen whose code the server no longer has cannot be retried in place: re-running
+								 * it asks for the same missing chunk again. When a newer build is serving, retrying is
+								 * loading this address fresh (lib/build-freshness/).
+								 */
+								if (await buildFreshness().check({ force: true })) {
+									window.location.reload();
+									return;
+								}
 								/*
 								 * Restore the connection signal first. While the cache layer believes it is offline, a
 								 * re-run loader would fall straight back into the paused state (`panel-retry.ts`).

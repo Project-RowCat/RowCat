@@ -17,3 +17,10 @@ interface ImportMetaEnv {
 interface ImportMeta {
 	readonly env: ImportMetaEnv;
 }
+
+/**
+ * The id of this build output (vite.config.ts `define`). Compared with the server's
+ * `/rowcat-build.json` to learn that a newer deployment is serving (`lib/build-freshness/`). Absent
+ * where nothing defines it (vitest), so it is read through `typeof`.
+ */
+declare const __ROWCAT_BUILD_ID__: string | undefined;

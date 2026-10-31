@@ -27,6 +27,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getRowCatClient } from "#/lib/api.ts";
+import { useHoldBuildSwitch } from "#/lib/build-freshness/hold.ts";
 import { GenerationBlockedError } from "#/lib/generation/availability.ts";
 import { streamChatGenerationPlan } from "#/lib/generation/router.ts";
 import { useGenerationScope } from "#/lib/local-generation/scope.ts";
@@ -245,6 +246,12 @@ export function useConversationGeneration(
 	 * Whether the last turn ended with a stop. Read in the same place as `unanswered`, and only there.
 	 */
 	const [stopped, setStopped] = useState(false);
+	/**
+	 * A reply still streaming is saved by this hook's unmount (the abort lands in `run`'s finally). A
+	 * document load would skip that, so a stale tab leaves this conversation as a client navigation
+	 * while one is in flight (lib/build-freshness/).
+	 */
+	useHoldBuildSwitch(generating);
 
 	const abortRef = useRef<AbortController | null>(null);
 	/**

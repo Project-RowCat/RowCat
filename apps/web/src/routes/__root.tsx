@@ -15,6 +15,7 @@ import { RouteError, RouteNotFound } from "#/components/route-fallback.tsx";
 import { AccountThemeBridge } from "#/features/theme/account-theme-bridge.tsx";
 import { ADMIN_CONSOLE_ORIGIN } from "#/lib/admin-console.ts";
 import { API_ORIGIN, getRowCatClient } from "#/lib/api.ts";
+import { BuildFreshnessWatch } from "#/lib/build-freshness/watch.tsx";
 import { currentLocale } from "#/lib/i18n/current.ts";
 import { I18nProvider } from "#/lib/i18n/provider.tsx";
 import { LocalDataScopeProvider } from "#/lib/local-data/scope.tsx";
@@ -189,6 +190,12 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 						 * over the same UI. Nothing renders on the server; the portal mounts after hydration.
 						 */}
 						<Toaster />
+						{/*
+						 * Moves a tab left open across a deployment onto the new build, at its next change of
+						 * screen (lib/build-freshness/). App-wide because the login, password-reset and
+						 * guardian screens can be that tab too; renders nothing.
+						 */}
+						<BuildFreshnessWatch />
 					</ThemeProvider>
 				</I18nProvider>
 				{/**

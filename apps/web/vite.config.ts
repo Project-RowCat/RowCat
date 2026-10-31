@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import tailwindcss from "@tailwindcss/vite";
 import { devtools } from "@tanstack/devtools-vite";
 
@@ -5,7 +6,7 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 
 import viteReact from "@vitejs/plugin-react";
 import { nitro } from "nitro/vite";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 
 /**
  * Points the use-sync-external-store shim import at the canonical path.
@@ -107,7 +108,43 @@ const previewWorkerDependencies = [
 	"monaco-editor/languages/features/typescript/tsWorker",
 ];
 
+/**
+ * The identity of one build output: baked into the bundle as `__ROWCAT_BUILD_ID__` and written beside
+ * it as `/rowcat-build.json`. An open tab compares the two to learn that the server now serves another
+ * build (`src/lib/build-freshness/freshness.ts`).
+ *
+ * **One random value per build, not the commit.** The image build has no `.git` to read, and an env
+ * value would have to be declared to turbo and passed into the Dockerfile — one more deployment knob for
+ * a fact the build already knows. A random id cannot collide across builds, every replica of one image
+ * carries the same one, and a turbo cache hit replays the same output with the same id. Rebuilding the
+ * same commit gives a new id; open tabs then take one document load they did not need, which is harmless.
+ *
+ * Evaluated once per `vite build`, so the client and server environments share it.
+ */
+const BUILD_ID = randomUUID();
+
+/**
+ * Writes the id where the server serves it: the client output's root, which nitro serves as static
+ * files. Not under `/assets/` — that path is cached as immutable for a year — and the route rule below
+ * forbids caching it anywhere (a proxy holding the old answer would hide every new deployment).
+ */
+function buildManifest(): Plugin {
+	return {
+		name: "rowcat-build-manifest",
+		apply: "build",
+		generateBundle() {
+			if (this.environment.name !== "client") return;
+			this.emitFile({
+				type: "asset",
+				fileName: "rowcat-build.json",
+				source: `${JSON.stringify({ buildId: BUILD_ID })}\n`,
+			});
+		},
+	};
+}
+
 const config = defineConfig({
+	define: { __ROWCAT_BUILD_ID__: JSON.stringify(BUILD_ID) },
 	optimizeDeps: { include: previewWorkerDependencies },
 	resolve: {
 		tsconfigPaths: true,
@@ -123,11 +160,15 @@ const config = defineConfig({
 			 * operator console's nginx had four. The reasoning for each value is in the securityHeaders()
 			 * header comment.
 			 */
-			routeRules: { "/**": { headers: securityHeaders() } },
+			routeRules: {
+				"/**": { headers: securityHeaders() },
+				"/rowcat-build.json": { headers: { "cache-control": "no-store" } },
+			},
 		}),
 		tailwindcss(),
 		tanstackStart(),
 		viteReact(),
+		buildManifest(),
 	],
 });
 

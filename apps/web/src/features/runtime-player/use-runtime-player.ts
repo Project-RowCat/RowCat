@@ -22,6 +22,7 @@ import {
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type { RuntimePreviewGenerationAdapter } from "#/features/runtime-preview/runtime-preview-generation.ts";
 import { createPreviewGenerationRouter } from "#/features/runtime-preview/runtime-preview-generation-router.ts";
+import { useHoldBuildSwitch } from "#/lib/build-freshness/hold.ts";
 import { useRuntimeSaveScope } from "#/lib/local-runtime-save/scope.ts";
 import type { WebResolvedAssetResolver } from "#/lib/runtime-assets/web-asset-resolver.ts";
 import type { PlayerWorkerMessage } from "./protocol.ts";
@@ -148,6 +149,11 @@ interface Session {
 }
 
 export function useRuntimePlayer(options: RuntimePlayerOptions): RuntimePlayer {
+	/**
+	 * Leaving playback flushes the last save through the lifecycle's teardown, which a document load
+	 * would skip. So a stale tab leaves this screen as a client navigation (lib/build-freshness/).
+	 */
+	useHoldBuildSwitch(true);
 	/**
 	 * The renderer is created once, when the surface attaches, so the resolver is held in a ref and
 	 * always read as the latest one.
