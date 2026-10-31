@@ -903,6 +903,57 @@ describe.skipIf(!databaseReady)("pull — cursor and order", () => {
 		expect(body.hasMore).toBe(false);
 	});
 
+	test("a page stops at the **byte budget**, not only the row cap", async () => {
+		/**
+		 * The row cap alone let one page carry 500 records near the ciphertext cap. The stored `bytes`
+		 * is what the budget reads, so the test sets it rather than pushing hundreds of megabytes.
+		 */
+		const account = await signUp();
+		await enableSync(account);
+		await push(
+			account,
+			await Promise.all(
+				Array.from({ length: 5 }, () =>
+					item(account.memberId, { id: recordId() }),
+				),
+			),
+		);
+		const third = Math.floor(SYNC_LIMITS.pullMaxBytes / 3) + 1;
+		await db
+			.update(sync_record)
+			.set({ bytes: third })
+			.where(eq(sync_record.owner, account.memberId));
+
+		const first = await readJson<PullBody>(await pull(account, 0));
+		expect(first.records.map((row) => row.seq)).toEqual([1, 2]);
+		expect(first.cursor).toBe(2);
+		expect(first.hasMore).toBe(true);
+
+		const second = await readJson<PullBody>(await pull(account, first.cursor));
+		expect(second.records.map((row) => row.seq)).toEqual([3, 4]);
+		const rest = await readJson<PullBody>(await pull(account, second.cursor));
+		expect(rest.records.map((row) => row.seq)).toEqual([5]);
+		expect(rest.hasMore).toBe(false);
+	});
+
+	test("one record over the byte budget still goes out alone", async () => {
+		/** A page that took nothing would echo the cursor forever: the device could never get past it. */
+		const account = await signUp();
+		await enableSync(account);
+		await push(account, [
+			await item(account.memberId, { id: recordId() }),
+			await item(account.memberId, { id: recordId() }),
+		]);
+		await db
+			.update(sync_record)
+			.set({ bytes: SYNC_LIMITS.pullMaxBytes + 1 })
+			.where(eq(sync_record.owner, account.memberId));
+
+		const page = await readJson<PullBody>(await pull(account, 0));
+		expect(page.records.map((row) => row.seq)).toEqual([1]);
+		expect(page.hasMore).toBe(true);
+	});
+
 	test("a request over the limit is **truncated**, not a 400", async () => {
 		const account = await signUp();
 		await enableSync(account);
@@ -1067,6 +1118,49 @@ describe.skipIf(!databaseReady)("idempotency", () => {
 		const response = await push(account, items, key);
 		expect(response.status).toBe(409);
 		expect(await readCode(response)).toBe("sync_idempotency_in_progress");
+	});
+
+	test("an account keeps at most `idempotencyMaxPerOwner` idempotency rows — the newest", async () => {
+		/**
+		 * Expiry alone bounded nothing: a push of conflicts writes a row and no record, so a loop grew the
+		 * table for a week. The oldest rows go; the one just claimed always stays, so its retry still
+		 * gets the cached answer.
+		 */
+		const account = await signUp();
+		await enableSync(account);
+		const old = Date.now() - 60 * 60 * 1000;
+		const prefix = `old-${newId()}`;
+		await db.insert(sync_push_dedupe).values(
+			Array.from(
+				{ length: SYNC_LIMITS.idempotencyMaxPerOwner },
+				(_, index) => ({
+					owner: account.memberId,
+					idempotency_key: `${prefix}-${index}`,
+					request_hash: "h",
+					response: "{}",
+					created_at: new Date(old + index),
+					expires_at: new Date(Date.now() + 60_000),
+				}),
+			),
+		);
+		const key = `idem-${newId()}`;
+		const items = [await item(account.memberId, { id: recordId() })];
+		const first = await readJson<PushBody>(await push(account, items, key));
+		expect(first.ok).toBe(true);
+
+		const rows = await db
+			.select({ key: sync_push_dedupe.idempotency_key })
+			.from(sync_push_dedupe)
+			.where(eq(sync_push_dedupe.owner, account.memberId));
+		expect(rows).toHaveLength(SYNC_LIMITS.idempotencyMaxPerOwner);
+		expect(rows.map((row) => row.key)).toContain(key);
+		// The oldest seeded row is the one that went; the next oldest is still there.
+		expect(rows.map((row) => row.key)).not.toContain(`${prefix}-0`);
+		expect(rows.map((row) => row.key)).toContain(`${prefix}-1`);
+		// The retry is answered from the cache: the same cursor, and no second version.
+		const retry = await readJson<PushBody>(await push(account, items, key));
+		expect(retry).toEqual(first);
+		expect(await readSyncCursor(account.memberId)).toBe(first.cursor);
 	});
 
 	test("idempotency keys are per account — they don't mix with another account's keys", async () => {

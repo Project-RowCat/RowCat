@@ -4,7 +4,7 @@ import { PASSWORD_LENGTH } from "@rowcat/contracts";
 import { APP_BUNDLE_ID, APP_NAME } from "@rowcat/domain";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { createAuthMiddleware } from "better-auth/api";
+import { APIError, createAuthMiddleware, isAPIError } from "better-auth/api";
 import { twoFactor as twoFactorPlugin } from "better-auth/plugins/two-factor";
 import { db } from "../db/client.ts";
 import {
@@ -30,6 +30,7 @@ import {
 } from "../env.ts";
 import { createAppleClientSecretSigner } from "../lib/apple-signin-config.ts";
 import { AUTH_CLIENT_IP_HEADER } from "../lib/client-ip.ts";
+import { loggableError, loggableErrorText } from "../lib/loggable-error.ts";
 import { getRedis } from "../lib/redis.ts";
 import { deleteAccountForUser } from "../services/account/deletion.ts";
 import {
@@ -115,6 +116,40 @@ function sendWithoutWaiting(mail: TransactionalMail, what: string): void {
 
 export const auth = betterAuth({
 	appName: APP_NAME,
+	/**
+	 * `/v2/auth/*` is answered by the library's router, so its failures never reach `app.onError`
+	 * and its scrubbing. Left to the library, an unexpected exception was printed whole — and a
+	 * failed query (a pool timeout, a restart during a deploy) carries every bound value: the session
+	 * token on a sign-in, a password hash, a verification value. For messages that mention a column
+	 * or a table the library printed only `e.message`, which is exactly where drizzle puts them.
+	 *
+	 * Both doors go through `loggableError`: the logger, for what the library logs on its own, and
+	 * the error hook, which replaces the router's logging. Expected refusals (`APIError` below 500)
+	 * are the library's normal answers and are not logged, as before. The hook must also *answer*: an
+	 * exception it lets fall through reaches the HTTP router underneath (better-call), which prints it
+	 * raw as `# SERVER_ERROR`. Thrown as an `APIError`, it becomes the 500 response instead.
+	 */
+	logger: {
+		log: (level, message, ...args) => {
+			const write =
+				level === "error"
+					? console.error
+					: level === "warn"
+						? console.warn
+						: console.log;
+			// The library sometimes passes the error itself as the message.
+			const text =
+				typeof message === "string" ? message : loggableErrorText(message);
+			write(`[auth] ${text}`, ...args.map(loggableError));
+		},
+	},
+	onAPIError: {
+		onError: (error) => {
+			if (isAPIError(error) && error.statusCode < 500) return;
+			console.error("[auth] unhandled", loggableError(error));
+			if (!isAPIError(error)) throw new APIError("INTERNAL_SERVER_ERROR");
+		},
+	},
 	// Base for callback URLs; `/v2/auth` is the mount point inside this API.
 	baseURL: `${publicApiUrl}/auth`,
 	secret: env.BETTER_AUTH_SECRET || undefined,

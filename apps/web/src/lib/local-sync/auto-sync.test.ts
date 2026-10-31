@@ -1,7 +1,7 @@
 import type { ChatSeed } from "@rowcat/chat";
 import { CHAT_SEED_VERSION } from "@rowcat/contracts";
 import type { SyncController, SyncSnapshot } from "@rowcat/sync";
-import { createAutoSyncCoordinator } from "@rowcat/sync";
+import { createAutoSyncCoordinator, SYNC_LOGIN_REQUIRED } from "@rowcat/sync";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	createDevice,
@@ -675,6 +675,59 @@ describe("web adapter", () => {
 
 		expect(stub.inspect).toHaveBeenCalledTimes(1);
 		expect(stub.syncNow).toHaveBeenCalledTimes(1);
+		auto.stop();
+	});
+
+	/**
+	 * The start-up check found someone else's session, so nothing can run, and the scope does not
+	 * change when the owner signs back in from another tab. Without asking again on a lifecycle
+	 * signal, this tab would stay stuck until reloaded.
+	 */
+	it("waiting for the owner's session, a focus checks the session again", async () => {
+		dom = stubDom();
+		const device = spawn("a-other-session", new FakeSyncServer());
+		const stub = stubController("error", false);
+		stub.become({ lastError: SYNC_LOGIN_REQUIRED });
+		const auto = build(device, stub.controller);
+
+		auto.start();
+		await waitUntil(() => stub.inspect.mock.calls.length === 1);
+		expect(stub.inspect).toHaveBeenCalledTimes(1);
+		dom.emit(dom.windowListeners, "focus");
+		await waitUntil(() => stub.inspect.mock.calls.length === 2);
+		// `waitUntil` returns on timeout without failing, so the count is asserted.
+		expect(stub.inspect).toHaveBeenCalledTimes(2);
+		expect(stub.syncNow).not.toHaveBeenCalled();
+
+		// One re-check at a time: let this one settle before the next signal.
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		// The owner's session is back: the next check makes the device runnable and it syncs.
+		stub.inspect.mockImplementation(async () => {
+			stub.become({ state: "ready", trusted: true, lastError: null });
+		});
+		dom.emit(dom.windowListeners, "focus");
+		await waitUntil(() => stub.syncNow.mock.calls.length > 0);
+		expect(stub.syncNow).toHaveBeenCalled();
+		auto.stop();
+	});
+
+	it("with automatic sync off, the session is still checked again — only the run waits", async () => {
+		dom = stubDom();
+		const device = spawn("a-other-session-off", new FakeSyncServer());
+		await device.autoSyncPreference.setEnabled(false);
+		const stub = stubController("error", false);
+		stub.become({ lastError: SYNC_LOGIN_REQUIRED });
+		const auto = build(device, stub.controller);
+
+		auto.start();
+		await waitUntil(() => stub.inspect.mock.calls.length === 1);
+		expect(stub.inspect).toHaveBeenCalledTimes(1);
+		dom.emit(dom.windowListeners, "focus");
+		await waitUntil(() => stub.inspect.mock.calls.length === 2);
+		// `waitUntil` returns on timeout without failing, so the count is asserted.
+		expect(stub.inspect).toHaveBeenCalledTimes(2);
+		await new Promise((resolve) => setTimeout(resolve, 40));
+		expect(stub.syncNow).not.toHaveBeenCalled();
 		auto.stop();
 	});
 

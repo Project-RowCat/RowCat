@@ -25,6 +25,7 @@ import {
 } from "./lib/client-ip.ts";
 import { ApiError, badRequest, forbidden, notFound } from "./lib/errors.ts";
 import { localOwnerDoorOpenFor } from "./lib/local-request.ts";
+import { loggableError } from "./lib/loggable-error.ts";
 import { requestLogger } from "./lib/request-logger.ts";
 import { withViewer } from "./middleware/viewer.ts";
 import { routes } from "./routes/index.ts";
@@ -283,7 +284,7 @@ app.onError((err, c) => {
 	}
 
 	// Unexpected exception: the stack goes to the log only, never the response.
-	console.error(`[${rid}] unhandled`, err);
+	console.error(`[${rid}] unhandled`, loggableError(err));
 	return c.json<ApiErrorBody>(
 		{
 			code: "internal_error",

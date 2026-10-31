@@ -155,6 +155,10 @@ export interface SyncWakeStreamOptions {
 	 * revoke or account deletion, whoever held the old cookie kept receiving the owner's cursor (when
 	 * they are active) indefinitely. `false` ends the stream; a failed check keeps it (this plane is an
 	 * optimization, and our own outage is not evidence the session ended).
+	 *
+	 * Asked before a wake frame too, once a heartbeat interval has passed since the last answer. A
+	 * frame resets the heartbeat timer, so while the owner pushes more often than that the heartbeat
+	 * never fires — and a check tied only to it never ran exactly while there was activity to leak.
 	 */
 	stillSignedIn?: () => Promise<boolean>;
 	/**
@@ -163,6 +167,8 @@ export interface SyncWakeStreamOptions {
 	 * every open one.
 	 */
 	maxLifetimeMs?: number;
+	/** The clock the session-check interval reads; tests replace it. */
+	now?: () => number;
 }
 
 /** How long one stream may live before the client is made to reconnect (`maxLifetimeMs`). */
@@ -198,6 +204,7 @@ export async function openSyncWakeStream(
 		heartbeatMs = SYNC_WAKE_HEARTBEAT_MS,
 		stillSignedIn,
 		maxLifetimeMs = SYNC_WAKE_MAX_LIFETIME_MS,
+		now = Date.now,
 	} = options;
 
 	/**
@@ -262,6 +269,15 @@ export async function openSyncWakeStream(
 		throw error;
 	}
 
+	/** The session was checked at open, so the first interval starts now. */
+	let sessionCheckedAt = now();
+	/** `false` once the session is known to have ended; a failed check counts as still signed in. */
+	const sessionStands = async (): Promise<boolean> => {
+		if (!stillSignedIn) return true;
+		sessionCheckedAt = now();
+		return stillSignedIn().catch(() => true);
+	};
+
 	/** Waits until there is something to send, a heartbeat is due, or the connection ends. */
 	const waitForWork = (): Promise<void> =>
 		new Promise((settle) => {
@@ -286,6 +302,15 @@ export async function openSyncWakeStream(
 					controller.close();
 					return;
 				}
+				if (
+					pending !== null &&
+					now() - sessionCheckedAt >= heartbeatMs &&
+					!(await sessionStands())
+				) {
+					close();
+					controller.close();
+					return;
+				}
 				if (pending !== null) {
 					const cursor = pending;
 					pending = null;
@@ -299,7 +324,7 @@ export async function openSyncWakeStream(
 					return;
 				}
 				if (pending === null) {
-					if (stillSignedIn && !(await stillSignedIn().catch(() => true))) {
+					if (!(await sessionStands())) {
 						close();
 						controller.close();
 						return;

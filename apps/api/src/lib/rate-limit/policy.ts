@@ -262,9 +262,9 @@ export const RATE_LIMIT_POLICIES = {
 
 	/**
 	 * Device-pairing session creation: new policy, 10 / 10 min / member. Prevents minting unlimited
-	 * pairing sessions. Each is a relay row (`sync_pairing`) and a new request kills the previous link
-	 * (`docs/sync/ARCHITECTURE.md` §13), so hammering this endpoint is also a way to keep an account
-	 * from ever finishing pairing.
+	 * pairing sessions. Each is a relay row (`sync_pairing`), and a new request never replaces an open
+	 * one — open sessions end only by expiry, cancel or approval — so this limit is what keeps one
+	 * session of the account from holding every slot of `pairingMaxActive` open.
 	 *
 	 * Status lookup (`/pairing/status`) deliberately has no policy: it is a designed poll about every
 	 * 2 seconds while the screen is open, and a limit would block honest users mid-pairing.

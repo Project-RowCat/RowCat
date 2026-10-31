@@ -85,6 +85,15 @@ export const SYNC_LIMITS = {
 	pushMaxTotalBytes: 4_000_000,
 	pullDefaultLimit: 200,
 	pullMaxLimit: 500,
+	/**
+	 * Ciphertext bytes one pull page may carry. The row cap alone let one page hold 500 records near
+	 * `ciphertextMaxBytes` — about 256 MB read from Postgres and copied again into the JSON response,
+	 * so a handful of concurrent pulls from one account could exhaust the API's heap. A page stops before
+	 * the record that would cross this budget and says `hasMore`; it always carries at least one record,
+	 * so a page can never be empty while records remain. Clients already loop on `hasMore`, which is
+	 * why this needed no client change.
+	 */
+	pullMaxBytes: 8_000_000,
 	ownerMaxRecords: 200_000,
 	/** 512 MiB. */
 	ownerMaxTotalBytes: 536_870_912,
@@ -96,6 +105,13 @@ export const SYNC_LIMITS = {
 	ownerMaxDistinctTypes: 32,
 	keyringMaxBytes: 4_096,
 	idempotencyTtlDays: 7,
+	/**
+	 * Idempotency rows one owner keeps. Expiry alone did not bound them: every push writes one, and a
+	 * push of nothing but conflicts writes one too without touching the record quota, so an account
+	 * pushing in a loop grew the table for a week. A client retries the last few chunks of one run, so
+	 * keeping the newest thousand loses nothing a real retry needs.
+	 */
+	idempotencyMaxPerOwner: 1_000,
 
 	/**
 	 * Lifetime of a pairing session. The server is the final authority. The row is relay state, not

@@ -45,6 +45,16 @@ import {
  * The DEK in memory also lives in this object, so discarding the controller is the same as locking.
  */
 
+/**
+ * The code a run or a setup fails with when this tab's session belongs to someone other than the
+ * owner. It is the screens' existing word for "sign in again" (both apps already have a sentence for
+ * it), and it is not a server code: no request was the problem, the cookie was.
+ */
+export const SYNC_LOGIN_REQUIRED = "login_required";
+
+const sameBytes = (a: Uint8Array, b: Uint8Array): boolean =>
+	a.length === b.length && a.every((byte, index) => byte === b[index]);
+
 export type SyncState =
 	/** Server not yet asked. */
 	| "idle"
@@ -193,6 +203,8 @@ export function createSyncController(
 
 	/** The DEK in memory. It disappears when this object is discarded, and that is the lock. */
 	let dek: Uint8Array | null = null;
+	/** The keyring string `dek` was last shown to open; `null` when this object has not seen one. */
+	let provenKeyring: string | null = null;
 	let snapshot: SyncSnapshot = {
 		state: "idle",
 		trusted: false,
@@ -260,6 +272,183 @@ export function createSyncController(
 		return transport.getKeyring(withSignal());
 	}
 
+	/**
+	 * A failure that says this session is not the owner's. `login_required` because that is what the
+	 * person has to do in this tab, and it is a 401 so the scheduler blocks instead of backing off —
+	 * retrying cannot change whose cookie the browser holds, and the next focus or press asks again.
+	 */
+	const notThisOwner = (): Error =>
+		Object.assign(new Error(SYNC_LOGIN_REQUIRED), {
+			status: 401,
+			code: SYNC_LOGIN_REQUIRED,
+		});
+	/** A definite "this key does not open the session's keyring", with nothing proven about whose. */
+	const keyDoesNotOpen = (): Error =>
+		Object.assign(new Error(SYNC_ERROR_CODE.keyringProofInvalid), {
+			status: 403,
+			code: SYNC_ERROR_CODE.keyringProofInvalid,
+		});
+
+	/** `true` / `false` when the transport can say whose session this is; `null` when it cannot. */
+	async function sessionIsOwners(): Promise<boolean | null> {
+		if (!transport.sessionOwner) return null;
+		return (await transport.sessionOwner(withSignal())) === owner;
+	}
+
+	/**
+	 * Whether the next run may ride this session with `candidate`, asked before every run.
+	 *
+	 * The owner of a sync request comes only from the session cookie, and that cookie is shared by
+	 * every tab of the browser. A tab left open as Alice while another tab signs in as Bob keeps
+	 * Alice's scope and key in memory — nothing in that tab changes — and its next run pulled Bob's
+	 * namespace: every record failed to open under Alice's key and was skipped, and the pull still
+	 * moved Alice's cursor onto Bob's sequence, so her own later records were skipped for good. Her
+	 * new records were then accepted into Bob's namespace. `ownsStore` cannot see this; it compares
+	 * stores inside one tab.
+	 *
+	 * - Someone else's session throws `login_required`; the key is kept, it is right for its owner.
+	 * - The owner's session whose keyring this key no longer opens (sync reset or set up again on
+	 *   another device) is a real change: `inspect()` decides it the way it does at start, and the run
+	 *   is skipped (`false`).
+	 * - Without identity, a mismatch throws `keyringProofInvalid` and keeps the key.
+	 * - Any failure to ask throws as the run's own failure. Running on anyway is exactly the case
+	 *   this check exists for: the keyring read succeeded and the pull would too.
+	 *
+	 * The common path is two reads (who, which keyring) and no proof: the keyring string this key was
+	 * proven against comes back unchanged. What this does not cover is a switch *during* a run — the
+	 * check is before the run, and a run of many pages rides whatever cookie each request carries.
+	 */
+	async function confirmSession(candidate: Uint8Array): Promise<boolean> {
+		const owners = await sessionIsOwners();
+		if (owners === false) throw notThisOwner();
+		const { keyring } = await readKeyring();
+		if (keyring !== null && keyring === provenKeyring) return true;
+		const opens =
+			keyring !== null &&
+			(await transport.verifyKeyring(
+				{
+					keyring,
+					proof: proveKeyring(deriveAuthKey(candidate, owner), keyring),
+				},
+				withSignal(),
+			));
+		if (opens) {
+			provenKeyring = keyring;
+			return true;
+		}
+		if (owners === true) {
+			/**
+			 * The in-memory key is the one just rejected; the stored one may be newer — another tab of
+			 * this member may have set sync up again or unlocked a moment ago, and the device key is one
+			 * row every tab shares. So the re-check judges the stored key first. The in-memory key is
+			 * left in place until a verdict replaces it: if the re-check cannot finish (a failed read, a
+			 * session switched again), this tab stays trusted with a key, and its next run asks again.
+			 */
+			await inspectNow({ preferStored: true });
+			return false;
+		}
+		throw keyDoesNotOpen();
+	}
+
+	/**
+	 * Forgets the stored key only if it is still `rejected`. The row is shared by every tab of the
+	 * member, and between reading it and forgetting it another tab may have stored a key that opens
+	 * the current keyring; forgetting that one would cost the device its trust for nothing.
+	 */
+	async function forgetIfStill(rejected: Uint8Array): Promise<void> {
+		const stored = await deviceKey.recall();
+		if (stored !== null && !sameBytes(stored, rejected)) return;
+		await deviceKey.forget();
+	}
+
+	async function inspectNow(
+		options: { preferStored?: boolean } = {},
+	): Promise<void> {
+		publish({ state: "checking" });
+		await refreshLocal();
+		/**
+		 * Every branch below that forgets the key is right only for this owner's session. Under someone
+		 * else's (another tab signed in), forgetting would cost this owner their trusted device.
+		 */
+		try {
+			if ((await sessionIsOwners()) === false) {
+				publish({ state: "error", lastError: SYNC_LOGIN_REQUIRED });
+				return;
+			}
+		} catch (error) {
+			publish({ state: "error", lastError: syncFailureOf(error).code });
+			return;
+		}
+		let keyring: string | null;
+		try {
+			keyring = (await readKeyring()).keyring;
+			/**
+			 * Another tab of this member may be setting sync up right now: its keyring lands before it
+			 * stores its key, so "no keyring" is read once more before it is believed.
+			 */
+			if (keyring === null && (dek !== null || (await deviceKey.recall())))
+				keyring = (await readKeyring()).keyring;
+		} catch (error) {
+			publish({ state: "error", lastError: syncFailureOf(error).code });
+			return;
+		}
+		if (!ownsStore()) return;
+
+		if (keyring === null) {
+			/**
+			 * If the server has no keyring but a key is remembered locally, the key is definitively stale:
+			 * no keyring corresponds to it. Keeping it would make the next setup look like an
+			 * already-trusted device, so it is discarded here.
+			 */
+			const stored = await deviceKey.recall();
+			if (stored !== null) await forgetIfStill(stored);
+			dek = null;
+			provenKeyring = null;
+			publish({ state: "disabled", trusted: false, lastError: null });
+			return;
+		}
+
+		const stored = await deviceKey.recall();
+		let remembered = options.preferStored ? (stored ?? dek) : (dek ?? stored);
+		if (!remembered) {
+			publish({ state: "locked", trusted: false });
+			return;
+		}
+
+		let verdict = await verifyRemembered(remembered, keyring);
+		if (!ownsStore()) return;
+		if (verdict === "invalid") {
+			/**
+			 * The row is shared, so the key there now may be one another tab stored after it was read.
+			 * That key is judged before this device is locked.
+			 */
+			const now = await deviceKey.recall();
+			if (now !== null && !sameBytes(now, remembered)) {
+				remembered = now;
+				verdict = await verifyRemembered(now, keyring);
+				if (!ownsStore()) return;
+			}
+		}
+		if (verdict === "invalid") {
+			await forgetIfStill(remembered);
+			dek = null;
+			provenKeyring = null;
+			publish({
+				state: "locked",
+				trusted: false,
+				lastError: SYNC_ERROR_CODE.keyringProofInvalid,
+			});
+			return;
+		}
+		/**
+		 * `unknown` (network failure) does not lock. The local data is already on this device, and
+		 * locking while offline would block the user for nothing. The next check verifies again.
+		 */
+		dek = remembered;
+		provenKeyring = verdict === "valid" ? keyring : null;
+		publish({ state: "ready", trusted: true, lastError: null });
+	}
+
 	return {
 		snapshot: () => snapshot,
 
@@ -270,55 +459,7 @@ export function createSyncController(
 			};
 		},
 
-		async inspect() {
-			publish({ state: "checking" });
-			await refreshLocal();
-			let keyring: string | null;
-			try {
-				keyring = (await readKeyring()).keyring;
-			} catch (error) {
-				publish({ state: "error", lastError: syncFailureOf(error).code });
-				return;
-			}
-			if (!ownsStore()) return;
-
-			if (keyring === null) {
-				/**
-				 * If the server has no keyring but a key is remembered locally, the key is definitively stale:
-				 * no keyring corresponds to it. Keeping it would make the next setup look like an
-				 * already-trusted device, so it is discarded here.
-				 */
-				await deviceKey.forget();
-				dek = null;
-				publish({ state: "disabled", trusted: false, lastError: null });
-				return;
-			}
-
-			const remembered = dek ?? (await deviceKey.recall());
-			if (!remembered) {
-				publish({ state: "locked", trusted: false });
-				return;
-			}
-
-			const verdict = await verifyRemembered(remembered, keyring);
-			if (!ownsStore()) return;
-			if (verdict === "invalid") {
-				await deviceKey.forget();
-				dek = null;
-				publish({
-					state: "locked",
-					trusted: false,
-					lastError: SYNC_ERROR_CODE.keyringProofInvalid,
-				});
-				return;
-			}
-			/**
-			 * `unknown` (network failure) does not lock. The local data is already on this device, and
-			 * locking while offline would block the user for nothing. The next check verifies again.
-			 */
-			dek = remembered;
-			publish({ state: "ready", trusted: true, lastError: null });
-		},
+		inspect: () => inspectNow(),
 
 		async setup() {
 			publish({ state: "checking" });
@@ -327,6 +468,11 @@ export function createSyncController(
 			const authKey = bytesToB64(deriveAuthKey(fresh, owner));
 
 			try {
+				/**
+				 * Registering under someone else's session would put this owner's keyring in their account,
+				 * lock them behind a key they cannot open, and bootstrap this owner's records into it.
+				 */
+				if ((await sessionIsOwners()) === false) throw notThisOwner();
 				await transport.setupKeyring({ keyring, authKey }, withSignal());
 			} catch (error) {
 				const failure = syncFailureOf(error);
@@ -341,12 +487,13 @@ export function createSyncController(
 				 */
 				dek = null;
 				await deviceKey.forget();
-				await this.inspect();
+				await inspectNow();
 				return null;
 			}
 
 			if (!ownsStore()) return null;
 			dek = fresh;
+			provenKeyring = keyring;
 			await deviceKey.remember(fresh);
 			publish({ state: "syncing", trusted: true, lastError: null });
 			try {
@@ -380,6 +527,7 @@ export function createSyncController(
 			);
 			if (!ownsStore()) return;
 			dek = unlocked;
+			provenKeyring = keyring;
 			await deviceKey.remember(unlocked);
 			await refreshLocal();
 			publish({ state: "ready", trusted: true, lastError: null });
@@ -387,9 +535,11 @@ export function createSyncController(
 
 		async syncNow() {
 			if (!dek) return null;
+			const key = dek;
 			publish({ state: "syncing" });
 			try {
-				const result = await engine.run(dek);
+				if (!(await confirmSession(key))) return null;
+				const result = await engine.run(key);
 				await refreshLocal();
 				publish({ state: "ready", lastError: null });
 				return result;
@@ -405,6 +555,7 @@ export function createSyncController(
 		async forgetDevice() {
 			await deviceKey.forget();
 			dek = null;
+			provenKeyring = null;
 			publish({ state: "locked", trusted: false, lastError: null });
 		},
 
@@ -414,10 +565,17 @@ export function createSyncController(
 			 * deletion (re-login required), this device would have lost its key while the server stayed
 			 * unchanged. That is exactly the state this operation exists to fix.
 			 */
+			/**
+			 * The one irreversible operation here. Under someone else's session (another tab signed in,
+			 * fresh enough for the server's recent-login rule) it would erase their keyring and every
+			 * ciphertext they have, while this owner's namespace stays as it was.
+			 */
+			if ((await sessionIsOwners()) === false) throw notThisOwner();
 			await transport.resetKeyring(withSignal());
 			if (!ownsStore()) return;
 			await deviceKey.forget();
 			dek = null;
+			provenKeyring = null;
 			/**
 			 * The server now holds nothing, so every local `serverVersion` is false. If they are not
 			 * cleared, the next bootstrap push would send every record with baseVersion 0 and have them all
@@ -436,6 +594,7 @@ export function createSyncController(
 				{ keyring: rotated.keyring, proof: rotated.proof },
 				withSignal(),
 			);
+			provenKeyring = rotated.keyring;
 			return { recoveryCode: rotated.recoveryCode };
 		},
 

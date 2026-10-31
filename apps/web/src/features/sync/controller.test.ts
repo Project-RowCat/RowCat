@@ -6,6 +6,7 @@ import {
 	deriveAuthKey,
 	nobleAead,
 	proveKeyring,
+	SYNC_LOGIN_REQUIRED,
 	unlockWithRecovery,
 	verifyKeyringProof,
 } from "@rowcat/sync";
@@ -46,6 +47,15 @@ class FakeKeyServer {
 	 */
 	failVerifyNext = false;
 	verifyCalls = 0;
+	pulls = 0;
+	keyringReads = 0;
+	/** Makes the keyring read with this ordinal (1-based, counted from the start) fail once. */
+	failKeyringRead: number | null = null;
+	/**
+	 * Whose session the transport reports, when it can (`SyncTransport.sessionOwner`). `undefined`
+	 * leaves the method off, as a transport that cannot say.
+	 */
+	session: string | null | undefined = undefined;
 
 	private guard(): void {
 		if (!this.failNext) return;
@@ -63,6 +73,12 @@ class FakeKeyServer {
 		return {
 			getKeyring: async () => {
 				this.guard();
+				this.keyringReads += 1;
+				if (this.keyringReads === this.failKeyringRead)
+					throw Object.assign(new Error("network failure"), {
+						status: 0,
+						code: "offline",
+					});
 				return { keyring: this.keyring };
 			},
 			setupKeyring: async (input) => {
@@ -109,11 +125,14 @@ class FakeKeyServer {
 					verifyKeyringProof(this.authKey, input.keyring, input.proof)
 				);
 			},
-			pull: async (input) => ({
-				records: [],
-				cursor: input.since,
-				hasMore: false,
-			}),
+			pull: async (input) => {
+				this.pulls += 1;
+				return {
+					records: [],
+					cursor: input.since,
+					hasMore: false,
+				};
+			},
 			push: async () => ({ ok: true, cursor: 0, conflicts: [] }),
 			/*
 			 * This fake models only the keyring. Its pairing methods throw rather than pass silently, so a
@@ -124,6 +143,14 @@ class FakeKeyServer {
 			readPairing: unsupported,
 			approvePairing: unsupported,
 			cancelPairing: unsupported,
+			...(this.session === undefined
+				? {}
+				: {
+						sessionOwner: async () => {
+							this.guard();
+							return this.session ?? null;
+						},
+					}),
 		};
 	}
 }
@@ -452,5 +479,243 @@ describe("account switch", () => {
 		// Without ownership, sync ends quietly. That is not an error.
 		const result = await controller.syncNow();
 		expect(result?.abandoned ?? true).toBe(true);
+	});
+
+	/**
+	 * The session cookie is shared by every tab. A tab left open as this owner while another tab signs
+	 * in as someone else keeps this owner's store and key, and its next run rode the other session:
+	 * the pull moved this owner's cursor onto the other account's sequence.
+	 */
+	const signedInElsewhere = (server: FakeKeyServer): void => {
+		server.keyring = "another-accounts-keyring";
+		server.authKey = crypto.getRandomValues(new Uint8Array(32));
+	};
+	const codeOf = (error: unknown): unknown =>
+		(error as { code?: unknown }).code;
+
+	it("**someone else's session is not synced with this key, and the key is kept**", async () => {
+		const server = new FakeKeyServer();
+		server.session = OWNER;
+		const a = spawn("a");
+		const deviceKey = createDeviceKeyStore(a.db);
+		const controller = controllerFor(a, server, { deviceKey });
+		await controller.setup();
+		const pullsBefore = server.pulls;
+
+		server.session = "someone-else";
+		signedInElsewhere(server);
+
+		const failure = await controller.syncNow().catch((error) => error);
+		expect(codeOf(failure)).toBe(SYNC_LOGIN_REQUIRED);
+		expect(server.pulls).toBe(pullsBefore);
+		expect(controller.snapshot().lastError).toBe(SYNC_LOGIN_REQUIRED);
+		// The key is still right for its owner, and that session may come back.
+		expect(controller.snapshot().trusted).toBe(true);
+		expect(await deviceKey.recall()).not.toBeNull();
+	});
+
+	it("without identity, a keyring this key does not open fails the run and keeps the key", async () => {
+		const server = new FakeKeyServer();
+		const a = spawn("a");
+		const deviceKey = createDeviceKeyStore(a.db);
+		const controller = controllerFor(a, server, { deviceKey });
+		await controller.setup();
+		const pullsBefore = server.pulls;
+
+		signedInElsewhere(server);
+
+		const failure = await controller.syncNow().catch((error) => error);
+		expect(codeOf(failure)).toBe(SYNC_ERROR_CODE.keyringProofInvalid);
+		expect(server.pulls).toBe(pullsBefore);
+		expect(await deviceKey.recall()).not.toBeNull();
+	});
+
+	it("without identity, a session with no keyring at all is not synced either", async () => {
+		const server = new FakeKeyServer();
+		const controller = controllerFor(spawn("a"), server);
+		await controller.setup();
+		const pullsBefore = server.pulls;
+
+		server.keyring = null;
+		server.authKey = null;
+
+		await expect(controller.syncNow()).rejects.toBeDefined();
+		expect(server.pulls).toBe(pullsBefore);
+	});
+
+	/**
+	 * The owner reset sync on another device. Identity says this is the owner, so the change is real
+	 * and the device is re-checked as at start — instead of staying "ready" and never syncing again.
+	 */
+	it("the owner's own reset elsewhere is re-checked, not skipped forever", async () => {
+		const server = new FakeKeyServer();
+		server.session = OWNER;
+		const a = spawn("a");
+		const deviceKey = createDeviceKeyStore(a.db);
+		const controller = controllerFor(a, server, { deviceKey });
+		await controller.setup();
+		const pullsBefore = server.pulls;
+
+		server.keyring = null;
+		server.authKey = null;
+
+		expect(await controller.syncNow()).toBeNull();
+		expect(server.pulls).toBe(pullsBefore);
+		expect(controller.snapshot().state).toBe("disabled");
+		expect(await deviceKey.recall()).toBeNull();
+	});
+
+	it("**a proof check that fails to answer does not let the run through**", async () => {
+		const server = new FakeKeyServer();
+		const controller = controllerFor(spawn("a"), server);
+		await controller.setup();
+		const pullsBefore = server.pulls;
+
+		signedInElsewhere(server);
+		server.failVerifyNext = true;
+
+		await expect(controller.syncNow()).rejects.toBeDefined();
+		expect(server.pulls).toBe(pullsBefore);
+	});
+
+	it("a failure to read the keyring fails the run before anything is pulled", async () => {
+		const server = new FakeKeyServer();
+		const controller = controllerFor(spawn("a"), server);
+		await controller.setup();
+		const pullsBefore = server.pulls;
+
+		server.failNext = true;
+		await expect(controller.syncNow()).rejects.toBeDefined();
+		expect(server.pulls).toBe(pullsBefore);
+		expect(controller.snapshot().state).toBe("error");
+	});
+
+	it("the keyring this key was proven against is not proven again on every run", async () => {
+		const server = new FakeKeyServer();
+		const controller = controllerFor(spawn("a"), server);
+		await controller.setup();
+		const verifiesBefore = server.verifyCalls;
+		const pullsBefore = server.pulls;
+
+		await controller.syncNow();
+		await controller.syncNow();
+
+		expect(server.verifyCalls).toBe(verifiesBefore);
+		expect(server.pulls).toBeGreaterThan(pullsBefore);
+	});
+
+	it("a keyring another of the owner's devices rewrapped is proven once, then synced", async () => {
+		const server = new FakeKeyServer();
+		const first = controllerFor(spawn("a"), server);
+		const issued = await first.setup();
+		const second = controllerFor(spawn("b"), server);
+		await second.inspect();
+		if (!issued) throw new Error("setup issued no recovery code");
+		await second.unlock(issued.recoveryCode);
+		await second.rotateRecoveryCode();
+		const verifiesBefore = server.verifyCalls;
+		const pullsBefore = server.pulls;
+
+		expect(await first.syncNow()).not.toBeNull();
+		expect(server.verifyCalls).toBe(verifiesBefore + 1);
+		expect(server.pulls).toBeGreaterThan(pullsBefore);
+	});
+
+	/**
+	 * The device key is one row every tab of the member shares. Tab B resets and sets sync up again;
+	 * tab A, still holding the old key in memory, must adopt B's new key, not forget it.
+	 */
+	it("**a re-check adopts the key another tab just stored instead of forgetting it**", async () => {
+		const server = new FakeKeyServer();
+		server.session = OWNER;
+		const a = spawn("a");
+		const deviceKey = createDeviceKeyStore(a.db);
+		const tabA = controllerFor(a, server, { deviceKey });
+		await tabA.setup();
+		const tabB = controllerFor(a, server, { deviceKey });
+		await tabB.inspect();
+		await tabB.reset();
+		await tabB.setup();
+		const storedByB = await deviceKey.recall();
+
+		expect(await tabA.syncNow()).toBeNull();
+		expect(tabA.snapshot().state).toBe("ready");
+		expect(tabA.snapshot().trusted).toBe(true);
+		const stored = await deviceKey.recall();
+		expect(stored).not.toBeNull();
+		expect(Array.from(stored ?? [])).toEqual(Array.from(storedByB ?? []));
+		// And the adopted key runs on the next press.
+		expect(await tabA.syncNow()).not.toBeNull();
+	});
+
+	/**
+	 * The re-check is cut short (a read fails between the run's check and inspect's). The tab must
+	 * keep a key and its trust, so the next run asks again and heals — not sit "trusted" with no key,
+	 * skipping every run in silence.
+	 */
+	it("a re-check that cannot finish leaves the tab able to try again", async () => {
+		const server = new FakeKeyServer();
+		server.session = OWNER;
+		const a = spawn("a");
+		const deviceKey = createDeviceKeyStore(a.db);
+		const tabA = controllerFor(a, server, { deviceKey });
+		await tabA.setup();
+		const tabB = controllerFor(a, server, { deviceKey });
+		await tabB.inspect();
+		await tabB.reset();
+		await tabB.setup();
+
+		// The run's own keyring read succeeds; inspect's, right after, fails.
+		server.failKeyringRead = server.keyringReads + 2;
+		expect(await tabA.syncNow()).toBeNull();
+		expect(tabA.snapshot().state).toBe("error");
+		expect(tabA.snapshot().trusted).toBe(true);
+
+		// Next press: the check runs again, adopts the stored key, and the one after syncs.
+		expect(await tabA.syncNow()).toBeNull();
+		expect(tabA.snapshot().state).toBe("ready");
+		expect(await tabA.syncNow()).not.toBeNull();
+	});
+
+	it("**reset under someone else's session erases nothing**", async () => {
+		const server = new FakeKeyServer();
+		server.session = OWNER;
+		const a = spawn("a");
+		const deviceKey = createDeviceKeyStore(a.db);
+		const controller = controllerFor(a, server, { deviceKey });
+		await controller.setup();
+		const keyring = server.keyring;
+
+		server.session = "someone-else";
+		const failure = await controller.reset().catch((error) => error);
+		expect(codeOf(failure)).toBe(SYNC_LOGIN_REQUIRED);
+		expect(server.keyring).toBe(keyring);
+		expect(await deviceKey.recall()).not.toBeNull();
+	});
+
+	it("**setup under someone else's session registers nothing**", async () => {
+		const server = new FakeKeyServer();
+		server.session = "someone-else";
+		const controller = controllerFor(spawn("a"), server);
+
+		const failure = await controller.setup().catch((error) => error);
+		expect(codeOf(failure)).toBe(SYNC_LOGIN_REQUIRED);
+		expect(server.keyring).toBeNull();
+	});
+
+	it("inspect under someone else's session forgets nothing", async () => {
+		const server = new FakeKeyServer();
+		server.session = OWNER;
+		const a = spawn("a");
+		const deviceKey = createDeviceKeyStore(a.db);
+		await controllerFor(a, server, { deviceKey }).setup();
+
+		server.session = "someone-else";
+		signedInElsewhere(server);
+		const fresh = controllerFor(a, server, { deviceKey });
+		await fresh.inspect();
+
+		expect(fresh.snapshot().lastError).toBe(SYNC_LOGIN_REQUIRED);
+		expect(await deviceKey.recall()).not.toBeNull();
 	});
 });

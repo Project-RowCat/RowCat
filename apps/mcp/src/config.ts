@@ -1,4 +1,12 @@
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import {
+	chmodSync,
+	mkdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -74,15 +82,20 @@ const fromEnvironment = (): Partial<McpConfig> => ({
 
 export const configPath = (): string => FILE;
 
-export function readConfig(): McpConfig {
-	let stored: Partial<McpConfig> = {};
+/** The file alone, before the environment is laid over it. */
+function readStoredFile(): Partial<McpConfig> {
 	try {
 		const parsed: unknown = JSON.parse(readFileSync(FILE, "utf8"));
 		if (typeof parsed === "object" && parsed !== null)
-			stored = parsed as Partial<McpConfig>;
+			return parsed as Partial<McpConfig>;
 	} catch {
 		// Missing or unreadable means empty config, the normal first-run path.
 	}
+	return {};
+}
+
+export function readConfig(): McpConfig {
+	const stored = readStoredFile();
 	const environment = fromEnvironment();
 	const merged = { ...stored, ...environment };
 	return {
@@ -116,12 +129,19 @@ export const storedOnly = (config: McpConfig): McpConfig => ({
 });
 
 /**
- * Creates the file as 0600 before writing; the reverse order lets another user read it in between.
- * Persisted fields are enumerated because serializing the object whole would leave the derived
- * `fromEnvironment` in the file for the next run to read as fact.
+ * Writes a fresh 0600 file beside the config and renames it over the old one. Persisted fields are
+ * enumerated because serializing the object whole would leave the derived `fromEnvironment` in the
+ * file for the next run to read as fact.
+ *
+ * Writing in place was not enough: `mode` applies only when the file is created, so a config that
+ * already existed as 0644 (copied, restored from a backup, made under another umask) took the
+ * cookie and the sync key before the `chmod` after it ran. A new file made with `wx` is the one
+ * write whose mode holds from its first byte, and the rename also means a crash never leaves half
+ * a config. The directory is tightened too, since `mkdir` leaves an existing one as it was.
  */
 export function writeConfig(config: McpConfig): void {
 	mkdirSync(dirname(FILE), { recursive: true, mode: 0o700 });
+	chmodSync(dirname(FILE), 0o700);
 	const stored = {
 		...(config.apiBaseUrl === undefined
 			? {}
@@ -130,10 +150,39 @@ export function writeConfig(config: McpConfig): void {
 		...(config.dek === undefined ? {} : { dek: config.dek }),
 		...(config.memberId === undefined ? {} : { memberId: config.memberId }),
 	};
-	writeFileSync(FILE, `${JSON.stringify(stored, null, "\t")}\n`, {
-		mode: 0o600,
-	});
-	chmodSync(FILE, 0o600);
+	/**
+	 * A random name, not the pid: a container restarts with the same pid, and a temp file a crash
+	 * left behind would make `wx` refuse every write until someone deleted it.
+	 */
+	const next = `${FILE}.${randomUUID()}.tmp`;
+	try {
+		writeFileSync(next, `${JSON.stringify(stored, null, "\t")}\n`, {
+			mode: 0o600,
+			flag: "wx",
+		});
+		renameSync(next, FILE);
+	} catch (error) {
+		rmSync(next, { force: true });
+		throw error;
+	}
+}
+
+/**
+ * Drops `dek` from the file, but only if the file still holds exactly that key for `owner` when it
+ * is read again; returns whether it did. Between the question that found the key stale and this
+ * write, another terminal may have run `pair` — the very step the stale-key sentence asks for — and
+ * that new key must survive. A key supplied by `ROWCAT_SYNC_KEY` is not the file's and is left alone.
+ *
+ * It reads and rewrites the file itself, not the merged config: through `readConfig` an
+ * environment cookie would replace the file's own (and `storedOnly` would then drop it), and an
+ * environment API address would be written into the file to outlive the variable.
+ */
+export function forgetStoredDek(owner: string, dek: string): boolean {
+	if (process.env.ROWCAT_SYNC_KEY !== undefined) return false;
+	const { dek: stored, ...rest } = readStoredFile();
+	if (stored !== dek || rest.memberId !== owner) return false;
+	writeConfig(rest);
+	return true;
 }
 
 /**

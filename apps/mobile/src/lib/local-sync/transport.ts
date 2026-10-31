@@ -44,4 +44,7 @@ export const createSyncTransport = (client: RowCatClient): SyncTransport => ({
 		client.sync.approvePairing(input, toSdkOptions(options)),
 	cancelPairing: (input, options) =>
 		client.sync.cancelPairing(input, toSdkOptions(options)),
+	/** Whose session this is; the controller checks it before every run (`SyncTransport.sessionOwner`). */
+	sessionOwner: async (options) =>
+		(await client.me.get(toSdkOptions(options)))?.id ?? null,
 });

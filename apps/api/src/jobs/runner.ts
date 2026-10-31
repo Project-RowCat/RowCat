@@ -1,5 +1,6 @@
 import { legalRetentionDryRun } from "../env.ts";
 import { newId } from "../lib/id.ts";
+import { loggableErrorText } from "../lib/loggable-error.ts";
 import { JobLockUnavailable, withJobLock } from "./lock.ts";
 import type {
 	Clock,
@@ -177,7 +178,7 @@ export async function runJob(
 			// or provider responses.
 			logger.error("the run failed", {
 				error: error instanceof Error ? error.name : "unknown",
-				detail: String(error),
+				detail: loggableErrorText(error),
 			});
 			return finish(
 				"failed",

@@ -10,12 +10,14 @@ import type {
 	SyncTransport,
 } from "@rowcat/sync";
 import {
+	b64ToBytes,
 	createCodecRegistry,
 	createSyncEngine,
 	nobleAead,
 	SyncPushConflictError,
 	unlockWithRecovery,
 } from "@rowcat/sync";
+import { deriveAuthKey, proveKeyring } from "@rowcat/sync/keyring";
 import { createDeviceAuthoringPort } from "./authoring.ts";
 import { createRecordStore } from "./records.ts";
 
@@ -106,6 +108,42 @@ export async function unlockDek(
 			"This account has no sync key yet. Turn on sync in the web or app first.",
 		);
 	return unlockWithRecovery(owner, keyring, recoveryCode, nobleAead);
+}
+
+/**
+ * Whether a stored key still opens the account's current keyring.
+ *
+ * `dekForViewer` answers only *whose* key the file holds. After the owner resets sync and turns it
+ * back on, the account has a new key, the file still holds the old one under the same member, and
+ * the first pull fails to open every record — which the engine skips, so the agent was shown no
+ * drafts as a fact. The web and the app ask this on every start (`controller.inspect`); this tool
+ * now asks it too, through the same proof.
+ *
+ * `unknown` is a failure to ask, not an answer: the caller keeps the key and lets the next step
+ * report the connection.
+ */
+export async function verifyStoredDek(
+	transport: Pick<SyncTransport, "getKeyring" | "verifyKeyring">,
+	owner: string,
+	dekBase64: string,
+): Promise<"valid" | "invalid" | "unknown"> {
+	let dek: Uint8Array;
+	try {
+		dek = b64ToBytes(dekBase64);
+	} catch {
+		// A value that is not even a key opens nothing.
+		return "invalid";
+	}
+	try {
+		const { keyring } = await transport.getKeyring();
+		if (keyring === null) return "invalid";
+		const proof = proveKeyring(deriveAuthKey(dek, owner), keyring);
+		return (await transport.verifyKeyring({ keyring, proof }))
+			? "valid"
+			: "invalid";
+	} catch {
+		return "unknown";
+	}
 }
 
 export interface DeviceOptions {

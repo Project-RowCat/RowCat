@@ -69,6 +69,174 @@ describe("secrets and manuscripts do not go to logs", () => {
 		for (const leak of LEAKS)
 			expect(source, `${name}: ${leak}`).not.toMatch(leak);
 	});
+
+	/**
+	 * The patterns above see only `write(`, and the sinks people read are the `out()` and `status()`
+	 * wrappers and `console.*`. Their arguments are read whole (brackets balanced, so a nested call
+	 * cannot end the match early) by one pass that knows the three string forms: quoted text is
+	 * skipped, a template's text is skipped and its `${…}` expressions kept, so an apostrophe in
+	 * "Can't" cannot swallow the expression after it. A secret name is matched inside identifiers
+	 * too, so `dekBytes` and `sessionCookie` count.
+	 */
+	/** An optional call (`status?.(…)`, how the injected wrapper is called) is a call too. */
+	const SINK =
+		/\b(?:out|status|console\.\w+|process\.stderr\.write)(?:\?\.)?\(/g;
+	const SECRET = /dek|recoverycode|password|cookie|keyring|content/i;
+
+	/**
+	 * The argument list's code with every string's text removed and template expressions kept.
+	 * Comments and regex literals are skipped as what they are (a quote inside either would otherwise
+	 * open a "string" that swallows the code after it), and a string used as a member key —
+	 * `config["dek"]` — is kept as code, because there it is a name.
+	 */
+	const expressionsAt = (source: string, open: number): string => {
+		let code = "";
+		let depth = 0;
+		const templates: number[] = [];
+		const previous = (): string => code.trimEnd().at(-1) ?? "(";
+		/** Where a `/` starts a regex: after an operator or punctuation, or after one of these words. */
+		const regexAllowed = (): boolean =>
+			"(,=:[!&|?{};>+-*%<^~".includes(previous()) ||
+			/\b(?:return|typeof|void|case|in|of|delete|throw|new|yield|await)\s*$/.test(
+				code,
+			);
+		for (let index = open; index < source.length; index += 1) {
+			const char = source[index] as string;
+			const next = source[index + 1];
+			if (char === "/" && next === "/") {
+				while (index < source.length && source[index] !== "\n") index += 1;
+				code += " ";
+				continue;
+			}
+			if (char === "/" && next === "*") {
+				const end = source.indexOf("*/", index + 2);
+				index = end === -1 ? source.length : end + 1;
+				code += " ";
+				continue;
+			}
+			if (char === "/" && regexAllowed()) {
+				let inClass = false;
+				for (index += 1; index < source.length; index += 1) {
+					const c = source[index];
+					if (c === "\\") index += 1;
+					else if (c === "[") inClass = true;
+					else if (c === "]") inClass = false;
+					else if (c === "/" && !inClass) break;
+				}
+				code += " ";
+				continue;
+			}
+			if (char === '"' || char === "'") {
+				const asKey = previous() === "[";
+				const start = index + 1;
+				for (
+					index += 1;
+					index < source.length && source[index] !== char;
+					index += 1
+				)
+					if (source[index] === "\\") index += 1;
+				code += asKey ? ` ${source.slice(start, index)} ` : " ";
+				continue;
+			}
+			if (char === "`" && previous() === "[") {
+				// A template used as a member key, `config[`dek`]`: there it is a name.
+				const start = index + 1;
+				for (
+					index += 1;
+					index < source.length && source[index] !== "`";
+					index += 1
+				)
+					if (source[index] === "\\") index += 1;
+				code += ` ${source.slice(start, index)} `;
+				continue;
+			}
+			if (char === "`" || (char === "}" && templates.at(-1) === depth)) {
+				if (char === "}") templates.pop();
+				// Template text up to the closing backtick or the next `${`.
+				for (index += 1; index < source.length; index += 1) {
+					if (source[index] === "\\") {
+						index += 1;
+						continue;
+					}
+					if (source[index] === "`") break;
+					if (source[index] === "$" && source[index + 1] === "{") {
+						index += 1;
+						templates.push(depth);
+						break;
+					}
+				}
+				code += " ";
+				continue;
+			}
+			if (char === "(" || char === "{" || char === "[") depth += 1;
+			if (char === ")" || char === "}" || char === "]") {
+				depth -= 1;
+				if (depth === 0) return code;
+			}
+			code += char;
+		}
+		return code;
+	};
+
+	/**
+	 * Names that carry a secret word but return none: `dekForViewer` answers *whose* key it is (its
+	 * `.ok` is a boolean). A name joins this list only with that reason written beside it.
+	 */
+	const NOT_SECRETS = new Set(["dekForViewer"]);
+
+	const leaks = (code: string): boolean =>
+		(code.match(/[A-Za-z_$][\w$]*/g) ?? []).some(
+			(name) => !NOT_SECRETS.has(name) && SECRET.test(name),
+		);
+
+	test("an optional call to the status wrapper is read too", () => {
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: source text the scan reads
+		const calls = [..."status?.(`${bytesToB64(dek)}`)".matchAll(SINK)];
+		expect(calls).toHaveLength(1);
+	});
+
+	test.each(files)("%s: what reaches a person carries no secret", (name) => {
+		const source = code(name);
+		for (const call of source.matchAll(SINK)) {
+			const open = (call.index ?? 0) + call[0].length - 1;
+			const expressions = expressionsAt(source, open);
+			expect(leaks(expressions), `${name}: ${call[0]}${expressions})`).toBe(
+				false,
+			);
+		}
+	});
+
+	test("the scan reads past string text and nested calls", () => {
+		const probe = (args: string): boolean =>
+			leaks(expressionsAt(`(${args})`, 0));
+		expect(probe('"Check the recovery code again."')).toBe(false);
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: source text the scan reads
+		expect(probe("`Opened the sync key. (${configPath()}, 0600)`")).toBe(false);
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: source text the scan reads
+		expect(probe("`key: ${config.dek}`")).toBe(true);
+		expect(probe("label(fmt(viewer), config.cookie)")).toBe(true);
+		expect(probe("bytesToB64(dekBytes)")).toBe(true);
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: source text the scan reads
+		expect(probe("`${sessionCookie}`")).toBe(true);
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: source text the scan reads
+		expect(probe("`Can't open ${config.dek}, don't share`")).toBe(true);
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: source text the scan reads
+		expect(probe("`a ${`nested ${recoveryCode}`} b`")).toBe(true);
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: source text the scan reads
+		expect(probe("`  ${run.code}`")).toBe(false);
+		expect(probe("x, // don't\n config.dek, 'y'")).toBe(true);
+		expect(probe("s.replace(/'/g, ''), config.dek")).toBe(true);
+		expect(probe("s.replace(/`/g, ''), config.dek")).toBe(true);
+		expect(probe("config['dek']")).toBe(true);
+		expect(probe('config["recoveryCode"]')).toBe(true);
+		expect(probe("total / count, 'Can\\'t open'")).toBe(false);
+		expect(probe("xs.map((l) => /'/.test(l)), config.dek")).toBe(true);
+		expect(probe("'a' + /'/.source + config.dek")).toBe(true);
+		expect(probe("xs.map((l) => { return /'/.test(l) }), config.dek")).toBe(
+			true,
+		);
+		expect(probe("config[`dek`]")).toBe(true);
+	});
 });
 
 describe("no doors are added", () => {

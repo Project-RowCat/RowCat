@@ -458,6 +458,16 @@ The full rules are in `docs/sync/ARCHITECTURE.md` and the individual file header
   `routes/me/sync.test.ts` is not an exception (that test **plays the device side**, not the server).
 - **The owner comes only from the session.** There is no `owner` or `viewerId` anywhere in the request, and
   the contract schema has no slot for it.
+- **So a run first asks whose session it rides** (`SyncTransport.sessionOwner` → `/me`, in the controller before every
+  run, setup, inspect and reset). The cookie belongs to the browser, not the tab: a tab left open as Alice while another
+  tab signs in as Bob keeps Alice's store and key, and its run pulled Bob's namespace — every record skipped as
+  unreadable and Alice's cursor moved onto Bob's sequence for good. Someone else's session fails with `login_required`
+  and **keeps the key**; the owner's own session with a changed keyring is inspected again **from the stored key** —
+  the device key is one row every tab of the member shares, so judging the tab's stale in-memory key would forget the
+  key another tab just stored. The check is before the run, not per page (`docs/oss/SECURITY-REVIEW.md`).
+- **A pull page has a byte budget as well as a row cap** (`SYNC_LIMITS.pullMaxBytes`, read from `sync_record.bytes`
+  before any ciphertext). The first row always goes out, and a page is never empty while rows remain — the engine
+  reads an empty page with `hasMore` as a stuck cursor and ends the run.
 - **Pull application and cursor advance are one transaction.** Split, a state where only the cursor commits
   becomes representable, and that page's records never arrive (legacy's worst defect).
 - **Do not use a Postgres `SEQUENCE` for the cursor.** `nextval()` issues outside the transaction, so a

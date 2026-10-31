@@ -195,9 +195,10 @@ export const sync = new Hono<AppEnv>()
 		const viewer = requireActiveViewer(await getViewer(c));
 		/**
 		 * Limits how fast sessions are minted; the cap on open sessions is the service's
-		 * `pairingMaxActive`, a different problem (it clears by cancelling one). A new request kills the
-		 * previous link (§13), so hammering this path could keep an account from ever finishing pairing.
-		 * The error codes differ too (`pairingRateLimited` vs `pairingTooMany`) because the next action
+		 * `pairingMaxActive`, a different problem (it clears by cancelling one). A new request never
+		 * replaces an open session — that would cancel another device's pairing mid-flight — so open
+		 * sessions only end by expiry, cancel or approval, and this limit is what keeps one session of
+		 * the account from holding all of them open. The error codes differ too (`pairingRateLimited` vs `pairingTooMany`) because the next action
 		 * differs: wait vs cancel one.
 		 *
 		 * `/pairing/status` has no such gate: it is designed polling (about every 2s while the screen is

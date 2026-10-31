@@ -969,8 +969,44 @@ export function activateLocalDbScope(viewerId: string): LocalDb {
 	// open at once.
 	closeActiveScope();
 	const db = new LocalDb(scopedDbName(viewerId));
+	/**
+	 * Another tab deleted this database ('erase this device's data', or account withdrawal). Dexie's
+	 * default answer closes the connection *with* auto-open left on, so this tab's next read or write —
+	 * a live query, a late autosave, a sync run — silently recreated the database under the deleted
+	 * name. After an erase, a trusted tab then pulled the whole namespace back as plaintext into the
+	 * database the user had just emptied; after a withdrawal, a pending write left the deleted member's
+	 * text under a name nothing would ever open or delete again.
+	 *
+	 * So the connection closes for good, and the tab starts over: the keys, stores and timers held in
+	 * memory belong to a database that no longer exists. Dexie runs the newest listener first, and
+	 * `false` keeps its own handler from running after this one and switching auto-open back on. An
+	 * upgrade (`newVersion` set) returns nothing and keeps Dexie's behaviour.
+	 */
+	db.on("versionchange", (event) => {
+		if (event.newVersion !== null) return;
+		db.close({ disableAutoOpen: true });
+		if (active?.db === db) active = null;
+		deletedElsewhere(viewerId);
+		return false;
+	});
 	active = { viewerId, db };
 	return db;
+}
+
+/** What a tab does once another tab deleted its database. Replaced only by tests. */
+let deletedElsewhere = (_viewerId: string): void => {
+	if (typeof window !== "undefined") window.location.reload();
+};
+
+/** For tests: observe the reaction instead of reloading. Returns the previous handler's restore. */
+export function setLocalDbDeletedElsewhereHandler(
+	handler: (viewerId: string) => void,
+): () => void {
+	const previous = deletedElsewhere;
+	deletedElsewhere = handler;
+	return () => {
+		deletedElsewhere = previous;
+	};
 }
 
 /**

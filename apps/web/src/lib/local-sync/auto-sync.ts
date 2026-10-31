@@ -4,7 +4,7 @@ import type {
 	SyncController,
 	SyncReason,
 } from "@rowcat/sync";
-import { createAutoSyncCoordinator } from "@rowcat/sync";
+import { createAutoSyncCoordinator, SYNC_LOGIN_REQUIRED } from "@rowcat/sync";
 import type { LocalMutationSignal } from "#/lib/local-data/mutation-signal.ts";
 import type { AutoSyncPreferenceStore } from "./preference.ts";
 
@@ -167,8 +167,47 @@ export function createWebAutoSync(options: WebAutoSyncOptions): WebAutoSync {
 	}
 
 	/** Automatic triggers pass through the toggle. The manual path (runManualSync) does not. */
+	/**
+	 * A check that found someone else's session (`login_required`, not trusted) leaves nothing that
+	 * can run, and when the owner's session comes back in another tab the scope does not change, so
+	 * nothing would ask again. A lifecycle signal therefore checks again first; a run scheduled
+	 * instead would only be refused by `canRun`.
+	 */
+	let rechecking = false;
+	const awaitingOwner = (): boolean => {
+		const state = controller.snapshot();
+		return (
+			!state.trusted &&
+			state.state === "error" &&
+			state.lastError === SYNC_LOGIN_REQUIRED
+		);
+	};
+
 	const requestAuto = (reason: SyncReason): void => {
-		if (!enabled || !started) return;
+		if (!started) return;
+		/**
+		 * Before the toggle: a re-check is a read that settles state, not an automatic run, and with
+		 * automatic sync off this tab would otherwise have no way out but a reload (the screen draws no
+		 * button for this state). Only the run after it follows the toggle. Not at start-up: that
+		 * request follows the check that just ran.
+		 */
+		if (reason !== "startup" && awaitingOwner()) {
+			if (rechecking) return;
+			rechecking = true;
+			const claimed = generation;
+			void controller
+				.inspect()
+				.then(() => {
+					if (claimed === generation && started && enabled && ownsStore())
+						ensure().requestSync(reason);
+				})
+				.catch(() => undefined)
+				.finally(() => {
+					rechecking = false;
+				});
+			return;
+		}
+		if (!enabled) return;
 		ensure().requestSync(reason);
 	};
 

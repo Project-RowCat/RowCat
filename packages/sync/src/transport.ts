@@ -109,6 +109,19 @@ export interface SyncTransport {
 		input: SyncPairingLookupRequest,
 		options?: SyncRequestOptions,
 	): Promise<void>;
+
+	/**
+	 * The member the session answers to right now; `null` when signed out. The controller compares it
+	 * with the owner it was made for before every run and before setup.
+	 *
+	 * The session cookie belongs to the browser, not the tab: a tab left open as one member while
+	 * another tab signs in as someone else still holds the first member's store and key, and every
+	 * request it sends rides the second member's session. The keyring alone cannot tell "another
+	 * member" from "this member reset sync elsewhere" — only identity can, and the two need opposite
+	 * answers (leave the key alone vs. forget it). Optional so that a transport without it still works;
+	 * the controller then falls back to the keyring check and never forgets the key on a mismatch.
+	 */
+	sessionOwner?(options?: SyncRequestOptions): Promise<string | null>;
 }
 
 /**

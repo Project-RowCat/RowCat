@@ -6,6 +6,7 @@ import {
 	configPath,
 	type DekOwnership,
 	dekForViewer,
+	forgetStoredDek,
 	isSignedIn,
 	isUnlocked,
 	loginTransition,
@@ -20,6 +21,7 @@ import {
 	rowcatClient,
 	syncTransport,
 	unlockDek,
+	verifyStoredDek,
 } from "./device/device.ts";
 import { pairDevice } from "./pairing.ts";
 import { readSecret } from "./secret-input.ts";
@@ -251,6 +253,46 @@ function rememberDek(owner: string, dek: Uint8Array): boolean {
 	return true;
 }
 
+/**
+ * Asks the server whether the key in use still opens this account's sync (`verifyStoredDek`), and
+ * returns the sentence to show when it does not (`null` when it does, or when the question could
+ * not be answered — a failed question keeps the key and the next step reports the connection).
+ *
+ * Only a key that came from the file is dropped, and only if the file still holds that same key for
+ * the same member when it is re-read: another terminal may have run `pair` while the question was
+ * in flight, which is what this sentence tells people to do, and that new key must survive. A key
+ * from `ROWCAT_SYNC_KEY` is never the file's to drop — the environment wins on the next start
+ * anyway, so the person has to replace it there.
+ */
+async function staleKeyMessage(
+	config: McpConfig,
+	apiBaseUrl: string,
+	cookie: string,
+	owner: string,
+	dek: string,
+): Promise<string | null> {
+	const verdict = await verifyStoredDek(
+		syncTransport(rowcatClient(apiBaseUrl, cookie)),
+		owner,
+		dek,
+	);
+	if (verdict !== "invalid") return null;
+	if (config.fromEnvironment?.dek === true) return STALE_ENVIRONMENT_KEY;
+	/**
+	 * `false` means the file no longer holds the key that was judged — another terminal paired a new
+	 * one meanwhile — so the next start reads that one; telling the person to pair would only answer
+	 * "already here".
+	 */
+	return forgetStoredDek(owner, dek) ? STALE_KEY : KEY_CHANGED_MEANWHILE;
+}
+
+const STALE_KEY =
+	"The saved sync key no longer opens this account's sync (it was reset). Run rowcat-mcp pair.";
+const STALE_ENVIRONMENT_KEY =
+	"The key in ROWCAT_SYNC_KEY no longer opens this account's sync (it was reset). Replace the value of ROWCAT_SYNC_KEY.";
+const KEY_CHANGED_MEANWHILE =
+	"The saved sync key changed while it was being checked. Run the command again.";
+
 const UNLOCK_NOTICE =
 	"⚠ Anyone who can read this file can open this account's drafts. Don't use it on a shared machine.";
 
@@ -471,11 +513,21 @@ async function doctor(): Promise<number> {
 		return 1;
 	}
 	const owned = dekForViewer(config, viewer.id);
-	out(owned.ok ? "Sync key    ✓" : `Sync key    ✗ ${lockedGuidance(owned)}`);
 	if (!owned.ok) {
+		out(`Sync key    ✗ ${lockedGuidance(owned)}`);
 		out(`            ${NO_TRUSTED_DEVICE_HINT}`);
 		return 1;
 	}
+	// One line for the row, after the server has answered whether the key still opens anything.
+	const stale = await staleKeyMessage(
+		config,
+		apiBaseUrl,
+		config.cookie,
+		viewer.id,
+		owned.dek,
+	);
+	out(stale === null ? "Sync key    ✓" : `Sync key    ✗ ${stale}`);
+	if (stale !== null) return 1;
 	try {
 		const device = await openDevice({
 			baseUrl: apiBaseUrl,
@@ -529,6 +581,17 @@ async function serve(): Promise<number> {
 	const owned = dekForViewer(config, viewer.id);
 	if (!owned.ok) {
 		out(lockedGuidance(owned));
+		return 1;
+	}
+	const stale = await staleKeyMessage(
+		config,
+		apiBaseUrl,
+		config.cookie,
+		viewer.id,
+		owned.dek,
+	);
+	if (stale !== null) {
+		out(stale);
 		return 1;
 	}
 	const device = await openDevice({

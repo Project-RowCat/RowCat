@@ -248,6 +248,38 @@ describe("stream", () => {
 		expect(broker.subscriberCount("alice")).toBe(0);
 	});
 
+	/**
+	 * A wake frame resets the heartbeat timer, so an owner pushing faster than the interval kept the
+	 * heartbeat — and with it the only check — from ever running.
+	 */
+	test("activity does not starve the session check", async () => {
+		const broker = createSyncWakeBroker();
+		const abort = new AbortController();
+		let clock = 0;
+		let signedIn = true;
+		const stream = await openSyncWakeStream({
+			owner: "alice",
+			signal: abort.signal,
+			broker,
+			readCursor: async () => 0,
+			heartbeatMs: 1_000,
+			stillSignedIn: async () => signedIn,
+			now: () => clock,
+		});
+		const reader = stream.getReader();
+		await readFrame(reader);
+
+		clock = 500;
+		broker.publish("alice", 1);
+		expect(cursorOf(await readFrame(reader))).toBe(1);
+
+		signedIn = false;
+		clock = 1_500;
+		broker.publish("alice", 2);
+		expect((await reader.read()).done).toBe(true);
+		expect(broker.subscriberCount("alice")).toBe(0);
+	});
+
 	test("a failed session check keeps the stream: our outage is not the session ending", async () => {
 		const broker = createSyncWakeBroker();
 		const abort = new AbortController();

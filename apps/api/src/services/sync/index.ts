@@ -12,7 +12,18 @@ import {
 	isValidEnvelopeSyntax,
 	verifyKeyringProof,
 } from "@rowcat/sync/server";
-import { and, asc, eq, gt, inArray, lt } from "drizzle-orm";
+import {
+	and,
+	asc,
+	desc,
+	eq,
+	gt,
+	inArray,
+	lt,
+	lte,
+	notInArray,
+	sql,
+} from "drizzle-orm";
 import { db } from "../../db/client.ts";
 import {
 	sync_keyring,
@@ -241,25 +252,47 @@ export async function pullRecords(
 			"The sync cursor has expired. A full resync is required.",
 		);
 
-	// The extra row only decides `hasMore` and is not returned.
-	const rows = await db
-		.select({
-			id: sync_record.id,
-			type: sync_record.type,
-			ciphertext: sync_record.ciphertext,
-			envelope: sync_record.envelope,
-			version: sync_record.version,
-			seq: sync_record.seq,
-			deleted: sync_record.deleted,
-			updated_at: sync_record.updated_at,
-		})
-		.from(sync_record)
-		.where(and(eq(sync_record.owner, owner), gt(sync_record.seq, input.since)))
-		.orderBy(asc(sync_record.seq))
-		.limit(limit + 1);
-
-	const hasMore = rows.length > limit;
-	const page = hasMore ? rows.slice(0, limit) : rows;
+	/**
+	 * The page is decided first from sizes alone, then read. Reading ciphertext for `limit + 1` rows
+	 * and trimming in memory would be the very allocation the byte budget exists to prevent.
+	 *
+	 * The two reads are separate statements, so a push can rewrite rows between them; a rewritten row
+	 * moves to a seq above the page. A page that came back empty would read to the engine as "the
+	 * cursor did not move" and end the run, so the pair is retried until it returns something. Each
+	 * retry needs another commit to land in between, and the last falls back to one row read in a
+	 * single statement, which cannot come back empty while rows remain.
+	 */
+	let rows: PulledRow[] = [];
+	let hasMore = false;
+	for (
+		let attempt = 0;
+		attempt < PULL_PAGE_ATTEMPTS && rows.length === 0;
+		attempt++
+	) {
+		const sizes = await db
+			.select({ seq: sync_record.seq, bytes: sync_record.bytes })
+			.from(sync_record)
+			.where(
+				and(eq(sync_record.owner, owner), gt(sync_record.seq, input.since)),
+			)
+			.orderBy(asc(sync_record.seq))
+			.limit(limit + 1);
+		const pageEnd = pullPageEnd(sizes, limit);
+		if (pageEnd === null)
+			return { records: [], cursor: input.since, hasMore: false };
+		rows = await selectPulledRows(owner, input.since, pageEnd.lastSeq);
+		/**
+		 * A row rewritten between the two reads still has to be fetched, so a page shorter than sized
+		 * says there is more.
+		 */
+		hasMore = pageEnd.hasMore || rows.length < pageEnd.count;
+	}
+	if (rows.length === 0) {
+		rows = await selectPulledRows(owner, input.since, null, 2);
+		hasMore = rows.length > 1;
+		rows = rows.slice(0, 1);
+	}
+	const page = rows;
 
 	return {
 		records: page.map((row) => ({
@@ -284,6 +317,70 @@ export async function pullRecords(
 		 */
 		cursor: page.length > 0 ? page[page.length - 1].seq : input.since,
 		hasMore,
+	};
+}
+
+/** How many times the sized read and the fetch are tried before one row is read in one statement. */
+const PULL_PAGE_ATTEMPTS = 3;
+
+type PulledRow = Awaited<ReturnType<typeof selectPulledRows>>[number];
+
+/**
+ * The owner's rows after `since`, in seq order: up to `throughSeq`, or the first `limit` when no
+ * upper bound is given.
+ */
+function selectPulledRows(
+	owner: string,
+	since: number,
+	throughSeq: number | null,
+	limit?: number,
+) {
+	const query = db
+		.select({
+			id: sync_record.id,
+			type: sync_record.type,
+			ciphertext: sync_record.ciphertext,
+			envelope: sync_record.envelope,
+			version: sync_record.version,
+			seq: sync_record.seq,
+			deleted: sync_record.deleted,
+			updated_at: sync_record.updated_at,
+		})
+		.from(sync_record)
+		.where(
+			and(
+				eq(sync_record.owner, owner),
+				gt(sync_record.seq, since),
+				throughSeq === null ? undefined : lte(sync_record.seq, throughSeq),
+			),
+		)
+		.orderBy(asc(sync_record.seq));
+	return limit === undefined ? query : query.limit(limit);
+}
+
+/**
+ * Where a pull page ends: at most `limit` rows whose bytes add up to no more than `pullMaxBytes`.
+ * The first row is always taken whatever its size, so the page always advances.
+ * `sizes` is the owner's next `limit + 1` rows in seq order; the extra row only says whether more
+ * remain. `null` means nothing is left to send.
+ */
+export function pullPageEnd(
+	sizes: readonly { seq: number; bytes: number }[],
+	limit: number,
+): { lastSeq: number; count: number; hasMore: boolean } | null {
+	let total = 0;
+	let taken = 0;
+	for (const row of sizes) {
+		if (taken === limit) break;
+		if (taken > 0 && total + row.bytes > SYNC_LIMITS.pullMaxBytes) break;
+		total += row.bytes;
+		taken += 1;
+	}
+	if (taken === 0) return null;
+	return {
+		lastSeq: (sizes[taken - 1] as { seq: number }).seq,
+		count: taken,
+		hasMore: sizes.length > taken,
 	};
 }
 
@@ -483,6 +580,25 @@ export async function pushRecords(
 					advanced: false,
 				};
 			// Another transaction just swept it (expired); proceeding and re-applying is correct now.
+		} else {
+			/**
+			 * Only a new claim can push the owner past the cap, so only a new claim trims. The row just
+			 * claimed is the newest and always survives.
+			 */
+			const kept = tx
+				.select({ key: sync_push_dedupe.idempotency_key })
+				.from(sync_push_dedupe)
+				.where(eq(sync_push_dedupe.owner, owner))
+				.orderBy(desc(sync_push_dedupe.created_at))
+				.limit(SYNC_LIMITS.idempotencyMaxPerOwner);
+			await tx
+				.delete(sync_push_dedupe)
+				.where(
+					and(
+						eq(sync_push_dedupe.owner, owner),
+						notInArray(sync_push_dedupe.idempotency_key, kept),
+					),
+				);
 		}
 
 		/**
@@ -655,7 +771,9 @@ const cacheResponse = async (
  * Per-owner cap on distinct types: the abuse defence standing in for a type allowlist (anything
  * well-formed is accepted, so unbounded namespaces could fill storage). It counts only when a new
  * type actually arrives; counting on every push would scan all of the owner's rows (no `(owner,
- * type)` index) as a cost on routine sync.
+ * type)` index) as a cost on routine sync. A new record id is not a new type — every new message is
+ * one — so each incoming type is first probed, and a type the owner already has stops that probe
+ * at its first row.
  */
 async function assertTypeBudget(
 	tx: Tx,
@@ -665,7 +783,25 @@ async function assertTypeBudget(
 ): Promise<void> {
 	const incoming = new Set<string>();
 	for (const item of items) if (!current.has(item.id)) incoming.add(item.type);
-	if (incoming.size === 0) return;
+	/**
+	 * More distinct types than the cap in one batch cannot fit whatever the owner holds; no scan.
+	 * Otherwise probing stops at the first type the owner lacks: that one alone means the full count
+	 * is needed, and probing the rest would each scan every row for nothing.
+	 */
+	if (incoming.size > SYNC_LIMITS.ownerMaxDistinctTypes) throw tooManyTypes();
+	let unseen = false;
+	for (const type of incoming) {
+		const [known] = await tx
+			.select({ one: sql<number>`1` })
+			.from(sync_record)
+			.where(and(eq(sync_record.owner, owner), eq(sync_record.type, type)))
+			.limit(1);
+		if (!known) {
+			unseen = true;
+			break;
+		}
+	}
+	if (!unseen) return;
 
 	const rows = await tx
 		.selectDistinct({ type: sync_record.type })
@@ -673,13 +809,15 @@ async function assertTypeBudget(
 		.where(eq(sync_record.owner, owner));
 	const types = new Set(rows.map((row) => row.type));
 	for (const type of incoming) types.add(type);
-	if (types.size > SYNC_LIMITS.ownerMaxDistinctTypes)
-		throw syncError(
-			507,
-			SYNC_ERROR_CODE.quotaExceeded,
-			"There are too many sync record types.",
-		);
+	if (types.size > SYNC_LIMITS.ownerMaxDistinctTypes) throw tooManyTypes();
 }
+
+const tooManyTypes = () =>
+	syncError(
+		507,
+		SYNC_ERROR_CODE.quotaExceeded,
+		"There are too many sync record types.",
+	);
 
 /** For diagnostics and tests: the owner's current cursor (max seq). */
 export async function readSyncCursor(owner: string): Promise<number> {
