@@ -23,6 +23,8 @@ export function runtimePathIssueMessage(
 			return t("pathIssue.empty");
 		case "traversal":
 			return t("pathIssue.traversal");
+		case "reserved":
+			return t("pathIssue.reserved");
 		case "invalid_character":
 			return t("pathIssue.invalid_character");
 		case "too_long":

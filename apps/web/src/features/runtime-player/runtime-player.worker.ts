@@ -13,6 +13,10 @@ import {
 } from "@rowcat/runtime-host";
 import { createQuickJsEngine } from "@rowcat/runtime-host/quickjs";
 import { workerSchedulerClock } from "#/lib/runtime-vm/worker-clock.ts";
+import {
+	createRuntimeCommitFlow,
+	type RuntimeCommitFlow,
+} from "#/lib/runtime-watchdog/commit-flow.ts";
 import type {
 	PlayerErrorInfo,
 	PlayerGeneration,
@@ -42,11 +46,17 @@ import type {
  *   (validateRuntimeArtifact on the host). The value crosses network and cache, and stale tabs,
  *   service workers, or cached chunks can pair an old runtime with a new artifact. That mismatch
  *   must fail as a rejection, not as an execution error.
+ * - Main paces this worker and watches it. Each commit waits on main's `ack` once a few are
+ *   unanswered (commit-flow.ts), and `ping` is answered here, between turns, so main can tell a turn
+ *   the VM budget cannot reach (a native builtin running for minutes) from a busy one and terminate
+ *   this worker (liveness.ts). Every path that ends a session releases the flow first: stop and
+ *   dispose wait for the scheduler to go idle, and a scheduler parked on main's silence never does.
  */
 
 interface Current {
 	generation: PlayerGeneration;
 	session: RuntimeVmSession;
+	flow: RuntimeCommitFlow;
 }
 
 interface PendingGeneration {
@@ -187,8 +197,9 @@ const isArtifactFailure = (error: unknown): error is RuntimeHostError =>
 async function stopCurrent(): Promise<void> {
 	rejectPendingGenerations("player stopped");
 	if (current === null) return;
-	const { generation, session } = current;
+	const { generation, session, flow } = current;
 	current = null;
+	flow.release();
 	if (session.state === "ready" || session.state === "running") {
 		await session.unmountRoot();
 		await session.settle();
@@ -204,10 +215,12 @@ async function stopCurrent(): Promise<void> {
 async function failIfDead(
 	generation: PlayerGeneration,
 	session: RuntimeVmSession,
+	flow: RuntimeCommitFlow,
 	error: RuntimeExecutionError,
 ): Promise<boolean> {
 	if (session.state !== "failed") return false;
 	if (current?.session === session) current = null;
+	flow.release();
 	await session.dispose();
 	post({
 		type: "failed",
@@ -224,6 +237,8 @@ async function start(
 	await stopCurrent();
 	post({ type: "status", generation, stage: "starting" });
 
+	/** Per session: a new session's revisions start again from 1, and so does what main has answered. */
+	const flow = createRuntimeCommitFlow(workerSchedulerClock());
 	let session: RuntimeVmSession;
 	try {
 		session = await createRuntimeVmSession({
@@ -236,7 +251,7 @@ async function start(
 			artifact: request.artifact,
 			onConsole: (level, args) =>
 				post({ type: "console", generation, level, args: [...args] }),
-			scheduling: { clock: workerSchedulerClock() },
+			scheduling: { clock: flow.clock },
 			storyState: request.storyState,
 			persistentState: request.persistentState,
 			/**
@@ -272,7 +287,7 @@ async function start(
 		});
 		return;
 	}
-	current = { generation, session };
+	current = { generation, session, flow };
 
 	/**
 	 * Report the hydration result before mounting. If migration bumped the version, this is the
@@ -298,7 +313,10 @@ async function start(
 	});
 
 	const mounted = await session.mountRoot({
-		onCommit: (batch) => post({ type: "commit", generation, batch }),
+		onCommit: (batch) => {
+			flow.committed(batch.revision);
+			post({ type: "commit", generation, batch });
+		},
 		/**
 		 * Commands arrive after the commit. That ordering is the §12 guarantee, and this line carries it
 		 * unchanged.
@@ -317,7 +335,7 @@ async function start(
 				args: [diagnostic.code],
 			}),
 		onRootError: (error, work) => {
-			void failIfDead(generation, session, error).then((dead) => {
+			void failIfDead(generation, session, flow, error).then((dead) => {
 				if (!dead)
 					post({
 						type: "root-error",
@@ -329,8 +347,9 @@ async function start(
 		},
 	});
 	if (!mounted.ok) {
-		if (await failIfDead(generation, session, mounted.error)) return;
+		if (await failIfDead(generation, session, flow, mounted.error)) return;
 		current = null;
+		flow.release();
 		await session.dispose();
 		post({
 			type: "failed",
@@ -349,16 +368,25 @@ async function event(
 	source: RuntimeEventSource,
 ): Promise<void> {
 	if (current === null || current.generation !== generation) return;
-	const { session } = current;
+	const { session, flow } = current;
 	const outcome = await session.dispatchEvent(handlerId, payload, source);
 	if (outcome.ok) return;
-	if (await failIfDead(generation, session, outcome.error)) return;
+	if (await failIfDead(generation, session, flow, outcome.error)) return;
 	post({
 		type: "root-error",
 		generation,
 		error: toErrorInfo(outcome.error),
 		work: "event",
 	});
+}
+
+/**
+ * Passes a wake from main through the current session's flow gate. A wake for no session or another
+ * generation runs at once; what it would wake checks the generation itself and drops it.
+ */
+function admit(generation: PlayerGeneration, run: () => void): void {
+	if (current?.generation === generation) current.flow.admit(run);
+	else run();
 }
 
 self.addEventListener(
@@ -379,6 +407,11 @@ self.addEventListener(
 					);
 				return;
 			case "stop":
+				/**
+				 * Released here, not only inside stopCurrent: the chain may still be inside `start` with the
+				 * scheduler parked on main's acknowledgements, and main stopped answering when it sent this.
+				 */
+				if (current?.generation === request.generation) current.flow.release();
 				chain = chain
 					.then(async () => {
 						if (current?.generation === request.generation) await stopCurrent();
@@ -389,13 +422,34 @@ self.addEventListener(
 					);
 				return;
 			case "event":
-				/** Events do not wait on the chain. The session's scheduler owns ordering. */
-				void event(
-					request.generation,
-					request.handlerId,
-					request.payload ?? null,
-					request.source === "media" ? "media" : "interaction",
-				);
+				/**
+				 * Events do not wait on the chain; the session's scheduler orders them. They do wait on the
+				 * flow gate: an event would start a drain the gate never sees (commit-flow.ts), so while main
+				 * is behind it is held, in order, until main catches up or the session ends.
+				 */
+				admit(request.generation, () => {
+					void event(
+						request.generation,
+						request.handlerId,
+						request.payload ?? null,
+						request.source === "media" ? "media" : "interaction",
+					);
+				});
+				return;
+			case "ack":
+				if (current?.generation === request.generation)
+					current.flow.acknowledged(request.revision);
+				return;
+			case "ping":
+				/**
+				 * Answered at once and from here only. Reaching this line means no VM turn is running, which is
+				 * the whole fact main asks about.
+				 */
+				post({
+					type: "pong",
+					generation: request.generation,
+					seq: request.seq,
+				});
 				return;
 			case "generation-result": {
 				const pending = pendingGenerations.get(request.requestId);
@@ -404,7 +458,14 @@ self.addEventListener(
 				 */
 				if (pending === undefined || pending.generation !== request.generation)
 					return;
-				pending.settle(request.result);
+				/**
+				 * A reply wakes the VM like an event does, so it waits on the gate the same way. Settled only if
+				 * still open: a stop may have rejected it as cancelled while it was held.
+				 */
+				admit(request.generation, () => {
+					if (pendingGenerations.get(request.requestId) === pending)
+						pending.settle(request.result);
+				});
 				return;
 			}
 		}

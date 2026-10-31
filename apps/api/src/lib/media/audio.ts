@@ -111,6 +111,12 @@ const MP4_BRANDS = new Set(["M4A ", "M4B ", "mp42", "mp41", "isom", "iso2"]);
  * **rejects the file**: stopping quietly and judging what was walked let a sound track, four
  * thousand filler boxes and then a video track pass as audio, because the walker never reached the
  * `vide` handler.
+ *
+ * The same rule covers a box whose size cannot be right (smaller than its header, past its parent,
+ * a 64-bit size beyond this file's cap). The walker cannot find the next sibling after it, so
+ * everything that follows went unseen; those exits once returned quietly too, and a sound track
+ * followed by such a box holding a video track passed as audio. Any part of the file this walker did
+ * not see is a reason to reject, never a reason to judge the rest.
  */
 const MP4_MAX_BOXES = 4096;
 
@@ -138,11 +144,18 @@ function readMp4(raw: Buffer): ParsedAudio | null {
 		duration: 0,
 		sound: false,
 		video: false,
+		movieHeaders: 0,
 		exhausted: false,
 	};
 	walkMp4(raw, 0, raw.byteLength, 0, state);
 
 	if (state.exhausted) rejectBroken();
+	/**
+	 * A movie has exactly one `mvhd`. With two, which one a player reads is the player's choice, and
+	 * this walker once let the last one win: a long file with a short second header passed the
+	 * duration cap. Two answers to "how long is this" is a file we cannot describe.
+	 */
+	if (state.movieHeaders > 1) rejectBroken();
 	if (state.video) rejectFormat();
 	if (!state.sound) rejectBroken();
 	if (state.timescale <= 0 || state.duration <= 0) rejectBroken();
@@ -159,7 +172,11 @@ interface Mp4State {
 	duration: number;
 	sound: boolean;
 	video: boolean;
-	/** A cap was reached, so part of the file went unseen; the file is not judged on the rest. */
+	movieHeaders: number;
+	/**
+	 * A cap was reached or a box size was impossible, so part of the file went unseen; the file is not
+	 * judged on the rest.
+	 */
 	exhausted: boolean;
 }
 
@@ -196,18 +213,25 @@ function walkMp4(
 		let header = 8;
 		if (size === 1) {
 			// 64-bit size; nonzero high bits are corrupt at this size cap.
-			if (at + 16 > to) return;
-			if (readU32(raw, at + 8) !== 0) return;
+			if (at + 16 > to || readU32(raw, at + 8) !== 0) {
+				state.exhausted = true;
+				return;
+			}
 			size = readU32(raw, at + 12);
 			header = 16;
 		} else if (size === 0) {
 			// Size 0 means "to end of file".
 			size = to - at;
 		}
-		if (size < header || at + size > to) return;
+		if (size < header || at + size > to) {
+			state.exhausted = true;
+			return;
+		}
 
-		if (type === "mvhd") readMvhd(raw, at + header, at + size, state);
-		else if (type === "hdlr") readHdlr(raw, at + header, at + size, state);
+		if (type === "mvhd") {
+			state.movieHeaders += 1;
+			readMvhd(raw, at + header, at + size, state);
+		} else if (type === "hdlr") readHdlr(raw, at + header, at + size, state);
 		else if (MP4_CONTAINERS.has(type))
 			walkMp4(raw, at + header, at + size, depth + 1, state);
 
@@ -276,6 +300,7 @@ const MP3_SAMPLE_RATES: Readonly<Record<number, readonly number[]>> = {
 interface Mp3Frame {
 	readonly offset: number;
 	readonly length: number;
+	readonly layer: number;
 	readonly bitrate: number;
 	readonly sampleRate: number;
 	readonly samplesPerFrame: number;
@@ -288,6 +313,16 @@ interface Mp3Frame {
  * first frame's bitrate on a VBR file can be off several-fold; Xing/Info and VBRI carry the
  * encoder's frame count. Without them CBR is assumed; that error is unpredictable but far smaller
  * than the 10-minute cap's margin.
+ *
+ * The frame count is trusted only as far as the bytes allow. No frame of this version, layer and
+ * sample rate is longer than one at the highest bitrate, so a count whose frames could not fill the
+ * audio bytes is false, and the byte estimate stands instead. Trusted as written, a header claiming
+ * a hundred frames made 10MB of 8kbps audio (hours) read as seconds and pass the duration cap.
+ * Overcounting is left alone: it errs toward rejecting, which the cap has room for.
+ *
+ * ⚠️ This is a header reader, and it stays one. A file whose first frame claims a higher bitrate
+ * than the frames after it still reads short; only walking every frame would close that, and the
+ * module header says why this parser does not decode.
  */
 function readMp3(raw: Buffer): ParsedAudio | null {
 	const start = skipId3v2(raw);
@@ -297,13 +332,45 @@ function readMp3(raw: Buffer): ParsedAudio | null {
 	const end = trimTrailingTags(raw);
 	if (end <= frame.offset) rejectBroken();
 
+	const audioBytes = end - frame.offset;
+	const cbrMs = (audioBytes * 8 * 1000) / (frame.bitrate * 1000);
 	const vbrFrames = readVbrFrameCount(raw, frame);
+	// +1: encoders differ on whether the count includes the frame carrying the header.
+	const possible =
+		vbrFrames !== null &&
+		(vbrFrames + 1) * maxMp3FrameLength(frame) >= audioBytes;
 	const durationMs =
-		vbrFrames !== null
+		vbrFrames !== null && possible
 			? (vbrFrames * frame.samplesPerFrame * 1000) / frame.sampleRate
-			: ((end - frame.offset) * 8 * 1000) / (frame.bitrate * 1000);
+			: cbrMs;
 
 	return { mime: "audio/mpeg", durationMs };
+}
+
+/** The longest frame this version, layer and sample rate can have: highest bitrate, padded. */
+function maxMp3FrameLength(frame: Mp3Frame): number {
+	const bitrates = MP3_BITRATES[`${frame.mpeg1 ? 1 : 2}-${frame.layer}`] ?? [];
+	return mp3FrameLength(
+		frame.layer,
+		frame.samplesPerFrame,
+		Math.max(...bitrates),
+		frame.sampleRate,
+		1,
+	);
+}
+
+/** Bytes in one frame; the length the header implies and the bound above use the same arithmetic. */
+function mp3FrameLength(
+	layer: number,
+	samplesPerFrame: number,
+	bitrate: number,
+	sampleRate: number,
+	padding: number,
+): number {
+	return layer === 1
+		? (Math.floor((12 * bitrate * 1000) / sampleRate) + padding) * 4
+		: Math.floor((samplesPerFrame / 8) * ((bitrate * 1000) / sampleRate)) +
+				padding;
 }
 
 /**
@@ -369,16 +436,19 @@ function decodeMp3Header(raw: Buffer, at: number): Mp3Frame | null {
 
 	const padding = (b2 >> 1) & 0x01;
 	const samplesPerFrame = layer === 1 ? 384 : mpeg1 || layer === 2 ? 1152 : 576;
-	const length =
-		layer === 1
-			? (Math.floor((12 * bitrate * 1000) / sampleRate) + padding) * 4
-			: Math.floor((samplesPerFrame / 8) * ((bitrate * 1000) / sampleRate)) +
-				padding;
+	const length = mp3FrameLength(
+		layer,
+		samplesPerFrame,
+		bitrate,
+		sampleRate,
+		padding,
+	);
 	if (length <= 4) return null;
 
 	return {
 		offset: at,
 		length,
+		layer,
 		bitrate,
 		sampleRate,
 		samplesPerFrame,

@@ -449,3 +449,84 @@ describe("transitions are not rebuilt here", () => {
 			expect(file.source, file.name).not.toMatch(/reducedMotion|reduceMotion/);
 	});
 });
+
+/**
+ * Same wiring as product playback (see that folder's boundaries test). The pure rules are tested in
+ * lib/runtime-watchdog; this pins that the preview actually uses them.
+ */
+describe("the preview worker is paced and watched", () => {
+	const source = (name: string): string =>
+		files().find((file) => file.name === name)?.source ?? "";
+
+	it("the hook watches the worker by its own facts and acknowledges commits", () => {
+		const hook = source("use-runtime-preview.ts");
+		expect(hook).toMatch(/watchRuntimeWorker\(/);
+		/** `starting` resumes and the compile pauses: that is what keeps the compile out of the bound. */
+		expect(hook).toMatch(
+			/message\.stage === "starting" \? "session-starting" : "compiling"/,
+		);
+		expect(hook).toMatch(/watch\.observe\(fact, message\.generation\)/);
+		/**
+		 * Run must not end the watch: a stuck worker cannot read the new start, and nothing else would
+		 * bring the watch back (dev5 re-review). The only thing run() says to it is `restarting()`.
+		 */
+		const run = hook.slice(
+			hook.indexOf("const run = useCallback("),
+			hook.indexOf("const resetPlaythrough = useCallback("),
+		);
+		expect(run).toMatch(/watchRef\.current\?\.restarting\(\)/);
+		expect(run).not.toMatch(/stopWatch\(\)|\.stop\(\)/);
+		expect(hook).toMatch(
+			/client\.acknowledge\(message\.generation, message\.batch\.revision\)/,
+		);
+	});
+
+	it("the worker answers pings, applies acks and releases before every dispose", () => {
+		const worker = source("runtime-preview.worker.ts");
+		expect(worker).toMatch(/case "ping":[\s\S]*?type: "pong"/);
+		expect(worker).toMatch(/case "ack":[\s\S]*?\.acknowledged\(/);
+		/** Wakes from main wait on the gate too, or each one starts an ungated drain. */
+		expect(worker).toMatch(/case "event":[\s\S]*?admit\(request\.generation/);
+		expect(worker).toMatch(
+			/case "generation-result":[\s\S]*?admit\(request\.generation/,
+		);
+		expect(worker).toMatch(/current\.flow\.admit\(run\)/);
+		expect(worker).toMatch(/scheduling: \{ clock: flow\.clock \}/);
+		const disposes = [...worker.matchAll(/await session\.dispose\(\)/g)];
+		expect(disposes.length).toBeGreaterThan(0);
+		for (const match of disposes) {
+			const before = worker.slice(
+				Math.max(0, (match.index ?? 0) - 400),
+				match.index,
+			);
+			expect(before).toMatch(/flow\.release\(\)/);
+		}
+	});
+
+	/**
+	 * Stopping releases the worker's commit gate, so a press it held runs before the unmount and may
+	 * ask for a generation. Stop does not move the generation number, so the router has to refuse the
+	 * stopped generation by its own record, or that request is answered with a paid call nobody reads.
+	 */
+	it("nothing a stopped session asks for is answered", () => {
+		const hook = source("use-runtime-preview.ts");
+		const stop = hook.slice(
+			hook.indexOf("const stop = useCallback("),
+			hook.indexOf(
+				"generationRouter.abort();",
+				hook.indexOf("const stop = useCallback("),
+			),
+		);
+		expect(stop).toMatch(/stoppedGenerationRef\.current = generation;/);
+		expect(hook).toMatch(
+			/currentGeneration: \(\) =>\s*stoppedGenerationRef\.current === generationRef\.current\s*\? -1/,
+		);
+	});
+
+	it("a stop that times out silences the tree it leaves", () => {
+		const hook = source("use-runtime-preview.ts");
+		expect(hook).toMatch(
+			/stopTimerRef\.current = setTimeout\(\(\) => \{[\s\S]*?silenceAudio\(\);[\s\S]*?\}, STOP_GRACE_MS\);/,
+		);
+	});
+});

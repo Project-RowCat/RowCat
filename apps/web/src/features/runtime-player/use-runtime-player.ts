@@ -25,8 +25,17 @@ import { createPreviewGenerationRouter } from "#/features/runtime-preview/runtim
 import { useHoldBuildSwitch } from "#/lib/build-freshness/hold.ts";
 import { useRuntimeSaveScope } from "#/lib/local-runtime-save/scope.ts";
 import type { WebResolvedAssetResolver } from "#/lib/runtime-assets/web-asset-resolver.ts";
+import {
+	type RuntimeWorkerWatch,
+	watchRuntimeWorker,
+} from "#/lib/runtime-watchdog/liveness.ts";
 import type { PlayerWorkerMessage } from "./protocol.ts";
 import type { RuntimePlayerClient } from "./runtime-player-client.ts";
+import {
+	LIFECYCLE_EVENT_SILENCES_AUDIO,
+	runtimePlayerAnswersGeneration,
+	runtimePlayerUnresponsiveFailure,
+} from "./runtime-player-session.ts";
 import {
 	initialRuntimePlayerState,
 	type RuntimePlayerState,
@@ -51,6 +60,14 @@ import {
  *   the current screen.
  * - Leaving the page stops the session: cancel generation, stop, flush saves (capped so
  *   navigation is not blocked), terminate the worker. No orphan worker or unsaved write remains.
+ * - Main paces and watches the worker. Each handled commit is acknowledged, and the worker's
+ *   scheduler waits once a few are unanswered, so batches cannot pile up on this thread
+ *   (lib/runtime-watchdog/commit-flow.ts). A liveness ping runs from the worker's own `starting`
+ *   until the session ends; a worker that stops answering is stuck in a turn the VM budget cannot
+ *   cut, and is terminated (lib/runtime-watchdog/liveness.ts).
+ * - Sound ends with the session, not with the surface. Whenever the session behind the visible
+ *   tree is over (a transition began, the VM or the worker died, or no next session will start), the
+ *   renderer's sound is silenced and the last picture is left as the screen state decides.
  */
 
 export interface RuntimePlayerOptions {
@@ -275,6 +292,8 @@ export function useRuntimePlayer(options: RuntimePlayerOptions): RuntimePlayer {
 				),
 			),
 			onFailure: (error) => {
+				/** The renderer stopped taking batches; nothing will remove its sounds any more. */
+				rendererRef.current?.silenceAudio();
 				dispatch({
 					type: "failed",
 					generation: generationRef.current,
@@ -312,6 +331,8 @@ export function useRuntimePlayer(options: RuntimePlayerOptions): RuntimePlayer {
 			startSession: (start) => startWorkerSession(start),
 			teardownFlushTimeoutMs: TEARDOWN_FLUSH_TIMEOUT_MS,
 			onEvent(event) {
+				if (LIFECYCLE_EVENT_SILENCES_AUDIO[event.type])
+					rendererRef.current?.silenceAudio();
 				switch (event.type) {
 					case "transition":
 						generationRef.current = event.token;
@@ -394,14 +415,28 @@ export function useRuntimePlayer(options: RuntimePlayerOptions): RuntimePlayer {
 		const router = createPreviewGenerationRouter({
 			adapter: () => inputsRef.current.adapter,
 			/**
-			 * Answers a request only if its generation is still the current owner's. Otherwise it returns
-			 * -1, which matches no request.
+			 * Answers a request only while this generation is both the owner and the one on screen
+			 * (runtimePlayerAnswersGeneration). Otherwise it returns -1, which matches no request.
 			 */
 			currentGeneration: () =>
-				sessionRef.current?.generation === generation ? generation : -1,
+				runtimePlayerAnswersGeneration(
+					{
+						session: sessionRef.current?.generation ?? null,
+						visible: generationRef.current,
+					},
+					generation,
+				)
+					? generation
+					: -1,
 			send: (gen, requestId, result) =>
 				sessionRef.current?.client.generationResult(gen, requestId, result),
 		});
+		/**
+		 * Assigned once the client exists. The worker posts nothing before `start`, which is sent after
+		 * the assignment, so no message reaches a null here.
+		 */
+		let clientHandle: RuntimePlayerClient | null = null;
+		let watch: RuntimeWorkerWatch | null = null;
 
 		let stopped = false;
 		let resolveStopped: () => void = () => undefined;
@@ -425,6 +460,10 @@ export function useRuntimePlayer(options: RuntimePlayerOptions): RuntimePlayer {
 					try {
 						rendererRef.current?.apply(message.batch);
 					} catch (error) {
+						/**
+						 * Not acknowledged: the screen has failed, and the worker idling on the flow gate until this
+						 * session is stopped costs nothing.
+						 */
 						dispatch({
 							type: "failed",
 							generation,
@@ -433,7 +472,13 @@ export function useRuntimePlayer(options: RuntimePlayerOptions): RuntimePlayer {
 								message: error instanceof Error ? error.message : String(error),
 							},
 						});
+						return;
 					}
+					/**
+					 * Acknowledged once handled, whether or not a renderer was attached: what the worker waits on
+					 * is this thread having got through the batch.
+					 */
+					clientHandle?.acknowledge(generation, message.batch.revision);
 					return;
 				/**
 				 * Control commands (scroll, focus). The renderer compares revisions and silently discards
@@ -477,6 +522,13 @@ export function useRuntimePlayer(options: RuntimePlayerOptions): RuntimePlayer {
 					if (generationRef.current !== generation) return;
 					remoteAssetsRef.current = new Set(message.remoteAssets);
 					return;
+				case "status":
+					/**
+					 * The worker's first message, sent from its message handling: from here on it can answer, so
+					 * from here on its silence counts. Before it, the worker's script may still be downloading.
+					 */
+					watch?.observe("session-starting");
+					return;
 				case "started":
 					dispatch({ type: "started", generation });
 					return;
@@ -484,10 +536,18 @@ export function useRuntimePlayer(options: RuntimePlayerOptions): RuntimePlayer {
 					dispatch({ type: "root-error", generation, error: message.error });
 					return;
 				case "failed":
+					/** The session is dead in the worker; its last tree stays, its sound does not. */
+					watch?.stop();
+					if (generationRef.current === generation)
+						rendererRef.current?.silenceAudio();
 					dispatch({ type: "failed", generation, failure: message.failure });
 					return;
 				case "stopped":
+					watch?.stop();
 					settleStop();
+					return;
+				case "pong":
+					watch?.answered(message.seq);
 					return;
 				default:
 					return;
@@ -500,7 +560,10 @@ export function useRuntimePlayer(options: RuntimePlayerOptions): RuntimePlayer {
 		const client = await createRuntimePlayerClient({
 			onMessage,
 			onCrash: (message) => {
+				watch?.stop();
 				settleStop();
+				if (generationRef.current === generation)
+					rendererRef.current?.silenceAudio();
 				dispatch({
 					type: "failed",
 					generation,
@@ -508,6 +571,8 @@ export function useRuntimePlayer(options: RuntimePlayerOptions): RuntimePlayer {
 				});
 			},
 		});
+
+		clientHandle = client;
 
 		const session: Session = {
 			generation,
@@ -524,6 +589,30 @@ export function useRuntimePlayer(options: RuntimePlayerOptions): RuntimePlayer {
 			persistentState: start.persistentState,
 			generationEnabled: allowed === true,
 		});
+		/**
+		 * Created with the start but paused until the worker's `starting` (the onMessage branch above):
+		 * the worker's script is still downloading when the client resolves, and a slow network is not a
+		 * stuck turn. From `starting` on, this worker never compiles, and everything it does before
+		 * mounting is either asynchronous (fetching the WASM) or under the execution budget (boot), so it
+		 * can always answer between those steps. A verdict ends the worker the way release() would and
+		 * draws the budget failure. Saves already received are in the coordinator; the worker has nothing
+		 * more to send, so the lifecycle's flush still captures the last value.
+		 */
+		watch = watchRuntimeWorker({
+			ping: (seq) => client.ping(generation, seq),
+			onUnresponsive: () => {
+				session.abortGeneration();
+				client.terminate();
+				settleStop();
+				if (generationRef.current === generation)
+					rendererRef.current?.silenceAudio();
+				dispatch({
+					type: "failed",
+					generation,
+					failure: runtimePlayerUnresponsiveFailure(),
+				});
+			},
+		});
 
 		return {
 			async stop() {
@@ -539,6 +628,12 @@ export function useRuntimePlayer(options: RuntimePlayerOptions): RuntimePlayer {
 				}
 			},
 			release() {
+				/**
+				 * Aborted again: a request the worker posted after stop() began reached the router after the
+				 * first abort, and the router no longer answers this generation, so nothing else would end it.
+				 */
+				session.abortGeneration();
+				watch?.stop();
 				client.terminate();
 				if (sessionRef.current === session) sessionRef.current = null;
 			},

@@ -6,7 +6,7 @@
  * **neither the harness nor the WASM rides in the JS bundle as a string.**
  */
 
-export const RUNTIME_VM_HARNESS_VERSION = "0a37712c4e6791b6";
+export const RUNTIME_VM_HARNESS_VERSION = "79c24a461be05787";
 
 export const RUNTIME_VM_WASM_SHA256 = "b56fe5094b8751c47b8c32fb5ed4d75afe2dbb43412d3d983ac5d1156af456da";
 

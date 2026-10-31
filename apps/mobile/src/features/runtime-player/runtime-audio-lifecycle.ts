@@ -85,3 +85,26 @@ export function attachRuntimeAudio(
 		deck.dispose();
 	};
 }
+
+/**
+ * The store whose sound may play now: the session's tree store while that session is `starting` or
+ * `running`, otherwise none.
+ *
+ * Keyed on the store alone, the deck outlived the session that made the sound. The store keeps the
+ * last tree through a failure (the screen may still want it) and through a stop whose unmount commit
+ * never arrived — a harness that hung or crashed, or a transition blocked on its save — so the
+ * previous playthrough's looped music played on behind a failed or syncing screen. Keeping the
+ * visible tree and keeping the sound are separate decisions; this is the second one.
+ *
+ * `stopping` is silent too: restart and reset stop the old session the moment their transition
+ * begins, and the music should end with the press, not after the save flushed.
+ */
+export function runtimeAudioStore<S>(
+	native: { readonly status: string },
+	store: S | null,
+): S | null {
+	if (store === null) return null;
+	return native.status === "starting" || native.status === "running"
+		? store
+		: null;
+}

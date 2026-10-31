@@ -6,6 +6,10 @@ import {
 	rowcatRuntimeNativeModule,
 } from "../../../modules/rowcat-runtime-webview/index.ts";
 import type { NativeRuntimeHostDescriptor } from "./host-bridge.ts";
+import {
+	RUNTIME_HOST_ORIGIN_WHITELIST,
+	runtimeHostNavigationAllowed,
+} from "./navigation-policy.ts";
 import type { NativeRuntimeTransport } from "./transport.ts";
 
 /**
@@ -33,6 +37,23 @@ import type { NativeRuntimeTransport } from "./transport.ts";
 let nextHostId = 1;
 
 /**
+ * One WebView per transport. A session renews its transport when the old one died or stopped
+ * answering (`session.ts`), and the new transport must land in a **new realm**: a stuck thread or a
+ * crashed process cannot be reused, and reopening the same view would hand the fresh bridge to the
+ * document that just hung. Keying on the transport's identity is what remounts it.
+ */
+const hostKeys = new WeakMap<NativeRuntimeTransport, number>();
+let nextHostKey = 1;
+const hostKeyFor = (transport: NativeRuntimeTransport): number => {
+	let key = hostKeys.get(transport);
+	if (key === undefined) {
+		key = nextHostKey++;
+		hostKeys.set(transport, key);
+	}
+	return key;
+};
+
+/**
  * The injected script. It wraps the message once more as a JS string literal, and the harness reads
  * it back with `JSON.parse`. Concatenating the value directly into code would make the value code
  * itself. The trailing `true` is the format react-native-webview requires.
@@ -47,10 +68,13 @@ export function NativeRuntimeHostView({
 	descriptor: NativeRuntimeHostDescriptor;
 	transport: NativeRuntimeTransport;
 }) {
+	const key = hostKeyFor(transport);
 	if (descriptor.bridge === "android-webmessage")
-		return <AndroidHost descriptor={descriptor} transport={transport} />;
+		return (
+			<AndroidHost key={key} descriptor={descriptor} transport={transport} />
+		);
 	if (descriptor.bridge === "ios-webview")
-		return <IosHost descriptor={descriptor} transport={transport} />;
+		return <IosHost key={key} descriptor={descriptor} transport={transport} />;
 	return null;
 }
 
@@ -119,8 +143,12 @@ function IosHost({
 			 *
 			 * Creator code runs inside QuickJS WASM, and that boundary is the real isolation. The props
 			 * below are the second fence for when that boundary is breached: escaped code would land in a
-			 * browser realm where `fetch` works, so a one-document harness must be unable to navigate,
-			 * open windows, or reach cookies and other files.
+			 * browser realm, so a one-document harness must be unable to navigate, open windows, or reach
+			 * cookies and other files. Its requests are fenced by the document itself (`harness-document.ts`):
+			 * the Content-Security-Policy for fetch, XHR, WebSocket and subresources, a prelude that deletes
+			 * the WebRTC constructors from this realm's global (no CSP directive reaches ICE/STUN; a same-origin
+			 * child frame still has its own, so this narrows rather than closes), and DNS prefetch turned off —
+			 * WKWebView intercepts nothing on this path.
 			 *
 			 * `allowFileAccessFromFileURLs` being on is the one axis this slice loosened, and the price is
 			 * that WASM does not cross the bridge as base64. The read-access scope is the single asset
@@ -130,18 +158,17 @@ function IosHost({
 			<WebView
 				ref={webview}
 				source={{ uri: descriptor.documentUrl }}
-				originWhitelist={["file://*"]}
+				/**
+				 * `*`, so every URL reaches the decision below. A URL failing a narrower whitelist is not
+				 * rejected by the library but handed to the OS (`navigation-policy.ts`).
+				 */
+				originWhitelist={RUNTIME_HOST_ORIGIN_WHITELIST}
 				allowingReadAccessToURL={descriptor.readAccessUrl}
 				allowFileAccessFromFileURLs
 				allowUniversalAccessFromFileURLs={false}
-				/**
-				 * Navigation is allowed **only inside the asset directory**. Exact matching of the single
-				 * document is not used, because the first load's URL may not match the string we built
-				 * character for character (percent-encoding, symlink resolution). The scope is still one folder
-				 * holding the two committed files; any other destination is rejected whatever its scheme.
-				 */
+				/** Navigation is allowed **only inside the asset directory**, whatever the scheme. */
 				onShouldStartLoadWithRequest={(request) =>
-					request.url.startsWith(descriptor.readAccessUrl ?? "\u0000")
+					runtimeHostNavigationAllowed(request.url, descriptor.readAccessUrl)
 				}
 				setSupportMultipleWindows={false}
 				javaScriptCanOpenWindowsAutomatically={false}

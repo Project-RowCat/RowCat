@@ -30,6 +30,13 @@ import {
 import { runtimeProjectSignature } from "#/features/runtime-studio/compile/signature.ts";
 import type { RuntimeProjectSnapshot } from "#/features/runtime-studio/compile/source-snapshot.ts";
 import type { WebResolvedAssetResolver } from "#/lib/runtime-assets/web-asset-resolver.ts";
+import {
+	RUNTIME_UNRESPONSIVE_CODE,
+	RUNTIME_UNRESPONSIVE_MESSAGE,
+	type RuntimeWorkerFact,
+	type RuntimeWorkerWatch,
+	watchRuntimeWorker,
+} from "#/lib/runtime-watchdog/liveness.ts";
 import type { PreviewGeneration, PreviewWorkerMessage } from "./protocol.ts";
 import type { RuntimePreviewClient } from "./runtime-preview-client.ts";
 import {
@@ -78,6 +85,14 @@ import {
  *   fear the run button. Enabling is an explicit action, and the choice is fixed when a run starts.
  * - Even when AI is on, requests start only from user interaction. The host decides that
  *   (`RuntimeHostCallContext.origin`); this file does not restate it.
+ * - Main paces and watches the worker as product playback does: each commit is acknowledged
+ *   (lib/runtime-watchdog/commit-flow.ts), and the worker is watched for liveness from its own
+ *   `starting` (after the compile, which is long and synchronous by design) until it reports its
+ *   next compile or the session's end. A worker that stops answering is stuck in a turn the VM
+ *   budget cannot cut, and is terminated (lib/runtime-watchdog/liveness.ts). The watch belongs to
+ *   the worker, not to a run: pressing run on a stuck preview leaves it counting.
+ * - Sound ends with the session. A dead VM, a dead worker, a renderer failure or a stop that timed
+ *   out leaves the last tree on screen and silences it.
  */
 
 /**
@@ -85,6 +100,24 @@ import {
  * cleanup may hang.
  */
 const STOP_GRACE_MS = 3_000;
+
+/**
+ * What a preview worker message says about the worker itself. Read before the generation filter:
+ * a stale session's `starting` still means creator code is about to run on that one thread.
+ */
+function previewWorkerFact(
+	message: PreviewWorkerMessage,
+): RuntimeWorkerFact | null {
+	switch (message.type) {
+		case "status":
+			return message.stage === "starting" ? "session-starting" : "compiling";
+		case "failed":
+		case "stopped":
+			return "session-ended";
+		default:
+			return null;
+	}
+}
 
 export interface RuntimePreviewInput {
 	/** The current editor project: plain `{ path, content }` entries plus the entry path. */
@@ -242,10 +275,20 @@ export function useRuntimePreview({
 	 * same place. The object holds no state, so stopping is a single `abort()` call.
 	 */
 	const generationRouterRef = useRef<PreviewGenerationRouter | null>(null);
+	/**
+	 * The generation Stop was pressed for. Stop does not move `generationRef` (the stopping session's
+	 * `stopped` still has to land), but from that press on nothing that session asks for is answered:
+	 * stopping releases the worker's commit gate, and a press it was holding then runs before the unmount
+	 * and may ask for a generation. Answering would start a paid request after Stop that nobody reads.
+	 */
+	const stoppedGenerationRef = useRef<number | null>(null);
 	if (generationRouterRef.current === null)
 		generationRouterRef.current = createPreviewGenerationRouter({
 			adapter: () => adapterRef.current,
-			currentGeneration: () => generationRef.current,
+			currentGeneration: () =>
+				stoppedGenerationRef.current === generationRef.current
+					? -1
+					: generationRef.current,
 			send: (generation, requestId, result) => {
 				debugRef.current?.generationResult({
 					requestId,
@@ -262,6 +305,12 @@ export function useRuntimePreview({
 	const rendererRef = useRef<WebRuntimeRenderer | null>(null);
 	const [audioActivationRequired, setAudioActivationRequired] = useState(false);
 	const stopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	/** The current worker's liveness watch. Created and ended with the worker (see ensureClient). */
+	const watchRef = useRef<RuntimeWorkerWatch | null>(null);
+	const stopWatch = useCallback((): void => {
+		watchRef.current?.stop();
+		watchRef.current = null;
+	}, []);
 	const snapshotRef = useRef(snapshot);
 	snapshotRef.current = snapshot;
 	/**
@@ -335,9 +384,22 @@ export function useRuntimePreview({
 					return;
 				case "commit": {
 					const renderer = rendererRef.current;
-					if (renderer === null) return;
+					/**
+					 * Acknowledged whether or not a surface is attached: the worker waits on this thread having
+					 * got through the batch, and an unattached surface must not park the session.
+					 */
+					const acknowledge = (): void => {
+						void clientRef.current?.then((client) =>
+							client.acknowledge(message.generation, message.batch.revision),
+						);
+					};
+					if (renderer === null) {
+						acknowledge();
+						return;
+					}
 					try {
 						renderer.apply(message.batch);
+						acknowledge();
 						dispatch({
 							type: "committed",
 							generation: message.generation,
@@ -345,6 +407,7 @@ export function useRuntimePreview({
 						});
 					} catch (error) {
 						/** A renderer failure is not the creator's. Stop the preview and discard the session. */
+						renderer.silenceAudio();
 						dispatch({
 							type: "failed",
 							generation: message.generation,
@@ -407,6 +470,8 @@ export function useRuntimePreview({
 					});
 					return;
 				case "failed":
+					/** The session is over in the worker: its last tree stays, its sound does not. */
+					rendererRef.current?.silenceAudio();
 					dispatch({
 						type: "failed",
 						generation: message.generation,
@@ -423,21 +488,75 @@ export function useRuntimePreview({
 	);
 
 	const ensureClient = useCallback((): Promise<RuntimePreviewClient> => {
-		if (clientRef.current === null)
-			clientRef.current = import("./runtime-preview-client.ts").then((module) =>
-				module.createRuntimePreviewClient({
-					onMessage,
-					onCrash: (message) => {
-						dispatch({
-							type: "failed",
-							generation: generationRef.current,
-							failure: { stage: "worker", message },
-						});
+		if (clientRef.current !== null) return clientRef.current;
+		/**
+		 * One watch per worker, starting paused: the worker has said nothing yet, and loading its script
+		 * (the compiler is in it) is not a turn. Its own messages move it, through this client's handler
+		 * only, so a message can never move another worker's watch.
+		 *
+		 * A verdict terminates the worker (the next run creates a new one), cuts any paid request, and
+		 * draws the budget failure over the last tree, silenced, on whatever run is current: the run
+		 * that was pressed on a stuck worker is the one that cannot start.
+		 */
+		const watch = watchRuntimeWorker({
+			ping: (seq) => {
+				void pending.then((client) => client.ping(generationRef.current, seq));
+			},
+			onUnresponsive: () => {
+				if (watchRef.current === watch) watchRef.current = null;
+				void pending.then((client) => client.terminate());
+				if (clientRef.current !== pending) return;
+				clientRef.current = null;
+				generationRouter.abort();
+				clearStopTimer();
+				rendererRef.current?.silenceAudio();
+				setGenerationActive(false);
+				dispatch({
+					type: "failed",
+					generation: generationRef.current,
+					failure: {
+						stage: "runtime",
+						error: {
+							kind: "host",
+							name: "RuntimeHostError",
+							message: RUNTIME_UNRESPONSIVE_MESSAGE,
+							code: RUNTIME_UNRESPONSIVE_CODE,
+							componentStack: [],
+							frames: [],
+						},
 					},
-				}),
-			);
-		return clientRef.current;
-	}, [onMessage]);
+				});
+			},
+		});
+		const pending = import("./runtime-preview-client.ts").then((module) =>
+			module.createRuntimePreviewClient({
+				onMessage: (message) => {
+					/** Liveness is not an observation event; the debugger never sees it. */
+					if (message.type === "pong") {
+						watch.answered(message.seq);
+						return;
+					}
+					const fact = previewWorkerFact(message);
+					if (fact !== null) watch.observe(fact, message.generation);
+					onMessage(message);
+				},
+				onCrash: (message) => {
+					watch.stop();
+					if (watchRef.current === watch) watchRef.current = null;
+					rendererRef.current?.silenceAudio();
+					dispatch({
+						type: "failed",
+						generation: generationRef.current,
+						failure: { stage: "worker", message },
+					});
+				},
+			}),
+		);
+		stopWatch();
+		watchRef.current = watch;
+		clientRef.current = pending;
+		return pending;
+	}, [clearStopTimer, generationRouter, onMessage, stopWatch]);
 
 	const run = useCallback(
 		(options: { resetStory?: boolean; resetPersistent?: boolean } = {}) => {
@@ -468,6 +587,12 @@ export function useRuntimePreview({
 			 * without aborting, a paid request already sent would run to completion with no one reading it.
 			 */
 			generationRouter.abort();
+			/**
+			 * The watch keeps counting. If the worker is stuck in the old session's turn it cannot read this
+			 * start, and only the watch can still end it; a healthy worker pauses the watch itself by
+			 * reporting its compile.
+			 */
+			watchRef.current?.restarting();
 			debugRef.current?.run({
 				generation,
 				resetStory: options.resetStory === true,
@@ -541,6 +666,7 @@ export function useRuntimePreview({
 
 	const stop = useCallback(() => {
 		const generation = generationRef.current;
+		stoppedGenerationRef.current = generation;
 		generationRouter.abort();
 		setGenerationActive(false);
 		dispatch({ type: "stop", generation });
@@ -548,20 +674,26 @@ export function useRuntimePreview({
 		if (pending === null) return;
 		void pending.then((client) => client.stop(generation));
 		clearStopTimer();
-		/** If cleanup hangs, terminate the worker. The next run creates a new one. */
+		/**
+		 * If cleanup hangs, terminate the worker. The next run creates a new one. The unmount commit that
+		 * would have removed the sounds never arrives, so they are silenced here; the tree stays.
+		 */
 		stopTimerRef.current = setTimeout(() => {
 			stopTimerRef.current = null;
+			stopWatch();
 			void pending.then((client) => client.terminate());
 			clientRef.current = null;
+			rendererRef.current?.silenceAudio();
 			dispatch({ type: "stopped", generation });
 		}, STOP_GRACE_MS);
-	}, [clearStopTimer, generationRouter]);
+	}, [clearStopTimer, generationRouter, stopWatch]);
 
 	useEffect(
 		() => () => {
 			const generation = generationRef.current;
 			generationRef.current = generation + 1;
 			generationRouter.abort();
+			stopWatch();
 			clearStopTimer();
 			const pending = clientRef.current;
 			clientRef.current = null;
@@ -571,7 +703,7 @@ export function useRuntimePreview({
 				setTimeout(() => client.terminate(), STOP_GRACE_MS);
 			});
 		},
-		[clearStopTimer, generationRouter],
+		[clearStopTimer, generationRouter, stopWatch],
 	);
 
 	const attachSurface = useCallback((element: HTMLDivElement | null) => {

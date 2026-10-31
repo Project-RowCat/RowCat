@@ -5,7 +5,7 @@ import {
 	resolveEffectiveGeneration,
 	resolveGenerationExecution,
 } from "@rowcat/chat";
-import { applyPlatformSafetyPolicy } from "@rowcat/chat/guards";
+import { runtimeGenerationSafety } from "@rowcat/chat/guards";
 import {
 	CHAT_MAX_OUTPUT_TOKENS,
 	type ChatGenerationRequest,
@@ -57,6 +57,7 @@ import { toNativeGenerationFailure } from "./runtime-generation-failure.ts";
  *
  * ```text
  * [RowCat] absolute prohibitions · rating guard   the head of applyPlatformSafetyPolicy
+ *          · minor guard (adult, when the instructions describe a minor)
  * [creator] instructions                           this value; it can be neither removed nor
  * overridden
  * [RowCat] rating tail guard                       the last instruction just before generation
@@ -182,6 +183,7 @@ export function useRuntimeGeneration(
 				{ adult: workIsAdult },
 				{ adultAllowed: canViewAdultContent(current) },
 			);
+			const safety = runtimeGenerationSafety(request.instructions, allAges);
 			const generationRequest: ChatGenerationRequest = {
 				/**
 				 * **The creator runtime has no tools.** Even though the contract has a slot for them, this path
@@ -190,10 +192,11 @@ export function useRuntimeGeneration(
 				 * under names we have not reviewed, into the device's data.
 				 */
 				tools: [],
-				system: applyPlatformSafetyPolicy(request.instructions, {
-					allAges,
-					houseRules: false,
-				}),
+				/**
+				 * The creator's instructions between the guards, plus the minor guard when they describe a
+				 * minor — one judgment that also fills `context` (`runtimeGenerationSafety` in `@rowcat/chat/guards`).
+				 */
+				system: safety.system,
 				messages: request.messages.map((message) => ({
 					role: message.role,
 					content: message.content,
@@ -222,10 +225,7 @@ export function useRuntimeGeneration(
 						target: execution.target,
 					}),
 				}),
-				context: {
-					requestedMode: allAges ? "all-ages" : "adult",
-					minorCharacterPresent: false,
-				},
+				context: safety.context,
 			};
 
 			const transport = createGenerationTransport(execution.target, {

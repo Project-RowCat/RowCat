@@ -49,8 +49,9 @@ export const RUNTIME_MCP_LIMITS = {
 	inputChars: 10_000,
 	searchResults: 20,
 	/**
-	 * Maximum JSON bytes one tool returns. An overflow is cut, and the cut is reported in the
-	 * response.
+	 * Maximum UTF-8 bytes of the text one tool returns, the truncation notice included. An overflow is
+	 * cut on a character boundary, and the cut is reported in the response. The transport
+	 * (`apps/mcp/src/server.ts`) reads this value; it keeps no copy.
 	 */
 	responseBytes: 512 * 1024,
 } as const;

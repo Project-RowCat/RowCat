@@ -72,7 +72,18 @@ export type PlayerWorkerRequest =
 			generation: PlayerGeneration;
 			requestId: number;
 			result: PlayerGenerationResult;
-	  };
+	  }
+	/**
+	 * Main has handled every commit up to this revision. The worker's scheduler does not start another
+	 * slice while too many commits are unanswered (lib/runtime-watchdog/commit-flow.ts), so a work
+	 * cannot queue batches on main faster than main applies them.
+	 */
+	| { type: "ack"; generation: PlayerGeneration; revision: number }
+	/**
+	 * Liveness: the worker answers from its message handler, which runs only between VM turns. Silence
+	 * past the bound means a turn is stuck where the budget cannot reach (lib/runtime-watchdog/liveness.ts).
+	 */
+	| { type: "ping"; generation: PlayerGeneration; seq: number };
 
 /**
  * Failure categories. They separate the creator's failures from ours (§131).
@@ -179,4 +190,6 @@ export type PlayerWorkerMessage =
 			request: PlayerGenerationRequest;
 	  }
 	| { type: "failed"; generation: PlayerGeneration; failure: PlayerFailure }
-	| { type: "stopped"; generation: PlayerGeneration };
+	| { type: "stopped"; generation: PlayerGeneration }
+	/** The answer to `ping`, carrying its number. */
+	| { type: "pong"; generation: PlayerGeneration; seq: number };

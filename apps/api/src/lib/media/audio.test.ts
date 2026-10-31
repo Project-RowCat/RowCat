@@ -49,6 +49,24 @@ describe("MP3", () => {
 		expect(Math.round(audio.durationMs)).toBe(Math.round(1000 * MP3_FRAME_MS));
 	});
 
+	/**
+	 * A frame count is the encoder's claim, and the bytes can contradict it: a frame is never longer
+	 * than its version and layer allow at the highest bitrate, so a hundred frames cannot fill 40KB.
+	 * Trusted anyway, a small count made an hours-long 8kbps file read as seconds and pass the cap.
+	 */
+	test("a frame count the bytes cannot hold falls back to the byte estimate", () => {
+		const cbr = validateAudio(buildMp3({ frames: 100 }));
+		const forged = validateAudio(buildMp3({ frames: 100, xingFrames: 10 }));
+		expect(forged.durationMs).toBe(cbr.durationMs);
+	});
+
+	test("a forged frame count does not get a long file past the length cap", () => {
+		// About 613 seconds of 128kbps frames under a header that claims a hundred.
+		const long = buildMp3({ frames: 23_500, xingFrames: 100 });
+		expect(long.byteLength).toBeLessThan(10 * 1024 * 1024);
+		expect(codeOf(() => validateAudio(long))).toBe("media_audio_too_long");
+	});
+
 	test("a trailing ID3v1 is left out of the audio bytes", () => {
 		const withTag = validateAudio(buildMp3({ frames: 20, id3v1: true }));
 		const without = validateAudio(buildMp3({ frames: 20 }));
@@ -134,7 +152,88 @@ describe("M4A", () => {
 		const truncated = buildM4a().subarray(0, 40);
 		expect(codeOf(() => validateAudio(truncated))).toBe("media_invalid_audio");
 	});
+
+	/**
+	 * A movie has one `mvhd`. With two, the last one used to decide, while a player reads the first:
+	 * a long file could carry a short second header and pass the cap.
+	 */
+	test("a second movie header is damage, not a second opinion", () => {
+		const file = m4a(
+			box("moov", mvhd(44100, 44100 * 3600), mvhd(44100, 44100 * 5), sound()),
+		);
+		expect(codeOf(() => validateAudio(file))).toBe("media_invalid_audio");
+	});
+
+	/**
+	 * A box whose size cannot be right ends the walk of its container, so what comes after it went
+	 * unseen. Judged on what was walked, a sound track followed by an oversized box holding a video
+	 * track passed as audio — the same shape the box cap was closed against.
+	 */
+	test.each([
+		[
+			"overruns its parent",
+			(inner: Buffer) => sizedBox("trak", inner.byteLength + 64, inner),
+		],
+		[
+			"is smaller than its header",
+			(inner: Buffer) => sizedBox("trak", 4, inner),
+		],
+		[
+			"has a 64-bit size with high bits set",
+			(inner: Buffer) => {
+				const header = Buffer.alloc(16);
+				header.writeUInt32BE(1, 0);
+				header.write("trak", 4, "latin1");
+				header.writeUInt32BE(1, 8);
+				header.writeUInt32BE(inner.byteLength + 16, 12);
+				return Buffer.concat([header, inner]);
+			},
+		],
+	])("a box that %s is damage, and what follows it is not ignored", (_, broken) => {
+		const file = m4a(
+			box(
+				"moov",
+				mvhd(44100, 44100 * 30),
+				sound(),
+				broken(box("mdia", hdlr("vide"))),
+			),
+		);
+		expect(codeOf(() => validateAudio(file))).toBe("media_invalid_audio");
+	});
 });
+
+/**
+ * Hand-built boxes for the shapes the fixture builder cannot express (a second header, a size that
+ * lies). Kept here rather than in `test/audio-fixture.ts` because no honest file has them.
+ */
+const sizedBox = (type: string, size: number, payload: Buffer): Buffer => {
+	const header = Buffer.alloc(8);
+	header.writeUInt32BE(size, 0);
+	header.write(type, 4, "latin1");
+	return Buffer.concat([header, payload]);
+};
+const box = (type: string, ...children: Buffer[]): Buffer => {
+	const payload = Buffer.concat(children);
+	return sizedBox(type, payload.byteLength + 8, payload);
+};
+const hdlr = (handler: string): Buffer => {
+	const payload = Buffer.alloc(25);
+	payload.write(handler, 8, "latin1");
+	return box("hdlr", payload);
+};
+const mvhd = (timescale: number, duration: number): Buffer => {
+	const payload = Buffer.alloc(100);
+	payload.writeUInt32BE(timescale, 12);
+	payload.writeUInt32BE(duration, 16);
+	return box("mvhd", payload);
+};
+const sound = (): Buffer => box("trak", box("mdia", hdlr("soun")));
+const m4a = (moov: Buffer): Buffer =>
+	Buffer.concat([
+		box("ftyp", Buffer.from("M4A \0\0\0\0M4A mp42", "latin1")),
+		moov,
+		box("mdat", Buffer.alloc(1024)),
+	]);
 
 describe("limits", () => {
 	test("an empty body is not a format problem", () => {

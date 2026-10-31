@@ -181,7 +181,10 @@ const CLASSIFY_WITHOUT_CLOCK: RuntimeVmSlice = {
 	isCancelled: () => true,
 };
 
-/** A thrown value that could not be read in time, or whose reading threw. */
+/** Thrown inside classification when a read was cut by the interrupt. Never leaves this file. */
+const INTERRUPTED_READ = Symbol("interrupted read");
+
+/** A thrown value whose reading threw for a reason other than the interrupt. */
 const UNREADABLE_FAILURE: RuntimeVmFailure = {
 	kind: "thrown",
 	name: "Error",
@@ -298,7 +301,15 @@ class QuickJsInstance implements RuntimeVmInstance {
 	 * `JSON.stringify`, so `throw { toJSON() { for (;;) {} } }` ran unbounded on the host thread: past the
 	 * execution budget, past stop and dispose. So classification gets a slice of its own
 	 * (`CLASSIFY_BUDGET_MS`, on the clock of the slice that just ran) and reads three properties instead
-	 * of dumping the value. A read that is interrupted or throws folds to an unnamed creator error.
+	 * of dumping the value.
+	 *
+	 * That slice never outlives the turn's own deadline. It used to start a fresh 25 ms per value, and
+	 * one sweep turn classifies every settled waiting execution, so forty rejections whose `name`
+	 * getter loops held one turn for a second while the session stayed `ready`. And a read the
+	 * interrupt cut is `interrupted`, fatal like every other interrupt: creator code was stopped
+	 * mid-statement, which is the reason interrupts end a session (scheduler/failures.ts). Folded to a
+	 * recoverable creator error it was also what let the next value in the sweep start over. A read that
+	 * throws on its own still folds to an unnamed creator error.
 	 *
 	 * Not dumping objects also closes the second defect: `dump` disposes a promise's handle itself,
 	 * after which reading or disposing that handle here was a use-after-free that escaped the scheduler
@@ -307,18 +318,24 @@ class QuickJsInstance implements RuntimeVmInstance {
 	private classify(error: QuickJSHandle): RuntimeVmFailure {
 		const outer = this.currentSlice;
 		const basis = outer ?? this.lastSlice;
+		const ownDeadline = basis === null ? 0 : basis.now() + CLASSIFY_BUDGET_MS;
 		this.currentSlice =
 			basis === null
 				? CLASSIFY_WITHOUT_CLOCK
 				: {
-						deadline: basis.now() + CLASSIFY_BUDGET_MS,
+						deadline: Math.min(basis.deadline, ownDeadline),
 						now: () => basis.now(),
 						isCancelled: () => basis.isCancelled(),
 					};
 		try {
 			return this.readFailure(error);
-		} catch {
-			return UNREADABLE_FAILURE;
+		} catch (cause) {
+			if (cause !== INTERRUPTED_READ) return UNREADABLE_FAILURE;
+			return basis !== null &&
+				!basis.isCancelled() &&
+				ownDeadline < basis.deadline
+				? { kind: "interrupted", during: "read" }
+				: { kind: "interrupted" };
 		} finally {
 			this.currentSlice = outer;
 			if (error.alive) error.dispose();
@@ -375,12 +392,24 @@ class QuickJsInstance implements RuntimeVmInstance {
 	private stringProp(error: QuickJSHandle, name: string): string | null {
 		const handle = this.context.getProp(error, name);
 		try {
-			return this.context.typeof(handle) === "string"
-				? this.context.getString(handle)
-				: null;
+			const type = this.context.typeof(handle);
+			/**
+			 * A read that raised does not throw here: getProp hands back the exception value, whose typeof
+			 * is `unknown`. Whether it was the creator's getter throwing or the interrupt is told apart by
+			 * the slice, and only the interrupt stops the reading.
+			 */
+			if (type === "unknown" && this.readCut()) throw INTERRUPTED_READ;
+			return type === "string" ? this.context.getString(handle) : null;
 		} finally {
 			handle.dispose();
 		}
+	}
+
+	/** Whether the slice classification runs under has been cut (deadline passed or cancelled). */
+	private readCut(): boolean {
+		const slice = this.currentSlice;
+		if (slice === null || slice === CLASSIFY_WITHOUT_CLOCK) return false;
+		return slice.isCancelled() || slice.now() > slice.deadline;
 	}
 
 	private engineFailure(cause: unknown): RuntimeVmOutcome<never> {

@@ -129,6 +129,7 @@ export {
 } from "./persistent-state.ts";
 export {
 	DEFAULT_BUDGET_POLICY,
+	RUNTIME_TURN_OVERRUN_GRACE_MS,
 	type RuntimeBudgetPolicy,
 } from "./scheduler/budget.ts";
 export {

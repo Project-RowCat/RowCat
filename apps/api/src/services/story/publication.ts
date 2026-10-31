@@ -210,6 +210,8 @@ export interface PublishStoryResult {
 export async function publishStory(
 	viewer: Viewer,
 	request: StoryPublishRequest,
+	/** The request's signal; a client that leaves ends its compile (`runtime-compile.ts`). */
+	signal?: AbortSignal,
 ): Promise<PublishStoryResult> {
 	requirePublishableVisibility(request.metadata);
 	requireAdultPublishEligibility(viewer, request.metadata.adult);
@@ -220,7 +222,7 @@ export async function publishStory(
 	 * building a TypeScript program takes hundreds of milliseconds and holding a connection or lock
 	 * that long slows unrelated requests (cover normalization made the same call).
 	 */
-	const runtime = await planStoryRuntime(request.runtime, viewer.id);
+	const runtime = await planStoryRuntime(request.runtime, viewer.id, signal);
 
 	/**
 	 * Mint the identity up front: the payload needs the id before INSERT, which avoids an "insert
@@ -387,16 +389,20 @@ export async function updatePublishedStory(
 	viewer: Viewer,
 	storyId: string,
 	request: StoryPublishRequest,
+	/** The request's signal; a client that leaves ends its compile (`runtime-compile.ts`). */
+	signal?: AbortSignal,
 ): Promise<Story> {
 	requirePublishableVisibility(request.metadata);
 	requireAdultPublishEligibility(viewer, request.metadata.adult);
-	await requireOwnSceneImages(viewer.id, request.play);
-	/** Same order as first publication: compile before the DB, outside the transaction. */
-	const runtime = await planStoryRuntime(request.runtime, viewer.id);
 
 	/**
 	 * Lookup only to name the failure reason. The UPDATE's WHERE below is the final authority
 	 * (ownership can change in between).
+	 *
+	 * It stands before the compile, not after it. The compile is the most expensive thing this request
+	 * can cost and the lookup is one indexed read; in the other order a PUT on any story id, someone
+	 * else's included, spent a full compile slot before answering 404. Reading here and compiling
+	 * outside the transaction leaves the same window the UPDATE's predicate already closes.
 	 */
 	const [existing] = await db
 		.select({
@@ -431,6 +437,10 @@ export async function updatePublishedStory(
 	 * open would let an update sending `public` skip `Restore` and return to the catalogue.
 	 */
 	if (existing.visibility === "archived") rejectArchivedTarget();
+
+	await requireOwnSceneImages(viewer.id, request.play);
+	/** Same order as first publication otherwise: compile before the DB writes, outside the transaction. */
+	const runtime = await planStoryRuntime(request.runtime, viewer.id, signal);
 
 	const payload = buildPlayPayload(storyId, request.metadata, request.play);
 

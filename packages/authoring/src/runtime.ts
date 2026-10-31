@@ -67,6 +67,23 @@ export const RUNTIME_PROJECT_LIMITS = {
 const SEGMENT_PATTERN = /^[A-Za-z0-9._-]+$/;
 
 /**
+ * Top-level folder names the runtime compiler keeps for itself. Its virtual file system holds the
+ * runtime package and the TypeScript libraries under node_modules/ and the entry check under
+ * .rowcat/, so a creator file there would be read as the compiler's own: a type error in it surfaced
+ * as an infrastructure failure, and a .rowcat/entry-check.ts was silently replaced by the injected
+ * one. Refusing the name here means the editor never creates a file the compiler then refuses.
+ *
+ * This is a copy of RESERVED_PROJECT_ROOTS in @rowcat/runtime-compiler (the compiler cannot import
+ * this package; see its paths.ts), and runtime-path-parity.test.ts in apps/web holds the two equal.
+ * Only the first segment is reserved, because only there do the two trees overlap. Files already
+ * stored under these names are not revalidated; they stay readable and can be renamed out.
+ */
+const RESERVED_ROOT_SEGMENTS: ReadonlySet<string> = new Set([
+	"node_modules",
+	".rowcat",
+]);
+
+/**
  * Derives the project record id from the draft id. The `authoring-runtime:` prefix keeps the
  * server's (owner, id) primary key from colliding with the draft's own record row.
  */
@@ -349,6 +366,7 @@ export const RUNTIME_PATH_ISSUE_CODE = {
 	duplicate: "duplicate",
 	tooMany: "too_many",
 	contentTooLong: "content_too_long",
+	reserved: "reserved",
 } as const;
 export type RuntimePathIssueCode =
 	(typeof RUNTIME_PATH_ISSUE_CODE)[keyof typeof RUNTIME_PATH_ISSUE_CODE];
@@ -400,6 +418,12 @@ export function checkRuntimePath(
 				"Only letters, digits and `.`, `_`, `-` can be used.",
 			);
 	}
+
+	if (RESERVED_ROOT_SEGMENTS.has(segments[0] ?? ""))
+		return fail(
+			"reserved",
+			"node_modules and .rowcat are reserved at the top of the project. Use another folder name.",
+		);
 
 	if (kind === "file" && !isRuntimeSourcePath(path))
 		return fail(

@@ -54,6 +54,11 @@ export interface NativeRuntimeTransport {
 	/** Whether the harness is up. Sends before this are queued. */
 	readonly ready: boolean;
 	readonly closed: boolean;
+	/**
+	 * How many strings the document has sent. The session's liveness watchdog reads only whether this
+	 * moved; a duplicate `ready` (the answer to a `hello` ping) counts although it makes no transition.
+	 */
+	readonly received: number;
 	send(message: NativeRuntimeToVm): void;
 	subscribe(listener: (event: NativeRuntimeTransportEvent) => void): () => void;
 	/** The view opens the channel, passing a function that carries one string. */
@@ -76,6 +81,7 @@ export function createNativeRuntimeTransport(
 	let sender: ((json: string) => void) | null = null;
 	let ready = false;
 	let closed = false;
+	let received = 0;
 
 	const emit = (event: NativeRuntimeTransportEvent): void => {
 		for (const listener of [...listeners]) listener(event);
@@ -97,6 +103,9 @@ export function createNativeRuntimeTransport(
 		get closed() {
 			return closed;
 		},
+		get received() {
+			return received;
+		},
 		send(message) {
 			if (closed) return;
 			queue.push(JSON.stringify(message));
@@ -116,6 +125,7 @@ export function createNativeRuntimeTransport(
 		},
 		receive(raw) {
 			if (closed) return;
+			received += 1;
 			const message = parseRuntimeMessage(raw);
 			if (message === null) return;
 			if (message.type === "ready") {

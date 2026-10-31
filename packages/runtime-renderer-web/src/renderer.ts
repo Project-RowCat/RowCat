@@ -98,6 +98,16 @@ export interface WebRuntimeRenderer {
 	 * renderer over a harmless race would kill the screen.
 	 */
 	applyCommands(batch: RuntimeCommandBatch): void;
+	/**
+	 * Ends every sound of this tree for good and leaves the drawn tree as it is. reset() lifts it.
+	 *
+	 * The host calls this when the session behind the tree is over but the tree stays mounted: a
+	 * transition has begun, the VM died, or the next session could not start. Hiding the surface does
+	 * not pause a media element, and the unmount commit that would have removed the sound never
+	 * arrives once the host stops listening to that session. Keeping the picture and ending the sound
+	 * are separate decisions, so this does not touch nodes, revisions or failure state.
+	 */
+	silenceAudio(): void;
 	/** Returns to an empty root so that the first batch of a new session (revision 1) is accepted. */
 	reset(): void;
 	dispose(): void;
@@ -255,6 +265,11 @@ export function createWebRuntimeRenderer(
 
 	/** Every sound this renderer created. Visibility changes and disposal walk this list. */
 	const audioNodes = new Set<NodeRecord>();
+	/**
+	 * Set by silenceAudio(), cleared by reset(). While set, a sound a late commit creates is disposed at
+	 * birth: the session that would play it is already over, whatever its last batch says.
+	 */
+	let silenced = false;
 
 	/**
 	 * Pauses when the document is hidden and resumes when it becomes visible. The desired state is
@@ -299,6 +314,12 @@ export function createWebRuntimeRenderer(
 				syncActivation();
 			},
 		});
+		/**
+		 * The controller stays on the record even when disposed: the prop table treats an audio node
+		 * without one as a contract error, and a silenced session's late props are not the creator's
+		 * fault. A disposed controller ignores every call.
+		 */
+		if (silenced) record.audio.dispose();
 		audioNodes.add(record);
 	};
 
@@ -376,8 +397,7 @@ export function createWebRuntimeRenderer(
 				const record = registry.get(patch.id);
 				const parent = record.parent;
 				if (parent !== null) {
-					const at = parent.children.indexOf(record);
-					parent.children.splice(at, 1);
+					parent.children.remove(record);
 					record.parent = null;
 				}
 				record.node.parentNode?.removeChild(record.node);
@@ -402,8 +422,8 @@ export function createWebRuntimeRenderer(
 						WEB_RENDERER_ERROR_CODE.topology,
 						`insert index ${patch.index} is past the end of ${patch.parent}`,
 					);
-				const before = parent.children[patch.index]?.node ?? null;
-				parent.children.splice(patch.index, 0, child);
+				const before = parent.children.at(patch.index)?.node ?? null;
+				parent.children.insert(patch.index, child);
 				child.parent = parent;
 				parent.node.insertBefore(child.node, before);
 				return;
@@ -416,15 +436,19 @@ export function createWebRuntimeRenderer(
 						WEB_RENDERER_ERROR_CODE.topology,
 						`host node ${patch.child} is not a child of ${patch.parent}`,
 					);
-				const at = parent.children.indexOf(child);
-				parent.children.splice(at, 1);
+				parent.children.remove(child);
 				if (patch.index > parent.children.length)
 					throw rendererError(
 						WEB_RENDERER_ERROR_CODE.topology,
 						`move index ${patch.index} is past the end of ${patch.parent}`,
 					);
-				const before = parent.children[patch.index]?.node ?? null;
-				parent.children.splice(patch.index, 0, child);
+				/**
+				 * Both lookups go through the child list, so a move costs a walk over blocks rather than over
+				 * the parent. The batch is creator-shaped and applied on the main thread, outside any VM
+				 * budget; with an array, one batch of moves in a wide parent was patch count × parent width.
+				 */
+				const before = parent.children.at(patch.index)?.node ?? null;
+				parent.children.insert(patch.index, child);
 				/**
 				 * Move the same DOM node. Do not delete and recreate it, so focus, scroll and identity survive.
 				 */
@@ -524,8 +548,18 @@ export function createWebRuntimeRenderer(
 				}
 			}
 		},
+		silenceAudio() {
+			if (disposed) return;
+			silenced = true;
+			/**
+			 * audioNodes holds every sound this renderer created, attached or not, so a sound whose node was
+			 * created but never inserted is reached too. Disposal also clears its activation wait.
+			 */
+			for (const record of audioNodes) record.audio?.dispose();
+		},
 		reset() {
 			if (disposed) return;
+			silenced = false;
 			/** The registry disposes the controllers, and that disposal empties the waiting set. */
 			registry.clear();
 			clearAudio();

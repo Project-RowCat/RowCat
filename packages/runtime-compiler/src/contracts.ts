@@ -17,7 +17,13 @@ export const RUNTIME_ARTIFACT_FORMAT_VERSION = 1;
 /**
  * Semantic version of the compiler rules, not the package version. It answers one question: did the
  * rules that built this artifact change? Bump it when any of these change: module resolution order,
- * what the policy pass blocks, compiler options, the emit target, or the TypeScript version itself.
+ * what the policy pass allows, compiler options, the emit target, or the TypeScript version itself.
+ *
+ * Every host demands an exact match (runtime-host artifact.ts), so a bump makes every published
+ * runtime unplayable until republished. A change that only refuses more source does not bump: every
+ * artifact it still accepts emits the same bytes, and an artifact built before it was already safe
+ * to run under the VM. Refusing triple-slash reference directives, narrowing the library set to the
+ * ES chain, and reserving node_modules/ and .rowcat/ were that kind of change and kept this at 1.
  *
  * A TypeScript change is not detected automatically. typescript-version.test.ts pins the version,
  * and the commit that breaks that test is where this value should be bumped or kept.
@@ -94,9 +100,11 @@ export const RUNTIME_DIAGNOSTIC_CODE = {
 	moduleEscape: "runtime_module_escape",
 	moduleDuplicate: "runtime_module_duplicate",
 	moduleInvalidPath: "runtime_module_invalid_path",
+	moduleReservedPath: "runtime_module_reserved_path",
 	importForbidden: "runtime_import_forbidden",
 	dynamicImportForbidden: "runtime_dynamic_import_forbidden",
 	requireForbidden: "runtime_require_forbidden",
+	referenceDirectiveForbidden: "runtime_reference_directive_forbidden",
 	evalForbidden: "runtime_eval_forbidden",
 	functionConstructorForbidden: "runtime_function_constructor_forbidden",
 	webAssemblyForbidden: "runtime_webassembly_forbidden",
@@ -186,3 +194,22 @@ export interface RuntimeAnalyzeResult {
 	/** Resolved module ids, only those reachable from the entry point. */
 	modules: readonly string[];
 }
+
+/**
+ * Upper bounds on the remote-image list an artifact may carry. These protect metadata and are separate
+ * from the proxy's request limits.
+ *
+ * They live here and not beside the extraction (`remote-assets.ts`) because the runtime host checks
+ * them when it validates an artifact, and that module imports the TypeScript compiler: the host taking
+ * its limit from there shipped the whole compiler into the player worker and the native harness.
+ */
+export const RUNTIME_REMOTE_ASSET_MANIFEST_LIMITS = {
+	/** Number of addresses. No single work has a reason to declare more fixed images than this. */
+	maxCount: 256,
+	/**
+	 * Total character length of the list. Counting entries alone would let 256 signed URLs of 8 KiB
+	 * each become about 2 MiB of metadata sent to the player's device. Both axes must hold: how many,
+	 * and how big (the same split as the remote image count and byte limits).
+	 */
+	maxTotalCharacters: 64 * 1024,
+} as const;

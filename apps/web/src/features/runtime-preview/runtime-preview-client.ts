@@ -38,6 +38,10 @@ export interface RuntimePreviewClient {
 		requestId: number,
 		result: PreviewGenerationResult,
 	): void;
+	/** Main has handled the commits up to `revision` (backpressure; see protocol.ts). */
+	acknowledge(generation: PreviewGeneration, revision: number): void;
+	/** Asks the worker whether it is between turns (liveness; see protocol.ts). */
+	ping(generation: PreviewGeneration, seq: number): void;
 	/** Kills the worker immediately. This is the last resort when cleanup does not finish. */
 	terminate(): void;
 }
@@ -78,6 +82,9 @@ export async function createRuntimePreviewClient(handlers: {
 			}),
 		generationResult: (generation, requestId, result) =>
 			send({ type: "generation-result", generation, requestId, result }),
+		acknowledge: (generation, revision) =>
+			send({ type: "ack", generation, revision }),
+		ping: (generation, seq) => send({ type: "ping", generation, seq }),
 		terminate: () => worker.terminate(),
 	};
 }

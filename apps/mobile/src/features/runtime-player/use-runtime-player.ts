@@ -9,6 +9,7 @@ import {
 } from "@rowcat/runtime-persistence";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AppState } from "react-native";
 import { getRowCatClient } from "../../lib/api.ts";
 import { useRuntimeSaveScope } from "../../lib/local-data/scope.tsx";
 import {
@@ -155,8 +156,16 @@ export function useRuntimePlayer({
 	const latestPersistenceRef = useRef<RuntimePlayerPersistence | null>(null);
 
 	/**
-	 * The bridge and session **have the screen's lifetime.** When the work changes, the route remounts
-	 * (the same axis as `remountDeps`), so there is no need to bind the identity to `storyId` here.
+	 * The bridge and session **have the screen's lifetime.** When the work changes, the screen
+	 * remounts — the route keys it on the story id (the web's `remountDeps`) — so the identity is not
+	 * bound to `storyId` here. `runtime-chat-route.test.ts` pins that key: without it a story switch
+	 * that reused this instance would carry the previous story's AI answer into the next.
+	 *
+	 * The session renews the transport itself when the old one died or stopped answering, and the
+	 * view remounts the WebView on that new transport (`runtime-host-view.tsx`); a restart then lands
+	 * in a fresh realm instead of waiting on a dead one. A bridge that never stood is not renewed on
+	 * its own — each renewal is a WebView, and a device that cannot stand the port fails them all
+	 * (`session.ts`).
 	 */
 	const descriptor = useMemo(() => describeNativeRuntimeHost(), []);
 	const transport = useMemo(
@@ -187,8 +196,23 @@ export function useRuntimePlayer({
 					),
 				onGenerationRequest: (request, context) =>
 					adapterRef.current(request, context),
+				/**
+				 * Someone else's code runs here, and the VM budget cannot interrupt a long native builtin
+				 * call. The watchdog is the owner outside that turn (`liveness.ts`).
+				 */
+				liveness: {
+					setInterval: (callback, ms) => setInterval(callback, ms),
+					clearInterval: (handle) =>
+						clearInterval(handle as ReturnType<typeof setInterval>),
+					/**
+					 * Away from the foreground the WebView may be suspended while Hermes timers still run
+					 * for a moment; an unanswered ping there says nothing about the harness.
+					 */
+					foreground: () => AppState.currentState === "active",
+				},
+				renewTransport: () => createHostTransport(descriptor),
 			}),
-		[transport],
+		[transport, descriptor],
 	);
 
 	const [native, setNative] = useState(session.getState);
@@ -272,6 +296,13 @@ export function useRuntimePlayer({
 			onEvent(event) {
 				switch (event.type) {
 					case "transition":
+						/**
+						 * The old session stops **now**, not when the lifecycle reaches its retire step a few
+						 * awaits later. In between, a press that reached the VM could still have its generation
+						 * request answered by a paid provider call nobody reads, and the old playthrough's
+						 * music would keep playing. The retire step's own stop finds it already stopping.
+						 */
+						session.stop();
 						setStatus("starting");
 						return;
 					case "sync-required":

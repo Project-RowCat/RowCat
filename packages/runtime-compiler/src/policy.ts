@@ -37,6 +37,8 @@ const MESSAGE: Record<RuntimeDiagnosticCode, string> = {
 		"Dynamic import can't be used. Every module is linked statically.",
 	[RUNTIME_DIAGNOSTIC_CODE.requireForbidden]:
 		"require can't be used. Link modules with import statements.",
+	[RUNTIME_DIAGNOSTIC_CODE.referenceDirectiveForbidden]:
+		"Triple-slash reference directives can't be used. The runtime's library and types are fixed, and files are linked with import statements.",
 } as Record<RuntimeDiagnosticCode, string>;
 
 /**
@@ -90,6 +92,43 @@ export function scanRuntimePolicy(
 			),
 		);
 	};
+
+	/**
+	 * Triple-slash reference directives are refused whole: lib, types, path and no-default-lib.
+	 *
+	 * Each one changes what the program contains without an import, so it reaches past the two things
+	 * that define this language's environment: the fixed ES library (no DOM, no Node) and the module
+	 * graph the resolver built. `/// <reference lib="dom" />` put lib.dom.d.ts back into the
+	 * publication compile, so fetch and document type-checked on the server while the studio refused
+	 * the same source. The directives are fields the parser fills (no checker needed), so the studio's
+	 * analysis pass gives this same answer. A runtime project has no legitimate use for any of them.
+	 */
+	const references: readonly ts.FileReference[] = [
+		...file.libReferenceDirectives,
+		...file.typeReferenceDirectives,
+		...file.referencedFiles,
+	];
+	for (const reference of references)
+		found.push(
+			runtimeDiagnostic(
+				RUNTIME_DIAGNOSTIC_CODE.referenceDirectiveForbidden,
+				"policy",
+				MESSAGE[RUNTIME_DIAGNOSTIC_CODE.referenceDirectiveForbidden],
+				positionOf(file, reference.pos, reference.end - reference.pos, path),
+			),
+		);
+	/**
+	 * no-default-lib leaves no FileReference, only a flag, so it is reported at the top of the file.
+	 */
+	if (file.hasNoDefaultLib)
+		found.push(
+			runtimeDiagnostic(
+				RUNTIME_DIAGNOSTIC_CODE.referenceDirectiveForbidden,
+				"policy",
+				MESSAGE[RUNTIME_DIAGNOSTIC_CODE.referenceDirectiveForbidden],
+				positionOf(file, 0, 0, path),
+			),
+		);
 
 	const visit = (node: ts.Node): void => {
 		if (ts.isCallExpression(node)) {

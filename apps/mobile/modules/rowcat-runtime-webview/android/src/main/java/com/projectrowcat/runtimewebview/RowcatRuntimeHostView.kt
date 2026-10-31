@@ -53,6 +53,14 @@ import java.io.IOException
  * The document is one app asset and every other navigation is refused. Asset requests accept only
  * names under `runtime/`: the second fence if creator code ever escapes into this realm (the first
  * is WASM linear memory, which is the real isolation).
+ *
+ * That interception is not the whole fence: WebSockets, WebRTC (ICE/STUN/TURN) and DNS prefetch
+ * never pass through `shouldInterceptRequest`. The harness document closes them in three pieces
+ * (`src/lib/runtime-native/harness-document.ts`): its Content-Security-Policy covers `fetch`, XHR,
+ * WebSocket, beacons and every subresource; no CSP directive governs WebRTC, so a prelude script
+ * deletes the `RTC*` constructors before the bundle runs; and `x-dns-prefetch-control` turns
+ * prefetch off. A same-origin child frame would still carry its own constructors — this narrows an
+ * escaped realm's reach, it is not a second isolation.
  */
 @SuppressLint("SetJavaScriptEnabled")
 class RowcatRuntimeHostView(context: Context, appContext: AppContext) :

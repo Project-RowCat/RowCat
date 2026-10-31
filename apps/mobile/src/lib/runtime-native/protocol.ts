@@ -134,7 +134,20 @@ export type NativeRuntimeToVm =
 			 */
 			source?: "media";
 	  }
-	| { type: "stop"; generation: NativeRuntimeGeneration };
+	| { type: "stop"; generation: NativeRuntimeGeneration }
+	/**
+	 * Hermes applied the commit with this revision to its tree. **The harness's backpressure.**
+	 *
+	 * The VM budget charges VM time only, so a commit cheap to produce and expensive to apply let the
+	 * harness run ahead of Hermes with nothing to slow it. The harness's scheduler clock waits while
+	 * too many commits are unacknowledged (`commit-window.ts`). Sent after the tree applied the batch,
+	 * not when the bridge delivered it — that is the fact the window is about.
+	 */
+	| {
+			type: "commit-ack";
+			generation: NativeRuntimeGeneration;
+			revision: number;
+	  };
 
 /* ── WebView → Native ─────────────────────────────────────────────────── */
 

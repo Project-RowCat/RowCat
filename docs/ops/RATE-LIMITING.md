@@ -190,6 +190,7 @@ Redis 오류의 원문은 **사용자 응답에 가지 않는다**(호스트·�
 | `syncPairingCreate` | 10 / 10분 | 회원 | allow | 상태 조회에는 없다 |
 | `mediaUpload` | 20 / 10분 | 회원 | allow | 아바타·표지·상황 이미지 한 정책 |
 | `appealCreate` | 5 / 10분 | 회원 | allow | 제재된 계정도 부른다 |
+| `storyRuntimeCompile` | 10 / 10분 | 회원 | allow | 런타임 소스를 실은 발행·갱신만, 컴파일 **앞**. 자원의 상한은 프로세스 자리와 회원당 하나(`runtime-compile.ts`)가 쥔다 |
 | `guardianBegin` | 20 / 10분 | 동의 요청 | **deny** | 확인과 다른 예산 |
 | `runtimeRemoteAsset` | 240 / 1분 | 회원 | allow | 원격 이미지 프록시의 **횟수** |
 | `runtimeRemoteAssetBytes` | 512 MiB / 10분 | 회원 | allow | 같은 프록시의 **바이트** — `reserveRateLimit` |

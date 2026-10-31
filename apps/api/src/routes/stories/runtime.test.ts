@@ -11,6 +11,8 @@ import { app } from "../../app.ts";
 import { closeDb, db } from "../../db/client.ts";
 import { story, story_runtime } from "../../db/schema.ts";
 import { newId } from "../../lib/id.ts";
+import { RATE_LIMIT_POLICIES } from "../../lib/rate-limit/policy.ts";
+import { runtimeCompileStats } from "../../services/story/runtime-compile.ts";
 import { createTestMember, TEST_PASSWORD } from "../../test/auth.ts";
 import { connectTestDatabase, deleteTestUsers } from "../../test/database.ts";
 import { WEB_ORIGIN } from "../../test/http.ts";
@@ -203,6 +205,120 @@ async function publishWithRuntime(
 		);
 	return ((await response.json()) as PublishBody).story.id;
 }
+
+/**
+ * Nesting deep enough that the checker runs to the deadline rather than the stack or the heap: a
+ * compile that is still running when the test looks at it.
+ */
+const SLOW_SOURCE = `${COUNTER_SOURCE}
+export const z = ${"[".repeat(2_000)}${"]".repeat(2_000)};
+`;
+
+const FORBIDDEN_SOURCE = `export default function App() {\n\teval("1");\n\treturn null;\n}\n`;
+
+/** Polls until this process's compiler holds a member's place, so the next request meets it. */
+async function untilCompiling(): Promise<void> {
+	for (let tries = 0; tries < 200; tries += 1) {
+		if (runtimeCompileStats().members > 0) return;
+		await new Promise((resolve) => setTimeout(resolve, 25));
+	}
+	throw new Error("no compile started");
+}
+
+describe.skipIf(!databaseReady)(
+	"runtime publish — the compiler is shared",
+	() => {
+		/**
+		 * An update named its target only after compiling, so a PUT on any story id spent a full compile
+		 * before the 404. The owner and the target are cheap to read; the compile is not.
+		 */
+		test("an update of someone else's story compiles nothing", async () => {
+			const owner = await signUp();
+			const storyId = await publishWithRuntime(owner.cookie);
+			const stranger = await signUp();
+			const response = await update(stranger.cookie, storyId, {
+				...publishRequest(),
+				runtime: runtimeSource(FORBIDDEN_SOURCE),
+			});
+			expect(response.status).toBe(404);
+		});
+
+		test("a member's compiles are counted", async () => {
+			const owner = await signUp();
+			const { max } = RATE_LIMIT_POLICIES.storyRuntimeCompile;
+			for (let at = 0; at < max; at += 1) {
+				const response = await publish(owner.cookie, {
+					...publishRequest(),
+					runtime: runtimeSource(FORBIDDEN_SOURCE),
+				});
+				expect(response.status).toBe(400);
+			}
+			const over = await publish(owner.cookie, {
+				...publishRequest(),
+				runtime: runtimeSource(FORBIDDEN_SOURCE),
+			});
+			expect(over.status).toBe(429);
+			expect(((await over.json()) as ErrorBody).code).toBe(
+				RATE_LIMIT_POLICIES.storyRuntimeCompile.code,
+			);
+			expect(over.headers.get("Retry-After")).not.toBeNull();
+			/** A publish that compiles nothing is not this limit's business. */
+			const chat = await publish(owner.cookie, publishRequest());
+			expect(chat.status).toBe(201);
+		}, 120_000);
+
+		/**
+		 * The process holds two compile slots for everyone. One member used to be able to hold both, and
+		 * the queue, with a few slow compiles; now a second compile from the same member is refused while
+		 * the first runs, and the first ends when its client leaves.
+		 */
+		test("one member holds one compile, and leaving ends it", async () => {
+			const owner = await signUp();
+			const controller = new AbortController();
+			const started = Date.now();
+			const slow = Promise.resolve(
+				app.request("/v2/stories", {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						Origin: WEB_ORIGIN,
+						Cookie: owner.cookie,
+					},
+					body: JSON.stringify({
+						...publishRequest(),
+						runtime: runtimeSource(SLOW_SOURCE),
+					}),
+					signal: controller.signal,
+				}),
+			);
+			await untilCompiling();
+
+			const second = await publish(owner.cookie, {
+				...publishRequest(),
+				runtime: runtimeSource(COUNTER_SOURCE),
+			});
+			expect(second.status).toBe(409);
+			expect(((await second.json()) as ErrorBody).code).toBe(
+				"story_runtime_compile_in_progress",
+			);
+			expect(second.headers.get("Retry-After")).not.toBeNull();
+
+			/** Someone else is not held up by that member. */
+			const other = await signUp();
+			await publishWithRuntime(other.cookie);
+
+			controller.abort();
+			await slow.catch(() => undefined);
+			/** Ended by the abort, well before the twenty-second deadline, and its thread is gone. */
+			expect(Date.now() - started).toBeLessThan(15_000);
+			expect(runtimeCompileStats()).toEqual({
+				inFlight: 0,
+				queued: 0,
+				members: 0,
+			});
+		}, 60_000);
+	},
+);
 
 describe.skipIf(!databaseReady)("runtime publish — the server compiles", () => {
 	test("sending source makes the server build the artifact", async () => {

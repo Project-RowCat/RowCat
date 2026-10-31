@@ -281,6 +281,8 @@ export const runtimeStudio: Messages["runtimeStudio"] = {
 		too_long: "경로는 {{max}}자를 넘을 수 없습니다.",
 		too_deep: "폴더는 {{max}}단계까지만 만들 수 있습니다.",
 		traversal: "프로젝트 바깥은 가리킬 수 없습니다.",
+		reserved:
+			"프로젝트 맨 위의 `node_modules`와 `.rowcat`은 예약된 이름입니다. 다른 폴더 이름을 써 주세요.",
 		segment_too_long: "이름은 {{max}}자를 넘을 수 없습니다.",
 		invalid_character: "영문·숫자와 `.`·`_`·`-`만 쓸 수 있습니다.",
 		unsupported_extension: "{{extensions}} 파일만 만들 수 있습니다.",

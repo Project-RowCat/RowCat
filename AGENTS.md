@@ -102,7 +102,7 @@ at greater length.
 | `sync` | `contracts`, `@noble/*`, fflate | React, fetch, Dexie/IndexedDB, SQLite, DOM, Node APIs, `chat`, `authoring`, `sdk` |
 | `runtime` | **nothing** | React, DOM, Node, Monaco, authoring stores, network — `dependencies` is empty |
 | `runtime-compiler` | `runtime`, TypeScript | `authoring`, `chat`, `sdk`, `query`, UI, React, Dexie, DOM. Node only in `environment/node.ts` |
-| `runtime-host` | `runtime` (declarations and the **generated sandbox**), `runtime-compiler` (contracts and paths only); quickjs-emscripten **only in `vm/quickjs.ts`** | React, RN, Monaco, authoring stores, Dexie, SQLite, SDK, generation, UI, Node APIs, the TypeScript compiler (**it does not compile**), `requestAnimationFrame`, `requestIdleCallback`, `postTask`, `setImmediate` (yielding is injected as a clock port) |
+| `runtime-host` | `runtime` (declarations and the **generated sandbox**), `runtime-compiler` (**`contracts`, `paths` and `module-resolution` only** — a subpath does not say what it pulls in, and `boundaries.test.ts` walks those three to prove none reaches TypeScript); quickjs-emscripten **only in `vm/quickjs.ts`** | React, RN, Monaco, authoring stores, Dexie, SQLite, SDK, generation, UI, Node APIs, the TypeScript compiler (**it does not compile**), `requestAnimationFrame`, `requestIdleCallback`, `postTask`, `setImmediate` (yielding is injected as a clock port) |
 | `runtime-persistence` | `contracts` (`Rev`), `runtime-host` (**only the `story-state` and `persistent-state` subpaths** — pulling the root drags the QuickJS engine into the save layer), zod | React, RN, Dexie, SQLite, `fetch`, SDK, query, `@rowcat/sync`, authoring, chat, compiler, renderers, DOM, generation |
 | `runtime-renderer-web` | `runtime` (color decision), `runtime-host` (**only the `patches` subpath**) | React, React DOM, Monaco, authoring, Dexie, query, SDK, router, studio UI, Node, network, `innerHTML`, generic `setAttribute(name, value)` assignment |
 | `runtime-renderer-native` | `runtime` (color decision), `runtime-host` (**only the `patches` subpath**), React and React Native (peer) | `apps/mobile`, authoring, compiler, the web renderer, `ui-native`, `ui-web`, SDK, query, Dexie, SQLite, Node, network, JSX prop spreading |
@@ -250,6 +250,7 @@ what binds other packages too.**
                    planChatGeneration · protectedStoryIdOf · deliveredChatSystem
                    canSuggestReply · selectReplySuggestionWindow · replySuggestionTurnKey
                    buildReplySuggestionRequest · parseReplySuggestions · runReplySuggestion
+                   runtimeGenerationSafety
   @rowcat/domain   filtersForViewer · resolveProfileActions · profileContentBlocked
                    appliedGalleryFilters · sortTriggerLabel · periodApplies
                    adultVisibilityState · storyLifecycleActions
@@ -2979,6 +2980,16 @@ runtime TS/TSX source → path and module resolution → a TypeScript program (n
   existence and permission are different questions, and policy standing before resolution makes that distinction
   structural. **Dynamic `import()` is blocked even for local files** (the module graph must be fully known at compile
   time for the loader to instantiate only a pre-built graph = arbitrary code cannot be introduced later).
+- **Triple-slash reference directives are refused** (`runtime_reference_directive_forbidden` — `lib`, `types`, `path`,
+  `no-default-lib`), **and the server's lib set is the studio preview's** (es5 through es2022, not every `lib.*.d.ts`).
+  Each directive changes what the program contains without an import: `/// <reference lib="dom" />` put `lib.dom.d.ts`
+  back into the publication compile, so `fetch` and `document` type-checked on the server while the studio refused them.
+  The directives are parser fields, so the studio's analysis gives the same answer. A change that only refuses more source
+  does not move `RUNTIME_COMPILER_VERSION` (every still-accepted source emits the same bytes).
+- **`node_modules/` and `.rowcat/` are reserved as a project path's first segment** (authoring `reserved`, compiler
+  `runtime_module_reserved_path`; `runtime-path-parity.test.ts` holds the copies equal). The compiler's virtual file
+  system keeps its own files there, so a creator file at those paths was read as ours (its type errors became
+  "environment invalid") or silently replaced by the injected entry check.
 - **The policy pass does not prove data flow, and it errs toward blocking** (err the other way and the creator
   believes the code is permitted and builds a project on it, which the VM then blocks wholesale).
 - **A planted file asks about the entry point's type** (`.rowcat/entry-check.ts`) — walking symbols by hand makes that
@@ -3138,6 +3149,25 @@ RuntimeArtifact v1 → validate → create VM (a WASM instance per session) → 
   be continued, so cutting it is the session's death. **The deadline and the clock must share a basis** (the slice
   carries `now()` along and the adapter does not read `Date.now()` directly — mixed, the deadline is always in the
   past and the first interrupt check cuts).
+- **⚠️ The interrupt does not reach inside a native builtin, so a turn is also judged after it returns.** QuickJS polls
+  the interrupt between bytecodes and inside the regex engine, never inside one native call — a quadratic
+  `String.prototype.includes` on 120 KB of strings ran for seconds under a 100 ms budget and **reported success**. The
+  scheduler measures every turn when it returns, and one that ended more than `RUNTIME_TURN_OVERRUN_GRACE_MS` (100 ms)
+  past its deadline is a fatal budget failure. Results reached during a turn are buffered until that verdict: on an
+  overrun the owner gets the budget error and every other execution settled in that turn gets `sessionFailed`, so a
+  value computed past the budget is never delivered. Host work inside the turn counts — which is why the ledger below
+  must stay linear. **Do not raise the grace to quiet a slow device**; it only lengthens the one freeze it allows.
+- **A turn that never returns is the thread owner's to end — a liveness watchdog, not the scheduler.** The web main
+  thread pings the player and preview workers (`apps/web/src/lib/runtime-watchdog/`) and Hermes pings the harness
+  (`lib/runtime-native/liveness.ts`); a realm that stays silent past the bound is torn down (`worker.terminate()`, a
+  remounted WebView) and the session shows `runtime_execution_budget_exceeded`. The watch follows what the realm says
+  about itself, not the screen's generation: it starts when the worker reports its session starting (loading the worker
+  script is not a turn), pauses for the preview's compile, and a Run aimed at a stuck preview keeps it watching — a watch
+  that stopped at Run never came back, because a stuck worker cannot read the new start. On mobile a gap in the pinging
+  clock itself (app backgrounded, screen locked) is a reset, never a verdict, and nothing is judged off the foreground.
+  It is not polling the network — nothing leaves the device. **The MCP Node host has no watchdog** (it runs the
+  creator's own drafts in its own process; `docs/oss/SECURITY-REVIEW.md`). A bridge that never stood is not renewed —
+  the session fails at stage `transport` rather than re-creating WebViews in a loop.
 - **Yielding is one clock port** (`RuntimeHostSchedulerClock`) — the core does not choose
   `requestAnimationFrame`, `requestIdleCallback`, `postTask` or `setImmediate`, and the default is `setTimeout(0)`
   (the web worker and the WebView harness plug in a `MessageChannel`).
@@ -3644,7 +3674,19 @@ Full rules in `docs/creator-runtime/publication.md` and `player.md`.
   few lines long took the whole API process to "heap out of memory" from a ~1 KB source, far below every size cap.
   Exhaustion is the source's doing and is a diagnostic (`runtime_compile_exhausted`); too many compiles at once is a 503
   (`story_runtime_compile_busy`). Each thread is fresh and single-shot — a thread that compiled hostile source is never
-  reused. Do not move the compile back inline to save its cold start.
+  reused. Do not move the compile back inline to save its cold start. **A stack overflow is exhaustion too** (a few KB of
+  nested brackets overflow TypeScript's recursive parser; `stackSizeMb` is pinned and the overflow is caught around the
+  compile only).
+- **One member holds at most one compile, and publishing runtime source is rate-limited.** Two slots shared by everyone
+  let one account hold both and the queue with slow compiles, so a second compile from the same member is refused with
+  409 `story_runtime_compile_in_progress` rather than queued, and `storyRuntimeCompile` (10 / 10 min / member,
+  fail-open — the process gate and the per-member cap bound memory whether or not the store answers) is counted before
+  the compile, only for requests that carry runtime source. The request's signal reaches the compile (a client that left
+  frees its place or ends its thread) and a slot comes back only after the thread's `exit` (otherwise a terminated
+  thread's heap overlaps the next compile's and the bound stops being slots × heap). **An update checks existence,
+  ownership, origin and archiving before it compiles** — in the other order a PUT on any story id spent a compile slot
+  before answering 404. The clients fold all three refusals into the generic "try again in a moment", which is the right
+  next step for each.
 - **The server does not retain authoring source** (do not create columns such as `mainTsx` or `runtimeSourceFiles` —
   source crosses once as compilation input, and the durable original stays in the device's local-first, E2EE
   authoring system).
@@ -3708,12 +3750,46 @@ Full rules in `docs/creator-runtime/publication.md` and `player.md`.
   slice, where nothing interrupts, and reading can run creator code (`toJSON`, getters, proxy traps): `throw { toJSON()
   { for (;;) {} } }` ran unbounded on the host thread, past stop and dispose, and `throw new Promise(…)` crashed a Node
   host through a use-after-free in `dump`. Classification reads `name`/`message`/`stack` as properties and never dumps
-  an object.
+  an object. **The read window never outlives the turn's own deadline**, and a read the interrupt cut is `interrupted`
+  (fatal) like every interrupt — recoverable, forty swept looping getters each took a fresh 25 ms in one turn. The stack
+  string is parsed by index, not with backtracking regexes (it is 16 KiB of creator text parsed on the host).
 - **The host counts tree depth too** (`RuntimeHostNodeLedger.project`), as it already counted nodes and bytes: the batch
   is a string creator code can shape. It counts ancestors below the root for what each batch attached, so for a real tree
-  it is never stricter than the reconciler.
+  it is never stricter than the reconciler. **`project()` is linear in the batch** — parents from a per-batch map,
+  subtree heights memoized, a reborn id carries no committed children. It runs inside the turn and its time is charged
+  to the creator: quadratic, an ordinary 3,000-node mount exceeded the session window and a forged batch held the host
+  thread for minutes. Its tests assert the shape of the cost, not wall-clock time.
+- **Commits are paced by the side that applies them.** The VM budget charges VM time only, and a cached batch string
+  costs the VM nothing to emit while costing the main thread (or Hermes) a full apply. The applying side acknowledges
+  each revision it handled, and the realm's scheduler clock (`yield()`) does not return while too many commits are
+  unacknowledged (web `runtime-watchdog/commit-flow.ts`, native `commit-window.ts` · `commit-ack`); every path that ends
+  a session releases that gate first, or `dispose` waits on a scheduler parked on silence. The yield bounds one
+  continuous drain; on the web a drain that main's own messages would start (an event, a generation reply) also waits
+  at the gate (`admit`). A drain restarted by a completion that settles inside the realm is one ungated slice — closing
+  that needs a hook at the scheduler's drain start. The renderers' child lists
+  keep a batch's apply linear in its patch count (web `child-list.ts`; native copies a parent's list once per batch).
+- **Sound ends with the session, not with the surface.** A transition, a failure, `sync-required`, `blocked` and the
+  preview's stop timeout silence audio at once (`silenceAudio()` · `runtimeAudioStore`) while the last tree may stay
+  drawn — the old session's unmount commit is dropped once the visible generation moves on, and CSS visibility does not
+  pause media.
+- **A generation request is answered only while its session is both the owner and the visible one.** Once a transition
+  begins the retiring session's requests never reach the adapter (web: `generationRef`, and the preview also refuses
+  the generation Stop was pressed for, since stopping releases presses the commit gate held; native: a stopping session
+  answers `cancelled`), and release aborts what is in flight again — the router's promise is that no paid request starts
+  with nobody to read it.
 - **The native canvas clips** (`overflow: "hidden"` on the surface, the twin of the web's `.rc-root`): transitions may
   translate ±100,000 and iOS draws outside bounds by default, so a story could paint over the app bar.
+- **The harness realm is fenced as if creator code had escaped into it.** The generated document carries a
+  Content-Security-Policy (`default-src 'none'`, only inline script, wasm compilation and same-origin fetch of its
+  sibling assets — `lib/runtime-native/harness-document.ts`), which closes fetch, XHR, WebSocket, beacons and images on
+  both platforms; WebRTC is outside every CSP directive, so its constructors are deleted before any creator-reachable code
+  runs. **Every navigation reaches the view's own decision** (`originWhitelist={["*"]}` on iOS on purpose:
+  react-native-webview hands a whitelist miss to `Linking.openURL` without asking the component, so a narrow whitelist
+  failed open into Safari or a `rowcat://` deep link). Changing that document changes a native asset — a new runtime
+  generation and binary.
+- **A different story is a different screen instance on mobile** (`<RuntimeChatScreen key={id} … />`, and the room route
+  likewise) — the per-playthrough AI answer must never carry from one story to the next, and whether expo-router reuses a
+  route for a navigation is not this app's to decide. The web says the same with `remountDeps`.
 - **Do not trust the artifact.** Even though the server built and validated it, the runtime host validates it again
   before execution — it crossed a network and a cache, and above all the version may have diverged. A compatibility
   failure **has its own state** (`incompatible`) and that panel does not suggest restarting (the same failure would

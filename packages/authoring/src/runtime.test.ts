@@ -125,6 +125,37 @@ describe("path decisions", () => {
 		});
 	});
 
+	/**
+	 * The compiler's virtual file system keeps its own files under these two top-level folders, so a
+	 * creator file there would be read as the compiler's (runtime-compiler paths.ts).
+	 */
+	it("refuses the folders the compiler reserves, for files and folders alike", () => {
+		for (const input of [
+			"node_modules/x.ts",
+			".rowcat/entry-check.ts",
+			"./node_modules/a/b.tsx",
+		])
+			expect(checkRuntimePath(input)).toMatchObject({
+				ok: false,
+				code: "reserved",
+			});
+		for (const input of ["node_modules", ".rowcat", ".rowcat/sub"])
+			expect(checkRuntimePath(input, "folder")).toMatchObject({
+				ok: false,
+				code: "reserved",
+			});
+	});
+
+	it("only the first segment is reserved", () => {
+		for (const input of [
+			"src/node_modules/x.ts",
+			"src/.rowcat/x.ts",
+			"Node_Modules/x.ts",
+			"rowcat/x.ts",
+		])
+			expect(checkRuntimePath(input)).toEqual({ ok: true, path: input });
+	});
+
 	it("enforces depth and length caps", () => {
 		const deep = `${Array.from({ length: RUNTIME_PROJECT_LIMITS.depth }, (_, i) => `d${i}`).join("/")}/a.ts`;
 		expect(checkRuntimePath(deep)).toMatchObject({

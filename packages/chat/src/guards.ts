@@ -341,8 +341,8 @@ export interface PlatformSafetyPolicy {
 	/**
 	 * Whether HOUSE_RULES is set. Callers always state it. Chat prompts include it; the runtime
 	 * generation instruction does not, since that path has only ever applied the absolute prohibition,
-	 * rating, and tail. There is no default, because any default would be silently inherited by a
-	 * caller that does not know about it.
+	 * rating, minor guard and tail (`runtimeGenerationSafety`). There is no default, because any
+	 * default would be silently inherited by a caller that does not know about it.
 	 */
 	houseRules: boolean;
 }
@@ -414,6 +414,41 @@ export function conversationSafetyPolicy(context: ChatGenerationContext): {
 		allAges: context.requestedMode === "all-ages",
 		minorPresent: context.minorCharacterPresent,
 		houseRules: true,
+	};
+}
+
+/**
+ * The safety half of one runtime generation request (`useGeneration()`): the wrapped system prompt and
+ * the context that declares it. Web preview, web playback and the mobile player all call this one
+ * function, so the three cannot disagree about which guards a creator's instructions stand behind.
+ *
+ * - **The minor guard reads the creator's instructions.** They are this request's work content, the
+ *   role the scenario and cast play in a conversation, so the judgment is the conversation's own
+ *   `hasMinorIndicator`. Hard-coding `false` left runtime the one path where creator text reached an
+ *   adult model without `MINOR_PRESENT_GUARD`, and nothing later can add it: the managed server
+ *   re-wraps with the policy this context declares and skips the head of a body already wrapped, and
+ *   BYO has no server at all.
+ * - **The two values come from one judgment.** Computed separately, a request could carry the guard
+ *   and declare it absent (or the reverse), and the re-wrap would then disagree with what was sent.
+ * - **Messages are not scanned**, as conversation turns are not: a verdict that changed per request
+ *   would toggle the guard on and off inside one playthrough.
+ * - **House rules stay off**, the runtime path's long-standing scope (`PlatformSafetyPolicy`).
+ */
+export function runtimeGenerationSafety(
+	instructions: string,
+	allAges: boolean,
+): { system: string; context: ChatGenerationContext } {
+	const minorPresent = !allAges && hasMinorIndicator(instructions);
+	return {
+		system: applyPlatformSafetyPolicy(instructions, {
+			allAges,
+			minorPresent,
+			houseRules: false,
+		}),
+		context: {
+			requestedMode: allAges ? "all-ages" : "adult",
+			minorCharacterPresent: minorPresent,
+		},
 	};
 }
 

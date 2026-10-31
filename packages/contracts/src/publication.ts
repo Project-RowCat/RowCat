@@ -368,6 +368,19 @@ export const STORY_PUBLISH_ERROR_CODE = {
 	 * wrong.
 	 */
 	runtimeCompileBusy: "story_runtime_compile_busy",
+	/**
+	 * This member's previous runtime check is still running (409, `Retry-After`). Kept apart from
+	 * `runtimeCompileBusy`, which means the whole process is full: one member holds at most one compile
+	 * at a time, so a script cannot take every slot from everyone else.
+	 */
+	runtimeCompileInProgress: "story_runtime_compile_in_progress",
+	/** This member published runtime source too often (429, `Retry-After`). */
+	runtimeCompileRateLimited: "story_runtime_compile_rate_limited",
+	/**
+	 * The request ended before its runtime check did, and the check was stopped. Nobody reads the
+	 * answer; the code exists so that a departure is not logged as a server incident.
+	 */
+	runtimeCompileCancelled: "story_runtime_compile_cancelled",
 } as const;
 export type StoryPublishErrorCode =
 	(typeof STORY_PUBLISH_ERROR_CODE)[keyof typeof STORY_PUBLISH_ERROR_CODE];

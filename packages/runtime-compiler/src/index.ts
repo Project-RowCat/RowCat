@@ -57,8 +57,10 @@ export {
 export {
 	directoryOf,
 	escapesProjectRoot,
+	isReservedProjectPath,
 	isRuntimeSourcePath,
 	normalizeProjectPath,
+	RESERVED_PROJECT_ROOTS,
 	resolveProjectPath,
 	toProjectPath,
 	toVirtualPath,

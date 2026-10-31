@@ -116,16 +116,39 @@ export function directoryOf(path: string): string {
 export const toVirtualPath = (path: string): string =>
 	`${RUNTIME_VIRTUAL_ROOT}/${path}`;
 
+/**
+ * Top-level folders of the virtual file system that belong to the compiler: node_modules/ holds the
+ * runtime package and the TypeScript libraries, .rowcat/ holds the entry check. They are listed once
+ * because two questions read them: which virtual files are not the creator's (toProjectPath), and
+ * which project paths a creator may not use (isReservedProjectPath).
+ *
+ * The authoring rule refuses the same first segments (checkRuntimePath in @rowcat/authoring), and
+ * runtime-path-parity.test.ts holds the two copies equal. Only the first segment is reserved,
+ * because only there do the two trees overlap: src/node_modules/x.ts is an ordinary creator file
+ * that compiles and emits like any other.
+ */
+export const RESERVED_PROJECT_ROOTS = ["node_modules", ".rowcat"] as const;
+
+/**
+ * Whether a canonical project path sits under a compiler-owned folder.
+ *
+ * Accepting one used to be silently wrong in two ways. A creator node_modules/x.ts was read as the
+ * compiler's own file, so its type error surfaced as 'the compiler environment is invalid' with no
+ * path. A creator .rowcat/entry-check.ts was replaced in the virtual file system by the injected
+ * entry check, so the policy pass and the remote-asset scan read the creator's text while emit
+ * produced ours. Refusing the path up front makes both unrepresentable.
+ */
+export function isReservedProjectPath(path: string): boolean {
+	const first = path.split("/", 1)[0] ?? "";
+	return (RESERVED_PROJECT_ROOTS as readonly string[]).includes(first);
+}
+
 export function toProjectPath(virtualPath: string): string | null {
 	const prefix = `${RUNTIME_VIRTUAL_ROOT}/`;
 	if (!virtualPath.startsWith(prefix)) return null;
 	const rest = virtualPath.slice(prefix.length);
-	/**
-	 * Files under node_modules/ and .rowcat/ belong to the compiler, not the creator, so they map to
-	 * no project path.
-	 */
-	if (rest.startsWith("node_modules/") || rest.startsWith(".rowcat/"))
-		return null;
+	/** Files under the reserved folders belong to the compiler, so they map to no project path. */
+	if (isReservedProjectPath(rest)) return null;
 	return rest;
 }
 

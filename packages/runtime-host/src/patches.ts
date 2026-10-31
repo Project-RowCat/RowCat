@@ -229,6 +229,21 @@ function checkPatch(value: unknown): string | null {
  * project() computes the result without applying it. A rejected batch must not move the ledger, or
  * the next calculation would build on values that are already wrong. The consumer applies the
  * change by calling commit() once it accepts the batch.
+ *
+ * project() must stay linear in the batch. It runs synchronously inside the VM turn (the session's
+ * emit), where no interrupt can cut host work, and its time is charged to the creator's budget. A
+ * batch is also a string creator code can shape (see the depth check below), so linear has to hold
+ * for every sequence of operations, not only for the ones the reconciler sends. Three walks once
+ * were not: finding a node's parent by scanning every parent the batch had attached (an ordinary
+ * 3,000-node mount spent 240 ms here and blew the session's 250 ms window, and a forged
+ * 50,000-insert batch held the thread for 18 s); walking every attached subtree afresh for its
+ * height; and removing a node the batch had re-created, which walked that id's committed children
+ * again on every remove (a forged remove/create pair repeated 25,000 times over a parent of 5,000
+ * children took 5 to 10 s). So the batch keeps its own child → parent map, a node that dies is cut
+ * from its parent and forgets its children on the spot, and heights and depths are computed once per
+ * node. A node's committed children are then read at most once by the remove walk and once by the
+ * depth walk, and each patch adds a bounded amount of work. Nothing in a projection deletes a key and
+ * adds it back (see `state`): even with no walk repeated, that churn alone is quadratic in V8.
  */
 export class RuntimeHostNodeLedger {
 	/** Live nodes. The synthetic root (0) never comes from `create`, so it is not in this set. */
@@ -254,29 +269,47 @@ export class RuntimeHostNodeLedger {
 		readonly tooDeep: boolean;
 		readonly commit: () => void;
 	} {
-		const born = new Set<number>();
-		const died = new Set<number>();
+		/**
+		 * What this batch did to each id it touched: `true` created and alive, `false` removed. Ids it
+		 * did not touch keep their committed state. One value per id, overwritten, never added and
+		 * deleted: V8 keeps a deleted Set or Map key in its hash chain until the table is rebuilt, so
+		 * removing and re-adding one key thousands of times in a large table makes every later lookup of
+		 * that key walk the whole chain. Two sets toggled this way cost about 900 ms for a forged batch
+		 * of 25,000 remove/create pairs. Every structure below is likewise only added to or overwritten.
+		 */
+		const state = new Map<number, boolean>();
+		/**
+		 * Every id that died at some point in this batch, alive again or not. Its committed children no
+		 * longer describe it: a `create` of a dead id is a new node, with no parent until an insert and
+		 * no children but the ones this batch attaches afterwards. Without this, each remove of a
+		 * re-created id walked the committed children the first remove had already killed.
+		 */
+		const cleared = new Set<number>();
+		/**
+		 * Where this batch last put each node it touched. It shadows the committed parents. `undefined`
+		 * means the node died here and hangs nowhere until it is inserted again.
+		 */
+		const placed = new Map<number, number | undefined>();
+		/**
+		 * The children this batch inserted under each parent, as candidates: one that moved on or died
+		 * since stays in the set and is filtered by `placed`. A parent that dies gets a fresh empty set, so
+		 * a re-created id never rereads the candidates of its previous life.
+		 */
 		const attached = new Map<number, Set<number>>();
-		const detached = new Map<number, Set<number>>();
 		let live = this.alive.size;
 
-		const add = (map: Map<number, Set<number>>, key: number, value: number) => {
-			const set = map.get(key);
-			if (set === undefined) map.set(key, new Set([value]));
-			else set.add(value);
-		};
 		const isAlive = (id: number): boolean =>
-			!died.has(id) && (this.alive.has(id) || born.has(id));
-		const parentOf = (id: number): number | undefined => {
-			for (const [parent, set] of attached) if (set.has(id)) return parent;
-			return this.parents.get(id);
-		};
+			state.get(id) ?? this.alive.has(id);
+		const parentOf = (id: number): number | undefined =>
+			placed.has(id) ? placed.get(id) : this.parents.get(id);
+		/** A committed child the batch never touched is still where it was; any it touched is in `placed`. */
 		const childrenOf = (id: number): number[] => {
 			const out: number[] = [];
-			const gone = detached.get(id);
-			for (const child of this.children.get(id) ?? [])
-				if (gone === undefined || !gone.has(child)) out.push(child);
-			for (const child of attached.get(id) ?? []) out.push(child);
+			if (!cleared.has(id))
+				for (const child of this.children.get(id) ?? [])
+					if (!placed.has(child)) out.push(child);
+			for (const child of attached.get(id) ?? [])
+				if (placed.get(child) === id) out.push(child);
 			return out;
 		};
 
@@ -284,18 +317,16 @@ export class RuntimeHostNodeLedger {
 			switch (patch.op) {
 				case "create": {
 					if (isAlive(patch.id)) break;
-					died.delete(patch.id);
-					born.add(patch.id);
+					state.set(patch.id, true);
 					live += 1;
 					break;
 				}
 				case "insert": {
-					const previous = parentOf(patch.child);
-					if (previous !== undefined && previous !== patch.parent) {
-						add(detached, previous, patch.child);
-						attached.get(previous)?.delete(patch.child);
-					}
-					add(attached, patch.parent, patch.child);
+					const set = attached.get(patch.parent);
+					if (set === undefined)
+						attached.set(patch.parent, new Set([patch.child]));
+					else set.add(patch.child);
+					placed.set(patch.child, patch.parent);
 					break;
 				}
 				case "remove": {
@@ -304,10 +335,20 @@ export class RuntimeHostNodeLedger {
 					while (stack.length > 0) {
 						const node = stack.pop() as number;
 						if (!isAlive(node)) continue;
-						died.add(node);
-						born.delete(node);
+						state.set(node, false);
 						live -= 1;
-						for (const child of childrenOf(node)) stack.push(child);
+						/**
+						 * The dead node leaves its parent and forgets its children here, once. Each live child
+						 * goes on the stack and dies with it; a child already dead (one a forged batch inserted
+						 * without creating) is cut loose, so nothing points at this id any more and a later
+						 * `create` of it starts empty, as a new node.
+						 */
+						for (const child of childrenOf(node))
+							if (isAlive(child)) stack.push(child);
+							else placed.set(child, undefined);
+						placed.set(node, undefined);
+						cleared.add(node);
+						if (attached.has(node)) attached.set(node, new Set());
 					}
 					break;
 				}
@@ -329,32 +370,93 @@ export class RuntimeHostNodeLedger {
 		 */
 		let tooDeep = false;
 		if (Number.isFinite(maxDepth)) {
-			const heightWithin = (root: number, budget: number): number => {
-				let tallest = 0;
-				const stack: [number, number][] = [[root, 1]];
+			/**
+			 * Heights are capped one past what any check can accept: a subtree at least that tall is too deep
+			 * wherever it hangs, so the exact number past it buys nothing. Each node's height is computed
+			 * once and remembered; walking every attached child's subtree afresh made a fresh mount cost the
+			 * sum of all subtree sizes. A node met again while its own height is still open is a cycle, and
+			 * a cycle counts as too deep, which is also what ends it.
+			 */
+			const cap = maxDepth + 2;
+			const heights = new Map<number, number>();
+			const open = new Set<number>();
+			const heightOf = (root: number): number => {
+				const known = heights.get(root);
+				if (known !== undefined) return known;
+				const stack: {
+					node: number;
+					children: number[];
+					next: number;
+					tallest: number;
+				}[] = [];
+				const enter = (node: number) => {
+					open.add(node);
+					stack.push({ node, children: childrenOf(node), next: 0, tallest: 1 });
+				};
+				enter(root);
+				let result = 1;
 				while (stack.length > 0) {
-					const [node, height] = stack.pop() as [number, number];
-					if (height > tallest) tallest = height;
-					if (tallest > budget) return tallest;
-					for (const child of childrenOf(node))
-						if (isAlive(child)) stack.push([child, height + 1]);
-				}
-				return tallest;
-			};
-			outer: for (const set of attached.values())
-				for (const child of set) {
-					if (!isAlive(child)) continue;
-					let ancestors = 0;
-					let cursor = parentOf(child);
-					while (cursor !== undefined && cursor !== 0) {
-						ancestors += 1;
-						if (ancestors > maxDepth) break;
-						cursor = parentOf(cursor);
+					const frame = stack[stack.length - 1] as (typeof stack)[number];
+					if (frame.tallest < cap && frame.next < frame.children.length) {
+						const child = frame.children[frame.next] as number;
+						frame.next += 1;
+						if (!isAlive(child)) continue;
+						const seen = heights.get(child);
+						if (seen !== undefined)
+							frame.tallest = Math.max(frame.tallest, Math.min(cap, seen + 1));
+						else if (open.has(child)) frame.tallest = cap;
+						else if (stack.length >= cap) frame.tallest = cap;
+						else enter(child);
+						continue;
 					}
-					if (
-						ancestors + heightWithin(child, maxDepth + 1 - ancestors) - 1 >
-						maxDepth
-					) {
+					stack.pop();
+					open.delete(frame.node);
+					heights.set(frame.node, frame.tallest);
+					result = frame.tallest;
+					const parent = stack[stack.length - 1];
+					if (parent !== undefined)
+						parent.tallest = Math.max(
+							parent.tallest,
+							Math.min(cap, frame.tallest + 1),
+						);
+				}
+				return result;
+			};
+			/**
+			 * Ancestor counts are remembered the same way: 50,000 attached children each walking up to 64
+			 * ancestors is still a walk per child, and siblings share every step of it. A walk that passes
+			 * the limit is too deep at once and ends the check, so only counts that reached the root (or a
+			 * node hanging nowhere, or one already counted) are remembered, and those are exact. A cycle
+			 * never reaches either and so always ends as too deep.
+			 */
+			const ancestorCounts = new Map<number, number>();
+			const ancestorsOf = (node: number): number => {
+				const path: number[] = [];
+				let cursor: number | undefined = node;
+				let above = -1;
+				while (cursor !== undefined && cursor !== 0) {
+					const known = ancestorCounts.get(cursor);
+					if (known !== undefined) {
+						above = known;
+						break;
+					}
+					if (path.length > maxDepth + 1) return Number.POSITIVE_INFINITY;
+					path.push(cursor);
+					cursor = parentOf(cursor);
+				}
+				for (let i = path.length - 1; i >= 0; i -= 1) {
+					above += 1;
+					ancestorCounts.set(path[i] as number, above);
+				}
+				/** `node` itself is not its own ancestor. */
+				return above;
+			};
+			outer: for (const [parent, set] of attached)
+				for (const child of set) {
+					/** A candidate that moved on is checked under the parent it moved to. */
+					if (!isAlive(child) || placed.get(child) !== parent) continue;
+					const ancestors = parent === 0 ? 0 : ancestorsOf(parent) + 1;
+					if (ancestors + heightOf(child) - 1 > maxDepth) {
 						tooDeep = true;
 						break outer;
 					}
@@ -365,21 +467,26 @@ export class RuntimeHostNodeLedger {
 			live: live < 0 ? 0 : live,
 			tooDeep,
 			commit: () => {
-				for (const id of born) this.alive.add(id);
-				for (const [parent, set] of detached)
-					for (const child of set) this.children.get(parent)?.delete(child);
-				for (const [parent, set] of attached)
-					for (const child of set) {
-						add(this.children, parent, child);
-						this.parents.set(child, parent);
+				/**
+				 * A node that died here forgets its committed children. Each of them was moved away or died
+				 * with it, so each is in `placed` and is put where it now hangs just below.
+				 */
+				for (const id of cleared) this.children.delete(id);
+				for (const [child, parent] of placed) {
+					const before = this.parents.get(child);
+					if (before !== undefined) this.children.get(before)?.delete(child);
+					if (parent === undefined) {
+						this.parents.delete(child);
+						continue;
 					}
-				for (const id of died) {
-					this.alive.delete(id);
-					this.children.delete(id);
-					const parent = this.parents.get(id);
-					if (parent !== undefined) this.children.get(parent)?.delete(id);
-					this.parents.delete(id);
+					const set = this.children.get(parent);
+					if (set === undefined) this.children.set(parent, new Set([child]));
+					else set.add(child);
+					this.parents.set(child, parent);
 				}
+				for (const [id, alive] of state)
+					if (alive) this.alive.add(id);
+					else this.alive.delete(id);
 			},
 		};
 	}

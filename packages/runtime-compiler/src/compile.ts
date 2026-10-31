@@ -24,6 +24,7 @@ import {
 	type RuntimeModuleGraph,
 } from "./module-graph.ts";
 import {
+	isReservedProjectPath,
 	isRuntimeSourcePath,
 	normalizeProjectPath,
 	toVirtualPath,
@@ -107,7 +108,12 @@ function prelude(input: RuntimeCompileInput): Prelude {
 
 	const entryModule = graph.modules.get(entry);
 	if (!entryModule) {
-		if (entry.length > 0 && isRuntimeSourcePath(entry))
+		/** A reserved entry already has its own diagnostic from the graph; 'missing' would only repeat it. */
+		if (
+			entry.length > 0 &&
+			isRuntimeSourcePath(entry) &&
+			!isReservedProjectPath(entry)
+		)
 			diagnostics.push(
 				runtimeDiagnostic(
 					RUNTIME_DIAGNOSTIC_CODE.entryMissing,

@@ -195,31 +195,88 @@ export function parseCreatorStack(stack: string): CreatorStackFrame[] {
 	const frames: CreatorStackFrame[] = [];
 	for (const raw of stack.split("\n")) {
 		if (frames.length >= MAX_CREATOR_STACK_FRAMES) break;
-		const line = raw.trim();
-		if (line.length === 0) continue;
-		const located = /^at\s+(.*?)\s*\((.+?):(\d+):(\d+)\)$/.exec(line);
-		if (located) {
-			const [, fn, moduleId, ln, col] = located;
-			if (moduleId?.startsWith("<")) continue;
-			frames.push({
-				functionName: fn && fn.length > 0 ? fn : null,
-				moduleId: moduleId ?? null,
-				line: Number(ln),
-				column: Number(col),
-			});
-			continue;
-		}
-		const bare =
-			/^at\s+(.*?)\s*\((.+?)\)$/.exec(line) ?? /^at\s+(.*)$/.exec(line);
-		if (!bare) continue;
-		const moduleId = bare[2] ?? null;
-		if (moduleId?.startsWith("<")) continue;
-		frames.push({
-			functionName: bare[1] && bare[1].length > 0 ? bare[1] : null,
-			moduleId,
-			line: null,
-			column: null,
-		});
+		const frame = parseFrameLine(raw.trim());
+		if (frame === null || frame.moduleId?.startsWith("<")) continue;
+		frames.push(frame);
 	}
 	return frames;
+}
+
+const WHITESPACE = /\s/;
+const DIGIT = /[0-9]/;
+const LINE_TERMINATOR = /[\r\u2028\u2029]/;
+
+/**
+ * One line, read by index. The stack is the creator's string (any thrown object carries its own
+ * `stack`, clipped only to 16 KiB), and this runs on the host after the VM call returned, where no
+ * budget reaches. It used to be `/^at\s+(.*?)\s*\((.+?):(\d+):(\d+)\)$/` and a fallback, which
+ * backtrack quadratically on `at ` plus thousands of ` (`: about 175 ms per line on desktop V8, twice,
+ * on every failing execution. This reads the same three shapes in one pass each:
+ *
+ * - `at <name> (<module>:<line>:<column>)`: the first `(` after the name opens the module, and the
+ *   last two `:digits` before the closing `)` are the position.
+ * - `at <name> (<module>)`: the same `(`, and the module runs to the closing `)`.
+ * - `at <name>`: the rest of the line.
+ *
+ * A line with an inner line terminator is not one the engine wrote, and none of the three shapes
+ * reads it.
+ */
+function parseFrameLine(line: string): CreatorStackFrame | null {
+	if (!line.startsWith("at") || LINE_TERMINATOR.test(line)) return null;
+	let start = 2;
+	while (start < line.length && WHITESPACE.test(line.charAt(start))) start += 1;
+	if (start === 2) return null;
+	const nameBefore = (end: number): string | null => {
+		const name = line.slice(start, end).trimEnd();
+		return name.length > 0 ? name : null;
+	};
+	const open = line.indexOf("(", start);
+	const close = line.length - 1;
+	if (open !== -1 && line.charAt(close) === ")") {
+		const position = trailingPosition(line, close);
+		if (position !== null && open + 1 < position.colon)
+			return {
+				functionName: nameBefore(open),
+				moduleId: line.slice(open + 1, position.colon),
+				line: position.line,
+				column: position.column,
+			};
+		if (open + 1 < close)
+			return {
+				functionName: nameBefore(open),
+				moduleId: line.slice(open + 1, close),
+				line: null,
+				column: null,
+			};
+	}
+	const name = line.slice(start);
+	return {
+		functionName: name.length > 0 ? name : null,
+		moduleId: null,
+		line: null,
+		column: null,
+	};
+}
+
+/** `:<line>:<column>` ending just before `close`, and where its first colon sits. */
+function trailingPosition(
+	line: string,
+	close: number,
+): { colon: number; line: number; column: number } | null {
+	const digitsBefore = (end: number): number => {
+		let at = end;
+		while (at > 0 && DIGIT.test(line.charAt(at - 1))) at -= 1;
+		return at;
+	};
+	const columnStart = digitsBefore(close);
+	if (columnStart === close || line.charAt(columnStart - 1) !== ":")
+		return null;
+	const lineEnd = columnStart - 1;
+	const lineStart = digitsBefore(lineEnd);
+	if (lineStart === lineEnd || line.charAt(lineStart - 1) !== ":") return null;
+	return {
+		colon: lineStart - 1,
+		line: Number(line.slice(lineStart, lineEnd)),
+		column: Number(line.slice(columnStart, close)),
+	};
 }

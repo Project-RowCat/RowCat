@@ -283,6 +283,8 @@ export const runtimeStudio = {
 		too_long: "A path can't exceed {{max}} characters.",
 		too_deep: "Folders can be nested only {{max}} levels deep.",
 		traversal: "A path can't point outside the project.",
+		reserved:
+			"`node_modules` and `.rowcat` are reserved at the top of the project. Use another folder name.",
 		segment_too_long: "A name can't exceed {{max}} characters.",
 		invalid_character: "Only letters, digits and `.`, `_`, `-` can be used.",
 		unsupported_extension: "Only {{extensions}} files can be created.",

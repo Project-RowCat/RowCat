@@ -5,7 +5,7 @@ import {
 	resolveEffectiveGeneration,
 	resolveGenerationExecution,
 } from "@rowcat/chat";
-import { applyPlatformSafetyPolicy } from "@rowcat/chat/guards";
+import { runtimeGenerationSafety } from "@rowcat/chat/guards";
 import {
 	CHAT_MAX_OUTPUT_TOKENS,
 	type ChatGenerationMessage,
@@ -181,6 +181,7 @@ export function useRuntimePreviewGeneration(
 				{ adult: workIsAdult },
 				{ adultAllowed: canViewAdultContent(current) },
 			);
+			const safety = runtimeGenerationSafety(request.instructions, allAges);
 			const messages: ChatGenerationMessage[] = request.messages.map(
 				(message) => ({ role: message.role, content: message.content }),
 			);
@@ -192,13 +193,11 @@ export function useRuntimePreviewGeneration(
 				 */
 				tools: [],
 				/**
-				 * The creator's instructions sit between the two guards. This function is idempotent and is the
-				 * same one the conversation and BYO paths use, so no second safety policy grows here.
+				 * The creator's instructions sit between the two guards, and the minor guard stands when they
+				 * describe a minor (`runtimeGenerationSafety` in `@rowcat/chat/guards`). The wrap is the same idempotent
+				 * function the conversation and BYO paths use, so no second safety policy grows here.
 				 */
-				system: applyPlatformSafetyPolicy(request.instructions, {
-					allAges,
-					houseRules: false,
-				}),
+				system: safety.system,
 				messages,
 				maxOutputTokens: outputTokensFor(request.maxOutputCharacters),
 				/**
@@ -217,10 +216,7 @@ export function useRuntimePreviewGeneration(
 						target: execution.target,
 					}),
 				}),
-				context: {
-					requestedMode: allAges ? "all-ages" : "adult",
-					minorCharacterPresent: false,
-				},
+				context: safety.context,
 				/**
 				 * Runtime generation has no continuation, and this is stated explicitly. Continuation is a
 				 * conversation feature that appends a truncated assistant record. Here the input is one request

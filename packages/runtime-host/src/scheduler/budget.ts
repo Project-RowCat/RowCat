@@ -49,6 +49,24 @@ export const DEFAULT_BUDGET_POLICY: RuntimeBudgetPolicy = Object.freeze({
 });
 
 /**
+ * How far past its interrupt deadline a turn may end before it counts as a budget overrun.
+ *
+ * The interrupt only reaches bytecode and the regex engine. A native builtin is one uninterruptible
+ * call, and `"a".repeat(n).includes(...)` with a long near-miss needle is quadratic inside that call:
+ * 2 s with `executionMs: 100`, reported as success. Host work inside the turn (commit validation,
+ * reading a thrown value) is just as uninterruptible. So the scheduler measures the turn after it
+ * returns, and a turn that ran past its deadline by more than this is fatal like an interrupt.
+ *
+ * Why 100 ms. Inside the VM the interrupt lands within microseconds of the deadline, so what this
+ * absorbs is one stretch of host work or one native call that started just before it: the linear
+ * ledger walk of a 5,000-node commit, a GC pause, a worker or WebView thread descheduled on a slow
+ * phone. Those are tens of milliseconds at worst. A smaller value would end healthy sessions for the
+ * device's sake; a larger one only lengthens the one freeze it still allows. A turn that never
+ * returns is not this layer's question — the host that owns the thread needs a watchdog for that.
+ */
+export const RUNTIME_TURN_OVERRUN_GRACE_MS = 100;
+
+/**
  * The remaining time and the single operation that consumes it. All three axes share this shape.
  */
 export interface RuntimeBudgetAccount {
@@ -128,8 +146,25 @@ export function earliestDeadline(
 	now: number,
 	accounts: readonly RuntimeBudgetAccount[],
 ): number {
+	return earliestDeadlineOf(now, accounts).deadline;
+}
+
+/**
+ * The earliest deadline and the index of the account that set it (`-1` when there are none). On a
+ * tie the earlier account wins, so the order the caller passes is the order of blame.
+ */
+export function earliestDeadlineOf(
+	now: number,
+	accounts: readonly RuntimeBudgetAccount[],
+): { deadline: number; index: number } {
 	let remaining = Number.POSITIVE_INFINITY;
-	for (const account of accounts)
-		remaining = Math.min(remaining, account.remainingMs(now));
-	return now + Math.max(0, remaining);
+	let index = -1;
+	accounts.forEach((account, at) => {
+		const left = account.remainingMs(now);
+		if (left < remaining) {
+			remaining = left;
+			index = at;
+		}
+	});
+	return { deadline: now + Math.max(0, remaining), index };
 }

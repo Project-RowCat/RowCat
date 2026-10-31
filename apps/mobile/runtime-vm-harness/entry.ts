@@ -21,6 +21,10 @@ import type {
 	NativeRuntimeGenerationResult,
 	NativeRuntimeToVm,
 } from "../src/lib/runtime-native/protocol.ts";
+import {
+	createNativeRuntimeCommitWindow,
+	type NativeRuntimeCommitWindow,
+} from "../src/lib/runtime-native/commit-window.ts";
 import { RUNTIME_WASM_FILE } from "../src/lib/runtime-native/runtime-assets.ts";
 
 /**
@@ -121,8 +125,18 @@ const wasmBinary = async (): Promise<ArrayBuffer> => {
 
 const engine = createQuickJsEngine(variant, { wasmBinary });
 
-/** WebView yield: a `MessageChannel` makes the macrotask boundary, avoiding `setTimeout(0)`'s minimum delay. */
-const webviewClock = (): RuntimeHostSchedulerClock => {
+/**
+ * WebView yield: a `MessageChannel` makes the macrotask boundary, avoiding `setTimeout(0)`'s minimum
+ * delay.
+ *
+ * A session's clock also waits on its commit window: while Hermes has not applied enough of the
+ * commits already posted, the scheduler does not start its next slice. This is the only
+ * backpressure between the VM and Hermes (`commit-window.ts`); the VM budget charges VM time and
+ * never saw what applying a batch cost on the other side. The PoC suite passes no window.
+ */
+const webviewClock = (
+	commits?: NativeRuntimeCommitWindow,
+): RuntimeHostSchedulerClock => {
 	const channel = new MessageChannel();
 	let waiters: (() => void)[] = [];
 	channel.port1.onmessage = () => {
@@ -132,11 +146,13 @@ const webviewClock = (): RuntimeHostSchedulerClock => {
 	};
 	return {
 		now: () => performance.now(),
-		yield: () =>
-			new Promise((resolve) => {
+		yield: async () => {
+			if (commits !== undefined) await commits.wait();
+			await new Promise<void>((resolve) => {
 				waiters.push(resolve);
 				channel.port2.postMessage(null);
-			}),
+			});
+		},
 	};
 };
 
@@ -280,8 +296,28 @@ let current: Current | null = null;
 /** `start` and `stop` go through one chain so B's start waits for A's cleanup. */
 let chain: Promise<void> = Promise.resolve();
 
+/**
+ * The commit window of the session being set up or running. Kept outside `current` because it
+ * exists before the session does (the clock is handed to `createRuntimeVmSession`), and because
+ * `receive` must be able to release it **at once**: a stop that waited its turn on the chain behind
+ * a mount stalled on acknowledgements would never come.
+ */
+let activeCommits: {
+	generation: NativeRuntimeGeneration;
+	commits: NativeRuntimeCommitWindow;
+} | null = null;
+
+function releaseCommits(generation?: NativeRuntimeGeneration): void {
+	if (activeCommits === null) return;
+	if (generation !== undefined && activeCommits.generation !== generation)
+		return;
+	activeCommits.commits.release();
+	activeCommits = null;
+}
+
 async function stopCurrent(): Promise<void> {
 	rejectPendingGenerations("player stopped");
+	releaseCommits();
 	if (current === null) return;
 	const { generation, session } = current;
 	current = null;
@@ -306,6 +342,7 @@ async function failIfDead(
 ): Promise<boolean> {
 	if (session.state !== "failed") return false;
 	if (current?.session === session) current = null;
+	releaseCommits(generation);
 	await session.dispose();
 	post({
 		type: "failed",
@@ -323,6 +360,8 @@ async function start(
 	generationEnabled: boolean,
 ): Promise<void> {
 	await stopCurrent();
+	const commits = createNativeRuntimeCommitWindow();
+	activeCommits = { generation, commits };
 	let session: RuntimeVmSession;
 	try {
 		session = await createRuntimeVmSession({
@@ -330,7 +369,7 @@ async function start(
 			artifact,
 			onConsole: (level, args) =>
 				post({ type: "console", generation, level, args: [...args] }),
-			scheduling: { clock: webviewClock() },
+			scheduling: { clock: webviewClock(commits) },
 			/**
 			 * Snapshots are the values Hermes supplies. Absent, the host default (empty snapshot) applies;
 			 * that branch belongs to the diagnostic harness with no saves, since the product path always
@@ -351,6 +390,7 @@ async function start(
 				post({ type: "persistent-state", generation, snapshot }),
 		});
 	} catch (error) {
+		releaseCommits(generation);
 		post({
 			type: "failed",
 			generation,
@@ -372,7 +412,10 @@ async function start(
 	});
 
 	const mounted = await session.mountRoot({
-		onCommit: (batch) => post({ type: "commit", generation, batch }),
+		onCommit: (batch) => {
+			commits.committed(batch.revision);
+			post({ type: "commit", generation, batch });
+		},
 		/** Arrives after the commit; the bridge preserves order, and that order carries §12's promise. */
 		onCommands: (batch) => post({ type: "commands", generation, batch }),
 		onDiagnostic: (diagnostic) =>
@@ -392,6 +435,7 @@ async function start(
 	if (!mounted.ok) {
 		if (await failIfDead(generation, session, mounted.error)) return;
 		current = null;
+		releaseCommits(generation);
 		await session.dispose();
 		post({
 			type: "failed",
@@ -457,7 +501,13 @@ function receive(json: string): void {
 			pending.settle(message.result);
 			return;
 		}
+		case "commit-ack":
+			if (activeCommits?.generation === message.generation)
+				activeCommits.commits.acknowledged(message.revision);
+			return;
 		case "start":
+			/** A new start supersedes whatever is in flight; its window must not hold the stop ahead. */
+			releaseCommits();
 			chain = chain
 				.then(() =>
 					start(
@@ -477,6 +527,7 @@ function receive(json: string): void {
 				);
 			return;
 		case "stop":
+			releaseCommits(message.generation);
 			chain = chain
 				.then(async () => {
 					if (current?.generation === message.generation) await stopCurrent();

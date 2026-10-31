@@ -91,7 +91,17 @@ export type PreviewWorkerRequest =
 	 * no such action. It exists for testing: reproducing a first-time user's screen requires clearing
 	 * long progress too. Without it, creators would learn to reload the browser instead.
 	 */
-	| { type: "reset-persistent"; generation: PreviewGeneration };
+	| { type: "reset-persistent"; generation: PreviewGeneration }
+	/**
+	 * Main has handled every commit up to this revision. Backpressure: the worker's scheduler does not
+	 * start another slice while too many commits are unanswered (lib/runtime-watchdog/commit-flow.ts).
+	 */
+	| { type: "ack"; generation: PreviewGeneration; revision: number }
+	/**
+	 * Liveness: answered from the worker's message handler, which runs only between VM turns
+	 * (lib/runtime-watchdog/liveness.ts). Sent only while a session runs, never during the compile.
+	 */
+	| { type: "ping"; generation: PreviewGeneration; seq: number };
 
 /**
  * The on-screen projection of an error. Host file paths, worker stacks, and engine internals are
@@ -250,4 +260,6 @@ export type PreviewWorkerMessage =
 			request: PreviewGenerationRequest;
 	  }
 	| { type: "failed"; generation: PreviewGeneration; failure: PreviewFailure }
-	| { type: "stopped"; generation: PreviewGeneration; cleanups: number };
+	| { type: "stopped"; generation: PreviewGeneration; cleanups: number }
+	/** The answer to `ping`, carrying its number. Not an observation event: the debugger never sees it. */
+	| { type: "pong"; generation: PreviewGeneration; seq: number };

@@ -237,6 +237,42 @@ describe("platform and layer coupling", () => {
 		expect(offenders).toEqual([]);
 	});
 
+	/**
+	 * The compiler is a dependency for its contracts and path rules only. A subpath import does not
+	 * say what that module pulls in: `remote-assets` imports the TypeScript compiler at top level, and
+	 * while the host took one constant from it the whole compiler shipped into the player worker and
+	 * the native harness (3.7 MiB). So the allowlist is checked here, and each allowed module is walked
+	 * to its local imports to prove none of them reaches TypeScript.
+	 */
+	it("takes from the compiler only modules that do not pull in TypeScript", () => {
+		const allowed = new Set(["contracts", "paths", "module-resolution"]);
+		const taken = new Set<string>();
+		for (const file of files())
+			for (const match of file.source.matchAll(
+				/from\s+"@rowcat\/runtime-compiler(?:\/([\w-]+))?"/g,
+			))
+				taken.add(match[1] ?? "(root)");
+		expect([...taken].filter((name) => !allowed.has(name))).toEqual([]);
+
+		const compiler = fileURLToPath(
+			new URL("../../runtime-compiler/src/", import.meta.url),
+		);
+		const seen = new Set<string>();
+		const reachesTypeScript = (name: string): boolean => {
+			if (seen.has(name)) return false;
+			seen.add(name);
+			const source = stripComments(
+				readFileSync(join(compiler, `${name}.ts`), "utf8"),
+			);
+			if (/from\s+"(typescript|typescript-compiler-api)"/.test(source))
+				return true;
+			return [...source.matchAll(/from\s+"\.\/([\w-]+)\.ts"/g)].some((match) =>
+				reachesTypeScript(match[1]),
+			);
+		};
+		expect([...taken].filter(reachesTypeScript)).toEqual([]);
+	});
+
 	it("does not call the compiler's execute function: input is always an artifact", () => {
 		const offenders = files()
 			.filter((file) =>

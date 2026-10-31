@@ -1,9 +1,12 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import type { NativeAudioDeck } from "@rowcat/runtime-renderer-native/audio-deck";
 import type { NativeRuntimeTreeStore } from "@rowcat/runtime-renderer-native/tree-store";
 import { describe, expect, it, vi } from "vitest";
 import {
 	attachRuntimeAudio,
 	type RuntimeAudioAppState,
+	runtimeAudioStore,
 } from "./runtime-audio-lifecycle.ts";
 
 /**
@@ -145,5 +148,39 @@ describe("a deployment without a port", () => {
 		expect(() =>
 			attach({ deck, appState: fakeAppState().state }),
 		).not.toThrow();
+	});
+});
+
+/**
+ * **Sound lives only while a session is live.** The deck's identity is the session's tree store, and
+ * that store outlives a failure (the last tree is kept) and a stop that never delivered its unmount
+ * commit (a hung or crashed harness, a blocked transition). Keyed on the store alone, the previous
+ * playthrough's looped music kept playing behind a failed or syncing screen.
+ */
+describe("which store owns sound", () => {
+	const store = {} as NativeRuntimeTreeStore;
+
+	it("a starting or running session sounds", () => {
+		expect(runtimeAudioStore({ status: "starting" }, store)).toBe(store);
+		expect(runtimeAudioStore({ status: "running" }, store)).toBe(store);
+	});
+
+	it("a stopping, stopped or failed session is silent", () => {
+		for (const status of ["stopping", "idle", "failed"])
+			expect(runtimeAudioStore({ status }, store), status).toBeNull();
+	});
+
+	it("no session, no sound", () => {
+		expect(runtimeAudioStore({ status: "running" }, null)).toBeNull();
+	});
+
+	it("the playback screen keys the deck on it", () => {
+		const screen = readFileSync(
+			fileURLToPath(new URL("./runtime-chat-screen.tsx", import.meta.url)),
+			"utf8",
+		);
+		expect(screen).toMatch(
+			/useNativeRuntimeAudio\(\s*runtimeAudioStore\(player\.native, player\.session\?\.store \?\? null\)/,
+		);
 	});
 });

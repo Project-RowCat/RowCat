@@ -26,6 +26,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../../db/client.ts";
 import { story_runtime } from "../../db/schema.ts";
 import { ApiError } from "../../lib/errors.ts";
+import { checkRateLimit } from "../../lib/rate-limit/index.ts";
 import { findUnusableRuntimeAudio } from "../runtime-audio.ts";
 import {
 	findUnusableRuntimeImages,
@@ -359,6 +360,14 @@ function deriveCapabilities(
 	return usesGeneration ? ["generation"] : [];
 }
 
+const EXHAUSTED_MESSAGE: Record<"memory" | "stack" | "time", string> = {
+	memory:
+		"Checking this project needed more memory than a publication may use. Simplify the types (deeply recursive or very large type computations are the usual cause) and try again.",
+	stack:
+		"This project is nested too deeply to check. Flatten deeply nested expressions, arrays or types and try again.",
+	time: "Checking this project took longer than a publication may take. Simplify the types (deeply recursive or very large type computations are the usual cause) and try again.",
+};
+
 export interface CompiledStoryRuntime {
 	artifact: RuntimeArtifact;
 	capabilities: StoryRuntimeCapability[];
@@ -366,32 +375,71 @@ export interface CompiledStoryRuntime {
 }
 
 /**
+ * Who a compile is for. A publication names the member (the compiler's per-member place and the
+ * rate limit count by it) and passes its request's signal (a client that left ends its compile).
+ * Absent only for a process compiling for nobody, the e2e seed.
+ */
+export interface StoryRuntimeCompileCaller {
+	member: string;
+	signal?: AbortSignal;
+}
+
+/**
  * Runtime source -> artifact; does not touch the DB.
  *
- * The compile runs in a thread of its own with a memory ceiling and a deadline
+ * The compile runs in a thread of its own with a memory ceiling, a stack ceiling and a deadline
  * (`runtime-compile.ts`): type checking is unbounded, and inline it let a kilobyte of source take
- * the whole API down. Running out of either is the source's doing and is rejected like any other
- * diagnostic; a busy compiler is a 503.
+ * the whole API down. Running out of any of them is the source's doing and is rejected like any
+ * other diagnostic; a busy compiler is a 503.
+ *
+ * The rate limit is checked after the shape checks (free, and a malformed request should not spend
+ * the budget) and before the compile (the thing it budgets). The order of refusals that follow:
+ * this member's own compile still running is a 409 it can wait out; the whole process being full
+ * is a 503.
  *
  * Exceptions thrown by the compiler are our failures, not the creator's. Folding them into
  * diagnostics would make a server incident look like a syntax error, so they are not caught here
  * and become a 500 with a log entry.
  */
-export async function compileStoryRuntime(project: {
-	apiVersion: number;
-	entry: string;
-	files: readonly { path: string; content: string }[];
-}): Promise<CompiledStoryRuntime> {
+export async function compileStoryRuntime(
+	project: {
+		apiVersion: number;
+		entry: string;
+		files: readonly { path: string; content: string }[];
+	},
+	caller?: StoryRuntimeCompileCaller,
+): Promise<CompiledStoryRuntime> {
 	requireValidRuntimeSource(project);
+	if (caller) await checkRateLimit("storyRuntimeCompile", caller.member);
 
-	const isolated = await compileRuntimeInIsolation({
-		apiVersion: project.apiVersion,
-		entry: project.entry,
-		files: project.files.map((file) => ({
-			path: file.path,
-			content: file.content,
-		})),
-	});
+	const isolated = await compileRuntimeInIsolation(
+		{
+			apiVersion: project.apiVersion,
+			entry: project.entry,
+			files: project.files.map((file) => ({
+				path: file.path,
+				content: file.content,
+			})),
+		},
+		{ member: caller?.member, signal: caller?.signal },
+	);
+	if (isolated.kind === "member-busy")
+		throw new ApiError(
+			409,
+			STORY_PUBLISH_ERROR_CODE.runtimeCompileInProgress,
+			"Your previous runtime project is still being checked. Please try again when it finishes.",
+			{ retryAfterSeconds: 10 },
+		);
+	/**
+	 * The client left, so nobody reads this; it is an `ApiError` only so that a departure is not
+	 * logged as a server incident.
+	 */
+	if (isolated.kind === "cancelled")
+		throw new ApiError(
+			503,
+			STORY_PUBLISH_ERROR_CODE.runtimeCompileCancelled,
+			"The request ended before the runtime project was checked. Nothing was published.",
+		);
 	if (isolated.kind === "busy")
 		throw new ApiError(
 			503,
@@ -403,9 +451,7 @@ export async function compileStoryRuntime(project: {
 		rejectRuntime([
 			shapeIssue(
 				"runtime_compile_exhausted",
-				isolated.reason === "memory"
-					? "Checking this project needed more memory than a publication may use. Simplify the types (deeply recursive or very large type computations are the usual cause) and try again."
-					: "Checking this project took longer than a publication may take. Simplify the types (deeply recursive or very large type computations are the usual cause) and try again.",
+				EXHAUSTED_MESSAGE[isolated.reason],
 			),
 		]);
 	const result = isolated.result;
@@ -469,6 +515,7 @@ export type StoryRuntimePlan =
 export async function planStoryRuntime(
 	input: StoryPublishRuntimeInput | undefined,
 	ownerId: string,
+	signal?: AbortSignal,
 ): Promise<StoryRuntimePlan> {
 	if (input === undefined) return { kind: "preserve" };
 	if (input.mode === "disabled") return { kind: "remove" };
@@ -476,7 +523,10 @@ export async function planStoryRuntime(
 	await requireOwnRuntimeAssets(ownerId, input.project.assets);
 	return {
 		kind: "publish",
-		compiled: await compileStoryRuntime(input.project),
+		compiled: await compileStoryRuntime(input.project, {
+			member: ownerId,
+			signal,
+		}),
 		assets: canonicalManagedAssets(input.project.assets),
 	};
 }

@@ -291,3 +291,275 @@ describe("depth", () => {
 		expect(second.ok).toBe(false);
 	});
 });
+
+/**
+ * The ledger runs synchronously inside the VM turn, where no interrupt can cut it, and its time is
+ * charged to the creator's budget. It used to find a node's parent by scanning every parent the batch
+ * had attached: 3,000 ordinary nodes cost 240 ms of a 250 ms session window, and a forged batch held
+ * the thread for many seconds. A forged batch of remove/create pairs on one id did the same through
+ * the remove walk.
+ *
+ * The cost is counted, not timed. A wall-clock bound measures the machine as much as the walk (CI's
+ * oversubscribed runner is several times slower than a desktop), while these two numbers are the same
+ * on every machine:
+ * - steps: every value a Set, Map or array iterator hands out. The ledger's walks are for-of loops, so
+ *   a walk repeated per patch makes the count grow with the square of the batch. Each case runs at n
+ *   and at 4n: a linear ledger takes about 4 times the steps, a quadratic one about 16.
+ * - churn: the most times one key was deleted from one Set or Map. V8 keeps a deleted key in its hash
+ *   chain until the table is rebuilt, so deleting and re-adding the same key thousands of times makes
+ *   each lookup of it walk that chain: quadratic time that no iteration count shows.
+ */
+describe("ledger cost", () => {
+	type Next = (this: unknown, ...args: unknown[]) => unknown;
+	type Delete = (this: object, key: unknown) => boolean;
+
+	const workOf = (run: () => void): { steps: number; churn: number } => {
+		const iterators = [
+			new Set<number>().values(),
+			new Map<number, number>().entries(),
+			[].values(),
+		].map((iterator) => Object.getPrototypeOf(iterator) as { next: Next });
+		const nexts = iterators.map((prototype) => prototype.next);
+		const collections = [Set.prototype, Map.prototype] as unknown as {
+			delete: Delete;
+		}[];
+		const deletes = collections.map((prototype) => prototype.delete);
+		const deleted = new WeakMap<object, Map<unknown, number>>();
+		let steps = 0;
+		let churn = 0;
+		iterators.forEach((prototype, index) => {
+			const next = nexts[index] as Next;
+			prototype.next = function (this: unknown, ...args: unknown[]) {
+				steps += 1;
+				return next.apply(this, args);
+			};
+		});
+		collections.forEach((prototype, index) => {
+			const remove = deletes[index] as Delete;
+			prototype.delete = function (this: object, key: unknown) {
+				let counts = deleted.get(this);
+				if (counts === undefined) {
+					counts = new Map();
+					deleted.set(this, counts);
+				}
+				const times = (counts.get(key) ?? 0) + 1;
+				counts.set(key, times);
+				churn = Math.max(churn, times);
+				return remove.call(this, key);
+			};
+		});
+		try {
+			run();
+		} finally {
+			iterators.forEach((prototype, index) => {
+				prototype.next = nexts[index] as Next;
+			});
+			collections.forEach((prototype, index) => {
+				prototype.delete = deletes[index] as Delete;
+			});
+		}
+		return { steps, churn };
+	};
+
+	/**
+	 * Validates `committed` (if any) into a fresh ledger, then counts the work of validating `json`
+	 * against it. Only the second batch is counted.
+	 */
+	const costOf = (
+		json: string,
+		committed?: string,
+	): { ok: boolean; steps: number; churn: number } => {
+		const tree = new RuntimeHostNodeLedger();
+		if (committed !== undefined) {
+			const first = validatePatchBatch(committed, DEFAULT_ROOT_LIMITS, {
+				tree,
+			});
+			if (!first.ok)
+				throw new Error(`committed batch refused: ${first.reason}`);
+			first.commit();
+		}
+		let ok = false;
+		const work = workOf(() => {
+			ok = validatePatchBatch(json, DEFAULT_ROOT_LIMITS, { tree }).ok;
+		});
+		return { ok, ...work };
+	};
+
+	/** The same case at n and at 4n: how much more work, and whether each was accepted. */
+	const growth = (
+		n: number,
+		build: (size: number) => { json: string; committed?: string },
+	) => {
+		const small = build(n);
+		const large = build(4 * n);
+		const a = costOf(small.json, small.committed);
+		const b = costOf(large.json, large.committed);
+		return {
+			ok: [a.ok, b.ok],
+			ratio: b.steps / a.steps,
+			churn: Math.max(a.churn, b.churn),
+		};
+	};
+
+	/** Linear is about 4 and quadratic about 16; the bound sits well clear of both. */
+	const LINEAR = 7;
+
+	/** What the reconciler sends for a scroll of rows, each a row with a label and a button. */
+	const listMount = (rows: number): unknown[] => {
+		const patches: unknown[] = [{ op: "create", id: 1, kind: "scroll" }];
+		let id = 2;
+		for (let row = 0; row < rows; row += 1) {
+			const [box, label, labelText, button, buttonText] = [
+				id,
+				id + 1,
+				id + 2,
+				id + 3,
+				id + 4,
+			];
+			id += 5;
+			patches.push(
+				{ op: "create", id: box, kind: "row" },
+				{ op: "create", id: label, kind: "text" },
+				{ op: "create", id: labelText, kind: "#text" },
+				{ op: "set-text", id: labelText, value: `row ${row}` },
+				{ op: "insert", parent: label, child: labelText, index: 0 },
+				{ op: "create", id: button, kind: "button" },
+				{
+					op: "set-prop",
+					id: button,
+					name: "onPress",
+					value: { $handler: id },
+				},
+				{ op: "create", id: buttonText, kind: "#text" },
+				{ op: "set-text", id: buttonText, value: "go" },
+				{ op: "insert", parent: button, child: buttonText, index: 0 },
+				{ op: "insert", parent: box, child: label, index: 0 },
+				{ op: "insert", parent: box, child: button, index: 1 },
+				{ op: "insert", parent: 1, child: box, index: row },
+			);
+		}
+		patches.push({ op: "insert", parent: 0, child: 1, index: 0 });
+		return patches;
+	};
+
+	/** One parent at the root with `children` children under it. */
+	const wideParent = (children: number): string => {
+		const patches: unknown[] = [
+			{ op: "create", id: 1, kind: "view" },
+			{ op: "insert", parent: 0, child: 1, index: 0 },
+		];
+		for (let id = 2; id < children + 2; id += 1)
+			patches.push(
+				{ op: "create", id, kind: "view" },
+				{ op: "insert", parent: 1, child: id, index: id - 2 },
+			);
+		return batch(patches);
+	};
+
+	it("a mount grows linearly, up to 5,000 nodes", () => {
+		const { ok, ratio, churn } = growth(240, (rows) => ({
+			json: batch(listMount(rows)),
+		}));
+		expect(ok).toEqual([true, true]);
+		expect(ratio).toBeLessThan(LINEAR);
+		expect(churn).toBeLessThanOrEqual(2);
+	});
+
+	it("deep chains under the depth limit grow linearly", () => {
+		const { ok, ratio, churn } = growth(16, (chains) => {
+			const patches: unknown[] = [];
+			let id = 1;
+			for (let chain = 0; chain < chains; chain += 1) {
+				let parent = 0;
+				for (let level = 0; level < 60; level += 1) {
+					patches.push({ op: "create", id, kind: "view" });
+					patches.push({ op: "insert", parent, child: id, index: 0 });
+					parent = id;
+					id += 1;
+				}
+			}
+			return { json: batch(patches) };
+		});
+		expect(ok).toEqual([true, true]);
+		expect(ratio).toBeLessThan(LINEAR);
+		expect(churn).toBeLessThanOrEqual(2);
+	});
+
+	it("a forged batch of inserts under distinct parents grows linearly", () => {
+		const { ok, ratio, churn } = growth(6_000, (count) => {
+			const patches: unknown[] = [];
+			for (let id = 1; id <= count; id += 1) {
+				patches.push({ op: "create", id, kind: "view" });
+				patches.push({ op: "insert", parent: id + count, child: id, index: 0 });
+			}
+			return { json: batch(patches) };
+		});
+		expect(ok).toEqual([false, false]);
+		expect(ratio).toBeLessThan(LINEAR);
+		expect(churn).toBeLessThanOrEqual(2);
+	});
+
+	/**
+	 * A re-created id is a new node. Each remove of it used to walk the committed children the first
+	 * remove had already killed: pairs times children. Both grow here, so that product is quadratic.
+	 */
+	it("a forged batch removing and re-creating one parent grows linearly", () => {
+		const { ok, ratio, churn } = growth(1_200, (size) => {
+			const patches: unknown[] = [];
+			for (let pair = 0; pair < size; pair += 1)
+				patches.push(
+					{ op: "remove", id: 1 },
+					{ op: "create", id: 1, kind: "view" },
+				);
+			return { committed: wideParent(size), json: batch(patches, 2) };
+		});
+		expect(ok).toEqual([true, true]);
+		expect(ratio).toBeLessThan(LINEAR);
+		expect(churn).toBeLessThanOrEqual(2);
+	});
+
+	/**
+	 * One child moved between two wide parents and back, over and over: a committed parent and one
+	 * this batch filled. Taking the child out of the second parent's set and putting it back is the
+	 * churn the header describes.
+	 */
+	it("a forged batch moving one child back and forth grows linearly", () => {
+		const other = 100_000;
+		const moved = 200_000;
+		const { ok, ratio, churn } = growth(1_200, (size) => {
+			const patches: unknown[] = [
+				{ op: "create", id: other, kind: "view" },
+				{ op: "insert", parent: 0, child: other, index: 1 },
+				{ op: "create", id: moved, kind: "view" },
+			];
+			for (let id = other + 1; id <= other + size / 2; id += 1)
+				patches.push(
+					{ op: "create", id, kind: "view" },
+					{ op: "insert", parent: other, child: id, index: 0 },
+				);
+			for (let move = 0; move < size; move += 1)
+				patches.push(
+					{ op: "insert", parent: other, child: moved, index: 0 },
+					{ op: "insert", parent: 1, child: moved, index: 0 },
+				);
+			return { committed: wideParent(size / 2), json: batch(patches, 2) };
+		});
+		expect(ok).toEqual([true, true]);
+		expect(ratio).toBeLessThan(LINEAR);
+		expect(churn).toBeLessThanOrEqual(2);
+	});
+
+	it("a cycle the batch draws is too deep, not endless", () => {
+		const result = validatePatchBatch(
+			batch([
+				{ op: "create", id: 1, kind: "view" },
+				{ op: "create", id: 2, kind: "view" },
+				{ op: "insert", parent: 0, child: 1, index: 0 },
+				{ op: "insert", parent: 1, child: 2, index: 0 },
+				{ op: "insert", parent: 2, child: 1, index: 0 },
+			]),
+			DEFAULT_ROOT_LIMITS,
+		);
+		expect(result.ok).toBe(false);
+	});
+});

@@ -1,6 +1,7 @@
 import { checkRuntimePath, normalizeRuntimePath } from "@rowcat/authoring";
 import {
 	escapesProjectRoot,
+	isReservedProjectPath,
 	normalizeProjectPath,
 } from "@rowcat/runtime-compiler";
 import { describe, expect, it } from "vitest";
@@ -105,5 +106,29 @@ describe("extension decisions are the same", () => {
 		);
 		expect(compiler(path)).toBe(expected);
 		expect(authoring(path)).toBe(expected);
+	});
+});
+
+describe("reserved folders are the same", () => {
+	/**
+	 * The compiler keeps its own files under two top-level folders of the virtual file system. If
+	 * authoring accepted a path there that the compiler refuses, a file could be created and edited
+	 * normally and then only fail at compile; the reverse would let the compiler read a creator file as
+	 * its own. Both copies must give one answer.
+	 */
+	it.each([
+		["node_modules/x.ts", true],
+		[".rowcat/entry-check.ts", true],
+		["node_modules/a/b.tsx", true],
+		["src/node_modules/x.ts", false],
+		["src/.rowcat/x.ts", false],
+		["Node_Modules/x.ts", false],
+		["rowcat/x.ts", false],
+		["src/main.tsx", false],
+	] as const)("%s", (path, reserved) => {
+		expect(isReservedProjectPath(path)).toBe(reserved);
+		const check = checkRuntimePath(path);
+		expect(check.ok).toBe(!reserved);
+		if (!check.ok) expect(check.code).toBe("reserved");
 	});
 });

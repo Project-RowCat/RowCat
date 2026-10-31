@@ -366,3 +366,71 @@ describe("both hosts see the same compatibility window", () => {
 		expect(source).not.toMatch(/RUNTIME_API_MIN_COMPATIBLE_VERSION/);
 	});
 });
+
+/**
+ * The pacing, liveness and sound rules live in pure modules with their own tests
+ * (lib/runtime-watchdog, runtime-player-session.ts). What can still go missing is the wiring: a hook
+ * that never arms the watch, a worker that never answers, or a dispose path that forgets to release
+ * the flow gate is green everywhere else and hangs or freezes only in the browser.
+ */
+describe("the worker is paced and watched", () => {
+	test("the hook watches from the worker's first message and acknowledges commits", () => {
+		const hook = read("./use-runtime-player.ts");
+		/** Paused until `starting`: downloading the worker's script is not a stuck turn. */
+		expect(hook).toMatch(/watchRuntimeWorker\(/);
+		expect(hook).not.toMatch(/watchRuntimeLiveness\(/);
+		expect(hook).toMatch(
+			/case "status":[\s\S]*?watch\?\.observe\("session-starting"\)/,
+		);
+		expect(hook).toMatch(/case "pong":/);
+		expect(hook).toMatch(
+			/\.acknowledge\(generation, message\.batch\.revision\)/,
+		);
+	});
+
+	test("the worker answers pings, applies acks and runs on the gated clock", () => {
+		const worker = read("./runtime-player.worker.ts");
+		expect(worker).toMatch(/case "ping":[\s\S]*?type: "pong"/);
+		expect(worker).toMatch(/case "ack":[\s\S]*?\.acknowledged\(/);
+		/** Wakes from main wait on the gate too, or each one starts an ungated drain. */
+		expect(worker).toMatch(/case "event":[\s\S]*?admit\(request\.generation/);
+		expect(worker).toMatch(
+			/case "generation-result":[\s\S]*?admit\(request\.generation/,
+		);
+		expect(worker).toMatch(/current\.flow\.admit\(run\)/);
+		expect(worker).toMatch(/scheduling: \{ clock: flow\.clock \}/);
+		expect(worker).not.toMatch(
+			/scheduling: \{ clock: workerSchedulerClock\(\) \}/,
+		);
+	});
+
+	/** Every dispose in the worker is preceded by a release, or a parked scheduler hangs it. */
+	test("every dispose releases the flow first", () => {
+		const worker = read("./runtime-player.worker.ts");
+		const disposes = [...worker.matchAll(/await session\.dispose\(\)/g)];
+		expect(disposes.length).toBeGreaterThan(0);
+		for (const match of disposes) {
+			const before = worker.slice(
+				Math.max(0, (match.index ?? 0) - 400),
+				match.index,
+			);
+			expect(before).toMatch(/flow\.release\(\)/);
+		}
+	});
+
+	test("the generation router asks whether the generation is still on screen", () => {
+		const hook = read("./use-runtime-player.ts");
+		expect(hook).toMatch(
+			/currentGeneration: \(\) =>\s*runtimePlayerAnswersGeneration\(/,
+		);
+		expect(hook).toMatch(/release\(\) \{\s*session\.abortGeneration\(\);/);
+	});
+
+	test("sound ends with the session", () => {
+		const hook = read("./use-runtime-player.ts");
+		expect(hook).toMatch(/LIFECYCLE_EVENT_SILENCES_AUDIO\[event\.type\]/);
+		const silences = hook.match(/silenceAudio\(\)/g) ?? [];
+		/** Lifecycle events, worker `failed`, crash, renderer failure, liveness verdict. */
+		expect(silences.length).toBeGreaterThanOrEqual(5);
+	});
+});

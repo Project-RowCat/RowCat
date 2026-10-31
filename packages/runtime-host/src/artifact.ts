@@ -7,12 +7,12 @@ import {
 import {
 	RUNTIME_ARTIFACT_FORMAT_VERSION,
 	RUNTIME_COMPILER_VERSION,
+	RUNTIME_REMOTE_ASSET_MANIFEST_LIMITS,
 	type RuntimeArtifact,
 	type RuntimeArtifactDependency,
 	type RuntimeArtifactModule,
 } from "@rowcat/runtime-compiler/contracts";
 import { isCanonicalRuntimeModuleId } from "@rowcat/runtime-compiler/paths";
-import { RUNTIME_REMOTE_ASSET_MANIFEST_LIMITS } from "@rowcat/runtime-compiler/remote-assets";
 import { RUNTIME_HOST_ERROR_CODE, RuntimeHostError } from "./errors.ts";
 import { isRecord } from "./is-record.ts";
 

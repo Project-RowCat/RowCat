@@ -349,7 +349,15 @@ export const stories = new Hono<AppEnv>()
 		const parsed = StoryPublishRequest.safeParse(await readJson(c));
 		if (!parsed.success) throw invalidInput(parsed.error);
 
-		const { created, story } = await publishStory(viewer, parsed.data);
+		/**
+		 * The request's signal reaches the compile: a client that leaves gives back its place in the
+		 * shared compiler instead of holding it to the deadline (`services/story/runtime-compile.ts`).
+		 */
+		const { created, story } = await publishStory(
+			viewer,
+			parsed.data,
+			c.req.raw.signal,
+		);
 		const body: StoryPublishResponse = { created, story };
 		/** 201 vs 200 for created vs updated: proxies, logs and metrics read the status, clients branch on the body's `created`. */
 		return c.json(body, created ? 201 : 200);
@@ -373,6 +381,7 @@ export const stories = new Hono<AppEnv>()
 			viewer,
 			c.req.param("id"),
 			parsed.data,
+			c.req.raw.signal,
 		);
 		const body: StoryUpdateResponse = { story };
 		return c.json(body);

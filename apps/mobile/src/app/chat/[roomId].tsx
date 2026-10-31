@@ -20,5 +20,10 @@ export default function ChatRoute() {
 	 */
 	if (!id) return <Redirect href="/" />;
 
-	return <ChatScreen roomId={id} />;
+	/**
+	 * Keyed on the room, as the runtime route is keyed on its story: the composer draft, search,
+	 * reveal target and the generation hook belong to one room, and whether the router reuses this
+	 * route for a navigation to another room is the router's bookkeeping, not this app's.
+	 */
+	return <ChatScreen key={id} roomId={id} />;
 }

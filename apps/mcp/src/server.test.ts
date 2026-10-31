@@ -10,9 +10,9 @@ import type {
 	RuntimeAuthoringPort,
 	RuntimeMcpDraftView,
 } from "@rowcat/runtime-mcp";
-import { RUNTIME_MCP_TOOLS } from "@rowcat/runtime-mcp";
+import { RUNTIME_MCP_LIMITS, RUNTIME_MCP_TOOLS } from "@rowcat/runtime-mcp";
 import { afterEach, describe, expect, test } from "vitest";
-import { createRuntimeMcpServer } from "./server.ts";
+import { createRuntimeMcpServer, toolResultText } from "./server.ts";
 
 /**
  * Round trip over the protocol: a real MCP client against the real server. Tool semantics are
@@ -261,5 +261,43 @@ describe("calls", () => {
 		};
 		expect(parsed.ok).toBe(true);
 		expect(parsed.artifact?.sourceHash.length).toBeGreaterThan(0);
+	});
+});
+
+const CAP = RUNTIME_MCP_LIMITS.responseBytes;
+const utf8Bytes = (text: string): number => Buffer.byteLength(text, "utf8");
+
+describe("the per-response cap is UTF-8 bytes", () => {
+	test("Korean text cannot carry three times the cap", () => {
+		// 3 bytes per code unit: under the cap in code units, three times it in bytes.
+		const json = JSON.stringify("가".repeat(Math.floor(CAP / 2)));
+		expect(json.length).toBeLessThan(CAP);
+		const text = toolResultText(json);
+		expect(utf8Bytes(text)).toBeLessThanOrEqual(CAP);
+		expect(text).toContain("truncated past the cap");
+	});
+
+	test("the cut never splits a surrogate pair", () => {
+		// The opening quote puts every high surrogate on an odd index, so a code-unit cut at an even
+		// length lands between the halves of a pair.
+		const json = JSON.stringify("😀".repeat(CAP));
+		const text = toolResultText(json);
+		// A lone surrogate does not survive a UTF-8 round trip (it becomes U+FFFD).
+		expect(Buffer.from(text, "utf8").toString("utf8")).toBe(text);
+		expect(utf8Bytes(text)).toBeLessThanOrEqual(CAP);
+	});
+
+	test("a result exactly at the cap passes through untouched", () => {
+		const json = JSON.stringify("a".repeat(CAP - 2));
+		expect(utf8Bytes(json)).toBe(CAP);
+		expect(toolResultText(json)).toBe(json);
+	});
+
+	test("one byte over is cut, and the notice still fits under the cap", () => {
+		const json = JSON.stringify("a".repeat(CAP - 1));
+		const text = toolResultText(json);
+		expect(text).not.toBe(json);
+		expect(text).toContain("truncated past the cap");
+		expect(utf8Bytes(text)).toBeLessThanOrEqual(CAP);
 	});
 });

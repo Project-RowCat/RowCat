@@ -414,6 +414,131 @@ describe("the app's environment does not leak", () => {
 		expect(result.ok).toBe(false);
 		expect(result.artifact).toBeNull();
 	});
+
+	/**
+	 * One comment line used to bring the DOM back on the server: `lib: [es2022]` only picks the
+	 * default, and a reference directive was resolved against every lib file on disk.
+	 */
+	const directives: [string, string][] = [
+		["lib dom", '/// <reference lib="dom" />'],
+		["lib webworker", '/// <reference lib="webworker" />'],
+		["lib esnext", '/// <reference lib="esnext" />'],
+		["types", '/// <reference types="node" />'],
+		["path", '/// <reference path="./other.ts" />'],
+		["no-default-lib", '/// <reference no-default-lib="true" />'],
+	];
+
+	it.each(directives)("a %s reference directive is refused", (_name, line) => {
+		const files = [
+			main(
+				`${line}\nexport default function App() { void fetch; return null; }`,
+			),
+			{ path: "src/other.ts", content: "export const other = 1;\n" },
+		];
+		const compiled = compile(project(files));
+		expect(compiled.ok).toBe(false);
+		expect(codes(compiled)).toContain(
+			RUNTIME_DIAGNOSTIC_CODE.referenceDirectiveForbidden,
+		);
+		const directive = compiled.diagnostics.find(
+			(diagnostic) =>
+				diagnostic.code === RUNTIME_DIAGNOSTIC_CODE.referenceDirectiveForbidden,
+		);
+		expect(directive).toMatchObject({ path: "src/main.tsx", line: 1 });
+		/** The studio's analysis answers the same, so the two environments do not disagree. */
+		expect(codes(analyzeRuntimeProject(project(files)))).toContain(
+			RUNTIME_DIAGNOSTIC_CODE.referenceDirectiveForbidden,
+		);
+	});
+
+	it("an ordinary comment that mentions a directive is not refused", () => {
+		const result = compile(
+			project([main(`// see /// <reference lib="dom" /> in the docs\n${APP}`)]),
+		);
+		expect(result.diagnostics).toEqual([]);
+		expect(result.ok).toBe(true);
+	});
+
+	/**
+	 * Behind the policy pass, the library set itself is the one the studio preview worker ships
+	 * (apps/web runtime-preview-libs.ts): the es5..es2022 chain and the decorators libs. If the policy
+	 * line were ever lost, lib.dom.d.ts would still not be there to load.
+	 */
+	it("the server's library set is the ES chain only", () => {
+		const names = environment.defaultLibs.map((lib) => lib.path);
+		expect(names).toContain("lib.es2022.d.ts");
+		expect(names).toContain("lib.es5.d.ts");
+		expect(names).toContain("lib.decorators.d.ts");
+		for (const name of names)
+			expect(name).toMatch(
+				/^lib\.(es5|es20(15|16|17|18|19|20|21|22)(\.[a-z0-9]+)*|decorators(\.[a-z0-9]+)*)\.d\.ts$/,
+			);
+		expect(names).not.toContain("lib.dom.d.ts");
+		expect(names).not.toContain("lib.webworker.d.ts");
+		expect(names).not.toContain("lib.esnext.d.ts");
+	});
+});
+
+describe("reserved project paths", () => {
+	/**
+	 * The virtual file system keeps the runtime package and the TypeScript libs under node_modules/
+	 * and the entry check under .rowcat/. A creator file there used to be read as the compiler's own:
+	 * its type errors became 'the compiler environment is invalid', and a creator
+	 * .rowcat/entry-check.ts was silently replaced by ours in emit.
+	 */
+	const reserved = ["node_modules/x.ts", ".rowcat/entry-check.ts"];
+
+	it.each(reserved)("%s is refused as reserved", (path) => {
+		const withoutExtension = path.replace(/\.ts$/, "");
+		const files = [
+			main(`import "../${withoutExtension}";\n${APP}`),
+			{ path, content: "const x: string = 1;\nexport default x;\n" },
+		];
+		const result = compile(project(files));
+		expect(result.ok).toBe(false);
+		expect(codes(result)).toContain(RUNTIME_DIAGNOSTIC_CODE.moduleReservedPath);
+		expect(codes(result)).not.toContain(
+			RUNTIME_DIAGNOSTIC_CODE.apiVersionUnsupported,
+		);
+		expect(
+			result.diagnostics.find(
+				(diagnostic) =>
+					diagnostic.code === RUNTIME_DIAGNOSTIC_CODE.moduleReservedPath,
+			)?.path,
+		).toBe(path);
+		expect(codes(analyzeRuntimeProject(project(files)))).toContain(
+			RUNTIME_DIAGNOSTIC_CODE.moduleReservedPath,
+		);
+	});
+
+	it("an entry point under a reserved folder is refused", () => {
+		const result = compile(
+			project([{ path: ".rowcat/main.tsx", content: APP }], ".rowcat/main.tsx"),
+		);
+		expect(result.ok).toBe(false);
+		expect(codes(result)).toEqual([RUNTIME_DIAGNOSTIC_CODE.moduleReservedPath]);
+	});
+
+	/**
+	 * Only the first segment is reserved: that is where the creator's tree and the compiler's overlap.
+	 * A nested node_modules folder is an ordinary folder and emits like one.
+	 */
+	it("names that only resemble a reserved folder still compile", () => {
+		const files = [
+			main(
+				`import { n } from "./rowcat/node_modules_list";\nimport { m } from "./node_modules/m";\nvoid n; void m;\n${APP}`,
+			),
+			{
+				path: "src/rowcat/node_modules_list.ts",
+				content: "export const n = 1;\n",
+			},
+			{ path: "src/node_modules/m.ts", content: "export const m = 2;\n" },
+			{ path: "Node_Modules/unused.ts", content: "export {};\n" },
+		];
+		const result = compile(project(files));
+		expect(result.diagnostics).toEqual([]);
+		expect(result.ok).toBe(true);
+	});
 });
 
 describe("entry point", () => {

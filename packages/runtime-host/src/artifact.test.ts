@@ -2,7 +2,7 @@ import {
 	RUNTIME_API_MIN_COMPATIBLE_VERSION,
 	RUNTIME_API_VERSION,
 } from "@rowcat/runtime/declarations";
-import { RUNTIME_REMOTE_ASSET_MANIFEST_LIMITS } from "@rowcat/runtime-compiler/remote-assets";
+import { RUNTIME_REMOTE_ASSET_MANIFEST_LIMITS } from "@rowcat/runtime-compiler/contracts";
 import { describe, expect, it } from "vitest";
 import { validateRuntimeArtifact } from "./artifact.ts";
 import { RUNTIME_HOST_ERROR_CODE } from "./errors.ts";

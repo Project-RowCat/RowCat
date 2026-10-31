@@ -414,3 +414,41 @@ describe("managed audio", () => {
 		);
 	});
 });
+
+/**
+ * **The product playback path is the one that must not wait on a hung realm.** The watchdog, the
+ * renewal and the early stop are options and one event branch; dropping any of them compiles and
+ * every unit test of the session stays green, so the wiring is pinned by value.
+ */
+describe("product playback watches the harness", () => {
+	it("the session gets a liveness watchdog and renews its bridge", () => {
+		const hook = at("src/features/runtime-player/use-runtime-player.ts");
+		expect(hook.text).toMatch(/liveness:\s*\{/);
+		expect(hook.text).toMatch(
+			/renewTransport:\s*\(\)\s*=>\s*createHostTransport\(/,
+		);
+	});
+
+	it("a transition stops the old session at once", () => {
+		const hook = at("src/features/runtime-player/use-runtime-player.ts");
+		expect(hook.text).toMatch(/case "transition":\s*session\.stop\(\);/);
+	});
+
+	it("the WebView is keyed on its transport", () => {
+		const view = at("src/lib/runtime-native/runtime-host-view.tsx");
+		expect(view.text).toMatch(/<AndroidHost key=\{key\}/);
+		expect(view.text).toMatch(/<IosHost key=\{key\}/);
+	});
+
+	it("the harness clock waits on the commit window and stop releases it", () => {
+		const harness = readFileSync(
+			join(APP, "runtime-vm-harness/entry.ts"),
+			"utf8",
+		);
+		expect(harness).toMatch(/await commits\.wait\(\)/);
+		expect(harness).toMatch(
+			/case "stop":\s*releaseCommits\(message\.generation\)/,
+		);
+		expect(harness).toMatch(/case "commit-ack":/);
+	});
+});

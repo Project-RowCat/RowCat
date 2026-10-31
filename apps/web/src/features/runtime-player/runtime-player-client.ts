@@ -36,6 +36,10 @@ export interface RuntimePlayerClient {
 		requestId: number,
 		result: PlayerGenerationResult,
 	): void;
+	/** Main has handled the commits up to `revision` (backpressure; see protocol.ts). */
+	acknowledge(generation: PlayerGeneration, revision: number): void;
+	/** Asks the worker whether it is between turns (liveness; see protocol.ts). */
+	ping(generation: PlayerGeneration, seq: number): void;
 	/** Kills the worker immediately. A last resort, used when cleanup cannot finish. */
 	terminate(): void;
 }
@@ -79,6 +83,9 @@ export async function createRuntimePlayerClient(handlers: {
 			}),
 		generationResult: (generation, requestId, result) =>
 			send({ type: "generation-result", generation, requestId, result }),
+		acknowledge: (generation, revision) =>
+			send({ type: "ack", generation, revision }),
+		ping: (generation, seq) => send({ type: "ping", generation, seq }),
 		terminate: () => {
 			worker.terminate();
 		},

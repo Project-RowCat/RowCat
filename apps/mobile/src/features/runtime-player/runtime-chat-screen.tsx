@@ -29,6 +29,7 @@ import { useRuntimeConversationScope } from "../../lib/local-data/scope.tsx";
 import { describeNativeRuntimeHost } from "../../lib/runtime-native/host-bridge.ts";
 import { NativeRuntimeHostView } from "../../lib/runtime-native/runtime-host-view.tsx";
 import { AppSidebarTrigger } from "../shell/app-sidebar.tsx";
+import { runtimeAudioStore } from "./runtime-audio-lifecycle.ts";
 import { RuntimeGenerationSettingsDialog } from "./runtime-generation-settings-dialog.tsx";
 import {
 	RUNTIME_PLAYBACK_ACTIONS_LABEL,
@@ -151,11 +152,12 @@ export function RuntimeChatScreen({ storyId }: { storyId: string }) {
 	 */
 	/**
 	 * Sound is **not drawn**, so it lives outside the surface component. The session's tree store is
-	 * this deck's identity, so when the story changes or the session restarts, the previous story's
-	 * sound ends right there, before the new deck stands.
+	 * this deck's identity, and only while that session is live (`runtimeAudioStore`): a stop, a
+	 * restart or a failure ends the previous playthrough's sound right there, before the new deck
+	 * stands, even when the harness never sent the commit that would have removed it.
 	 */
 	useNativeRuntimeAudio(
-		player.session?.store ?? null,
+		runtimeAudioStore(player.native, player.session?.store ?? null),
 		resolveAudio,
 		/** A sound ending is not a press: `media` keeps it from authorizing generation. */
 		(handler) => player.session?.dispatchEvent(handler, undefined, "media"),

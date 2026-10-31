@@ -147,7 +147,32 @@ export function createNativeRuntimeTreeStore(): NativeRuntimeTreeStore {
 		undo: (() => void)[];
 		touched: Set<number>;
 		created: number[];
+		/** Parents whose child list this batch already copied. Their undo restores that original. */
+		copied: Set<number>;
 	}
+
+	/**
+	 * The child list this batch may edit in place. The first touch per parent copies it once and
+	 * records the original as the undo target; every later operation in the batch splices that copy.
+	 *
+	 * Copying per operation (and journaling each copy) made one batch cost patches × children in both
+	 * time and memory: 50,000 moves over 5,000 children held 2.4 GB until the commit point, which on a
+	 * phone is the app being killed (`move-cost.test.ts`). The host caps patches and nodes per batch,
+	 * not their product. A changed parent still gets a **new array object** once per batch, so
+	 * subscribers that compare list identity see the change, and a rolled-back batch leaves the very
+	 * array it started from.
+	 */
+	const editableChildren = (parent: Record_, journal: Journal): number[] => {
+		if (!journal.copied.has(parent.id)) {
+			journal.copied.add(parent.id);
+			const original = parent.children;
+			parent.children = original.slice();
+			journal.undo.push(() => {
+				parent.children = original;
+			});
+		}
+		return parent.children;
+	};
 
 	function applyPatch(patch: RuntimePatch, journal: Journal): void {
 		switch (patch.op) {
@@ -184,23 +209,19 @@ export function createNativeRuntimeTreeStore(): NativeRuntimeTreeStore {
 			case "remove": {
 				const record = get(patch.id);
 				const parent = record.parent === null ? null : get(record.parent);
-				const at = parent === null ? -1 : parent.children.indexOf(patch.id);
 				const detached = subtree(record);
 				if (parent !== null) {
-					parent.children = parent.children.filter((id) => id !== patch.id);
+					const children = editableChildren(parent, journal);
+					const at = children.indexOf(patch.id);
+					if (at >= 0) children.splice(at, 1);
 					journal.touched.add(parent.id);
 				}
 				record.parent = null;
 				for (const node of detached) records.delete(node.id);
+				/** The parent's list comes back through its copy's undo; this restores the nodes. */
 				journal.undo.push(() => {
 					for (const node of detached) records.set(node.id, node);
 					record.parent = parent === null ? null : parent.id;
-					if (parent !== null && at >= 0)
-						parent.children = [
-							...parent.children.slice(0, at),
-							patch.id,
-							...parent.children.slice(at),
-						];
 				});
 				return;
 			}
@@ -213,16 +234,10 @@ export function createNativeRuntimeTreeStore(): NativeRuntimeTreeStore {
 					throw topology(
 						`insert index ${patch.index} is past the end of ${patch.parent}`,
 					);
-				const before = parent.children;
-				parent.children = [
-					...before.slice(0, patch.index),
-					patch.child,
-					...before.slice(patch.index),
-				];
+				editableChildren(parent, journal).splice(patch.index, 0, patch.child);
 				child.parent = patch.parent;
 				journal.touched.add(parent.id);
 				journal.undo.push(() => {
-					parent.children = before;
 					child.parent = null;
 				});
 				return;
@@ -234,21 +249,16 @@ export function createNativeRuntimeTreeStore(): NativeRuntimeTreeStore {
 					throw topology(
 						`host node ${patch.child} is not a child of ${patch.parent}`,
 					);
-				const before = parent.children;
-				const without = before.filter((id) => id !== patch.child);
-				if (patch.index > without.length)
+				/** Checked before editing: the list without the child is one shorter. */
+				if (patch.index > parent.children.length - 1)
 					throw topology(
 						`move index ${patch.index} is past the end of ${patch.parent}`,
 					);
-				parent.children = [
-					...without.slice(0, patch.index),
-					patch.child,
-					...without.slice(patch.index),
-				];
+				const children = editableChildren(parent, journal);
+				const at = children.indexOf(patch.child);
+				if (at >= 0) children.splice(at, 1);
+				children.splice(patch.index, 0, patch.child);
 				journal.touched.add(parent.id);
-				journal.undo.push(() => {
-					parent.children = before;
-				});
 				return;
 			}
 			case "set-prop": {
@@ -354,6 +364,7 @@ export function createNativeRuntimeTreeStore(): NativeRuntimeTreeStore {
 				undo: [],
 				touched: new Set(),
 				created: [],
+				copied: new Set(),
 			};
 			try {
 				for (const patch of batch.patches) applyPatch(patch, journal);

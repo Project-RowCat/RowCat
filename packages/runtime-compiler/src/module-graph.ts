@@ -12,8 +12,10 @@ import {
 } from "./module-resolution.ts";
 import {
 	compareCodeUnits,
+	isReservedProjectPath,
 	isRuntimeSourcePath,
 	normalizeProjectPath,
+	RESERVED_PROJECT_ROOTS,
 } from "./paths.ts";
 import { scanRuntimePolicy } from "./policy.ts";
 
@@ -118,6 +120,21 @@ export function buildRuntimeModuleGraph(
 					"module",
 					`${file.path} is not runtime source. Only .ts and .tsx files are compiled.`,
 					{ path: file.path },
+				),
+			);
+			continue;
+		}
+		/**
+		 * Refused before indexing, so an import pointing there answers 'not found' rather than reaching a
+		 * file the compiler would read as its own (paths.ts, isReservedProjectPath).
+		 */
+		if (isReservedProjectPath(path)) {
+			diagnostics.push(
+				runtimeDiagnostic(
+					RUNTIME_DIAGNOSTIC_CODE.moduleReservedPath,
+					"module",
+					`${path} is in a folder the compiler reserves (${RESERVED_PROJECT_ROOTS.map((root) => `${root}/`).join(" · ")}). Move it to another folder.`,
+					{ path },
 				),
 			);
 			continue;

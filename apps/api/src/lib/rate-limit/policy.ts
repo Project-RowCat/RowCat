@@ -7,6 +7,7 @@ import {
 	SETUP_ERROR_CODE,
 	STORY_COMMENT_ERROR_CODE,
 	STORY_PLAY_START_ERROR_CODE,
+	STORY_PUBLISH_ERROR_CODE,
 	SYNC_ERROR_CODE,
 } from "@rowcat/contracts";
 import { REMOTE_IMAGE_BUDGET } from "../remote-image/budget.ts";
@@ -314,6 +315,34 @@ export const RATE_LIMIT_POLICIES = {
 		onStoreFailure: "allow",
 		code: "media_rate_limited",
 		message: "Images were uploaded too often. Please try again in a moment.",
+	},
+
+	/**
+	 * Runtime publication compiles: 10 / 10 min / member, counted before the compile and only for a
+	 * publish or update that carries runtime source (a chat-only publish compiles nothing and is not
+	 * counted). A compile is the most expensive thing a member can ask this API for: a thread of its
+	 * own for up to twenty seconds and hundreds of megabytes (`services/story/runtime-compile.ts`),
+	 * and the process has two such slots for everyone. The in-process per-member cap there keeps one
+	 * member to one slot at a time; this is how often, across replicas.
+	 *
+	 * 10 per 10 minutes is a publish a minute. Publishing is not the iteration loop (the studio
+	 * preview is, and it compiles in the creator's browser), so a creator republishing more often than
+	 * that is rare, and a script is not.
+	 *
+	 * Fail-open. The resource bound does not stand on this counter: the process gate (slots × heap) and
+	 * the per-member cap hold whether or not the store answers, so a store outage costs fairness over
+	 * time, not memory. Failing closed would stop every runtime publish for the length of the outage
+	 * to protect something those two already protect.
+	 */
+	storyRuntimeCompile: {
+		name: "story-runtime-compile",
+		max: 10,
+		windowMs: 600_000,
+		subject: "member",
+		onStoreFailure: "allow",
+		code: STORY_PUBLISH_ERROR_CODE.runtimeCompileRateLimited,
+		message:
+			"Runtime projects were published too often. Please try again in a few minutes.",
 	},
 
 	/**

@@ -3,6 +3,9 @@ import {
 	classifyRuntimeAssetValue,
 } from "@rowcat/runtime/asset";
 import ts from "typescript-compiler-api";
+import { RUNTIME_REMOTE_ASSET_MANIFEST_LIMITS } from "./contracts.ts";
+
+export { RUNTIME_REMOTE_ASSET_MANIFEST_LIMITS };
 
 /**
  * Collects the remote image addresses written statically in source. This becomes the artifact's
@@ -28,21 +31,6 @@ import ts from "typescript-compiler-api";
  *   them, and the authoritative artifact is produced by the server's compile, so its result must be
  *   the authority.
  */
-
-/**
- * Upper bounds on the list an artifact may carry. These protect metadata and are separate from the
- * proxy's request limits.
- */
-export const RUNTIME_REMOTE_ASSET_MANIFEST_LIMITS = {
-	/** Number of addresses. No single work has a reason to declare more fixed images than this. */
-	maxCount: 256,
-	/**
-	 * Total character length of the list. Counting entries alone would let 256 signed URLs of 8 KiB
-	 * each become about 2 MiB of metadata sent to the player's device. Both axes must hold: how many,
-	 * and how big (the same split as the remote image count and byte limits).
-	 */
-	maxTotalCharacters: 64 * 1024,
-} as const;
 
 /**
  * Whether a node is a complete static string. A template with substitutions (TemplateExpression)

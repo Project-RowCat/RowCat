@@ -50,7 +50,14 @@ export type RuntimeVmFailure =
 			 */
 			componentStack?: string | null;
 	  }
-	| { kind: "interrupted" }
+	| {
+			kind: "interrupted";
+			/**
+			 * `read`: the cut came from the short budget for reading a thrown value, not from the turn's
+			 * deadline. Only the message differs; the weight is the same.
+			 */
+			during?: "read";
+	  }
 	| { kind: "memory" }
 	| { kind: "engine"; message: string }
 	/**

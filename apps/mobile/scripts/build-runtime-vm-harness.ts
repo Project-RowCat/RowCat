@@ -7,12 +7,13 @@ import { RUNTIME_API_VERSION } from "@rowcat/runtime/declarations";
 import { compileRuntimeProject } from "@rowcat/runtime-compiler";
 import { nodeRuntimeEnvironment } from "@rowcat/runtime-compiler/node";
 import { build } from "esbuild";
+import { runtimeHarnessDocument } from "../src/lib/runtime-native/harness-document.ts";
 
 /**
  * Native runtime generated artifacts: the harness HTML and the QuickJS WASM asset.
  *
  * ```text
- * runtime-vm-harness/entry.ts ──esbuild──▶ IIFE ──▶ one HTML page ──base64──▶ harness.generated.ts
+ * runtime-vm-harness/entry.ts ──esbuild──▶ IIFE ──▶ one HTML page (+ CSP, WebRTC prelude) ──▶ assets/runtime/harness.html
  * @jitl/…/dist/emscripten-module.wasm ──bytes verbatim──▶ assets/runtime/quickjs-ng.wasm
  * ```
  *
@@ -92,7 +93,8 @@ async function bundle(): Promise<string> {
 		throw new Error(
 			"harness bundle contains a very long base64-looking literal — the WASM must be an app asset, not a string",
 		);
-	return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head><body><script>${js.replace(/<\/script/gi, "<\\/script")}</script></body></html>`;
+	/** The document, its policy and its prelude belong to one pure module, where tests pin them. */
+	return runtimeHarnessDocument(js);
 }
 
 const digest = (bytes: Buffer | string): string =>

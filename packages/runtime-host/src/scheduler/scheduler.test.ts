@@ -3,7 +3,9 @@ import type { RuntimeVmSlice } from "../vm/types.ts";
 import {
 	ExecutionAccount,
 	earliestDeadline,
+	earliestDeadlineOf,
 	RollingSessionAccount,
+	RUNTIME_TURN_OVERRUN_GRACE_MS,
 	SliceAccount,
 } from "./budget.ts";
 import type { RuntimeHostSchedulerClock } from "./clock.ts";
@@ -14,6 +16,8 @@ import {
 	RuntimeScheduler,
 	type RuntimeSchedulerOptions,
 	type RuntimeTurnOutcome,
+	type RuntimeTurnOverrun,
+	type RuntimeTurnSlice,
 } from "./scheduler.ts";
 
 /**
@@ -380,6 +384,164 @@ describe("cancellation and fatal failure", () => {
 		expect(failureSeverity({ kind: "lookup", reason: "export" })).toBe(
 			"recoverable",
 		);
+	});
+});
+
+/**
+ * The interrupt reaches only bytecode. A native builtin (a quadratic `includes`) or host work inside
+ * the turn runs to its end however late that is, and used to come back as success. The turn is
+ * measured once it returns.
+ */
+describe("turns that return late", () => {
+	const overrunBuild = (
+		finishTurn?: RuntimeSchedulerOptions<Task>["finishTurn"],
+	) => {
+		const clock = manualClock();
+		const seen: { overrun: RuntimeTurnOverrun | null }[] = [];
+		const built = build({
+			clock: clock.clock,
+			policy: {
+				sliceMs: 1_000,
+				executionMs: 1_000,
+				session: { windowMs: 1_000, maxMs: 50 },
+			},
+			accountsOf: () => [new ExecutionAccount(1_000)],
+			finishTurn:
+				finishTurn ??
+				((_, outcome, overrun) => {
+					seen.push({ overrun });
+					return overrun === null ? outcome : { kind: "fatal" };
+				}),
+		});
+		return { ...built, clock, seen };
+	};
+
+	it("a turn that ends past its deadline by more than the grace is fatal", async () => {
+		const built = overrunBuild();
+		built.scheduler.enqueue(
+			{
+				name: "native-call",
+				run: () => {
+					built.clock.advance(50 + RUNTIME_TURN_OVERRUN_GRACE_MS + 1);
+					return done();
+				},
+			},
+			"normal",
+		);
+		built.scheduler.enqueue({ name: "after", run: done }, "normal");
+		await built.scheduler.idle();
+		expect(built.seen).toEqual([
+			{
+				overrun: {
+					ms: 50 + RUNTIME_TURN_OVERRUN_GRACE_MS + 1,
+					allowedMs: 50,
+					limitedBy: "session",
+				},
+			},
+		]);
+		expect(built.scheduler.stopReason).toBe("failed");
+		expect(built.discarded).toEqual(["after:failed"]);
+	});
+
+	it("without a finishTurn the overrun is still fatal", async () => {
+		const clock = manualClock();
+		const built = build({
+			clock: clock.clock,
+			policy: { sliceMs: 1_000, session: { windowMs: 1_000, maxMs: 50 } },
+		});
+		built.scheduler.enqueue(
+			{
+				name: "native-call",
+				run: () => {
+					clock.advance(50 + RUNTIME_TURN_OVERRUN_GRACE_MS + 1);
+					return done();
+				},
+			},
+			"normal",
+		);
+		await built.scheduler.idle();
+		expect(built.scheduler.stopReason).toBe("failed");
+	});
+
+	it("ending past the deadline within the grace is not an overrun", async () => {
+		const built = overrunBuild();
+		built.scheduler.enqueue(
+			{
+				name: "late-commit",
+				run: () => {
+					built.clock.advance(50 + RUNTIME_TURN_OVERRUN_GRACE_MS);
+					return done();
+				},
+			},
+			"normal",
+		);
+		await built.scheduler.idle();
+		expect(built.seen).toEqual([{ overrun: null }]);
+		expect(built.scheduler.stopReason).toBeNull();
+	});
+
+	it("a turn that already failed is not judged again", async () => {
+		const built = overrunBuild();
+		built.scheduler.enqueue(
+			{
+				name: "interrupted",
+				run: () => {
+					built.clock.advance(10_000);
+					return { kind: "fatal" };
+				},
+			},
+			"normal",
+		);
+		await built.scheduler.idle();
+		expect(built.seen).toEqual([{ overrun: null }]);
+	});
+
+	it("the slice names the budget that set its deadline", async () => {
+		const clock = manualClock();
+		const limits: (string | null)[] = [];
+		const own = new ExecutionAccount(30);
+		const { scheduler } = build({
+			clock: clock.clock,
+			policy: { sliceMs: 1_000, session: { windowMs: 1_000, maxMs: 50 } },
+			accountsOf: (work) => (work.item.name === "unbounded" ? [] : [own]),
+			runTurn: (work, slice: RuntimeTurnSlice) => {
+				limits.push(slice.limitedBy);
+				clock.advance(work.item.name === "first" ? 25 : 0);
+				return done();
+			},
+		});
+		scheduler.enqueue({ name: "first", run: done }, "normal");
+		/** Own 5 ms left against the session's 25: the execution budget binds. */
+		scheduler.enqueue({ name: "second", run: done }, "normal");
+		scheduler.enqueue({ name: "unbounded", run: done }, "normal");
+		await scheduler.idle();
+		expect(limits).toEqual(["own", "own", "session"]);
+		const none = new RuntimeScheduler<Task>({
+			policy: { session: null },
+			runTurn: (_, slice) => {
+				limits.push(slice.limitedBy);
+				return done();
+			},
+			onDiscard: () => {},
+			isCancelled: () => false,
+		});
+		none.enqueue({ name: "free", run: done }, "normal");
+		await none.idle();
+		expect(limits.at(-1)).toBeNull();
+	});
+
+	it("the earliest deadline says which account set it, the first on a tie", () => {
+		const a = new ExecutionAccount(20);
+		const b = new ExecutionAccount(10);
+		const c = new ExecutionAccount(10);
+		expect(earliestDeadlineOf(100, [a, b, c])).toEqual({
+			deadline: 110,
+			index: 1,
+		});
+		expect(earliestDeadlineOf(100, [])).toEqual({
+			deadline: Number.POSITIVE_INFINITY,
+			index: -1,
+		});
 	});
 });
 

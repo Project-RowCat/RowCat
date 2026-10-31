@@ -23,5 +23,11 @@ export default function RuntimeChatRoute() {
 
 	if (!id) return <Redirect href="/" />;
 
-	return <RuntimeChatScreen storyId={id} />;
+	/**
+	 * Keyed on the story: a different story is a different screen instance. The AI notice's answer,
+	 * the play-start flag and the bridge and session all belong to one playthrough, and the router's
+	 * own decision on whether a navigation reuses this route is not something this app owns (the web
+	 * route says the same with `remountDeps`).
+	 */
+	return <RuntimeChatScreen key={id} storyId={id} />;
 }

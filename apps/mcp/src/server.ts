@@ -7,6 +7,7 @@ import type {
 	RuntimeMcpContext,
 } from "@rowcat/runtime-mcp";
 import {
+	RUNTIME_MCP_LIMITS,
 	RUNTIME_MCP_TOOLS,
 	RuntimePreviewManager,
 	runtimeMcpErrorPayload,
@@ -31,16 +32,38 @@ export interface RuntimeMcpServerOptions {
 	readonly version: string;
 }
 
-/** Per-response cap; a truncation is stated in the payload itself. */
-const MAX_RESULT_BYTES = 512 * 1024;
+const TRUNCATION_NOTICE =
+	"\n… The response was truncated past the cap. Call again with narrower arguments.";
+const encoder = new TextEncoder();
+
+/**
+ * Applies the per-response cap (`RUNTIME_MCP_LIMITS.responseBytes`, the one source of that number) to
+ * a serialized result; a truncation is stated in the payload itself.
+ *
+ * The cap is **UTF-8 bytes of this text**. It was compared against `String.length` for a while,
+ * which counts UTF-16 code units: a result of Korean tree text, console lines or state could reach
+ * three times the documented cap. The notice fits **inside** the cap, so the number bounds the whole
+ * text. The JSON-RPC frame that carries it on stdout escapes the text once more (quotes, tabs,
+ * newlines), so that frame is larger than this number by the escaping; the cap bounds what the tool
+ * returns, not the transport's encoding of it.
+ *
+ * The cut is made by `encodeInto`, which writes only whole characters and reports how many code units
+ * it consumed, so it never lands between the halves of a surrogate pair. `JSON.stringify` escapes lone
+ * surrogates, so the input itself is well formed.
+ */
+export const toolResultText = (json: string): string => {
+	const cap = RUNTIME_MCP_LIMITS.responseBytes;
+	if (Buffer.byteLength(json, "utf8") <= cap) return json;
+	const budget = new Uint8Array(
+		cap - Buffer.byteLength(TRUNCATION_NOTICE, "utf8"),
+	);
+	const { read } = encoder.encodeInto(json, budget);
+	return `${json.slice(0, read)}${TRUNCATION_NOTICE}`;
+};
 
 const asContent = (value: unknown): CallToolResult["content"] => {
 	const json = JSON.stringify(value, null, "\t") ?? "null";
-	const text =
-		json.length > MAX_RESULT_BYTES
-			? `${json.slice(0, MAX_RESULT_BYTES)}\n… The response was truncated past the cap. Call again with narrower arguments.`
-			: json;
-	return [{ type: "text", text }];
+	return [{ type: "text", text: toolResultText(json) }];
 };
 
 export function createRuntimeMcpServer(options: RuntimeMcpServerOptions): {

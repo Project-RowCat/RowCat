@@ -1,5 +1,6 @@
 import type { RuntimeHostNodeKind } from "@rowcat/runtime-host/patches";
 import type { WebAudioController } from "./audio.ts";
+import { ChildList } from "./child-list.ts";
 import { rendererError, WEB_RENDERER_ERROR_CODE } from "./errors.ts";
 import { newNodeMotion, type WebNodeMotion } from "./motion.ts";
 import type { CssMap } from "./styles.ts";
@@ -21,7 +22,11 @@ export interface NodeRecord {
 	readonly kind: RuntimeHostNodeKind | "root";
 	readonly node: HTMLElement | Text;
 	parent: NodeRecord | null;
-	readonly children: NodeRecord[];
+	/**
+	 * Ordered children. Not an array: a patch asks a parent for a child's position and for the child at
+	 * an index, and an array answers both by walking the parent (see child-list.ts).
+	 */
+	readonly children: ChildList<NodeRecord>;
 	/** Prop name to handler id. Handler ids stay in this record and never reach the DOM. */
 	readonly handlers: Map<string, number>;
 	/** Current prop values. Axes computed together, such as style and gap, read each other here. */
@@ -109,7 +114,7 @@ export class NodeRegistry {
 			kind: "root",
 			node: rootElement,
 			parent: null,
-			children: [],
+			children: new ChildList(),
 			handlers: new Map(),
 			props: new Map(),
 			css: new Map(),
@@ -168,7 +173,7 @@ export class NodeRegistry {
 			kind,
 			node,
 			parent: null,
-			children: [],
+			children: new ChildList(),
 			handlers: new Map(),
 			props: new Map(),
 			css: new Map(),
@@ -199,7 +204,7 @@ export class NodeRegistry {
 		record.audio?.dispose();
 		record.audio = null;
 		for (const child of record.children) this.release(child);
-		record.children.length = 0;
+		record.children.clear();
 	}
 
 	/**
@@ -217,7 +222,7 @@ export class NodeRegistry {
 			record.audio = null;
 		}
 		for (const child of this.root.children) this.release(child);
-		this.root.children.length = 0;
+		this.root.children.clear();
 		this.byId.clear();
 		this.seen.clear();
 		this.byControl.clear();

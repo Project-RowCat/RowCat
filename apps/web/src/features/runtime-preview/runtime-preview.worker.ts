@@ -24,6 +24,10 @@ import {
 } from "@rowcat/runtime-host";
 import { createQuickJsEngine } from "@rowcat/runtime-host/quickjs";
 import { workerSchedulerClock } from "#/lib/runtime-vm/worker-clock.ts";
+import {
+	createRuntimeCommitFlow,
+	type RuntimeCommitFlow,
+} from "#/lib/runtime-watchdog/commit-flow.ts";
 import type {
 	PreviewErrorInfo,
 	PreviewGeneration,
@@ -54,6 +58,10 @@ import { runtimeLibFiles } from "./runtime-preview-libs.ts";
  *   recompiles fully and creates no VM on failure, so it never silently runs an old artifact.
  *   Keeping the program handle (`previous`) between sessions is a speed concern, not a correctness
  *   one.
+ * - Main paces and watches a running session exactly as it does product playback: commits wait on
+ *   main's `ack` once a few are unanswered (commit-flow.ts), and `ping` is answered here, between
+ *   turns (liveness.ts). Every path that ends a session releases the flow first, or stop and dispose
+ *   would wait on a scheduler parked on main's silence.
  */
 
 interface Current {
@@ -64,6 +72,7 @@ interface Current {
 	 * frames back into source coordinates.
 	 */
 	artifact: RuntimeArtifact;
+	flow: RuntimeCommitFlow;
 }
 
 /**
@@ -218,8 +227,9 @@ function toErrorInfo(error: RuntimeExecutionError | unknown): PreviewErrorInfo {
 async function stopCurrent(): Promise<void> {
 	rejectPendingGenerations("preview stopped");
 	if (current === null) return;
-	const { generation, session } = current;
+	const { generation, session, flow } = current;
 	current = null;
+	flow.release();
 	let cleanups = 0;
 	if (session.state === "ready" || session.state === "running") {
 		const unmounted = await session.unmountRoot();
@@ -240,10 +250,12 @@ async function stopCurrent(): Promise<void> {
 async function failIfDead(
 	generation: PreviewGeneration,
 	session: RuntimeVmSession,
+	flow: RuntimeCommitFlow,
 	error: RuntimeExecutionError,
 ): Promise<boolean> {
 	if (session.state !== "failed") return false;
 	if (current?.session === session) current = null;
+	flow.release();
 	await session.dispose();
 	post({
 		type: "failed",
@@ -295,6 +307,8 @@ async function start(
 	}
 	post({ type: "status", generation, stage: "starting" });
 
+	/** Per session: a new session's revisions start again from 1. */
+	const flow = createRuntimeCommitFlow(workerSchedulerClock());
 	let session: RuntimeVmSession;
 	try {
 		session = await createRuntimeVmSession({
@@ -302,7 +316,7 @@ async function start(
 			artifact: result.artifact,
 			onConsole: (level, args) =>
 				post({ type: "console", generation, level, args: [...args] }),
-			scheduling: { clock: workerSchedulerClock() },
+			scheduling: { clock: flow.clock },
 			storyState: storySnapshot,
 			persistentState: persistentSnapshot,
 			/**
@@ -329,7 +343,7 @@ async function start(
 		});
 		return;
 	}
-	current = { generation, session, artifact: result.artifact };
+	current = { generation, session, artifact: result.artifact, flow };
 	/**
 	 * Hydration results are reported before mounting. If a migration upgraded the story state, this is
 	 * the current snapshot, and the next restart reads that upgraded state.
@@ -350,7 +364,10 @@ async function start(
 	});
 
 	const mounted = await session.mountRoot({
-		onCommit: (batch) => post({ type: "commit", generation, batch }),
+		onCommit: (batch) => {
+			flow.committed(batch.revision);
+			post({ type: "commit", generation, batch });
+		},
 		/**
 		 * Sent after the commit. That ordering is the §12 guarantee, and this line carries it unchanged.
 		 */
@@ -358,7 +375,7 @@ async function start(
 		onDiagnostic: (diagnostic) =>
 			post({ type: "diagnostic", generation, diagnostic }),
 		onRootError: (error, work) => {
-			void failIfDead(generation, session, error).then((dead) => {
+			void failIfDead(generation, session, flow, error).then((dead) => {
 				if (!dead)
 					post({
 						type: "root-error",
@@ -370,7 +387,7 @@ async function start(
 		},
 	});
 	if (!mounted.ok) {
-		if (await failIfDead(generation, session, mounted.error)) return;
+		if (await failIfDead(generation, session, flow, mounted.error)) return;
 		/**
 		 * The frame is resolved before the session is torn down. An exception from the first render
 		 * arrives here, and it is the failure creators meet most often. If `current` were cleared first,
@@ -379,6 +396,7 @@ async function start(
 		 */
 		const error = toErrorInfo(mounted.error);
 		current = null;
+		flow.release();
 		await session.dispose();
 		post({
 			type: "failed",
@@ -405,10 +423,10 @@ async function event(
 	source: RuntimeEventSource,
 ): Promise<void> {
 	if (current === null || current.generation !== generation) return;
-	const { session } = current;
+	const { session, flow } = current;
 	const outcome = await session.dispatchEvent(handlerId, payload, source);
 	if (outcome.ok) return;
-	if (await failIfDead(generation, session, outcome.error)) return;
+	if (await failIfDead(generation, session, flow, outcome.error)) return;
 	/** The handler threw synchronously. Only that event is lost; the session stays alive. */
 	post({
 		type: "root-error",
@@ -416,6 +434,15 @@ async function event(
 		error: toErrorInfo(outcome.error),
 		work: "event",
 	});
+}
+
+/**
+ * Passes a wake from main through the current session's flow gate. A wake for no session or another
+ * generation runs at once; what it would wake checks the generation itself and drops it.
+ */
+function admit(generation: PreviewGeneration, run: () => void): void {
+	if (current?.generation === generation) current.flow.admit(run);
+	else run();
 }
 
 self.addEventListener(
@@ -445,6 +472,11 @@ self.addEventListener(
 					);
 				return;
 			case "stop":
+				/**
+				 * Released here, not only inside stopCurrent: the chain may still be inside `start` with the
+				 * scheduler parked on main's acknowledgements, and main stopped answering when it sent this.
+				 */
+				if (current?.generation === request.generation) current.flow.release();
 				chain = chain
 					.then(async () => {
 						if (current?.generation === request.generation) await stopCurrent();
@@ -464,20 +496,48 @@ self.addEventListener(
 					);
 				return;
 			case "event":
-				/** Events do not wait on the chain. The session's scheduler provides their ordering. */
-				void event(
-					request.generation,
-					request.handlerId,
-					request.payload ?? null,
-					request.source === "media" ? "media" : "interaction",
-				);
+				/**
+				 * Events do not wait on the chain; the session's scheduler orders them. They do wait on the
+				 * flow gate: an event would start a drain the gate never sees (commit-flow.ts), so while main
+				 * is behind it is held, in order, until main catches up or the session ends.
+				 */
+				admit(request.generation, () => {
+					void event(
+						request.generation,
+						request.handlerId,
+						request.payload ?? null,
+						request.source === "media" ? "media" : "interaction",
+					);
+				});
+				return;
+			case "ack":
+				if (current?.generation === request.generation)
+					current.flow.acknowledged(request.revision);
+				return;
+			case "ping":
+				/**
+				 * Answered at once and from here only. Reaching this line means no VM turn is running, which is
+				 * the whole fact main asks about.
+				 */
+				post({
+					type: "pong",
+					generation: request.generation,
+					seq: request.seq,
+				});
 				return;
 			case "generation-result": {
 				const pending = pendingGenerations.get(request.requestId);
 				/** Drop replies from an old generation. Its promise was already settled as cancelled. */
 				if (pending === undefined || pending.generation !== request.generation)
 					return;
-				pending.settle(request.result);
+				/**
+				 * A reply wakes the VM like an event does, so it waits on the gate the same way. Settled only if
+				 * still open: a stop may have rejected it as cancelled while it was held.
+				 */
+				admit(request.generation, () => {
+					if (pendingGenerations.get(request.requestId) === pending)
+						pending.settle(request.result);
+				});
 				return;
 			}
 			case "reset-story":

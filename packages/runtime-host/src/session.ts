@@ -70,7 +70,10 @@ import {
 	RuntimeScheduler,
 	type RuntimeSchedulerMetrics,
 	type RuntimeSchedulerObserver,
+	type RuntimeTurnLimit,
 	type RuntimeTurnOutcome,
+	type RuntimeTurnOverrun,
+	type RuntimeTurnSlice,
 } from "./scheduler/scheduler.ts";
 import {
 	DEFAULT_STORY_STATE_LIMITS,
@@ -525,6 +528,20 @@ class Session implements RuntimeVmSession {
 	 * owns a call.
 	 */
 	private current: Execution | null = null;
+	/**
+	 * Results reached during the running turn, handed out when the turn's verdict is known. A turn is
+	 * measured only after it returns (a native builtin or host work cannot be interrupted), so a value
+	 * computed by a turn that then turns out to have overrun its budget must not already be on its
+	 * way to the caller. That holds for every execution the turn settled, not only its owner: a pump
+	 * also runs other executions' continuations and a sweep settles them, so the code that overran may
+	 * belong to one of those. Null outside a turn, where results resolve at once. Nothing observes the
+	 * difference otherwise: resolution callbacks are microtasks, and none runs inside a turn.
+	 */
+	private settlements:
+		| { execution: Execution; outcome: RuntimeCallOutcome }[]
+		| null = null;
+	/** Which budget set the running turn's deadline, for the message of a budget failure. */
+	private turnLimit: RuntimeTurnLimit | null = null;
 	private cancelRequested = false;
 	private disposal: Promise<void> | null = null;
 	private consoleLines = 0;
@@ -584,6 +601,8 @@ class Session implements RuntimeVmSession {
 				maxJobsPerTurn: limits.maxJobsPerSlice,
 			},
 			runTurn: (work, slice) => this.runTurn(work, slice),
+			finishTurn: (work, outcome, overrun) =>
+				this.finishTurn(work.item, outcome, overrun),
 			accountsOf: (work) => [work.item.execution.account],
 			onDiscard: (work, reason) => this.discard(work.item.execution, reason),
 			isCancelled: () => this.cancelRequested,
@@ -972,7 +991,9 @@ class Session implements RuntimeVmSession {
 						)
 					: new RuntimeHostError(
 							RUNTIME_HOST_ERROR_CODE.executionBudgetExceeded,
-							`execution exceeded its budget of ${this.limits.executionMs}ms`,
+							this.budgetMessage(
+								failure.during === "read" ? "read" : this.turnLimit,
+							),
 						);
 			case "memory":
 				return new RuntimeHostError(
@@ -1013,6 +1034,20 @@ class Session implements RuntimeVmSession {
 		}
 	}
 
+	/**
+	 * Names the budget that actually cut the turn. One code covers all of them (the consumer's remedy
+	 * is the same), but the sentence is what a creator or operator reads, and with the session's 250
+	 * ms window firing first by default, "1000ms" pointed at a limit the turn never reached.
+	 */
+	private budgetMessage(limit: RuntimeTurnLimit | "read" | null): string {
+		const session = this.scheduler.policy.session;
+		if (limit === "read")
+			return "reading a thrown value exceeded its time limit";
+		if (limit === "session" && session !== null)
+			return `execution exceeded the session budget of ${session.maxMs}ms per ${session.windowMs}ms`;
+		return `execution exceeded its budget of ${this.limits.executionMs}ms`;
+	}
+
 	private decoded(json: string): RuntimeCallOutcome {
 		const decoded = decodeWireValue(json, this.wireLimits);
 		if (decoded.ok) return { ok: true, value: decoded.value };
@@ -1033,7 +1068,61 @@ class Session implements RuntimeVmSession {
 			this.vm.release(execution.ref);
 			execution.ref = null;
 		}
-		execution.resolve(outcome);
+		if (this.settlements !== null)
+			this.settlements.push({ execution, outcome });
+		else execution.resolve(outcome);
+	}
+
+	private releaseSettlements(): void {
+		const settlements = this.settlements;
+		this.settlements = null;
+		this.turnLimit = null;
+		for (const { execution, outcome } of settlements ?? [])
+			execution.resolve(outcome);
+	}
+
+	/**
+	 * The turn's verdict. An overrun is a budget failure of the execution that owned the turn — the
+	 * value it may have computed is replaced, not delivered — and the session fails like any other
+	 * interrupt, because the turn ran creator code past the point where it should have been cut.
+	 *
+	 * Every other execution the turn settled gets sessionFailed instead, the answer an interrupt would
+	 * have given it through rejectWaiting. The turn's time is charged to its owner, but the code that
+	 * overran may be another execution's continuation the owner's pump ran, and nothing it produced may
+	 * reach a caller — not a value, and not a failure either: a creator error's message can carry
+	 * exactly what was computed past the budget.
+	 */
+	private finishTurn(
+		item: Work,
+		outcome: RuntimeTurnOutcome,
+		overrun: RuntimeTurnOverrun | null,
+	): RuntimeTurnOutcome {
+		try {
+			if (overrun === null || outcome.kind === "fatal") return outcome;
+			const owner = item.execution;
+			const failed: RuntimeCallOutcome = {
+				ok: false,
+				error: this.toError({ kind: "interrupted" }),
+			};
+			let reached = false;
+			for (const settlement of this.settlements ?? []) {
+				if (settlement.execution === owner) {
+					settlement.outcome = failed;
+					reached = true;
+				} else
+					settlement.outcome = {
+						ok: false,
+						error: this.unavailableError("failed"),
+					};
+			}
+			if (!reached) this.finish(owner, failed);
+			if (this.state === "ready" || this.state === "running")
+				this.state = transition(this.state, "failed");
+			this.rejectWaiting(RUNTIME_HOST_ERROR_CODE.sessionFailed);
+			return { kind: "fatal" };
+		} finally {
+			this.releaseSettlements();
+		}
 	}
 
 	/**
@@ -1048,6 +1137,16 @@ class Session implements RuntimeVmSession {
 		if (failureSeverity(failure) === "recoverable") return { kind: "done" };
 		if (this.state === "running") this.state = transition(this.state, "failed");
 		this.rejectWaiting(RUNTIME_HOST_ERROR_CODE.sessionFailed);
+		/**
+		 * A sweep fails other executions inside this turn. The turn's own execution is then neither
+		 * queued (the scheduler drains only the queue) nor waiting (it has not returned yet), and
+		 * nothing would ever settle it — not even dispose.
+		 */
+		if (this.current !== null)
+			this.finish(this.current, {
+				ok: false,
+				error: this.unavailableError("failed"),
+			});
 		return { kind: "fatal" };
 	}
 
@@ -1097,6 +1196,23 @@ class Session implements RuntimeVmSession {
 	 *   (waiting). If nothing can make progress, the result is executionStalled.
 	 */
 	private runTurn(
+		work: { item: Work },
+		slice: RuntimeTurnSlice,
+	): RuntimeTurnOutcome {
+		this.settlements = [];
+		this.turnLimit = slice.limitedBy;
+		let returned = false;
+		try {
+			const outcome = this.enterTurn(work, slice);
+			returned = true;
+			return outcome;
+		} finally {
+			/** A turn that threw gets no finishTurn; what it settled still reaches its callers. */
+			if (!returned) this.releaseSettlements();
+		}
+	}
+
+	private enterTurn(
 		work: { item: Work },
 		slice: RuntimeVmSlice,
 	): RuntimeTurnOutcome {
