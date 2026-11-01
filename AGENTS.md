@@ -5917,6 +5917,7 @@ check, and do not answer a red CI with an override — fix it on a new commit.
 19      runtime durable state    restart inherits · reset empties · raising the version migrates
 20      runtime playback         `플레이` creates no room · progress persists · reset empties it
 23      password reset           no link while closed · the token leaves the address but the form keeps it · expired link
+24      BYO generation           a personal key is checked, chosen and used from the browser · it never reaches RowCat
 ```
 
 **What 17 catches is a fact that only holds between components.** The row that opens a note is inside the popover and that
