@@ -5,10 +5,14 @@
 화면이 시키는 명령이 그 이미지에서 실제로 도는가 — 는 이렇게만 드러난다. 2026-10-30 첫 실행에서 찾은 결함이
 그 종류였다: 설정 완료 화면은 `db:seed:moderator`를 시켰는데 배포 이미지에는 그 스크립트가 없었다.
 
+이 문서는 **운영 설치**만 다룬다. 개발 환경은 `pnpm dev:setup`(README)이고, 그 스크립트가 만드는 `.env`,
+override, 개발 계정은 여기서 하나도 쓰지 않는다.
+
 릴리스 전에 한 번, 그리고 `docker-compose.yml`·Dockerfile·`tsdown.config.ts`·첫 실행 설정을 바꾼 뒤에 돌린다.
 아래 확인 목록의 대부분은 `scripts/compose-smoke.sh`(`pnpm test:compose`)가 자동으로 하고 CI의 `compose` 잡이 매
-커밋 돌린다 — 이미지는 그 잡이 통과한 커밋만 게시된다. 브라우저로 콘솔 `/setup` 화면을 직접 거치는 것(4번)은
-스크립트가 API로 대신하므로 릴리스 전 한 번은 손으로 본다.
+커밋 돌린다 — 이미지는 그 잡이 통과한 커밋만 게시된다. **스크립트가 대신하지 못하는 것은 브라우저로 콘솔
+`/setup`을 거치는 것과 준비 상태 목록이 맞는지 대조하는 것**(아래 「손으로 볼 것」)이라, 릴리스 전 한 번은
+손으로 본다.
 
 ## 격리
 
@@ -23,25 +27,58 @@ cp .env.example .env
 docker compose up -d --wait
 ```
 
-GHCR 이미지가 공개돼 있지 않으면 `up`은 당기기에 실패하고(`denied`) 이 클론에서 빌드한다 — 그것도 검증이지만,
-**공개 이미지를 검증한 것은 아니다.** 결과에 어느 쪽이었는지 적는다.
+GHCR 이미지를 익명으로 당길 수 없으면(패키지가 비공개이면 `unauthorized`) 컴포즈는 아무 말 없이 이 클론에서
+빌드한다 — `up` 출력에 `Pulling` 다음 빌드 단계가 이어지면 그쪽이다. 그것도 검증이지만, **게시된 이미지를
+검증한 것은 아니다.** 결과에 어느 쪽이었는지 적는다. 익명으로 당겨지는지는 빈 도커 설정으로 확인한다:
 
-## 확인할 것
+```bash
+mkdir -p /tmp/anon && echo '{}' > /tmp/anon/config.json
+DOCKER_CONFIG=/tmp/anon docker manifest inspect ghcr.io/project-rowcat/rowcat/api:latest
+```
+
+## 스크립트가 확인하는 것
+
+`pnpm test:compose`(CI는 `--build`). 자기 프로젝트 이름과 생성한 시크릿을 쓰고, 끝나면 `down -v`로 지운다.
+실행 전에 없던 api·web·admin 이미지 태그도 지운다 — `--build` 없이 돌려도 당기기가 거절되면 컴포즈가 같은
+이름으로 빌드하기 때문이다. 실패할 때만 API 로그를 보여 주며 그때도 설정 코드는 가린다.
 
 ```text
-1  다섯 서비스가 healthy                                docker compose ps
-2  API가 production으로 뜨고 설정 코드를 찍는다         docker compose logs api | grep "\[setup\]"
-3  GET /v2/setup → {"open":true}
-4  콘솔 /setup 에서 계정을 만든다                        http://localhost:3002/setup
-5  틀린 코드는 거절된다(setup_code_invalid)
-6  맞는 코드 → 그 계정이 admin, 준비 상태 목록이 보인다
-7  GET /v2/setup → {"open":false}, 다시 claim → 409 setup_closed
-8  준비 상태: admin 200 · 일반 회원 403 · 손님 401        GET /v2/admin/deployment/readiness
-9  API 재시작 → 코드가 다시 찍히지 않고, 설정은 닫힌 채, 세션은 유지
-10 이미지 안에서 운영자 지정이 된다
-     docker compose exec api node dist/db/seed-moderator.mjs <email> staff
-11 웹(3000)이 그 세션으로 뜨고 콘솔 오류가 없다
+표면      API health · 웹 · 콘솔 /setup · 웹이 런타임 API 오리진을 싣는다
+첫 설정   빈 DB에서 open · 로그에 코드 · compose에는 로컬 소유자 문이 없다(맞는 코드여도 403)
+          틀린 코드 403 · 두 사람이 같은 코드로 동시에 → 200 하나, 409 하나, admin 하나
+          닫힘 · 다시 claim 409
+권한      준비 상태: admin 200 · 일반 회원 403 · 손님 401
+이미지    컨테이너 안에서 seed-moderator로 운영자 지정
+콘텐츠    공개 작품 발행 · 표지 · 아바타 업로드 · 손님 갤러리에 보인다
+재시작    API만: 설정 닫힌 채, 코드 안 찍힘, 세션 유지
+          스택 전체 down → up(같은 볼륨): 위에 더해 두 세션, 갤러리의 작품, 표지·아바타 바이트가 같다
+거절      production이 개발 DB 비밀번호 · 테스트용 세션 키 · 짧은 세션 키로는 뜨지 않는다
 ```
+
+동시 claim의 결정은 설정 행의 `FOR UPDATE`이고, 단위 테스트(`routes/setup.test.ts`)가 네 명으로 같은 것을
+고정한다 — 그 잠금을 빼면 넷 다 admin이 되는 것을 확인했다.
+
+## 손으로 볼 것
+
+```text
+1  다섯 서비스가 healthy, 마이그레이션이 다 들어갔다
+     docker compose ps
+     docker compose exec db psql -U rowcat rowcat -tAc "select count(*) from drizzle.__drizzle_migrations"
+     (apps/api/drizzle/*.sql 개수와 같아야 한다)
+2  API가 production으로 뜨고 설정 코드를 찍는다    docker compose logs api | grep "\[setup\]"
+3  콘솔 /setup 에서 계정을 만든다                    http://localhost:3002/setup
+4  틀린 코드 → 화면이 "That code doesn't match"를 말하고 단계가 그대로다
+5  맞는 코드 → "You're the administrator"와 준비 상태 목록
+6  준비 상태 목록이 그 컨테이너의 실제 환경과 맞는다
+     docker compose exec -T api env > /tmp/api.env       (끝나면 지운다 — 시크릿이 들어 있다)
+     pnpm env:doctor --mode production --file /tmp/api.env --json
+     화면의 행마다 상태가 같아야 한다. 루프백 오리진이라 Browser origins만 운영 차단으로 나온다
+7  스택 전체 down → up 뒤 /setup은 "Setup is complete", 콘솔은 같은 세션으로 열린다
+8  웹(3000)이 그 세션으로 뜨고 콘솔에 오류가 없다
+```
+
+`env:doctor`는 이미지에 없다(체크아웃에서 돈다). 콘솔 화면은 그 결과에서 `summary`·`detail`만 뺀 것이라 상태가
+다르면 그 자체가 결함이다.
 
 ## 정리
 
@@ -57,5 +94,10 @@ docker image rm ghcr.io/project-rowcat/rowcat/{api,web,admin}:latest   # 로컬 
 
 - **TLS와 공개 도메인.** 오리진이 루프백이라 `WEB_ORIGIN`은 진단에서 운영 차단으로 나온다. 리버스 프록시와
   신뢰 오리진은 따로다.
+- **BYO 생성.** 그 요청은 브라우저에서 제공자로 바로 가고 이 서버를 지나지 않는다 — 스택이 할 일은 화면을
+  내주는 것뿐이고, 실제 대화는 제공자 키가 있어야 한다. 저장소에는 키가 없다. 생성 수명주기 자체는 브라우저
+  여정(`e2e/`)이 생성 대역으로 본다.
 - **메일·푸시·소셜 로그인·본인확인·관리형 생성** — 꺼진 채로 뜨는 것만 본다.
 - **업그레이드.** 빈 볼륨에서 시작한다. 기존 데이터 위의 마이그레이션은 다른 절차다.
+- **콘솔 글꼴.** 콘솔의 CSP(`style-src 'self'`)가 공유 스타일시트의 Pretendard(jsDelivr) 가져오기를 막아 콘솔은
+  시스템 글꼴로 그려지고, 브라우저 콘솔에 CSP 오류가 남는다. 기능에는 영향이 없다.

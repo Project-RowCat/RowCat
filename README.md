@@ -104,6 +104,10 @@ cp .env.example .env   # set BETTER_AUTH_SECRET and POSTGRES_PASSWORD, and for a
 docker compose up -d   # pulls api, web and admin; Postgres and Redis come along
 ```
 
+The pull needs the GHCR packages to be public (a setting the repository owner flips once). While they are
+not, the pull is refused and compose builds this checkout instead — slower, and it says so only by starting
+a build. `docs/ops/CLEAN-INSTALL.md` checks which of the two a deployment actually ran.
+
 Both secrets are generated, never copied: `openssl rand -base64 32` for `BETTER_AUTH_SECRET`, `openssl rand
 -hex 24` for `POSTGRES_PASSWORD` (hex goes into the database URL unescaped). Compose will not start without
 them, and the API refuses to boot in production on a short session key or on the old example password

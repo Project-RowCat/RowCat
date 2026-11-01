@@ -287,6 +287,42 @@ describe.skipIf(!databaseReady)("first-run setup — claim", () => {
 		expect(await roleOf(second.memberId)).toBe("user");
 	});
 
+	test("racing claims with the right code promote exactly one member", async () => {
+		const racers = await Promise.all([signUp(), signUp(), signUp(), signUp()]);
+		const code = deriveSetupCode(SALT);
+
+		/** Sent together, so each transaction waits on the row lock the first one took. */
+		const responses = await Promise.all(
+			racers.map((racer) => claim(racer.cookie, code)),
+		);
+		const statuses = responses.map((response) => response.status);
+		expect(statuses.filter((status) => status === 200)).toHaveLength(1);
+		expect(statuses.filter((status) => status === 409)).toHaveLength(3);
+
+		const winner = racers[statuses.indexOf(200)];
+		const roles = await Promise.all(
+			racers.map((racer) => roleOf(racer.memberId)),
+		);
+		expect(roles.filter((role) => role === "admin")).toHaveLength(1);
+		expect(await roleOf(winner?.memberId ?? "")).toBe("admin");
+
+		const [row] = await db.select().from(deployment_setup);
+		expect(row?.completed_by).toBe(winner?.memberId);
+		const audit = await db
+			.select({ operator: admin_audit_log.operator })
+			.from(admin_audit_log)
+			.where(
+				and(
+					inArray(
+						admin_audit_log.operator,
+						racers.map((racer) => racer.memberId),
+					),
+					eq(admin_audit_log.action, "admin.setup.claim"),
+				),
+			);
+		expect(audit).toEqual([{ operator: winner?.memberId }]);
+	});
+
 	test("a restricted account cannot claim", async () => {
 		const restricted = await signUp();
 		await db

@@ -94,9 +94,17 @@ override 없이 셸에서 Postgres에 접속하려면: `docker compose exec db p
 필요 없다.
 
 ```bash
-cp .env.example .env   # BETTER_AUTH_SECRET을 채우고, 실제 도메인이면 WEB_ORIGIN, API_ORIGIN, VITE_API_ORIGIN도
+cp .env.example .env   # BETTER_AUTH_SECRET과 POSTGRES_PASSWORD를 채우고, 실제 도메인이면 WEB_ORIGIN, API_ORIGIN, VITE_API_ORIGIN도
 docker compose up -d   # api, web, admin을 받아 오고 Postgres와 Redis도 함께 뜬다
 ```
+
+두 시크릿은 복사하지 않고 생성한다: `BETTER_AUTH_SECRET`은 `openssl rand -base64 32`, `POSTGRES_PASSWORD`는
+`openssl rand -hex 24`(16진수라 데이터베이스 URL에 그대로 들어간다). 둘이 없으면 컴포즈가 시작하지 않고, API는
+production에서 짧은 세션 키나 예전 예시 비밀번호 `rowcat`으로는 뜨지 않는다.
+
+받아 오려면 GHCR 패키지가 공개돼 있어야 한다(저장소 소유자가 한 번 바꾸는 설정). 공개 전에는 당기기가
+거절되고 컴포즈가 대신 이 체크아웃을 빌드한다 — 느릴 뿐 결과는 같고, 빌드가 시작되는 것 말고는 알려 주지
+않는다. 실제로 어느 쪽이 돌았는지는 `docs/ops/CLEAN-INSTALL.md`가 확인한다.
 
 `docker compose up --build`는 공개된 이미지 대신 이 체크아웃을 빌드해 실행한다. 한 빌드에 고정하려면
 `ROWCAT_IMAGE_TAG=sha-<commit>`을 쓰고, 자체 이미지를 발행하는 포크는 `ROWCAT_IMAGE_REGISTRY`를 그쪽으로
