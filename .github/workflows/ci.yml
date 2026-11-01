@@ -167,6 +167,17 @@ jobs:
         with:
           persist-credentials: false
 
+      # The images build themselves; the checkout's workspace is only for `pnpm env:doctor`, which the
+      # smoke runs on the API container's environment to compare against the console's readiness list.
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
       # Builds api, web and admin from this commit (never the published `latest`), boots the stack
       # with generated secrets, claims first-run setup, and tears everything down.
       - run: bash scripts/compose-smoke.sh --build

@@ -83,6 +83,7 @@ docker-compose.yml                    서비스가 실제로 받는 값과 그 �
 pnpm env:doctor --file .env --mode production
 pnpm --silent env:doctor --file .env --mode production --json   # 배포 파이프라인용
 pnpm env:doctor --mode production --strict                      # 저하 상태도 실패로 센다
+docker compose exec -T api env | pnpm --silent env:doctor --mode production --file -   # 돌고 있는 컨테이너 — 파일 없이
 ```
 
 `--json`을 파이프로 받을 때는 `pnpm --silent`로 부른다 — 그렇지 않으면 pnpm이 스크립트 이름

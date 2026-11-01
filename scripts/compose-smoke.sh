@@ -21,6 +21,9 @@ cd "$(dirname "$0")/.."
 PROJECT="${COMPOSE_SMOKE_PROJECT:-rowcat-smoke}"
 API=http://localhost:3001
 CONSOLE_ORIGIN="Origin: http://localhost:3002"
+# The work directory holds the generated secrets and session cookies. mktemp gives it a unique
+# name, so two runs never share files, and 0700; the umask keeps every file in it owner-only too.
+umask 077
 work="$(mktemp -d)"
 env_file="$work/env"
 failures=0
@@ -145,6 +148,40 @@ as "$member" -o /dev/null "$API/v2/me"
 expect "admin reads readiness" 200 "$(as "$admin" -o /dev/null -w '%{http_code}' "$API/v2/admin/deployment/readiness")"
 expect "a member is refused readiness" 403 "$(as "$member" -o /dev/null -w '%{http_code}' "$API/v2/admin/deployment/readiness")"
 expect "a guest is refused readiness" 401 "$(status_of "$API/v2/admin/deployment/readiness")"
+
+echo "--- readiness agrees with env:doctor"
+# The console's list is the doctor's report built inside the API from the environment it booted with.
+# The doctor is not in the image, so it runs from this checkout on that container's environment —
+# piped through stdin, never written to a file, and with this shell's own environment emptied so a
+# variable exported here cannot change the answer. Only ids and states are compared and printed:
+# the doctor's summaries carry origins and hosts.
+as "$admin" "$API/v2/admin/deployment/readiness" >"$work/readiness.json"
+dc exec -T api env |
+	env -i PATH="$PATH" HOME="$HOME" pnpm --silent env:doctor --mode production --file - --json \
+		>"$work/doctor.json" 2>"$work/doctor.err" || true
+readiness_diff="$(python3 - "$work/readiness.json" "$work/doctor.json" <<'PY'
+import json, sys
+try:
+    readiness = json.load(open(sys.argv[1]))
+    doctor = json.load(open(sys.argv[2]))
+except ValueError:
+    print("the readiness list or the doctor's report is not JSON")
+    sys.exit()
+screen = {c["id"]: c["status"] for c in readiness["capabilities"]}
+cli = {key: value["status"] for key, value in doctor["capabilities"].items()}
+problems = [f"mode: readiness {readiness['mode']}, doctor {doctor['mode']}"] if readiness["mode"] != doctor["mode"] else []
+for key in sorted(screen.keys() | cli.keys()):
+    if screen.get(key) != cli.get(key):
+        problems.append(f"{key}: readiness {screen.get(key)}, doctor {cli.get(key)}")
+print("; ".join(problems) if problems else f"same {len(screen)}")
+PY
+)"
+expect "the readiness list matches env:doctor on the container's environment" \
+	"same $(python3 -c "import json; print(len(json.load(open('$work/doctor.json'))['capabilities']))" 2>/dev/null || echo '?')" \
+	"$readiness_diff"
+if [ -s "$work/doctor.err" ] && [ ! -s "$work/doctor.json" ]; then
+	echo "      env:doctor did not run: $(tail -2 "$work/doctor.err")" >&2
+fi
 
 echo "--- appointing an operator inside the image"
 if dc exec -T api node dist/db/seed-moderator.mjs member@smoke.test staff >/dev/null 2>&1; then

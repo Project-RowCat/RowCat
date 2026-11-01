@@ -42,6 +42,8 @@ function usage(): void {
     --file <path>                          layers that file's values over the process environment
                                            (--env-file is accepted too — if pnpm's single executable
                                            takes that name as a Node option first, use --file)
+                                           \`-\` reads the values from stdin, so a running container's
+                                           environment never has to be written to disk
     --json                                 machine-readable output
     --strict                               counts warnings and degraded states as failures too
 `);
@@ -94,25 +96,35 @@ function parseDoctorArgs(argv: string[]): DoctorOptions | { error: string } {
 	return options;
 }
 
+const STDIN = "-";
+
 /**
  * Reads one env file, only when named explicitly — never searching parent directories, so operators
  * always know what is being checked. File values beat the process environment because the question
  * is "what happens if I deploy with this file"; the source line says so. Unreadable lines report
  * only line number and reason, never the content (it is usually a secret).
+ *
+ * `-` is stdin. Checking a running deployment means reading its container's environment
+ * (`docker compose exec -T api env | pnpm --silent env:doctor --file - …`), and the alternative was a
+ * dump of every secret it holds left in a temporary file — readable by whoever shares the machine's
+ * temp directory, and outliving the command whenever the cleanup step is forgotten.
  */
 function loadEnvFile(path: string): {
 	values: Record<string, string>;
 	label: string;
 	problems: string[];
 } {
-	const parsed = parseDotenvExample(readFileSync(path, "utf8"));
+	const parsed = parseDotenvExample(
+		readFileSync(path === STDIN ? 0 : path, "utf8"),
+	);
 	const values: Record<string, string> = {};
 	for (const entry of activeEntries(parsed)) values[entry.key] = entry.value;
 	return {
 		values,
-		label: `process environment + ${path} (${Object.keys(values).length} keys)`,
+		label: `process environment + ${path === STDIN ? "stdin" : path} (${Object.keys(values).length} keys)`,
 		problems: parsed.invalid.map(
-			(invalid) => `${path}:${invalid.line} — ${invalid.reason}`,
+			(invalid) =>
+				`${path === STDIN ? "stdin" : path}:${invalid.line} — ${invalid.reason}`,
 		),
 	};
 }
@@ -141,10 +153,10 @@ function runDoctor(argv: string[]): number {
 		 * `apps/api/.env` — a different deployment's file, reported as green with no hint. pnpm records
 		 * the invoking directory as `INIT_CWD`; a direct `tsx` run has none and uses its own cwd.
 		 */
-		const envFile = resolve(
-			process.env.INIT_CWD || process.cwd(),
-			parsed.envFile,
-		);
+		const envFile =
+			parsed.envFile === STDIN
+				? STDIN
+				: resolve(process.env.INIT_CWD || process.cwd(), parsed.envFile);
 		let loaded: ReturnType<typeof loadEnvFile>;
 		try {
 			loaded = loadEnvFile(envFile);

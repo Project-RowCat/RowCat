@@ -11,8 +11,7 @@ override, 개발 계정은 여기서 하나도 쓰지 않는다.
 릴리스 전에 한 번, 그리고 `docker-compose.yml`·Dockerfile·`tsdown.config.ts`·첫 실행 설정을 바꾼 뒤에 돌린다.
 아래 확인 목록의 대부분은 `scripts/compose-smoke.sh`(`pnpm test:compose`)가 자동으로 하고 CI의 `compose` 잡이 매
 커밋 돌린다 — 이미지는 그 잡이 통과한 커밋만 게시된다. **스크립트가 대신하지 못하는 것은 브라우저로 콘솔
-`/setup`을 거치는 것과 준비 상태 목록이 맞는지 대조하는 것**(아래 「손으로 볼 것」)이라, 릴리스 전 한 번은
-손으로 본다.
+`/setup`을 거치는 것**(아래 「손으로 볼 것」)이라, 릴리스 전 한 번은 손으로 본다.
 
 ## 격리
 
@@ -32,8 +31,9 @@ GHCR 이미지를 익명으로 당길 수 없으면(패키지가 비공개이면
 검증한 것은 아니다.** 결과에 어느 쪽이었는지 적는다. 익명으로 당겨지는지는 빈 도커 설정으로 확인한다:
 
 ```bash
-mkdir -p /tmp/anon && echo '{}' > /tmp/anon/config.json
-DOCKER_CONFIG=/tmp/anon docker manifest inspect ghcr.io/project-rowcat/rowcat/api:latest
+anon="$(mktemp -d)" && echo '{}' > "$anon/config.json"
+DOCKER_CONFIG="$anon" docker manifest inspect ghcr.io/project-rowcat/rowcat/api:latest
+rm -rf "$anon"
 ```
 
 ## 스크립트가 확인하는 것
@@ -48,6 +48,7 @@ DOCKER_CONFIG=/tmp/anon docker manifest inspect ghcr.io/project-rowcat/rowcat/ap
           틀린 코드 403 · 두 사람이 같은 코드로 동시에 → 200 하나, 409 하나, admin 하나
           닫힘 · 다시 claim 409
 권한      준비 상태: admin 200 · 일반 회원 403 · 손님 401
+          준비 상태 목록의 행마다 상태가 그 API 컨테이너 환경에 돌린 env:doctor와 같다
 이미지    컨테이너 안에서 seed-moderator로 운영자 지정
 콘텐츠    공개 작품 발행 · 표지 · 아바타 업로드 · 손님 갤러리에 보인다
 재시작    API만: 설정 닫힌 채, 코드 안 찍힘, 세션 유지
@@ -69,16 +70,20 @@ DOCKER_CONFIG=/tmp/anon docker manifest inspect ghcr.io/project-rowcat/rowcat/ap
 3  콘솔 /setup 에서 계정을 만든다                    http://localhost:3002/setup
 4  틀린 코드 → 화면이 "That code doesn't match"를 말하고 단계가 그대로다
 5  맞는 코드 → "You're the administrator"와 준비 상태 목록
-6  준비 상태 목록이 그 컨테이너의 실제 환경과 맞는다
-     docker compose exec -T api env > /tmp/api.env       (끝나면 지운다 — 시크릿이 들어 있다)
-     pnpm env:doctor --mode production --file /tmp/api.env --json
-     화면의 행마다 상태가 같아야 한다. 루프백 오리진이라 Browser origins만 운영 차단으로 나온다
+6  화면의 준비 상태 목록이 env:doctor와 같다(스크립트도 대조한다 — 여기서는 화면이 그것을 그리는지 본다)
+     docker compose exec -T api env | pnpm --silent env:doctor --mode production --file - --json
+     루프백 오리진이라 Browser origins만 운영 차단으로 나온다
 7  스택 전체 down → up 뒤 /setup은 "Setup is complete", 콘솔은 같은 세션으로 열린다
 8  웹(3000)이 그 세션으로 뜨고 콘솔에 오류가 없다
 ```
 
 `env:doctor`는 이미지에 없다(체크아웃에서 돈다). 콘솔 화면은 그 결과에서 `summary`·`detail`만 뺀 것이라 상태가
 다르면 그 자체가 결함이다.
+
+**컨테이너 환경을 파일로 쏟지 않는다.** `env > /tmp/api.env`는 세션 키와 DB 비밀번호를 포함한 전부를 공유 임시
+디렉터리에 남기고, 정리 단계를 잊으면 명령보다 오래 산다. `--file -`가 표준 입력에서 읽으므로 파이프로 넘긴다.
+`env:doctor`는 읽은 값을 출력하지 않는다(`config/cli.test.ts`). 파일이 꼭 필요하면 `umask 077` 아래
+`mktemp`로 만들고 `trap`으로 지운다 — 고정된 경로는 두 실행이 서로의 파일을 읽고 덮는다.
 
 ## 정리
 
