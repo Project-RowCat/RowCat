@@ -179,7 +179,7 @@ describe("Anthropic adapter", () => {
 			{
 				type: "text",
 				text: "The value our assembler made",
-				cache_control: { type: "ephemeral" },
+				cache_control: { type: "ephemeral", ttl: "1h" },
 			},
 		]);
 	});
@@ -202,7 +202,7 @@ describe("Anthropic adapter", () => {
 		expect(sent.cache_control).toEqual({ type: "ephemeral" });
 		expect(
 			(sent.system as Array<{ cache_control: unknown }>)[0]?.cache_control,
-		).toEqual({ type: "ephemeral" });
+		).toEqual({ type: "ephemeral", ttl: "1h" });
 	});
 
 	it("an empty system prompt stays a string (an empty text block is a 400)", async () => {

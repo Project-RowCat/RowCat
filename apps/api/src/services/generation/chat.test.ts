@@ -39,6 +39,18 @@ const request: ManagedChatGenerationRequest = {
 	continuation: false,
 };
 
+/** The system message an Anthropic upstream receives: the same text, its end marked for an hour. */
+const cachedSystem = {
+	role: "system",
+	content: [
+		{
+			type: "text",
+			text: "System prompt",
+			cache_control: { type: "ephemeral", ttl: "1h" },
+		},
+	],
+};
+
 describe("usesExplicitPromptCaching", () => {
 	/**
 	 * The decision axis is the provider namespace. Hard-coding model names would silently turn caching
@@ -137,14 +149,43 @@ describe("buildProviderRequestBody", () => {
 		 * A cache optimization that changes what the model sees is a behavior change, not an
 		 * optimization. Removing `cache_control` must leave the cached and uncached bodies equal.
 		 */
-		const { cache_control, ...cached } = buildProviderRequestBody(
+		const { cache_control, messages, ...cached } = buildProviderRequestBody(
 			request,
 			"anthropic/x",
 		);
+		const { messages: plainMessages, ...plain } = buildProviderRequestBody(
+			request,
+			"other/x",
+		);
 		expect(cache_control).toEqual({ type: "ephemeral" });
-		expect(cached).toEqual({
-			...buildProviderRequestBody(request, "other/x"),
-			model: "anthropic/x",
+		expect(cached).toEqual({ ...plain, model: "anthropic/x" });
+		/** The system block's breakpoint marks the text; the text itself is the same string. */
+		const [system, ...rest] = messages as SentMessages;
+		const [plainSystem, ...plainRest] = plainMessages as SentMessages;
+		expect(system).toEqual(cachedSystem);
+		expect(plainSystem).toEqual({ role: "system", content: "System prompt" });
+		expect(rest).toEqual(plainRest);
+	});
+
+	/**
+	 * The top-level breakpoint sits on the last block only, and past `CHAT_HISTORY_LIMIT` the window
+	 * drops its oldest message every turn, so that prefix never matches. Marking the end of the system
+	 * prompt is what lets the unchanged system prompt be read back on those turns.
+	 */
+	it("marks the end of the system prompt for Anthropic models", () => {
+		const body = buildProviderRequestBody(request, "anthropic/claude-sonnet-5");
+		expect((body.messages as SentMessages)[0]).toEqual(cachedSystem);
+	});
+
+	/** An empty text block is rejected upstream, so an empty system prompt stays a string. */
+	it("leaves an empty system prompt as a string", () => {
+		const body = buildProviderRequestBody(
+			{ ...request, system: "" },
+			"anthropic/claude-sonnet-5",
+		);
+		expect((body.messages as SentMessages)[0]).toEqual({
+			role: "system",
+			content: "",
 		});
 	});
 
@@ -598,7 +639,7 @@ describe("continuation body — nudge shape", () => {
 			"nudge",
 		);
 		expect(body.messages).toEqual([
-			{ role: "system", content: "System prompt" },
+			cachedSystem,
 			{ role: "user", content: "Continue" },
 			{ role: "assistant", content: "The door opens and he" },
 			{ role: "user", content: CONTINUATION_FALLBACK_NUDGE },
@@ -668,10 +709,7 @@ describe("continuation body — what both shapes share", () => {
 			capability,
 			shape,
 		);
-		expect(body.messages).toEqual([
-			{ role: "system", content: "System prompt" },
-			...messages,
-		]);
+		expect(body.messages).toEqual([cachedSystem, ...messages]);
 	});
 
 	/** System prompt, routing and cache control are unchanged in continuation. */
@@ -685,10 +723,7 @@ describe("continuation body — what both shapes share", () => {
 			capability,
 			shape,
 		);
-		expect((body.messages as SentMessages)[0]).toEqual({
-			role: "system",
-			content: "System prompt",
-		});
+		expect((body.messages as SentMessages)[0]).toEqual(cachedSystem);
 		expect(body.cache_control).toEqual({ type: "ephemeral" });
 		expect(body.provider).toEqual({
 			data_collection: "deny",
@@ -846,7 +881,7 @@ describe("tool declarations", () => {
 			"anthropic/claude-sonnet-5",
 		);
 		expect(body.messages).toEqual([
-			{ role: "system", content: "System prompt" },
+			cachedSystem,
 			{ role: "user", content: "Roll it" },
 			{
 				role: "assistant",

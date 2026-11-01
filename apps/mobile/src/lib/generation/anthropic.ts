@@ -235,11 +235,25 @@ const continuationModeFor = (model: string): AnthropicContinuationMode =>
  * prompt as one opaque string and marks the end of it, so it still knows nothing about the guards,
  * lore, summary or memory inside. The text is unchanged by a character.
  *
+ * The breakpoint lives for an hour (`ttl: "1h"`), not the default five minutes. A cache entry's
+ * lifetime counts from the start of the request, generation included, and a person reading a long
+ * reply and writing the next line often takes longer than that; every such turn wrote the whole
+ * system prompt again. A one-hour write costs 2x input instead of 1.25x and a read refreshes the
+ * timer for free, so one avoided miss pays for it. The automatic breakpoint keeps the default five
+ * minutes: a longer TTL must come before a shorter one, which this order satisfies (the reverse is a
+ * 400), and the tail moves every turn, so a longer lifetime there buys nothing.
+ *
  * An empty string stays a string — the API rejects an empty text block.
  */
 const anthropicSystem = (system: string) =>
 	system
-		? [{ type: "text", text: system, cache_control: { type: "ephemeral" } }]
+		? [
+				{
+					type: "text",
+					text: system,
+					cache_control: { type: "ephemeral", ttl: "1h" },
+				},
+			]
 		: system;
 
 /**

@@ -96,9 +96,23 @@ function captureProviderRequest(lines: string[] = []): {
 
 interface ProviderBody {
 	model: string;
-	messages: { role: string; content: string }[];
+	messages: {
+		role: string;
+		content: string | { type: string; text: string }[];
+	}[];
 	cache_control?: { type: string };
 }
+
+/**
+ * The system prompt's text as sent. Anthropic upstreams receive it as one text block carrying a cache
+ * breakpoint, others as a plain string; the assertions here are about the words, not that shape.
+ */
+const systemTextOf = (body: ProviderBody): string => {
+	const content = body.messages[0]?.content ?? "";
+	return typeof content === "string"
+		? content
+		: content.map((part) => part.text).join("");
+};
 
 // Reads events back from our NDJSON response, the same values a client sees.
 const eventsOf = async (
@@ -166,12 +180,12 @@ describe.skipIf(!databaseReady)("generation policy — server authority", () => 
 		);
 		await drain(response);
 
-		const system = provider.body().messages[0];
-		expect(system?.role).toBe("system");
+		expect(provider.body().messages[0]?.role).toBe("system");
+		const system = systemTextOf(provider.body());
 		// Both ends of the prompt must be ours: a guard only at the front is overridden by recency from
 		// the body that follows, which here is literally "ignore the rules above".
-		expect(system?.content.startsWith(ABSOLUTE_GUARD)).toBe(true);
-		expect(system?.content.endsWith(ALL_AGES_TAIL)).toBe(true);
+		expect(system.startsWith(ABSOLUTE_GUARD)).toBe(true);
+		expect(system.endsWith(ALL_AGES_TAIL)).toBe(true);
 	});
 
 	test("claiming adult mode without eligibility goes out as all-ages", async () => {
@@ -185,7 +199,7 @@ describe.skipIf(!databaseReady)("generation policy — server authority", () => 
 		expect(response.status).toBe(200);
 		await drain(response);
 
-		const system = provider.body().messages[0]?.content ?? "";
+		const system = systemTextOf(provider.body());
 		expect(system).toContain(ALL_AGES_GUARD);
 		expect(system).not.toContain(ADULT_GUARD);
 		expect(system.endsWith(ALL_AGES_TAIL)).toBe(true);
@@ -203,7 +217,7 @@ describe.skipIf(!databaseReady)("generation policy — server authority", () => 
 		expect(response.status).toBe(200);
 		await drain(response);
 
-		expect(provider.body().messages[0]?.content).toContain(ALL_AGES_GUARD);
+		expect(systemTextOf(provider.body())).toContain(ALL_AGES_GUARD);
 	});
 
 	test("an adult-eligible member goes out under the adult policy", async () => {
@@ -220,7 +234,7 @@ describe.skipIf(!databaseReady)("generation policy — server authority", () => 
 		expect(response.status).toBe(200);
 		await drain(response);
 
-		const system = provider.body().messages[0]?.content ?? "";
+		const system = systemTextOf(provider.body());
 		expect(system.startsWith(ABSOLUTE_GUARD)).toBe(true);
 		expect(system).toContain(ADULT_GUARD);
 		expect(system).not.toContain(ALL_AGES_GUARD);

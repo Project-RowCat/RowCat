@@ -112,7 +112,7 @@ describe("Anthropic adapter", () => {
 			{
 				type: "text",
 				text: "system prompt",
-				cache_control: { type: "ephemeral" },
+				cache_control: { type: "ephemeral", ttl: "1h" },
 			},
 		]);
 		expect(sent.messages).toEqual([
@@ -182,7 +182,7 @@ describe("Anthropic adapter", () => {
 			cache_control: unknown;
 		}>;
 		expect(system).toHaveLength(1);
-		expect(system[0]?.cache_control).toEqual({ type: "ephemeral" });
+		expect(system[0]?.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
 	});
 
 	/** An empty text block is a 400, so an empty system prompt stays the string it was. */

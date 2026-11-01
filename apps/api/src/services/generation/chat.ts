@@ -402,6 +402,48 @@ function toOpenAiMessages(
 	});
 }
 
+/**
+ * The system message, with its own cache breakpoint when the model is cached.
+ *
+ * The top-level automatic breakpoint sits on the last block only. Once a conversation passes
+ * `CHAT_HISTORY_LIMIT` the window drops its oldest message every turn, so that one breakpoint's
+ * prefix never matches the previous turn: every turn wrote the whole prompt to the cache and read
+ * nothing back, the unchanged system prompt included. Marking the end of the system prompt lets that
+ * part be read back (2 of Anthropic's 4 breakpoints). This mirrors the BYO adapters'
+ * `anthropicSystem`.
+ *
+ * It is not a breakpoint placed by hand inside the prompt: the system prompt arrives as one opaque
+ * string and only its end is marked, so this file still knows nothing about the guards, lore,
+ * summary or memory inside. The text is unchanged by a character.
+ *
+ * The breakpoint lives for an hour (`ttl: "1h"`), not the default five minutes. A cache entry's
+ * lifetime counts from the start of the request, generation included, and a person reading a long
+ * reply and writing the next line often takes longer than that; every such turn wrote the whole
+ * system prompt again. A one-hour write costs 2x input instead of 1.25x and a read refreshes the
+ * timer for free, so one avoided miss pays for it. The automatic breakpoint keeps the default five
+ * minutes: a longer TTL must come before a shorter one, which this order satisfies (the reverse is a
+ * 400), and the tail moves every turn, so a longer lifetime there buys nothing.
+ * OpenRouter honors the one-hour TTL on explicit breakpoints for every Claude provider on the
+ * allowlist.
+ *
+ * An empty string stays a string — an empty text block is rejected.
+ */
+function systemMessage(system: string, cached: boolean) {
+	return {
+		role: "system",
+		content:
+			cached && system
+				? [
+						{
+							type: "text",
+							text: system,
+							cache_control: { type: "ephemeral", ttl: "1h" },
+						},
+					]
+				: system,
+	};
+}
+
 export function buildProviderRequestBody(
 	request: ManagedChatGenerationRequest,
 	model: string,
@@ -501,7 +543,7 @@ export function buildProviderRequestBody(
 			? { cache_control: { type: "ephemeral" } }
 			: {}),
 		messages: [
-			{ role: "system", content: request.system },
+			systemMessage(request.system, usesExplicitPromptCaching(model)),
 			...toOpenAiMessages(messages),
 		],
 		/**

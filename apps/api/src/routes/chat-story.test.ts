@@ -155,8 +155,19 @@ const eventsOf = async (response: Response) =>
 		.filter((line) => line.trim())
 		.map((line) => JSON.parse(line) as Record<string, unknown>);
 
-const systemOf = (body: { messages: { role: string; content: string }[] }) =>
-	body.messages.find((message) => message.role === "system")?.content ?? "";
+/**
+ * The system prompt's text as sent. Anthropic upstreams receive it as one text block carrying a cache
+ * breakpoint, others as a plain string; these assertions are about the words, not that shape.
+ */
+const systemOf = (body: { messages: { role: string; content: unknown }[] }) => {
+	const content = body.messages.find(
+		(message) => message.role === "system",
+	)?.content;
+	if (typeof content === "string") return content;
+	return Array.isArray(content)
+		? content.map((part: { text: string }) => part.text).join("")
+		: "";
+};
 
 describe.skipIf(!databaseReady)("the seed sent down to the device", () => {
 	test("a protected story's /play has no creative prompt", async () => {
