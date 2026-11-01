@@ -9,6 +9,11 @@
 # run still in progress is waited for; a commit CI never saw, or saw fail, is refused — there is no
 # override, because the override is the thing a hurried release would use.
 #
+# Only `push` runs count. A `pull_request` run reports the PR's head as its head_sha, but what it
+# checked out and tested is the merge of that head into the base branch (refs/pull/N/merge) — a
+# different tree. Counting it would let a commit be released on the strength of a run that never
+# built it: tag a PR head whose merge passed, or dispatch on it, and the gate would say yes.
+#
 # Needs `gh` with a token that may read Actions (GH_TOKEN, `actions: read`) and GITHUB_REPOSITORY.
 set -euo pipefail
 
@@ -17,8 +22,8 @@ minutes="${2:-60}"
 deadline=$(($(date +%s) + minutes * 60))
 
 while :; do
-	runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${sha}&per_page=50" \
-		--jq '[.workflow_runs[] | {status, conclusion}]')"
+	runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${sha}&event=push&per_page=50" \
+		--jq '[.workflow_runs[] | select(.event == "push" and .head_sha == "'"${sha}"'") | {status, conclusion}]')"
 
 	if jq -e 'any(.[]; .status == "completed" and .conclusion == "success")' <<<"$runs" >/dev/null; then
 		echo "CI passed on ${sha}."
@@ -27,7 +32,7 @@ while :; do
 
 	if ! jq -e 'any(.[]; .status != "completed")' <<<"$runs" >/dev/null; then
 		if [ "$(jq length <<<"$runs")" = 0 ]; then
-			echo "::error::CI never ran on ${sha}. Push the commit to a branch and let CI pass before releasing it." >&2
+			echo "::error::CI never ran on a push of ${sha} (pull request runs test a merge commit, not this one). Push the commit to a branch and let CI pass before releasing it." >&2
 		else
 			echo "::error::CI did not pass on ${sha} ($(jq -c 'map(.conclusion)' <<<"$runs")). Fix it on a new commit; do not release this one." >&2
 		fi

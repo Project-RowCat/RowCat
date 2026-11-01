@@ -6,8 +6,9 @@
 #              (scripts/compose-smoke.sh — docs/ops/CLEAN-INSTALL.md as a script)
 #   secrets    gitleaks over every commit's added lines, against .gitleaksignore
 #
-# images.yml and mcp-publish.yml publish only a commit this workflow passed on
-# (scripts/ci-passed.sh), so every job here is a release gate, not advice.
+# images.yml, mcp-publish.yml and desktop-release.yml publish only a commit this workflow passed on
+# when it was pushed (scripts/ci-passed.sh — a pull_request run tests a merge commit, so it does not
+# count), so every job here is a release gate, not advice.
 #
 # A skipped test is not a passed one. The api suite skips what it cannot reach so a laptop without
 # Postgres or Redis still runs it; here ROWCAT_REQUIRE_TEST_SERVICES=1 turns each of those skips into
