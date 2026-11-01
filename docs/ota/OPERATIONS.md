@@ -273,12 +273,13 @@ pnpm mobile:update gc-report
 ## 로컬에서 끝까지
 
 ```bash
-# 저장소 밖에 시험용 키
-pnpm mobile:update keys:generate preview --key-out /tmp/rowcat-ota-keys
-export ROWCAT_OTA_SIGNING_KEY_FILE=/tmp/rowcat-ota-keys/rowcat-preview-1.private-key.pem
-export ROWCAT_OTA_STORAGE=file ROWCAT_OTA_STORAGE_DIR=/tmp/rowcat-ota-store
+# 저장소 밖에 시험용 키 — 고정된 /tmp 경로가 아니라 이 셸만 아는 0700 폴더에
+keys="$(mktemp -d)" store="$(mktemp -d)"
+pnpm mobile:update keys:generate preview --key-out "$keys"
+export ROWCAT_OTA_SIGNING_KEY_FILE="$keys/rowcat-preview-1.private-key.pem"
+export ROWCAT_OTA_STORAGE=file ROWCAT_OTA_STORAGE_DIR="$store"
 export ROWCAT_OTA_ASSET_BASE_URL=http://127.0.0.1:8787
-(cd /tmp/rowcat-ota-store && python3 -m http.server 8787 --bind 127.0.0.1) &
+(cd "$store" && python3 -m http.server 8787 --bind 127.0.0.1) &
 pnpm dev:api
 pnpm mobile:update publish preview --api-origin http://localhost:3001 --skip-checks
 ```
@@ -295,8 +296,9 @@ ROWCAT_OTA_CHANNEL=preview EXPO_PUBLIC_API_ORIGIN=http://localhost:3001 npx expo
 ```
 
 바이너리를 지은 **뒤에** 발행한 OTA만 그 바이너리에게 새것이다(스토어 번들의 시각이 빌드 시각이다).
-끝나면 시험용 인증서(`certs/rowcat-preview-1.pem`)를 지우고 `prebuild`를 OTA 없이 다시 돌린다 — 그
-인증서의 개인 키는 아무도 관리하지 않는다.
+끝나면 시험용 인증서(`certs/rowcat-preview-1.pem`)와 `"$keys"` 폴더를 지우고 `prebuild`를 OTA 없이 다시
+돌린다 — 그 인증서의 개인 키는 아무도 관리하지 않는다. 고정된 `/tmp` 경로에 두면 같은 기계의 다른 사용자가 그
+키를 읽고, 그 인증서를 믿는 로컬 바이너리에 자기 업데이트를 서명해 내보낼 수 있다.
 
 ## 검증 기록
 
