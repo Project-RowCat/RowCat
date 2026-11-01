@@ -224,6 +224,25 @@ const continuationModeFor = (model: string): AnthropicContinuationMode =>
 	ANTHROPIC_CONTINUATION[model] ?? "nudge";
 
 /**
+ * **The system prompt as one text block carrying its own cache breakpoint.**
+ *
+ * The automatic breakpoint sits on the last block, and the history window drops its oldest message
+ * once a conversation passes `CHAT_HISTORY_LIMIT`. From then on the previous request's entry is never
+ * a prefix of the next one, so without this breakpoint every turn wrote the whole prompt to the cache
+ * and read nothing back — the system prompt included, although it had not changed.
+ *
+ * This is not a breakpoint placed by hand inside the prompt: the adapter already receives the system
+ * prompt as one opaque string and marks the end of it, so it still knows nothing about the guards,
+ * lore, summary or memory inside. The text is unchanged by a character.
+ *
+ * An empty string stays a string — the API rejects an empty text block.
+ */
+const anthropicSystem = (system: string) =>
+	system
+		? [{ type: "text", text: system, cache_control: { type: "ephemeral" } }]
+		: system;
+
+/**
  * The message array for a continuation request — **same rules and reasons as the web adapter.**
  *
  * Prefill strips trailing whitespace from the last assistant content: this provider rejects it with
@@ -834,9 +853,10 @@ async function start(
 				max_tokens: maxTokensFor(request.maxOutputTokens, thinking.budget),
 				/**
 				 * The system prompt is a **top-level field**, not a message in the array. The string our
-				 * assembler built is sent as-is; nothing is trimmed or appended here.
+				 * assembler built is sent as-is; nothing is trimmed or appended here — only wrapped
+				 * (`anthropicSystem`).
 				 */
-				system: request.system,
+				system: anthropicSystem(request.system),
 				/**
 				 * Only continuation goes through a different assembler: it closes the tail in the model's
 				 * shape. The ordinary generation path is unchanged.
@@ -883,7 +903,8 @@ async function start(
 				 * **The switch for automatic prompt caching** (a top-level field). Breakpoints are not placed
 				 * by hand on each content block: that would require this adapter to know the boundaries of
 				 * guards, seed, lore, memory and history, a structure that belongs to `@rowcat/chat` and is
-				 * provider-neutral.
+				 * provider-neutral. This automatic breakpoint is one of two; the other sits on the system
+				 * block (`anthropicSystem`).
 				 */
 				cache_control: { type: "ephemeral" },
 				stream: true,

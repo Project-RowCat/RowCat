@@ -2110,6 +2110,11 @@ adapter's header).
   the registry's slug is swapped, caching turns off quietly, and the symptom is **the invoice**).
 - **Do not place breakpoints by hand** — attaching `cache_control` per block would require the adapter to know
   the boundaries of guards, seed, lore, memory and history, which breaks `@rowcat/chat`'s provider neutrality.
+  **The one exception is the end of the system block on Anthropic BYO** (`anthropicSystem`, a web/mobile pair):
+  the history window drops its oldest message every turn past `CHAT_HISTORY_LIMIT`, and with only the automatic
+  breakpoint on the last block every such turn wrote the whole prompt to the cache and read nothing back. The
+  adapter already holds the system prompt as one opaque string, so marking its end learns nothing about what is
+  inside.
 - **This is not response caching** (reusing a whole probabilistic model response is a different product
   behaviour, and in roleplay it shows up as the same answer repeating). **Do not reorder context for the cache**
   — instead **determinism** pays the price (a `Date.now()`, an RNG or a request timestamp in the assembler makes

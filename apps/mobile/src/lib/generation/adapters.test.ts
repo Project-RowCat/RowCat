@@ -175,9 +175,46 @@ describe("Anthropic adapter", () => {
 			signal: signal(),
 			fetch: transport.fetch,
 		});
-		expect(bodyOf(transport.calls[0]?.body).system).toBe(
-			"The value our assembler made",
-		);
+		expect(bodyOf(transport.calls[0]?.body).system).toEqual([
+			{
+				type: "text",
+				text: "The value our assembler made",
+				cache_control: { type: "ephemeral" },
+			},
+		]);
+	});
+
+	/**
+	 * **Two breakpoints: the automatic one and the end of the system block.** Past `CHAT_HISTORY_LIMIT`
+	 * the history window drops its oldest message every turn, so the automatic breakpoint alone never
+	 * finds its previous entry again. Dropping either is silent — the symptom is the bill.
+	 */
+	it("caches the system prompt on its own breakpoint as well as automatically", async () => {
+		const transport = respondWith(fakeResponse({ body: anthropicStream() }));
+		await run(anthropicAdapter, {
+			request: request(),
+			model: "claude-sonnet-5",
+			secret: "sk",
+			signal: signal(),
+			fetch: transport.fetch,
+		});
+		const sent = bodyOf(transport.calls[0]?.body);
+		expect(sent.cache_control).toEqual({ type: "ephemeral" });
+		expect(
+			(sent.system as Array<{ cache_control: unknown }>)[0]?.cache_control,
+		).toEqual({ type: "ephemeral" });
+	});
+
+	it("an empty system prompt stays a string (an empty text block is a 400)", async () => {
+		const transport = respondWith(fakeResponse({ body: anthropicStream() }));
+		await run(anthropicAdapter, {
+			request: request({ system: "" }),
+			model: "claude-sonnet-5",
+			secret: "sk",
+			signal: signal(),
+			fetch: transport.fetch,
+		});
+		expect(bodyOf(transport.calls[0]?.body).system).toBe("");
 	});
 
 	/**

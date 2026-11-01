@@ -108,7 +108,13 @@ describe("Anthropic adapter", () => {
 		expect(sent.model).toBe("claude-sonnet-5");
 		expect(sent.max_tokens).toBe(1024);
 		// The system prompt is a top-level field. It is not folded into the messages array.
-		expect(sent.system).toBe("system prompt");
+		expect(sent.system).toEqual([
+			{
+				type: "text",
+				text: "system prompt",
+				cache_control: { type: "ephemeral" },
+			},
+		]);
 		expect(sent.messages).toEqual([
 			{ role: "user", content: "first" },
 			{ role: "assistant", content: "answer" },
@@ -136,7 +142,9 @@ describe("Anthropic adapter", () => {
 		// Turning caching on must not change the prompt. This slice depends on that.
 		expect(sent.model).toBe("claude-sonnet-5");
 		expect(sent.max_tokens).toBe(1024);
-		expect(sent.system).toBe("system prompt");
+		expect(
+			(sent.system as Array<{ text: string }>).map((block) => block.text),
+		).toEqual(["system prompt"]);
 		expect(sent.messages).toEqual([
 			{ role: "user", content: "first" },
 			{ role: "assistant", content: "answer" },
@@ -156,6 +164,37 @@ describe("Anthropic adapter", () => {
 		expect(
 			body(seen[0] as { init: RequestInit }).cache_control,
 		).not.toHaveProperty("ttl");
+	});
+
+	/**
+	 * The second breakpoint. Past `CHAT_HISTORY_LIMIT` the history window drops its oldest message every
+	 * turn, so the automatic breakpoint alone never finds its previous entry again; this one keeps the
+	 * unchanged system prompt readable. Dropping it is silent too — the symptom is the bill.
+	 */
+	it("marks the end of the system prompt as a cache breakpoint, without a TTL", async () => {
+		const { seen, fetchMock } = recorder(() => sseResponse(ANTHROPIC_STREAM));
+		await collect(anthropicAdapter, {
+			model: "claude-sonnet-5",
+			secret: "sk-ant",
+			fetch: fetchMock,
+		});
+		const system = body(seen[0] as { init: RequestInit }).system as Array<{
+			cache_control: unknown;
+		}>;
+		expect(system).toHaveLength(1);
+		expect(system[0]?.cache_control).toEqual({ type: "ephemeral" });
+	});
+
+	/** An empty text block is a 400, so an empty system prompt stays the string it was. */
+	it("leaves an empty system prompt as a string", async () => {
+		const { seen, fetchMock } = recorder(() => sseResponse(ANTHROPIC_STREAM));
+		await collect(anthropicAdapter, {
+			model: "claude-sonnet-5",
+			secret: "sk-ant",
+			fetch: fetchMock,
+			request: { ...request, system: "" },
+		});
+		expect(body(seen[0] as { init: RequestInit }).system).toBe("");
 	});
 
 	/** Without this header, browser requests are blocked by CORS. */
