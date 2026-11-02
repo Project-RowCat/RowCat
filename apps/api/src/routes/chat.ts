@@ -5,7 +5,6 @@ import {
 } from "@rowcat/chat/guards";
 import {
 	CHAT_ERROR_CODE,
-	CHAT_MAX_TOOL_ROUND_TRIPS,
 	CHAT_STREAM_CONTENT_TYPE,
 	type ChatStreamEvent,
 	ManagedChatGenerationRequest,
@@ -143,7 +142,6 @@ export const chat = new Hono<AppEnv>()
 		const reservation = await reserveManagedGeneration({
 			inputChars: inputCharsOf(request),
 			maxOutputTokens: request.maxOutputTokens,
-			rounds: 1,
 		});
 
 		// Awaiting here is the point: missing provider config (503), unknown model (400) and upstream
@@ -158,7 +156,11 @@ export const chat = new Hono<AppEnv>()
 			throw error;
 		}
 
-		return streamChatEvents(c, reservation.meter(events), signal);
+		return streamChatEvents(
+			c,
+			reservation.meter(reservation.first.meter(events)),
+			signal,
+		);
 	})
 	/**
 	 * Generation for prompt-protected stories, assembled by the server. The protected creative prompt
@@ -222,17 +224,28 @@ export const chat = new Hono<AppEnv>()
 			allAges,
 		});
 		/**
-		 * The tool loop may call upstream once per round, each time with the whole request, so the
-		 * reservation covers every round it may take; the per-call ceiling still judges one call.
+		 * Weighs the first call only. The tool loop's later calls each carry the previous round's answer
+		 * and tool results, so each is weighed and reserved again right before it is sent
+		 * (`admitCall`); a first-call estimate times the rounds would under-count exactly those.
 		 */
 		const reservation = await reserveManagedGeneration({
 			inputChars: inputCharsOf(assembled.firstRequest),
 			maxOutputTokens: assembled.firstRequest.maxOutputTokens,
-			rounds: assembled.tools.length > 0 ? CHAT_MAX_TOOL_ROUND_TRIPS + 1 : 1,
 		});
 		let events: AsyncGenerator<ChatStreamEvent>;
 		try {
-			events = await startProtectedStoryGeneration({ assembled, signal });
+			events = await startProtectedStoryGeneration({
+				assembled,
+				signal,
+				budget: {
+					first: reservation.first,
+					admit: (request) =>
+						reservation.admitCall({
+							inputChars: inputCharsOf(request),
+							maxOutputTokens: request.maxOutputTokens,
+						}),
+				},
+			});
 		} catch (error) {
 			await reservation.abandon();
 			throw error;

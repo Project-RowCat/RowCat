@@ -15,6 +15,7 @@ import type {
 	StoryChatSeedDto,
 } from "@rowcat/contracts";
 import { ApiError } from "../../lib/errors.ts";
+import type { ManagedGenerationCall } from "./budget.ts";
 import { startChatGeneration } from "./chat.ts";
 
 /**
@@ -80,9 +81,19 @@ export function assembleProtectedStoryGeneration(input: {
 	};
 }
 
+/**
+ * The instance budget as this service sees it (`budget.ts`): the first call already admitted, and a
+ * door every later call goes through right before it is sent.
+ */
+export interface StoryGenerationBudget {
+	readonly first: ManagedGenerationCall;
+	admit(request: ManagedChatGenerationRequest): Promise<ManagedGenerationCall>;
+}
+
 export async function startProtectedStoryGeneration(input: {
 	assembled: AssembledStoryGeneration;
 	signal: AbortSignal;
+	budget: StoryGenerationBudget;
 }): Promise<AsyncGenerator<ChatStreamEvent>> {
 	const { base, firstRequest, tools, model } = input.assembled;
 	const managed = (
@@ -101,7 +112,9 @@ export async function startProtectedStoryGeneration(input: {
 		isValid: () => !input.signal.aborted,
 		stream: (request) => {
 			rounds += 1;
-			return rounds === 1 ? first : laterRound(managed(request), input.signal);
+			return rounds === 1
+				? input.budget.first.meter(first)
+				: laterRound(managed(request), input.signal, input.budget);
 		},
 	});
 }
@@ -110,18 +123,33 @@ export async function startProtectedStoryGeneration(input: {
  * Second round onward: the 200 is already out, so failures are frames. The error envelope's code is
  * carried through; folding missing provider config into an upstream failure would make the screen
  * offer `Regenerate`, which stalls at the same place.
+ *
+ * The budget answers first, on this round's own request: one that grew past the per-call ceiling or
+ * finds the instance budget spent is not sent, and the turn ends on that refusal's code (the loop
+ * emits the usage gathered so far, then the error). Nothing is left half-open: the tool result that
+ * would wait for an answer rides on the very request that is not sent.
  */
 async function* laterRound(
 	request: ManagedChatGenerationRequest,
 	signal: AbortSignal,
+	budget: StoryGenerationBudget,
 ): AsyncGenerator<ChatStreamEvent> {
-	let events: AsyncGenerator<ChatStreamEvent>;
+	let call: ManagedGenerationCall;
 	try {
-		events = await startChatGeneration(request, signal);
+		call = await budget.admit(request);
 	} catch (error) {
 		if (!(error instanceof ApiError)) throw error;
 		yield { type: "error", code: error.code, message: error.message };
 		return;
 	}
-	yield* events;
+	let events: AsyncGenerator<ChatStreamEvent>;
+	try {
+		events = await startChatGeneration(request, signal);
+	} catch (error) {
+		await call.abandon();
+		if (!(error instanceof ApiError)) throw error;
+		yield { type: "error", code: error.code, message: error.message };
+		return;
+	}
+	yield* call.meter(events);
 }

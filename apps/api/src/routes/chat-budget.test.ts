@@ -2,12 +2,15 @@ import {
 	CHAT_DEFAULT_OUTPUT_TOKENS,
 	CHAT_ERROR_CODE,
 	type ManagedGenerationBudgetDto,
+	StoryChatGenerationRequest,
 } from "@rowcat/contracts";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, test, vi } from "vitest";
 import { app } from "../app.ts";
 import { closeDb, db } from "../db/client.ts";
-import { member } from "../db/schema.ts";
+import { member, story } from "../db/schema.ts";
+import { env } from "../env.ts";
+import { newId } from "../lib/id.ts";
 import {
 	__setRateLimitStoreForTest,
 	createMemoryRateLimitStore,
@@ -15,10 +18,16 @@ import {
 import { rateLimitKey } from "../lib/rate-limit/limiter.ts";
 import { RATE_LIMIT_POLICIES } from "../lib/rate-limit/policy.ts";
 import type { RateLimitStore } from "../lib/rate-limit/store.ts";
-import { MANAGED_GENERATION_INSTANCE } from "../services/generation/budget.ts";
+import {
+	inputCharsOf,
+	MANAGED_GENERATION_INSTANCE,
+	perCallTokens,
+} from "../services/generation/budget.ts";
+import { assembleProtectedStoryGeneration } from "../services/generation/story.ts";
 import { allowManagedGeneration, createTestMember } from "../test/auth.ts";
 import { connectTestDatabase, deleteTestUsers } from "../test/database.ts";
 import { WEB_ORIGIN } from "../test/http.ts";
+import { parseChatSeed } from "./stories/playback-gate.ts";
 
 /**
  * The instance-wide ceilings on the operator's key (`services/generation/budget.ts`): slots, the
@@ -31,6 +40,7 @@ import { WEB_ORIGIN } from "../test/http.ts";
  */
 
 const EMAIL_PREFIX = "chat-budget-test-";
+const STORY_TITLE = "managed budget tool-loop test";
 const TOKENS = RATE_LIMIT_POLICIES.managedGenerationTokens;
 const SLOTS = RATE_LIMIT_POLICIES.managedGenerationSlots;
 const tokensKey = rateLimitKey(TOKENS.name, MANAGED_GENERATION_INSTANCE);
@@ -144,7 +154,12 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
-	if (databaseReady) await deleteTestUsers(EMAIL_PREFIX);
+	if (databaseReady) {
+		await deleteTestUsers(EMAIL_PREFIX);
+		await db
+			.delete(story)
+			.where(and(isNull(story.owner), eq(story.title, STORY_TITLE)));
+	}
 	await closeDb();
 });
 
@@ -430,5 +445,211 @@ describe.skipIf(!databaseReady)("the console's budget report", () => {
 		expect(body.dailyTokens.used).toBeNull();
 		expect(body.concurrency.active).toBeNull();
 		expect(body.blockers).toContain("store_unavailable");
+	});
+});
+
+/**
+ * A protected story's tool loop calls upstream more than once, and every later call carries the
+ * previous round's answer and tool results. Each call is weighed and reserved on its own request
+ * right before it is sent (DEV-64): reserving the first call's estimate times the rounds let a grown
+ * later call pass the per-call ceiling unweighed and the daily budget admit less than was sent.
+ */
+describe.skipIf(!databaseReady)("instance ceilings — tool-loop rounds", () => {
+	const LORE = `LORE_MARKER ${"The lighthouse keepers are twins. ".repeat(300)}`;
+
+	async function protectedStory(ownerId: string): Promise<string> {
+		const id = newId();
+		await db.insert(story).values({
+			id,
+			owner: ownerId,
+			title: STORY_TITLE,
+			visibility: "private",
+			adult: false,
+			prompt_protected: true,
+			play_payload: {
+				version: 1,
+				storyId: id,
+				title: STORY_TITLE,
+				adult: false,
+				promptProtected: true,
+				scenario: "A harbor city in the rain.",
+				playGuide: "Keep it short.",
+				firstScene: "*The door opens.*",
+				lore: [{ keys: ["lighthouse"], content: LORE }],
+			},
+		});
+		return id;
+	}
+
+	const turn = {
+		messages: [{ role: "user", speaker: "Ray", content: "Hi" }],
+		model: "claude-sonnet-5",
+	};
+
+	/** What the route weighs for the first call, computed the way the route does. */
+	async function firstCallTokens(storyId: string): Promise<number> {
+		const [row] = await db
+			.select({ payload: story.play_payload })
+			.from(story)
+			.where(eq(story.id, storyId));
+		const { firstRequest } = assembleProtectedStoryGeneration({
+			seed: parseChatSeed(storyId, row?.payload),
+			request: StoryChatGenerationRequest.parse(turn),
+			allAges: true,
+		});
+		return perCallTokens({
+			inputChars: inputCharsOf(firstRequest),
+			maxOutputTokens: firstRequest.maxOutputTokens,
+		});
+	}
+
+	const TOOL_CALL = JSON.stringify({
+		choices: [
+			{
+				delta: {
+					tool_calls: [
+						{
+							index: 0,
+							id: "call_0",
+							function: {
+								name: "lore_search",
+								arguments: '{"query":"lighthouse"}',
+							},
+						},
+					],
+				},
+			},
+		],
+	});
+	const TOOL_STOP = '{"choices":[{"finish_reason":"tool_calls"}]}';
+
+	/** Serves `rounds[n]` to the n-th upstream call and counts the calls. */
+	function rounds(...served: string[][]) {
+		let calls = 0;
+		vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+			const lines = served[calls] ?? [STOP];
+			calls += 1;
+			return new Response(sse([...lines, "[DONE]"]), {
+				status: 200,
+				headers: { "content-type": "text/event-stream" },
+			});
+		});
+		return { calls: () => calls };
+	}
+
+	/** Records every amount reserved against the instance's token budget. */
+	function recordingStore(refuseTokenReservation?: number) {
+		const memory = createMemoryRateLimitStore();
+		const reserved: number[] = [];
+		const store: RateLimitStore = {
+			...memory,
+			kind: "memory",
+			consume: async (key, windowMs, cost) => {
+				if (key === tokensKey) {
+					reserved.push(cost ?? 1);
+					// A real store counts the refused amount too; the limiter gives it back.
+					if (reserved.length === refuseTokenReservation) {
+						const taken = await memory.consume(key, windowMs, cost);
+						return { count: TOKENS.max + 1, resetMs: taken.resetMs };
+					}
+				}
+				return memory.consume(key, windowMs, cost);
+			},
+			release: (key, amount) => memory.release(key, amount),
+			acquire: (key, holder, max, leaseMs) =>
+				memory.acquire(key, holder, max, leaseMs),
+			releaseHolder: (key, holder) => memory.releaseHolder(key, holder),
+			observe: (key, kind) => memory.observe(key, kind),
+			close: () => memory.close(),
+		};
+		return { store, memory, reserved };
+	}
+
+	const play = (cookie: string, storyId: string) =>
+		Promise.resolve(
+			app.request(`/v2/chat/stories/${storyId}/generate`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Origin: WEB_ORIGIN,
+					Cookie: cookie,
+				},
+				body: JSON.stringify(turn),
+			}),
+		);
+
+	const framesOf = async (response: Response) =>
+		(await response.text())
+			.split("\n")
+			.filter((line) => line.trim())
+			.map((line) => JSON.parse(line) as Record<string, unknown>);
+
+	test("each round reserves on its own request and is charged its own report", async () => {
+		const { store, memory, reserved } = recordingStore();
+		await __setRateLimitStoreForTest(store);
+		const { cookie, memberId } = await signUp();
+		const id = await protectedStory(memberId);
+		const upstream = rounds([TOOL_CALL, TOOL_STOP, USAGE], [STOP, USAGE]);
+
+		const frames = await framesOf(await play(cookie, id));
+
+		expect(upstream.calls()).toBe(2);
+		expect(frames.at(-1)).toMatchObject({ type: "done" });
+		expect(reserved).toHaveLength(2);
+		expect(reserved[0]).toBe(await firstCallTokens(id));
+		// The second call carries the tool result (the lore, as much as the tool returns), so it weighs
+		// more than the first — what the old first-call-times-rounds reservation never saw.
+		expect(reserved[1] ?? 0).toBeGreaterThan(reserved[0] ?? 0);
+		// Both rounds reported 120 + 30, and that is all that stays charged.
+		expect((await memory.observe(tokensKey, "counter"))?.count).toBe(300);
+		expect(await memory.observe(slotsKey, "slots")).toBeNull();
+	});
+
+	test("a later round past the per-call ceiling is never sent and ends the turn with a 413 code", async () => {
+		const { store, memory } = recordingStore();
+		await __setRateLimitStoreForTest(store);
+		const { cookie, memberId } = await signUp();
+		const id = await protectedStory(memberId);
+		const first = await firstCallTokens(id);
+		const ceiling = env.MANAGED_GENERATION_REQUEST_TOKENS;
+		// Room for the first call, not for the lore the second one carries.
+		Object.assign(env, { MANAGED_GENERATION_REQUEST_TOKENS: first + 1_000 });
+		try {
+			const upstream = rounds([TOOL_CALL, TOOL_STOP]);
+			const response = await play(cookie, id);
+			expect(response.status).toBe(200);
+			const frames = await framesOf(response);
+
+			expect(upstream.calls()).toBe(1);
+			expect(frames.at(-1)).toMatchObject({
+				type: "error",
+				code: CHAT_ERROR_CODE.managedRequestTooLarge,
+			});
+		} finally {
+			Object.assign(env, { MANAGED_GENERATION_REQUEST_TOKENS: ceiling });
+		}
+		// The first round reported nothing, so it is charged its reservation; the refused one nothing.
+		expect((await memory.observe(tokensKey, "counter"))?.count).toBe(first);
+		expect(await memory.observe(slotsKey, "slots")).toBeNull();
+	});
+
+	test("a budget spent before a later round stops the turn there, fail-closed", async () => {
+		const { store, memory } = recordingStore(2);
+		await __setRateLimitStoreForTest(store);
+		const { cookie, memberId } = await signUp();
+		const id = await protectedStory(memberId);
+		const upstream = rounds([TOOL_CALL, TOOL_STOP, USAGE]);
+
+		const frames = await framesOf(await play(cookie, id));
+
+		expect(upstream.calls()).toBe(1);
+		expect(frames.at(-1)).toMatchObject({
+			type: "error",
+			code: CHAT_ERROR_CODE.managedBudgetExhausted,
+		});
+		// What the first round used is still reported to the device before the refusal.
+		expect(frames.some((frame) => frame.type === "usage")).toBe(true);
+		expect((await memory.observe(tokensKey, "counter"))?.count).toBe(150);
+		expect(await memory.observe(slotsKey, "slots")).toBeNull();
 	});
 });

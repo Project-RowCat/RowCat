@@ -1998,9 +1998,12 @@ refusal      403 chat_managed_not_allowed       → the client sends the person 
   `adminSetManagedGenerationMutationOptions`). The row write and its audit row
   (`admin.member.managed_generation.set`) are one transaction, and the detail projection carries the current value
   as `operator.managedGenerationAllowed`.
-- **Tokens are reserved, then settled from the stream's `usage` frames** — an overrun is recorded, a stream that
+- **Tokens are reserved per upstream call, right before that call is sent, then settled from that call's `usage`
+  frames** — a protected story's tool loop weighs every later round on its own, larger request against the per-call
+  ceiling and the daily budget (`admitCall`; a first-call estimate times the rounds let a grown round through
+  unweighed), and a refused round is not sent and ends the turn as a frame. An overrun is recorded, a call that
   ended with no usage is charged its whole reservation (unknown is not zero), and a failure before streaming gives
-  everything back. Concurrency is a **lease** (`holdRateLimitSlot`), not a window: a fixed window forgets open
+  that call's reservation back. Concurrency is a **lease** (`holdRateLimitSlot`), not a window: a fixed window forgets open
   streams when it rolls over. A spent budget is `chat_managed_budget_exhausted` — the AI-settings rung with no
   `다시 생성` in both apps; a full instance reuses `chat_rate_limited`. The console reads what is left through the
   store's one read (`observeRateLimit`), whose single caller `boundaries.test.ts` pins — a read that fed a decision
