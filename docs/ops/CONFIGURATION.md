@@ -179,7 +179,11 @@ DATABASE_URL         비밀번호가 개발용 `rowcat`                         
 ```bash
 openssl rand -base64 32   # BETTER_AUTH_SECRET
 openssl rand -hex 24      # POSTGRES_PASSWORD
+chmod 600 .env            # 두 값을 담은 파일은 소유자만 읽는다
 ```
+
+`cp .env.example .env`로 만든 파일은 umask를 따라(보통 0644) 그 컴퓨터의 다른 계정도 읽는다. `pnpm dev:setup`은
+두 env 파일을 0600으로 좁힌다.
 
 **이미 떠 있는 데이터베이스는 만들어질 때의 비밀번호를 유지한다.** Postgres 이미지는 `POSTGRES_PASSWORD`를
 볼륨이 처음 만들어질 때만 읽으므로 `.env`만 바꾸면 API가 접속하지 못한다. 예전 예시의 `rowcat`으로 떠 있던

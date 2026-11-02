@@ -21,7 +21,7 @@ override, 개발 계정은 여기서 하나도 쓰지 않는다.
 ```bash
 git clone <저장소> rowcat-cleanroom && cd rowcat-cleanroom
 export COMPOSE_PROJECT_NAME=rowcat-cleanroom
-cp .env.example .env
+cp .env.example .env && chmod 600 .env   # 비밀을 담을 파일이다 — 소유자만 읽게
 # BETTER_AUTH_SECRET=$(openssl rand -base64 32), POSTGRES_PASSWORD=$(openssl rand -hex 24) 를 채운다
 docker compose up -d --wait
 ```

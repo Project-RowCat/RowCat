@@ -1,6 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	copyFileSync,
+	existsSync,
+	readFileSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 
@@ -8,6 +15,7 @@ import { resolve } from "node:path";
  * `pnpm dev:setup` — takes a fresh clone to a running local stack's prerequisites in one command:
  *
  *   1. the two env files (`.env` for compose, `apps/api/.env` for the API on the host)
+ *      — readable by their owner only, since both hold the secrets below
  *   2. one BETTER_AUTH_SECRET, generated once and written into **both** — they must agree, and
  *      pasting it twice by hand is the step people got wrong
  *   3. a generated POSTGRES_PASSWORD in `.env` — compose requires it and publishes no default, so
@@ -69,6 +77,18 @@ function ensureEnvFile(target: string, example: string) {
 	}
 	copyFileSync(example, target);
 	note(`${relative(target)} created from ${relative(example)}`);
+}
+
+/**
+ * A copied example takes the umask (usually 0644), so every account on this machine could read the
+ * secrets this script writes into it. Files kept from an earlier run are narrowed too — only the
+ * mode changes, never the content. On Windows `chmod` sets only the read-only bit, so this is a no-op.
+ */
+function ownerOnly(path: string) {
+	if (process.platform === "win32") return;
+	if ((statSync(path).mode & 0o077) === 0) return;
+	chmodSync(path, 0o600);
+	note(`${relative(path)} made readable by its owner only (0600)`);
 }
 
 function relative(path: string) {
@@ -133,6 +153,8 @@ async function firstFreePort(from: number): Promise<number> {
 step("Env files");
 ensureEnvFile(ROOT_ENV, resolve(root, ".env.example"));
 ensureEnvFile(API_ENV, resolve(root, "apps/api/.env.example"));
+ownerOnly(ROOT_ENV);
+ownerOnly(API_ENV);
 
 step("BETTER_AUTH_SECRET");
 {
