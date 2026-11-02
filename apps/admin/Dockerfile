@@ -6,7 +6,9 @@
 # Unlike apps/web, this app has no SSR: the output is static files, so the runtime needs no Node
 # and there is no internal API address (`API_INTERNAL_ORIGIN`) for a server render to call.
 
-FROM node:26-alpine AS base
+# The build stages run on the builder's own platform; only the nginx runner is per-target. The output
+# is static files, and building it under QEMU crashed vite's native bundler (see apps/web/Dockerfile).
+FROM --platform=$BUILDPLATFORM node:26-alpine AS base
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH
 WORKDIR /app

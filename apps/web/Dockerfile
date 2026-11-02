@@ -3,7 +3,11 @@
 # The build context is the repository root.
 #   docker build -f apps/web/Dockerfile .
 
-FROM node:26-alpine AS base
+# The build stages run on the builder's own platform, and only the runtime stage is per-target. What
+# they produce is architecture-free (the nitro bundle is JavaScript plus one WASM file, no native
+# addons), and building it under QEMU is not just slow: vite's native bundler crashed there with an
+# illegal instruction and left the build waiting forever until the job timed out.
+FROM --platform=$BUILDPLATFORM node:26-alpine AS base
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH
 WORKDIR /app
