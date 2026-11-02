@@ -92,6 +92,18 @@ function logUnavailable(
 	console.info(`[runtime-assets] remote unavailable: reason=${reason}`);
 }
 export const runtimeAssets = new Hono<AppEnv>().get("/remote", async (c) => {
+	/**
+	 * ⚠️ HEAD is refused before any work. Hono runs HEAD through this GET handler and then drops the
+	 * body without cancelling it, so a HEAD that reached the fetch held its process slot until the stall
+	 * watchdog (30 s) — and pointed at a tiny image it spent almost no byte budget. Sixteen HEADs every
+	 * 30 s, far under the request count, kept every member's remote images at 503. Unlike `/media`
+	 * there are no stored headers to answer from (knowing the length means fetching), and `<img>` never
+	 * sends HEAD, so the method simply does not exist here.
+	 */
+	if (c.req.method === "HEAD") {
+		c.header("Allow", "GET");
+		return c.body(null, 405);
+	}
 	const viewer = requireViewer(await c.get("viewer")());
 	await checkRateLimit("runtimeRemoteAsset", viewer.id);
 

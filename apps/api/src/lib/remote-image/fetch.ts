@@ -1,5 +1,9 @@
 import { promises as dns } from "node:dns";
-import { request as httpsRequest } from "node:https";
+import {
+	Agent,
+	request as httpsRequest,
+	type RequestOptions,
+} from "node:https";
 import { APP_NAME } from "@rowcat/domain";
 import { classifyRuntimeAssetValue } from "@rowcat/runtime/asset";
 import { sniffImageMime } from "../media/image.ts";
@@ -414,33 +418,7 @@ const nodeTransport: RemoteImageTransport = {
 	request(connection, signal) {
 		return new Promise((resolve, reject) => {
 			const req = httpsRequest(
-				{
-					protocol: "https:",
-					hostname: connection.hostname,
-					servername: connection.hostname,
-					port: 443,
-					path: connection.path,
-					method: "GET",
-					headers: OUTBOUND_HEADERS,
-					signal,
-					/** The single vetted address; the callback shape depends on `all`, but either way the name is never re-resolved. */
-					lookup: (_hostname, options, callback) => {
-						const cb = callback as unknown as (
-							error: Error | null,
-							address: unknown,
-							family?: number,
-						) => void;
-						if (
-							typeof options === "object" &&
-							options !== null &&
-							(options as { all?: boolean }).all
-						)
-							cb(null, [
-								{ address: connection.address, family: connection.family },
-							]);
-						else cb(null, connection.address, connection.family);
-					},
-				},
+				remoteImageRequestOptions(connection, signal),
 				(res) => {
 					const headers: Record<string, string | undefined> = {};
 					for (const [name, value] of Object.entries(res.headers))
@@ -463,6 +441,53 @@ const nodeTransport: RemoteImageTransport = {
 		});
 	},
 };
+
+/**
+ * The fetch's own agent, never `https.globalAgent`, and no keep-alive.
+ *
+ * The global agent is shared with every other `https` caller in the process and pools sockets by
+ * name, not by address: a socket another caller opened to `cdn.example.com` resolved through
+ * `/etc/hosts` to an internal address would be handed to a creator's request whose public
+ * resolution we had just judged, and the vetted `lookup` below never runs for a reused socket. On
+ * Node 24.5+ the global agent also follows `HTTPS_PROXY` when `NODE_USE_ENV_PROXY` is set, and a
+ * proxy resolves the name itself, which is the second resolution the rebinding defence exists to
+ * remove. An agent built here has no `proxyEnv`, and closing each socket after its one response
+ * means a connection always opens to the address this request judged.
+ */
+export const REMOTE_IMAGE_AGENT = new Agent({ keepAlive: false });
+
+/** One request's options: the dedicated agent, our headers only, and a `lookup` that answers the vetted address. */
+export function remoteImageRequestOptions(
+	connection: RemoteImageConnection,
+	signal: AbortSignal,
+): RequestOptions {
+	return {
+		protocol: "https:",
+		hostname: connection.hostname,
+		servername: connection.hostname,
+		port: 443,
+		path: connection.path,
+		method: "GET",
+		headers: OUTBOUND_HEADERS,
+		signal,
+		agent: REMOTE_IMAGE_AGENT,
+		/** The single vetted address; the callback shape depends on `all`, but either way the name is never re-resolved. */
+		lookup: (_hostname, options, callback) => {
+			const cb = callback as unknown as (
+				error: Error | null,
+				address: unknown,
+				family?: number,
+			) => void;
+			if (
+				typeof options === "object" &&
+				options !== null &&
+				(options as { all?: boolean }).all
+			)
+				cb(null, [{ address: connection.address, family: connection.family }]);
+			else cb(null, connection.address, connection.family);
+		},
+	};
+}
 
 /** Per query, and two tries: a name that has not answered in ~4 s will not, and the fetch's 10 s also covers redirects. */
 const DNS_QUERY_TIMEOUT_MS = 2_000;

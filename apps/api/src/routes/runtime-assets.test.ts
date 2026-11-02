@@ -302,6 +302,37 @@ describe.skipIf(!hasDb)("totals", () => {
 	 * only while it is being fetched; a client that never read used to keep its bytes queued after the
 	 * slot was free again.
 	 */
+	/**
+	 * HEAD would run the GET handler and Hono drops its body uncancelled, so the slot stayed held until
+	 * the stall watchdog: a few HEADs at a tiny image pinned every slot. It is refused before the fetch.
+	 */
+	test("HEAD is refused before anything is fetched and takes no slot", async () => {
+		const { cookie } = await createTestMember(EMAIL_PREFIX);
+		const slots = createSlotGate({
+			maxInFlight: 1,
+			maxQueued: 0,
+			maxWaitMs: 50,
+		});
+		__setRemoteImageSlotsForTest(slots);
+		fetchSpy.mockImplementation(servesBytes(1024));
+
+		for (let i = 0; i < 3; i++) {
+			const head = await request(path("https://cdn.example.com/tiny.png"), {
+				cookie,
+				method: "HEAD",
+			});
+			expect(head.status).toBe(405);
+			expect(head.headers.get("allow")).toBe("GET");
+		}
+		expect(fetchSpy).not.toHaveBeenCalled();
+		expect(slots.stats()).toEqual({ inFlight: 0, queued: 0 });
+
+		const get = await api(path("https://cdn.example.com/tiny.png"), {
+			cookie,
+		});
+		expect(get.status).toBe(200);
+	});
+
 	test("the slot is held until the body has been read", async () => {
 		const { cookie } = await createTestMember(EMAIL_PREFIX);
 		const slots = createSlotGate({
