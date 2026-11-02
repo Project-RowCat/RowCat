@@ -31,6 +31,14 @@ https://admin.rowcat.example.com   운영 콘솔      Caddy → admin:3002
 
    `COMPOSE_FILE`이 있으면 이후 모든 `docker compose` 명령이 두 파일을 함께 읽는다 — `exec`, `logs`, `down`까지.
    빠뜨린 명령 하나는 프록시 없는 스택을 보고, `up`이면 앱 포트를 다시 연다.
+
+   **오리진은 적지 않는다.** `.env`에 `WEB_ORIGIN` · `API_ORIGIN` · `VITE_API_ORIGIN`이 값을 가지면 그 값이
+   아래의 파생을 이긴다 — 로컬에서 쓰던 `localhost` 줄이 남아 있으면 스택은 멀쩡히 뜨고 브라우저에서만 로그인과
+   API 호출이 막힌다. `.env.example`은 그래서 셋을 주석으로 둔다. 확인은 값을 찍지 않고 한다:
+
+   ```bash
+   docker compose config --format json | jq -r '.services.api.environment | {API_ORIGIN, WEB_ORIGIN}'
+   ```
 4. **올리기와 첫 관리자.**
 
    ```bash

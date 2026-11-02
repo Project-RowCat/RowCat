@@ -21,7 +21,7 @@ apps/web/.env.local     로컬 웹 오버라이드            예시: apps/web/.
 HOST · PORT · NODE_ENV     컴포즈가 고정한다        → 루트 예시에 없다
 DATABASE_URL               컴포즈가 조립한다        → 루트 예시에는 POSTGRES_* 가 있다
 DATABASE_POOL_MAX          컴포즈가 넘기지 않는다    → 코드 기본값을 쓴다
-WEB_ORIGIN                 운영자가 정한다          → 두 예시 모두에 있다
+WEB_ORIGIN                 운영자가 정한다          → 두 예시 모두에 있다(루트에는 주석 — 활성 줄은 HTTPS 오버레이의 파생을 이긴다)
 MANAGED_GENERATION_ACCESS  운영자가 정한다          → 두 예시 모두에 주석으로 있다(빈 값 = allowlist)
 VITE_API_ORIGIN            web·admin 컨테이너가 받는다 → 런타임 값이다(브라우저에는 <meta>로 건넨다)
 EXPO_PUBLIC_API_ORIGIN     모바일 번들에 박힌다      → 예시 파일이 없다(README가 적는다)
@@ -153,7 +153,7 @@ API_ORIGIN           공개 API 주소. 콜백과 절대 URL의 근거다 — �
 둘 다 운영자가 생성하는 시크릿이고, 공개 저장소가 대신 적어 줄 수 있는 값이 아니다(아래 「개발 기본값은
 운영 시크릿이 아니다」). 데이터베이스 주소는 컴포즈가 그 비밀번호로 조립하고, 두 오리진은 루프백으로 접혀 로컬 스택은 그대로 뜬다(부팅은 경고만 한다).
 공개 도메인에 세울 때 `.env`에 `WEB_ORIGIN`·`API_ORIGIN`을 더한다 — `deploy/caddy/` 오버레이를 쓰면
-`ROWCAT_DOMAIN` 하나에서 두 오리진과 쿠키 도메인, 신뢰할 프록시가 나온다(`HTTPS.md`). 컴포즈는 `REDIS_URL`과
+`ROWCAT_DOMAIN` 하나에서 두 오리진과 쿠키 도메인, 신뢰할 프록시가 나오고, 그때는 오리진을 `.env`에 적지 않는다 — 적은 값이 파생을 이긴다(`HTTPS.md`). 컴포즈는 `REDIS_URL`과
 `BACKGROUND_JOBS_ENABLED=on`을 스스로 채우므로 아래 표의 앞 두 줄은 컴포즈 밖 배포의 이야기다.
 
 ### 개발 기본값은 운영 시크릿이 아니다
