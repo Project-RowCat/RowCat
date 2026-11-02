@@ -7,17 +7,18 @@
 ## 무엇을 내는가
 
 ```text
-소스      git 태그 YYYY-MM-DD(접두어 없음)   이 문서의 절차 — GitHub Release는 만들지 않는다
+소스      git 태그 YYYY-MM-DD(접두어 없음)   이 문서의 절차 — 그 태그의 GitHub Release, 「최신」으로 표시하지 않는다
 이미지    ghcr.io/<owner>/rowcat/{api,web,admin}:sha-<커밋 12자>   images.yml — CI가 통과한 main 커밋마다 이미 있다
-데스크톱  태그 desktop-YYYY-MM-DD           desktop-release.yml — GitHub Release를 내는 유일한 워크플로
+데스크톱  태그 desktop-YYYY-MM-DD           desktop-release.yml — 「최신」 릴리스를 내는 유일한 워크플로
 MCP       태그 mcp-v<semver>               mcp-publish.yml — npm 패키지
 ```
 
 - **이름은 날짜다**(AGENTS.md §Versioning). KST 달력 날짜, `v`도 접미어도 없다. 같은 날 두 번이 필요하면 앞의 것이
   아직 낼 때가 아니었다는 뜻이다.
-- **소스 릴리스는 GitHub Release를 만들지 않는다.** 설치된 데스크톱은 `/releases/latest`를 따라 자기를 갈아 끼운다
-  (AGENTS.md §Desktop). 소스 릴리스가 "최신 릴리스"가 되면 모든 설치본이 그 릴리스에서 `latest.yml`을 찾다가
-  업데이트를 잃는다. 그래서 릴리스 노트는 주석 태그(`git tag -a`)의 본문과 아래 §릴리스 노트에 둔다.
+- **소스 릴리스는 GitHub Release로 내되 「최신」으로 표시하지 않는다**(`--latest=false`). 설치된 데스크톱은
+  `/releases/latest`를 따라 자기를 갈아 끼운다(AGENTS.md §Desktop). 소스 릴리스가 「최신 릴리스」가 되면 모든
+  설치본이 그 릴리스에서 `latest.yml`을 찾다가 업데이트를 잃는다 — GitHub는 새로 낸 정식 릴리스를 기본으로
+  「최신」에 올리므로 이 플래그는 빠뜨릴 수 없다. 노트는 주석 태그(`git tag -a`)의 본문과 그 릴리스의 본문에 같게 둔다.
 - **이미지는 새로 굽지 않는다.** 그 커밋의 `sha-<커밋 앞 12자>`가 곧 그 릴리스의 이미지다. 배포는 `ROWCAT_IMAGE_TAG`에 그 값을
   적는다(`docs/ops/BACKUP.md` §업그레이드). `latest`는 main을 따라가므로 릴리스를 가리키지 않는다.
 - **데스크톱과 MCP는 같은 날 낼 필요가 없다.** 내면 같은 커밋에서 낸다 — 그래야 노트가 하나의 코드를 말한다.
@@ -138,10 +139,14 @@ done
 # 4. 태그 — 주석 태그, 본문이 릴리스 노트다
 git tag -a "$date" "$sha" -F release-notes.md
 git push origin "$date"
+
+# 5. 그 태그의 GitHub Release — 「최신」이 아니다
+gh release create "$date" --verify-tag --title "RowCat $date" --notes-file release-notes.md --latest=false
+gh api "repos/<owner>/<repo>/releases/latest" --jq .tag_name   # 소스 릴리스가 나오면 안 된다
 ```
 
 - **태그는 옮기지 않는다.** 날짜 태그를 본 사람이 같은 코드를 받는다는 것이 그 태그의 전부다. 고침은 다음 날짜로 낸다.
-- **GitHub Release를 만들지 않는다**(§무엇을 내는가). 웹에서 태그를 릴리스로 승격하는 버튼도 누르지 않는다.
+- **릴리스는 「최신」으로 표시하지 않는다**(§무엇을 내는가). 웹에서 고칠 때도 「Set as the latest release」를 켜지 않는다.
 - `git push --tags`는 쓰지 않는다 — 공개하지 않을 로컬 태그가 함께 나간다.
 
 ## 릴리스 노트

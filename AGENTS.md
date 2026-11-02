@@ -5371,6 +5371,7 @@ web       apps/web/src/lib/build-freshness/  BUILD_ID in the bundle ↔ /rowcat-
   every tag that is not semver, which is all of ours). So **`desktop-release.yml` must stay the only workflow that
   publishes GitHub releases**: whichever release is "latest" is what every installed copy downloads. A release
   another process needs as a file drop (the iOS submit example) is a **draft** (`docs/ota/example-workflows.md`).
+  The source release (`docs/oss/RELEASE.md`) is published by hand with `--latest=false` for the same reason.
 
 ### Web — a tab left open across a deployment
 
