@@ -239,6 +239,20 @@ else
 	fail "the cover or the avatar is not served"
 fi
 
+echo "--- encrypted sync records"
+# The member's devices, played by the headless device's fixture: a keyring, three encrypted records.
+# The cookie goes through a file in the work directory, never a command line.
+awk '$6 ~ /session_token/ {print $6"="$7}' "$member" | head -1 >"$work/member.cookie"
+sync_fixture() { # sync_fixture <seed|verify>
+	pnpm --silent --filter @rowcat/mcp exec tsx scripts/sync-fixture.ts "$1" \
+		"$API/v2" "$work/member.cookie" "$work/sync.json" 2>"$work/sync-$1.log"
+}
+if sync_fixture seed; then
+	ok "a keyring and encrypted records are uploaded"
+else
+	fail "the sync fixture could not seed: $(tail -2 "$work/sync-seed.log")"
+fi
+
 echo "--- restart"
 before="$(setup_lines)"
 dc restart api >/dev/null
@@ -258,6 +272,41 @@ expect "the staff session survives the stack" staff "$(role_of "$member")"
 expect "a guest finds the story in the gallery" True "$(in_gallery)"
 expect "the cover is the same bytes" "$cover_before" "$(digest "$(absolute "$(cover_url)")")"
 expect "the avatar is the same bytes" "$avatar_before" "$(digest "$(absolute "$avatar_url")")"
+
+echo "--- backup and restore"
+# docs/ops/BACKUP.md as a script: dump the running stack, lose the volume, restore into a fresh one,
+# and ask the restored deployment for everything above. Same .env, so sessions and keys still verify.
+compose_cmd="docker compose -p $PROJECT -f docker-compose.yml --env-file $env_file"
+if ROWCAT_COMPOSE="$compose_cmd" scripts/backup.sh "$work/backups" >"$work/backup.log" 2>&1; then
+	ok "the running stack backs up"
+else
+	fail "the backup failed: $(tail -2 "$work/backup.log")"
+fi
+dump="$(find "$work/backups" -name '*.dump' 2>/dev/null | head -1)"
+expect "the dump is owner-only" 600 "$(stat -c '%a' "$dump" 2>/dev/null || stat -f '%Lp' "$dump" 2>/dev/null)"
+if ROWCAT_COMPOSE="$compose_cmd" scripts/restore.sh "$dump" >"$work/refuse-restore.log" 2>&1; then
+	fail "the restore ran over a database that has data"
+else
+	ok "the restore refuses a database that has data"
+fi
+dc down -v >/dev/null 2>&1
+if ROWCAT_COMPOSE="$compose_cmd" scripts/restore.sh "$dump" >"$work/restore.log" 2>&1; then
+	ok "the dump restores into an empty volume"
+else
+	fail "the restore failed: $(tail -2 "$work/restore.log")"
+fi
+dc up -d --wait >/dev/null
+expect "setup stays closed on the restored database" False "$(setup_open)"
+expect "the restored API prints no setup code" 0 "$(setup_lines)"
+expect "the admin session survives the restore" admin "$(role_of "$admin")"
+expect "a guest finds the story after the restore" True "$(in_gallery)"
+expect "the cover is the same bytes after the restore" "$cover_before" "$(digest "$(absolute "$(cover_url)")")"
+expect "the avatar is the same bytes after the restore" "$avatar_before" "$(digest "$(absolute "$avatar_url")")"
+if sync_fixture verify; then
+	ok "the keyring, the records and pairing work on the restored database"
+else
+	fail "sync after the restore: $(grep '✗' "$work/sync-verify.log" | head -3 | tr '\n' ' ')"
+fi
 
 echo "--- production refuses the development secrets"
 refuses() { # refuses <description> <log pattern> <env assignment>

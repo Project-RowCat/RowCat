@@ -123,6 +123,10 @@ For a public domain, `deploy/caddy/` puts the stack behind HTTPS: set `ROWCAT_DO
 on three host names with certificates it renews itself, deriving every origin and the cookie domain from that
 one value and closing the apps' plain-HTTP ports (`docs/ops/HTTPS.md`).
 
+`scripts/backup.sh` dumps the database — which holds everything, media bytes included — and `scripts/restore.sh`
+puts a dump into an empty one; keep `.env` with the dumps, since `BETTER_AUTH_SECRET` also encrypts 2FA secrets.
+Upgrades, rollback boundaries and what no backup can recover (lost end-to-end keys) are in `docs/ops/BACKUP.md`.
+
 ### On one computer, without Docker
 
 `apps/desktop` packages the whole deployment as a desktop app — a bundled Postgres and the same three

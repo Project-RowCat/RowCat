@@ -81,7 +81,7 @@ the `packageManager` field in the root `package.json` (`pnpm@10.34.5`) — do no
 | `docs/settings/ARCHITECTURE.md` | Settings, preferences, prompt caching |
 | `docs/moderation/` · `docs/profile/` · `docs/membership/` | Reports, enforcement, appeals / public profiles, relations / age, guardian consent |
 | `docs/notifications/` · `docs/updates/` · `docs/jobs/` | The two notification planes / update notes / background jobs |
-| `docs/ops/` | `RATE-LIMITING.md` · `CONFIGURATION.md` · `CLEAN-INSTALL.md` (fresh-clone production install and first admin, run before a release) · `HTTPS.md` (the `deploy/caddy/` overlay — TLS, origins, cookie domain, trusted proxy) |
+| `docs/ops/` | `RATE-LIMITING.md` · `CONFIGURATION.md` · `CLEAN-INSTALL.md` (fresh-clone production install and first admin, run before a release) · `HTTPS.md` (the `deploy/caddy/` overlay — TLS, origins, cookie domain, trusted proxy) · `BACKUP.md` (backup, restore, upgrade, rollback boundaries) |
 | `docs/ota/` | Self-hosted mobile OTA — `ARCHITECTURE.md` (trust model, runtime generation, rollout, rollback) · `OPERATIONS.md` (publish, canary, pause, rollback, new runtime, key rotation) |
 
 ## Layer rules
@@ -5810,6 +5810,7 @@ pnpm typecheck    # turbo: workspace tsc --noEmit + the journey (e2e) project
 pnpm test         # turbo: vitest across the workspace
 pnpm test:e2e     # browser journeys (Playwright) — brings the stack up itself
 pnpm test:compose # the production compose stack booted and set up, then thrown away (scripts/compose-smoke.sh)
+scripts/upgrade-smoke.sh <ref>  # an upgrade from <ref> to HEAD on a persistent volume (docs/ops/BACKUP.md)
 pnpm build        # turbo: the five apps' bundles
 
 pnpm runtime:declarations      # @rowcat/runtime source → the artifact tooling reads (committed)
