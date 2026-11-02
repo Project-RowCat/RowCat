@@ -18,7 +18,10 @@ MCP       태그 mcp-v<semver>               mcp-publish.yml — npm 패키지
 - **소스 릴리스는 GitHub Release로 내되 「최신」으로 표시하지 않는다**(`--latest=false`). 설치된 데스크톱은
   `/releases/latest`를 따라 자기를 갈아 끼운다(AGENTS.md §Desktop). 소스 릴리스가 「최신 릴리스」가 되면 모든
   설치본이 그 릴리스에서 `latest.yml`을 찾다가 업데이트를 잃는다 — GitHub는 새로 낸 정식 릴리스를 기본으로
-  「최신」에 올리므로 이 플래그는 빠뜨릴 수 없다. 노트는 주석 태그(`git tag -a`)의 본문과 그 릴리스의 본문에 같게 둔다.
+  「최신」에 올리므로 이 플래그는 빠뜨릴 수 없다. ⚠️ 플래그만으로는 모자랄 수 있다: 「최신」으로 표시된 릴리스가 하나도
+  없으면 `/releases/latest`는 가장 새 정식 릴리스로 떨어지고, 그것이 소스 릴리스다. 그래서 태그 전에 「최신」인
+  데스크톱 릴리스가 있는지 본다(프리릴리스는 「최신」이 될 수 없다). 노트는 주석 태그(`git tag -a`)의 본문과 그
+  릴리스의 본문에 같게 둔다.
 - **이미지는 새로 굽지 않는다.** 그 커밋의 `sha-<커밋 앞 12자>`가 곧 그 릴리스의 이미지다. 배포는 `ROWCAT_IMAGE_TAG`에 그 값을
   적는다(`docs/ops/BACKUP.md` §업그레이드). `latest`는 main을 따라가므로 릴리스를 가리키지 않는다.
 - **데스크톱과 MCP는 같은 날 낼 필요가 없다.** 내면 같은 커밋에서 낸다 — 그래야 노트가 하나의 코드를 말한다.
@@ -142,7 +145,7 @@ git push origin "$date"
 
 # 5. 그 태그의 GitHub Release — 「최신」이 아니다
 gh release create "$date" --verify-tag --title "RowCat $date" --notes-file release-notes.md --latest=false
-gh api "repos/<owner>/<repo>/releases/latest" --jq .tag_name   # 소스 릴리스가 나오면 안 된다
+gh api "repos/<owner>/<repo>/releases/latest" --jq .tag_name   # desktop-* 여야 한다 — 날짜 태그면 위 ⚠️
 ```
 
 - **태그는 옮기지 않는다.** 날짜 태그를 본 사람이 같은 코드를 받는다는 것이 그 태그의 전부다. 고침은 다음 날짜로 낸다.
