@@ -45,7 +45,8 @@ async function setUpSync(page: Page): Promise<void> {
 	await page.goto("/account");
 	const dialog = page.getByRole("dialog");
 	await expect(async () => {
-		await syncButton(page, "Set up sync").click({ timeout: 2_000 });
+		if (!(await dialog.isVisible()))
+			await syncButton(page, "Set up sync").click({ timeout: 2_000 });
 		await expect(dialog).toBeVisible({ timeout: 5_000 });
 	}).toPass({ timeout: 30_000 });
 
@@ -119,9 +120,10 @@ test("two browsers pair by exchanging a code, and a conversation then crosses ov
 
 		const pairDialog = pageB.getByRole("dialog");
 		await expect(async () => {
-			await syncButton(pageB, "Connect from another device").click({
-				timeout: 2_000,
-			});
+			if (!(await pairDialog.isVisible()))
+				await syncButton(pageB, "Connect from another device").click({
+					timeout: 2_000,
+				});
 			await expect(pairDialog).toBeVisible({ timeout: 5_000 });
 		}).toPass({ timeout: 30_000 });
 
@@ -165,7 +167,10 @@ test("two browsers pair by exchanging a code, and a conversation then crosses ov
 		await pageA.goto("/account");
 		const approveDialog = pageA.getByRole("dialog");
 		await expect(async () => {
-			await syncButton(pageA, "Connect a new device").click({ timeout: 2_000 });
+			if (!(await approveDialog.isVisible()))
+				await syncButton(pageA, "Connect a new device").click({
+					timeout: 2_000,
+				});
 			await expect(approveDialog).toBeVisible({ timeout: 5_000 });
 		}).toPass({ timeout: 30_000 });
 		await approveDialog.getByRole("textbox").fill(code);

@@ -73,10 +73,11 @@ test("deleting the account removes the server account and this device's private 
 	 * directly. The trigger only sets state, so pressing twice does not open two dialogs.
 	 */
 	await expect(async () => {
-		await page
-			.getByRole("button", { name: "Delete account" })
-			.first()
-			.click({ timeout: 2_000 });
+		if (!(await dialog.isVisible()))
+			await page
+				.getByRole("button", { name: "Delete account" })
+				.first()
+				.click({ timeout: 2_000 });
 		await expect(dialog).toBeVisible({ timeout: 3_000 });
 	}).toPass({ timeout: 30_000 });
 

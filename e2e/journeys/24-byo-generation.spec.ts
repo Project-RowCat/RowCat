@@ -175,9 +175,10 @@ test("a personal Anthropic key generates from the browser and never reaches RowC
 	/** Server-rendered: the button is visible before React owns it, so press until the dialog opens. */
 	const dialog = page.getByRole("dialog");
 	await expect(async () => {
-		await anthropicRow.getByRole("button", { name: "Connect" }).click({
-			timeout: 2_000,
-		});
+		if (!(await dialog.isVisible()))
+			await anthropicRow.getByRole("button", { name: "Connect" }).click({
+				timeout: 2_000,
+			});
 		await expect(dialog).toBeVisible({ timeout: 2_000 });
 	}).toPass({ timeout: 30_000 });
 	await dialog.getByRole("textbox", { name: "API key" }).fill(key);

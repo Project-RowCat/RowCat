@@ -177,12 +177,14 @@ test("from report to restriction, appeal and lifting — the restricted person c
 		 * signal.
 		 */
 		await expect(async () => {
-			await row
-				.getByRole("button", { name: /^Report menu for .*'s post$/ })
-				.click({ timeout: 2_000 });
-			await reporterPage
-				.getByRole("menuitem", { name: "Report" })
-				.click({ timeout: 2_000 });
+			if (!(await dialog.isVisible())) {
+				await row
+					.getByRole("button", { name: /^Report menu for .*'s post$/ })
+					.click({ timeout: 2_000 });
+				await reporterPage
+					.getByRole("menuitem", { name: "Report" })
+					.click({ timeout: 2_000 });
+			}
 			await expect(dialog).toBeVisible({ timeout: 3_000 });
 		}).toPass({ timeout: 30_000 });
 
@@ -270,10 +272,11 @@ test("from report to restriction, appeal and lifting — the restricted person c
 		await targetPage.goto("/account");
 		const appealDialog = targetPage.getByRole("dialog");
 		await expect(async () => {
-			await targetPage
-				.getByRole("button", { name: "Appeal" })
-				.first()
-				.click({ timeout: 2_000 });
+			if (!(await appealDialog.isVisible()))
+				await targetPage
+					.getByRole("button", { name: "Appeal" })
+					.first()
+					.click({ timeout: 2_000 });
 			await expect(appealDialog).toBeVisible({ timeout: 3_000 });
 		}).toPass({ timeout: 30_000 });
 

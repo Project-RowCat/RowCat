@@ -50,12 +50,18 @@ async function createPersona(
 	const trigger = page.getByRole("button", {
 		name: /Create your first persona$|New persona$/,
 	});
+	/*
+	 * A click that lands just as its timeout runs out opens the dialog yet reports failure. The modal
+	 * then hides the trigger from the accessibility tree, so pressing again can never succeed. Once the
+	 * dialog is up it is not pressed again (the same rule as the draft button in journey 18).
+	 */
+	const dialog = page.getByRole("dialog");
 	await expect(async () => {
-		await trigger.first().click({ timeout: 2_000 });
-		await expect(page.getByRole("dialog")).toBeVisible({ timeout: 3_000 });
+		if (!(await dialog.isVisible()))
+			await trigger.first().click({ timeout: 2_000 });
+		await expect(dialog).toBeVisible({ timeout: 3_000 });
 	}).toPass({ timeout: 30_000 });
 
-	const dialog = page.getByRole("dialog");
 	await dialog.getByRole("textbox", { name: "Name" }).fill(name);
 	await dialog.getByRole("textbox", { name: "Description" }).fill(description);
 	await dialog.getByRole("button", { name: "Create" }).click();
@@ -91,12 +97,13 @@ async function choosePersona(
 async function startChatAs(page: Page, personaName: string): Promise<string> {
 	await page.goto("/stories/e2e-story-chat");
 
+	const dialog = page.getByRole("dialog");
 	await expect(async () => {
-		await ui.startChat(page).click({ timeout: 2_000 });
-		await expect(page.getByRole("dialog")).toBeVisible({ timeout: 3_000 });
+		if (!(await dialog.isVisible()))
+			await ui.startChat(page).click({ timeout: 2_000 });
+		await expect(dialog).toBeVisible({ timeout: 3_000 });
 	}).toPass({ timeout: 30_000 });
 
-	const dialog = page.getByRole("dialog");
 	await choosePersona(dialog, personaName);
 	await dialog.getByRole("button", { name: "Start conversation" }).click();
 
