@@ -17,6 +17,14 @@
 # Windows read nothing else — so the same date goes in as `YYYY.M.D`. That number is the build's
 # identity, never what the page calls the release.
 #
+# ## The notes are English, then Korean
+#
+# The repository's front page is English first (README.md, with README.ko.md beside it), so someone who
+# arrives from it and opens Releases must be able to read how to install an unsigned file. Both halves
+# stay expanded: folded, one language's readers click before they read. The notes are a fixed template,
+# so a change to one half is a change to the other in the same commit. The desktop menu has Korean labels
+# only, so the English half names them in Korean with a gloss rather than inventing English ones.
+#
 # **A release that went out is never replaced.** Installed copies update themselves to it, and an
 # update is accepted only when its version is higher — a rebuild under the same date would reach no one
 # who already took the first. A fix ships as the next date. So there is still one release per day; the
@@ -233,6 +241,28 @@ jobs:
           installer="$(cd release && ls *.exe)"
           checksum="$(cut -d' ' -f1 "release/${installer}.sha256")"
           cat >notes.md <<EOF
+          A Windows app that runs all of RowCat on one computer. No terminal, no Docker.
+
+          ## Install
+
+          1. Download **${installer}** below and double-click it. It installs for your account only and does not ask for administrator rights.
+          2. **The installer is not signed.** If Windows shows "Windows protected your PC", choose **More info → Run anyway**.
+          3. The first launch takes about a minute to get ready. After that, the RowCat window opens right away.
+
+          Conversations, drafts and the database stay on this computer under \`%APPDATA%\\RowCat\`. Installing a new version keeps them.
+
+          ## Updates
+
+          The installed app downloads new releases by itself. Once downloaded, the update installs when you quit the app, or right away from **다시 시작해서 업데이트** (Restart to update) in the RowCat menu. The desktop menu is in Korean for now. If your RowCat menu has no **업데이트 확인** (Check for updates), download and run this installer yourself this one time.
+
+          ## Verify
+
+          SHA-256: \`${checksum}\`
+
+          Built on a GitHub Actions Windows runner from a commit CI passed on. Details are in [apps/desktop/README.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/apps/desktop/README.md).
+
+          ---
+
           컴퓨터 한 대에서 RowCat을 통째로 돌리는 Windows 앱입니다. 터미널도 Docker도 필요 없습니다.
 
           ## 설치
@@ -257,7 +287,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --latest \
-            --title "데스크톱 ${DATE}" \
+            --title "Desktop · 데스크톱 ${DATE}" \
             --notes-file notes.md \
             "release/${installer}" "release/${installer}.sha256" \
             "release/${installer}.blockmap" "release/latest.yml"
