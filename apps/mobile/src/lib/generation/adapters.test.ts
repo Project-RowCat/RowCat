@@ -205,6 +205,37 @@ describe("Anthropic adapter", () => {
 		).toEqual({ type: "ephemeral", ttl: "1h" });
 	});
 
+	/**
+	 * A tool round trip's tail is read back only by the next round of the same turn, seconds later, so
+	 * it is written for five minutes (1.25x), not an hour (2x). The web adapter and the managed body
+	 * follow the same rule.
+	 */
+	it("writes a tool round trip's tail for five minutes", async () => {
+		const transport = respondWith(fakeResponse({ body: anthropicStream() }));
+		await run(anthropicAdapter, {
+			request: request({
+				messages: [
+					{ role: "user", content: "Roll it" },
+					{
+						role: "assistant",
+						content: "",
+						toolCall: { id: "call_1", name: "dice", arguments: { sides: 20 } },
+					},
+					{ role: "tool", callId: "call_1", content: "17" },
+				],
+			}),
+			model: "claude-sonnet-5",
+			secret: "sk",
+			signal: signal(),
+			fetch: transport.fetch,
+		});
+		const sent = bodyOf(transport.calls[0]?.body);
+		expect(sent.cache_control).toEqual({ type: "ephemeral", ttl: "5m" });
+		expect(
+			(sent.system as Array<{ cache_control: unknown }>)[0]?.cache_control,
+		).toEqual({ type: "ephemeral", ttl: "1h" });
+	});
+
 	it("an empty system prompt stays a string (an empty text block is a 400)", async () => {
 		const transport = respondWith(fakeResponse({ body: anthropicStream() }));
 		await run(anthropicAdapter, {

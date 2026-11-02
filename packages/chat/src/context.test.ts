@@ -459,6 +459,73 @@ describe("buildChatGenerationRequest: determinism", () => {
 });
 
 /**
+ * Keyword lore lives inside the system prompt, so a change in which entries are selected rewrites the
+ * whole cached prefix (system and every history message after it). The scan therefore covers the
+ * history window the turn sends: while that window only grows, the selected set only grows, and the
+ * system prompt changes when a new entry first matches or when the window itself moves, never
+ * because a word scrolled a few messages up.
+ */
+describe("buildChatGenerationRequest: lore stays stable while the window grows", () => {
+	const loreRoom = () =>
+		room({
+			lore: [
+				{
+					keys: ["등대"],
+					content: "LIGHTHOUSE_LORE",
+					constant: false,
+					order: 0,
+					position: "system_bottom",
+				},
+			],
+		});
+	const conversation = (length: number) =>
+		Array.from({ length }, (_, i) =>
+			message(
+				i % 2 === 0 ? "user" : "assistant",
+				i === 0 ? "등대로 가자" : `걷는다 ${i}`,
+				i,
+			),
+		);
+	const systemAt = (length: number, userInput?: string) =>
+		buildChatGenerationRequest({
+			room: loreRoom(),
+			messages: conversation(length),
+			allAges: true,
+			...(userInput ? { userInput } : {}),
+		}).system;
+
+	it("an entry matched early in the window is still selected many turns later", () => {
+		expect(systemAt(2)).toContain("LIGHTHOUSE_LORE");
+		expect(systemAt(12)).toContain("LIGHTHOUSE_LORE");
+	});
+
+	it("the system prompt is byte-identical across turns that only append messages", () => {
+		const first = systemAt(2);
+		for (const length of [4, 6, 8, 10, 20])
+			expect(systemAt(length)).toBe(first);
+	});
+
+	it("the current input still triggers an entry before it is stored", () => {
+		const quiet = buildChatGenerationRequest({
+			room: loreRoom(),
+			messages: [message("user", "안녕", 0)],
+			allAges: true,
+			userInput: "등대가 보인다",
+		});
+		expect(quiet.system).toContain("LIGHTHOUSE_LORE");
+	});
+
+	it("an entry whose message left the window is no longer selected", () => {
+		const request = buildChatGenerationRequest({
+			room: loreRoom(),
+			messages: conversation(CHAT_HISTORY_WINDOW_MAX + 2),
+			allAges: true,
+		});
+		expect(request.system).not.toContain("LIGHTHOUSE_LORE");
+	});
+});
+
+/**
  * Where the narration pack sits in the prompt and what it changes. Three things are checked: its
  * position (after the progress rules, before creator content), placeholder substitution, and that
  * the protective sentence is swapped only together with the pack.

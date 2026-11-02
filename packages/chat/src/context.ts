@@ -200,12 +200,6 @@ export const CHAT_HISTORY_WINDOW_MAX = CHAT_HISTORY_LIMIT + 20;
 export const CHAT_MEMORY_CONTEXT_CHAR_BUDGET = 4_000;
 
 /**
- * Number of recent messages scanned for lore keywords. Scanning too deep lets a word that appeared
- * long ago keep matching.
- */
-const LORE_SCAN_DEPTH = 4;
-
-/**
  * Minimal user turn prepended when history starts with an assistant message. Most providers require
  * this.
  */
@@ -1007,14 +1001,21 @@ function assembleChatGenerationRequest(
 	const window = messages.slice(-CHAT_HISTORY_WINDOW_MAX);
 
 	/**
-	 * The lore scan text is the current input plus the last few turns. The whole window is not
-	 * scanned, because a word that appeared once long ago would keep pulling the same lore through the
-	 * rest of the conversation.
+	 * The lore scan text is the current input plus the whole history window this turn sends.
+	 *
+	 * It used to be the last four messages, so an entry dropped out as soon as its word scrolled a few
+	 * messages up, and came back when someone said it again. Lore sits inside the system prompt, so
+	 * every such flip rewrote the whole cached prefix (system and all history after it) at the
+	 * one-hour write price, and on lore-heavy works that was nearly every turn.
+	 *
+	 * Scanning the window ties the selection to the window's own lifetime. The window starts at the
+	 * summary frontier and only grows until the frontier moves (`chatHistoryWindow`), so within it the
+	 * selected set only grows: the system prompt changes when an entry first matches, or on the turn
+	 * the window moves, which already changes the summary block and the history prefix. "Long ago" is
+	 * bounded by the same window, and a message the model still reads verbatim is a fair reason for its
+	 * lore to stay.
 	 */
-	const scanText = [
-		userInput,
-		...window.slice(-LORE_SCAN_DEPTH).map((message) => message.content),
-	]
+	const scanText = [userInput, ...window.map((message) => message.content)]
 		.filter(Boolean)
 		.join("\n");
 

@@ -863,6 +863,35 @@ describe("tool declarations", () => {
 		]);
 	});
 
+	/**
+	 * A tool round trip's tail is read back only by the next round of the same turn, seconds later, so
+	 * it is written for five minutes (1.25x), not an hour (2x). The system marker stays an hour, which
+	 * keeps the allowed order (longer before shorter).
+	 */
+	it("writes a tool round trip's tail for five minutes and keeps the system marker an hour", () => {
+		const roundTrip = buildProviderRequestBody(
+			{
+				...request,
+				messages: [
+					{ role: "user", content: "Roll it" },
+					{
+						role: "assistant",
+						content: "",
+						toolCall: { id: "call_1", name: "dice", arguments: { sides: 20 } },
+					},
+					{ role: "tool", callId: "call_1", content: "17" },
+				],
+			},
+			"anthropic/claude-sonnet-5",
+		);
+		expect(roundTrip.cache_control).toEqual({ type: "ephemeral", ttl: "5m" });
+		expect((roundTrip.messages as SentMessages)[0]).toEqual(cachedSystem);
+		expect(
+			buildProviderRequestBody(request, "anthropic/claude-sonnet-5")
+				.cache_control,
+		).toEqual({ type: "ephemeral", ttl: "1h" });
+	});
+
 	/** This spec's arguments are a JSON string, not an object. */
 	it("moves the assistant turn carrying the call and its result under the spec's names", () => {
 		const body = buildProviderRequestBody(

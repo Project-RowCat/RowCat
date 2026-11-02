@@ -2164,6 +2164,12 @@ adapter's header).
   included, and reading a reply and writing the next line often outlasts five minutes; since the history window
   stays put between summaries, the cached history is worth keeping across that pause too. A longer TTL must come
   before a shorter one, so the system marker must never be shorter than the automatic one (that is a 400).
+  **The one exception is a tool round trip's tail (`5m`, `tailCacheTtl` in all three adapters)** — a request ending
+  in a tool result is read back only by the next round of the same turn, and an hour-long write (2x) there bought a
+  lifetime nothing uses.
+- **Keyword lore scans the whole history window, not the last few messages** (`assembleChatGenerationRequest`).
+  Lore sits inside the system prompt, so every flip in the selected set rewrote the whole cached prefix; within one
+  window the set now only grows, and it changes on the turn the window moves, which already rewrites that prefix.
 - **This is not response caching** (reusing a whole probabilistic model response is a different product
   behaviour, and in roleplay it shows up as the same answer repeating). **Do not reorder context for the cache**
   — instead **determinism** pays the price (a `Date.now()`, an RNG or a request timestamp in the assembler makes

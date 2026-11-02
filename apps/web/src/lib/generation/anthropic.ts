@@ -256,6 +256,20 @@ const continuationModeFor = (model: string): AnthropicContinuationMode =>
  *
  * An empty string stays a string — the API rejects an empty text block.
  */
+/**
+ * The automatic breakpoint's lifetime for this request.
+ *
+ * A request ending in a tool result is a round trip inside one turn (`nextChatToolRequest`). Its
+ * tail is read back only by the next round of the same turn, seconds later; the next turn never
+ * reads it, because tool round trips are not stored and that turn's history has none of them. An
+ * hour-long write (2x input) there paid for a lifetime nothing uses; five minutes (1.25x) covers the
+ * rounds that follow.
+ *
+ * Shorter after longer is the allowed order, so the system marker stays one hour.
+ */
+const tailCacheTtl = (messages: readonly ChatGenerationMessage[]) =>
+	messages.at(-1)?.role === "tool" ? "5m" : "1h";
+
 const anthropicSystem = (system: string) =>
 	system
 		? [
@@ -748,13 +762,17 @@ async function* stream(
 				 * `@rowcat/chat` and is provider-neutral. Pushing cache mechanics into it would tie prompt
 				 * assembly to provider details. Provider mechanics stay inside the adapter.
 				 *
-				 * No TTL is set (no `ttl: "1h"`). The default lifetime is sufficient. Cache lifetime is a
-				 * transport optimization users have no reason to understand, so it is not a config option.
+				 * Cache lifetime is a transport optimization users have no reason to understand, so it is not a
+				 * config option.
 				 *
 				 * This automatic breakpoint is one of two; the other sits on the system block
-				 * (`anthropicSystem`). Both live an hour, for the reason given there.
+				 * (`anthropicSystem`). Both live an hour, for the reason given there, except on a tool
+				 * round trip (`tailCacheTtl`).
 				 */
-				cache_control: { type: "ephemeral", ttl: "1h" },
+				cache_control: {
+					type: "ephemeral",
+					ttl: tailCacheTtl(request.messages),
+				},
 				stream: true,
 			}),
 		});

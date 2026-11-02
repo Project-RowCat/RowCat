@@ -172,6 +172,37 @@ describe("Anthropic adapter", () => {
 	});
 
 	/**
+	 * A tool round trip's tail is read back only by the next round of the same turn, seconds later, so
+	 * it is written for five minutes (1.25x), not an hour (2x). The system marker stays an hour, which
+	 * keeps the allowed order (longer before shorter). The managed body follows the same rule.
+	 */
+	it("writes a tool round trip's tail for five minutes", async () => {
+		const { seen, fetchMock } = recorder(() => sseResponse(ANTHROPIC_STREAM));
+		await collect(anthropicAdapter, {
+			model: "claude-sonnet-5",
+			secret: "sk-ant",
+			fetch: fetchMock,
+			request: {
+				...request,
+				messages: [
+					{ role: "user", content: "Roll it" },
+					{
+						role: "assistant",
+						content: "",
+						toolCall: { id: "call_1", name: "dice", arguments: { sides: 20 } },
+					},
+					{ role: "tool", callId: "call_1", content: "17" },
+				],
+			},
+		});
+		const sent = body(seen[0] as { init: RequestInit });
+		expect(sent.cache_control).toEqual({ type: "ephemeral", ttl: "5m" });
+		expect(
+			(sent.system as Array<{ cache_control: unknown }>)[0]?.cache_control,
+		).toEqual({ type: "ephemeral", ttl: "1h" });
+	});
+
+	/**
 	 * The second breakpoint. Whenever the history in front of the automatic breakpoint changes (the
 	 * window moving, an edit), that breakpoint alone no longer finds its previous entry; this one keeps
 	 * the unchanged system prompt readable. Dropping it is silent too — the symptom is the bill.

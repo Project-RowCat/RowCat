@@ -248,6 +248,20 @@ const continuationModeFor = (model: string): AnthropicContinuationMode =>
  *
  * An empty string stays a string — the API rejects an empty text block.
  */
+/**
+ * **The automatic breakpoint's lifetime for this request.** The web adapter's pair.
+ *
+ * A request ending in a tool result is a round trip inside one turn (`nextChatToolRequest`). Its
+ * tail is read back only by the next round of the same turn, seconds later; the next turn never
+ * reads it, because tool round trips are not stored and that turn's history has none of them. An
+ * hour-long write (2x input) there paid for a lifetime nothing uses; five minutes (1.25x) covers the
+ * rounds that follow.
+ *
+ * Shorter after longer is the allowed order, so the system marker stays one hour.
+ */
+const tailCacheTtl = (messages: readonly ChatGenerationMessage[]) =>
+	messages.at(-1)?.role === "tool" ? "5m" : "1h";
+
 const anthropicSystem = (system: string) =>
 	system
 		? [
@@ -961,9 +975,13 @@ async function start(
 				 * by hand on each content block: that would require this adapter to know the boundaries of
 				 * guards, seed, lore, memory and history, a structure that belongs to `@rowcat/chat` and is
 				 * provider-neutral. This automatic breakpoint is one of two; the other sits on the system
-				 * block (`anthropicSystem`). Both live an hour, for the reason given there.
+				 * block (`anthropicSystem`). Both live an hour, for the reason given there, except on a
+				 * tool round trip (`tailCacheTtl`).
 				 */
-				cache_control: { type: "ephemeral", ttl: "1h" },
+				cache_control: {
+					type: "ephemeral",
+					ttl: tailCacheTtl(request.messages),
+				},
 				stream: true,
 			}),
 		});

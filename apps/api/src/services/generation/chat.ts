@@ -437,6 +437,21 @@ function toOpenAiMessages(
  *
  * An empty string stays a string — an empty text block is rejected.
  */
+/**
+ * The automatic breakpoint's lifetime for this request. The BYO adapters' `tailCacheTtl` is the
+ * same rule.
+ *
+ * A request ending in a tool result is a round trip inside one turn (`nextChatToolRequest`). Its
+ * tail is read back only by the next round of the same turn, seconds later; the next turn never
+ * reads it, because tool round trips are not stored and that turn's history has none of them. An
+ * hour-long write (2x input) there paid for a lifetime nothing uses; five minutes (1.25x) covers the
+ * rounds that follow.
+ * Shorter after longer is the allowed order, so the system marker stays one hour.
+ */
+function tailCacheTtl(messages: ManagedChatGenerationRequest["messages"]) {
+	return messages.at(-1)?.role === "tool" ? "5m" : "1h";
+}
+
 function systemMessage(system: string, cached: boolean) {
 	return {
 		role: "system",
@@ -549,7 +564,7 @@ export function buildProviderRequestBody(
 			? { session_id: request.routingSessionId }
 			: {}),
 		...(usesExplicitPromptCaching(model)
-			? { cache_control: { type: "ephemeral", ttl: "1h" } }
+			? { cache_control: { type: "ephemeral", ttl: tailCacheTtl(messages) } }
 			: {}),
 		messages: [
 			systemMessage(request.system, usesExplicitPromptCaching(model)),
