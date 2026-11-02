@@ -20,6 +20,7 @@ import { translator } from "#/lib/i18n/current.ts";
  * ProviderError            our own sentence, used as is            → settings (key rejected) · retry
  * chat_rate_limited        the server's per-minute and daily cap   → wait, then retry
  * chat_managed_not_allowed outside this deployment's managed list  → settings (connect own key)
+ * chat_managed_budget_exhausted  the instance's token budget is spent  → settings (connect own key)
  * anything else            folded into a generic sentence          → retry
  * ```
  *
@@ -61,6 +62,15 @@ const rateLimitedMessage = (): string =>
  */
 const managedNotAllowedMessage = (): string =>
 	translator("conversation")("failure.managedNotAllowed");
+
+/**
+ * This deployment's managed generation spent its instance-wide token budget (429). It names a
+ * different fact from the allowlist refusal — everyone is refused, not this account — but the next
+ * step is the same: the budget refills on its own schedule (hours, not a moment), and a personal key
+ * does not draw on it. So the sentence says both, and the action is AI settings, not a retry.
+ */
+const managedBudgetExhaustedMessage = (): string =>
+	translator("conversation")("failure.managedBudgetExhausted");
 
 /** The reply was received but could not be written to the device. A storage failure, not a network one. */
 const persistenceFailedMessage = (): string =>
@@ -194,6 +204,8 @@ export function generationFailureMessage(failure: Error | null): string {
 	if (code === CHAT_ERROR_CODE.rateLimited) return rateLimitedMessage();
 	if (code === CHAT_ERROR_CODE.managedNotAllowed)
 		return managedNotAllowedMessage();
+	if (code === CHAT_ERROR_CODE.managedBudgetExhausted)
+		return managedBudgetExhaustedMessage();
 
 	return opaqueFailureMessage();
 }
@@ -222,7 +234,8 @@ export function needsProviderSetup(failure: Error | null): boolean {
 	return (
 		(error instanceof GenerationBlockedError && error.needsConnection) ||
 		(error instanceof ProviderError && error.code === "invalid_credential") ||
-		failureCode(error) === CHAT_ERROR_CODE.managedNotAllowed
+		failureCode(error) === CHAT_ERROR_CODE.managedNotAllowed ||
+		failureCode(error) === CHAT_ERROR_CODE.managedBudgetExhausted
 	);
 }
 
@@ -281,7 +294,9 @@ export function canRetryGeneration(failure: Error | null): boolean {
 		code !== CHAT_ERROR_CODE.providerUnconfigured &&
 		code !== CHAT_ERROR_CODE.managedModelUnavailable &&
 		/** The allowlist does not change on retry. What changes is the operator's decision or my own key. */
-		code !== CHAT_ERROR_CODE.managedNotAllowed
+		code !== CHAT_ERROR_CODE.managedNotAllowed &&
+		/** Nor does a spent instance budget: it refills in hours, and each press is one more refusal. */
+		code !== CHAT_ERROR_CODE.managedBudgetExhausted
 	);
 }
 

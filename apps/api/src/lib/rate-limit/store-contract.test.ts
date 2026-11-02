@@ -217,6 +217,87 @@ for (const adapter of ADAPTERS) {
 				);
 				await store.close();
 			});
+
+			/** Slots: what the managed-generation concurrency ceiling stands on. */
+			test("slots admit up to the cap, and a released one admits the next", async () => {
+				const store = adapter.create();
+				const key = freshKey("slots");
+				const first = await store.acquire(key, "a", 2, 5_000);
+				const second = await store.acquire(key, "b", 2, 5_000);
+				const third = await store.acquire(key, "c", 2, 5_000);
+				expect([first, second, third]).toEqual([
+					{ admitted: true, held: 1 },
+					{ admitted: true, held: 2 },
+					{ admitted: false, held: 2 },
+				]);
+				await store.releaseHolder(key, "a");
+				expect(await store.acquire(key, "c", 2, 5_000)).toEqual({
+					admitted: true,
+					held: 2,
+				});
+				await store.close();
+			});
+
+			test("a lease nobody released lapses on its own", async () => {
+				const store = adapter.create();
+				const key = freshKey("lease");
+				await store.acquire(key, "crashed", 1, WINDOW_MS);
+				expect((await store.acquire(key, "next", 1, WINDOW_MS)).admitted).toBe(
+					false,
+				);
+				await sleep(WINDOW_MS + 50);
+				expect((await store.acquire(key, "next", 1, WINDOW_MS)).admitted).toBe(
+					true,
+				);
+				await store.close();
+			});
+
+			/**
+			 * The reason `acquire` takes the cap: twenty requests racing for five slots must leave exactly
+			 * five holders. An add-then-check-then-undo implementation lets two replicas both see room for
+			 * the last slot.
+			 */
+			test("concurrent acquires never admit more than the cap", async () => {
+				const store = adapter.create();
+				const key = freshKey("slot-race");
+				const results = await Promise.all(
+					Array.from({ length: 20 }, (_, i) =>
+						store.acquire(key, `h${i}`, 5, 5_000),
+					),
+				);
+				expect(results.filter((slot) => slot.admitted)).toHaveLength(5);
+				expect((await store.observe(key, "slots"))?.count).toBe(5);
+				await store.close();
+			});
+
+			test("releasing a holder that is not there changes nothing", async () => {
+				const store = adapter.create();
+				const key = freshKey("release-missing");
+				await store.releaseHolder(key, "nobody");
+				await store.acquire(key, "a", 3, 5_000);
+				await store.releaseHolder(key, "nobody");
+				expect((await store.observe(key, "slots"))?.count).toBe(1);
+				await store.close();
+			});
+
+			test("observe reads a counter and slots without changing them, and null for nothing", async () => {
+				const store = adapter.create();
+				const counter = freshKey("observe-counter");
+				const slots = freshKey("observe-slots");
+				expect(await store.observe(counter, "counter")).toBeNull();
+				expect(await store.observe(slots, "slots")).toBeNull();
+
+				await store.consume(counter, 5_000, 7);
+				const seen = await store.observe(counter, "counter");
+				expect(seen?.count).toBe(7);
+				expect(seen?.resetMs).toBeGreaterThan(0);
+				expect((await store.consume(counter, 5_000)).count).toBe(8);
+
+				await store.acquire(slots, "a", 3, 5_000);
+				expect((await store.observe(slots, "slots"))?.count).toBe(1);
+				expect((await store.observe(slots, "slots"))?.count).toBe(1);
+				await store.close();
+			});
 		},
 	);
 }

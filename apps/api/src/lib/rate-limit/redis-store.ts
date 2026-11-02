@@ -1,5 +1,10 @@
 import type Redis from "ioredis";
-import type { RateLimitConsumption, RateLimitStore } from "./store.ts";
+import type {
+	RateLimitConsumption,
+	RateLimitObservation,
+	RateLimitSlot,
+	RateLimitStore,
+} from "./store.ts";
 
 /**
  * Redis fixed-window counter: the distributed adapter.
@@ -58,6 +63,48 @@ end
 return 1
 `;
 
+/**
+ * Slots are a sorted set: member = holder, score = lease end in ms. The clock is Redis's own (`TIME`),
+ * not the caller's — replicas whose clocks disagree would otherwise expire each other's leases early
+ * or late. Scripts that call `TIME` are fine to run: Redis 7+ replicates a script's effects, not the
+ * script.
+ *
+ * KEYS[1] slot key, ARGV[1] holder, ARGV[2] max, ARGV[3] lease ms -> {admitted 0|1, live holders}.
+ * Expired holders go first, then the count decides, then the add — one step, so two replicas cannot
+ * both see room for the last slot. The key's own TTL follows the newest lease, so an idle key leaves.
+ */
+const ACQUIRE_SCRIPT = `
+local t = redis.call('TIME')
+local now = tonumber(t[1]) * 1000 + math.floor(tonumber(t[2]) / 1000)
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now)
+local held = redis.call('ZCARD', KEYS[1])
+if held >= tonumber(ARGV[2]) then
+  return {0, held}
+end
+redis.call('ZADD', KEYS[1], now + tonumber(ARGV[3]), ARGV[1])
+redis.call('PEXPIRE', KEYS[1], ARGV[3])
+return {1, held + 1}
+`;
+
+/**
+ * KEYS[1] key, ARGV[1] "counter" | "slots" -> {count, remaining ms} or {} when absent. Reads only:
+ * expired holders are not counted, and not removed either (that belongs to `acquire`).
+ */
+const OBSERVE_SCRIPT = `
+if ARGV[1] == 'slots' then
+  local t = redis.call('TIME')
+  local now = tonumber(t[1]) * 1000 + math.floor(tonumber(t[2]) / 1000)
+  local held = redis.call('ZCOUNT', KEYS[1], '(' .. now, '+inf')
+  if held == 0 then return {} end
+  local last = redis.call('ZRANGE', KEYS[1], -1, -1, 'WITHSCORES')
+  return {held, tonumber(last[2]) - now}
+end
+local value = redis.call('GET', KEYS[1])
+if not value then return {} end
+local ttl = redis.call('PTTL', KEYS[1])
+return {tonumber(value), ttl}
+`;
+
 /** Shape of the methods ioredis `defineCommand` plants on the instance. */
 interface RedisWithConsume extends Redis {
 	rowcatRateLimitConsume(
@@ -66,6 +113,13 @@ interface RedisWithConsume extends Redis {
 		cost: string,
 	): Promise<[number, number]>;
 	rowcatRateLimitRelease(key: string, amount: string): Promise<number>;
+	rowcatRateLimitAcquire(
+		key: string,
+		holder: string,
+		max: string,
+		leaseMs: string,
+	): Promise<[number, number]>;
+	rowcatRateLimitObserve(key: string, kind: string): Promise<number[]>;
 }
 
 /** Do not define twice on one connection (ioredis warns). */
@@ -80,6 +134,14 @@ export function createRedisRateLimitStore(client: Redis): RateLimitStore {
 		client.defineCommand("rowcatRateLimitRelease", {
 			numberOfKeys: 1,
 			lua: RELEASE_SCRIPT,
+		});
+		client.defineCommand("rowcatRateLimitAcquire", {
+			numberOfKeys: 1,
+			lua: ACQUIRE_SCRIPT,
+		});
+		client.defineCommand("rowcatRateLimitObserve", {
+			numberOfKeys: 1,
+			lua: OBSERVE_SCRIPT,
 		});
 		defined.add(client);
 	}
@@ -109,6 +171,34 @@ export function createRedisRateLimitStore(client: Redis): RateLimitStore {
 		async release(key: string, amount: number): Promise<void> {
 			if (amount <= 0) return;
 			await withConsume.rowcatRateLimitRelease(key, String(amount));
+		},
+		async acquire(
+			key: string,
+			holder: string,
+			max: number,
+			leaseMs: number,
+		): Promise<RateLimitSlot> {
+			const [admitted, held] = await withConsume.rowcatRateLimitAcquire(
+				key,
+				holder,
+				String(max),
+				String(leaseMs),
+			);
+			return { admitted: admitted === 1, held };
+		},
+		async releaseHolder(key: string, holder: string): Promise<void> {
+			await client.zrem(key, holder);
+		},
+		async observe(
+			key: string,
+			kind: "counter" | "slots",
+		): Promise<RateLimitObservation | null> {
+			const [count, resetMs] = await withConsume.rowcatRateLimitObserve(
+				key,
+				kind,
+			);
+			if (count === undefined || resetMs === undefined) return null;
+			return { count, resetMs: Math.max(0, resetMs) };
 		},
 		/** The connection belongs to `lib/redis.ts` and is shared per process; closing it here would kill the next consumer. */
 		close: () => Promise.resolve(),

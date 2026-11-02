@@ -33,12 +33,22 @@ import { startChatGeneration } from "./chat.ts";
  * which lets the screen pick guidance by reason. The loop receives that stream as its first round;
  * failures from the second round on arrive after the 200 and are reported as frames.
  */
-export async function startProtectedStoryGeneration(input: {
+/**
+ * The assembled request, before anything is sent. Split from the start so the route can weigh what
+ * it is about to send (the instance budget, `budget.ts`) between assembling it and sending it.
+ */
+export interface AssembledStoryGeneration {
+	readonly base: ChatGenerationRequest;
+	readonly firstRequest: ManagedChatGenerationRequest;
+	readonly tools: ReturnType<typeof chatConversationTools>;
+	readonly model: StoryChatGenerationRequest["model"];
+}
+
+export function assembleProtectedStoryGeneration(input: {
 	seed: StoryChatSeedDto;
 	request: StoryChatGenerationRequest;
 	allAges: boolean;
-	signal: AbortSignal;
-}): Promise<AsyncGenerator<ChatStreamEvent>> {
+}): AssembledStoryGeneration {
 	const assembled = buildChatGenerationRequest(
 		storyAssemblyInput({
 			seed: input.seed,
@@ -62,14 +72,27 @@ export async function startProtectedStoryGeneration(input: {
 	const firstRequest: ChatGenerationRequest = tools.length
 		? { ...base, tools: chatToolDeclarations(tools) }
 		: base;
+	return {
+		base,
+		firstRequest: { ...firstRequest, model: input.request.model },
+		tools,
+		model: input.request.model,
+	};
+}
+
+export async function startProtectedStoryGeneration(input: {
+	assembled: AssembledStoryGeneration;
+	signal: AbortSignal;
+}): Promise<AsyncGenerator<ChatStreamEvent>> {
+	const { base, firstRequest, tools, model } = input.assembled;
 	const managed = (
 		request: ChatGenerationRequest,
 	): ManagedChatGenerationRequest => ({
 		...request,
-		model: input.request.model,
+		model,
 	});
 
-	const first = await startChatGeneration(managed(firstRequest), input.signal);
+	const first = await startChatGeneration(firstRequest, input.signal);
 
 	let rounds = 0;
 	return runChatToolLoop(base, {

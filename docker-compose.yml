@@ -179,6 +179,11 @@ services:
       # what guards the bill for the key above is the per-member rate limit and this allowlist. With
       # allowlist, only listed members and staff/admin use it; everyone else goes BYO. Unknown values block boot.
       MANAGED_GENERATION_ACCESS: ${MANAGED_GENERATION_ACCESS:-}
+      # Instance-wide ceilings on that key, all members and replicas together (fail-closed). Empty
+      # means the code's default: 8 streams at once, 2000000 tokens per 24 h, 300000 per upstream call.
+      MANAGED_GENERATION_CONCURRENCY: ${MANAGED_GENERATION_CONCURRENCY:-}
+      MANAGED_GENERATION_DAILY_TOKENS: ${MANAGED_GENERATION_DAILY_TOKENS:-}
+      MANAGED_GENERATION_REQUEST_TOKENS: ${MANAGED_GENERATION_REQUEST_TOKENS:-}
       # Mobile OTA publish jobs: the operations console starts the CI workflow. **Fill all three or
       # leave all three empty** (half blocks boot). Empty, the console reads releases and only
       # rolls out, pauses and resumes. ⚠️ No signing key comes here; that is a CI environment (ota-<channel>) secret.

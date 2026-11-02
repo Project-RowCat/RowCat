@@ -79,10 +79,10 @@ export async function enforceRateLimit(
 	store: RateLimitStore,
 	{ policy, subject, scope }: RateLimitRequest,
 ): Promise<void> {
-	/** A bytes policy counted per request would count 1 byte each and block nothing. */
-	if (policy.unit === "bytes")
+	/** An amount or slot policy counted per request would count 1 each and block nothing. */
+	if (policy.unit !== undefined && policy.unit !== "requests")
 		throw new Error(
-			`${policy.name} is a policy that counts amounts — call it through reserve`,
+			`${policy.name} is a ${policy.unit} policy — call it through ${policy.unit === "slots" ? "holdSlot" : "reserve"}`,
 		);
 	const key = rateLimitKey(policy.name, subject, scope);
 
@@ -140,9 +140,9 @@ export async function reserveRateLimit(
 	{ policy, subject, scope }: RateLimitRequest,
 	amount: number,
 ): Promise<RateLimitReservation> {
-	if (policy.unit !== "bytes")
+	if (policy.unit !== "bytes" && policy.unit !== "tokens")
 		throw new Error(
-			`${policy.name} is a policy that counts calls — call it through check`,
+			`${policy.name} is not an amount policy — call it through ${policy.unit === "slots" ? "holdSlot" : "check"}`,
 		);
 	const key = rateLimitKey(policy.name, subject, scope);
 
@@ -185,14 +185,91 @@ export async function reserveRateLimit(
 			if (settled) return;
 			settled = true;
 			/**
-			 * Never charge more than reserved (an overshoot is at most the last chunk). An unreadable value
-			 * counts as fully used: folding unknown into 0 would open the whole budget the day metering
-			 * breaks, so err toward the expensive side.
+			 * An unreadable value counts as fully used: folding unknown into 0 would open the whole budget
+			 * the day metering breaks, so err toward the expensive side.
+			 *
+			 * Bytes never charge more than reserved (the reservation is the response cap; an overshoot is
+			 * at most the last chunk). Tokens do: the reservation's input side is an estimate made before
+			 * the provider counted anything, and capping at it would let every request whose estimate was
+			 * low spend past the budget unrecorded. The overrun is added without a limit check — the
+			 * tokens are already spent, and refusing to record them changes nothing but the count.
 			 */
-			const charged = Number.isFinite(used)
-				? Math.min(Math.max(0, Math.floor(used)), amount)
+			const reported = Number.isFinite(used)
+				? Math.max(0, Math.floor(used))
 				: amount;
-			await giveBack(amount - charged);
+			if (policy.unit === "tokens" && reported > amount) {
+				try {
+					await store.consume(key, policy.windowMs, reported - amount);
+				} catch (error) {
+					logStoreFailure(policy, error);
+				}
+				return;
+			}
+			await giveBack(amount - Math.min(reported, amount));
+		},
+	};
+}
+
+/**
+ * A held slot. `release()` frees it once even if called twice, and never throws: a failed release
+ * leaves the lease to lapse on its own (`windowMs`), the safe direction.
+ */
+export interface RateLimitSlotHold {
+	release(): Promise<void>;
+}
+
+const RELEASED: RateLimitSlotHold = { release: () => Promise.resolve() };
+
+/**
+ * Wait quoted when every slot is taken. Not the lease length (up to the stream wall-clock cap):
+ * slots free up as streams finish, which is seconds, and quoting minutes would make clients stay away
+ * from a server that has room again.
+ */
+const SLOTS_FULL_RETRY_MS = 5_000;
+
+/**
+ * Takes one of `policy.max` slots for as long as the caller holds it. Throws 429 when all are taken
+ * (nothing is held then), or 503 / passes per the policy when the store is down.
+ */
+export async function holdSlot(
+	store: RateLimitStore,
+	{ policy, subject, scope }: RateLimitRequest,
+	holder: string,
+): Promise<RateLimitSlotHold> {
+	if (policy.unit !== "slots")
+		throw new Error(`${policy.name} is not a slot policy`);
+	const key = rateLimitKey(policy.name, subject, scope);
+
+	let slot: Awaited<ReturnType<RateLimitStore["acquire"]>>;
+	try {
+		slot = await store.acquire(key, holder, policy.max, policy.windowMs);
+	} catch (error) {
+		logStoreFailure(policy, error);
+		if (policy.onStoreFailure === "deny")
+			throw serviceUnavailable(
+				"Temporarily unavailable. Please try again in a moment.",
+				policy.code,
+				retryAfterSecondsFrom(STORE_FAILURE_RETRY_MS),
+			);
+		return RELEASED;
+	}
+	if (!slot.admitted)
+		throw tooManyRequests(
+			policy.message,
+			policy.code,
+			retryAfterSecondsFrom(SLOTS_FULL_RETRY_MS),
+		);
+
+	let released = false;
+	return {
+		async release(): Promise<void> {
+			if (released) return;
+			released = true;
+			try {
+				await store.releaseHolder(key, holder);
+			} catch (error) {
+				logStoreFailure(policy, error);
+			}
 		},
 	};
 }

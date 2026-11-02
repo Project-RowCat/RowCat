@@ -39,6 +39,7 @@ import { formatDateTime } from "#/lib/format.ts";
 import { PageEnter } from "#/lib/motion/page-transition.tsx";
 import { canAdminister } from "#/lib/operator.ts";
 import { useAdminQuery } from "#/lib/query/use-admin-query.ts";
+import { ManagedGenerationBudgetCard } from "./managed-generation-budget-card.tsx";
 
 /**
  * Operational settings: breakers and minimum app versions.
@@ -298,6 +299,8 @@ export function OperationsPage() {
 			) : null}
 
 			{canEdit ? <DeploymentReadinessCard /> : null}
+
+			<ManagedGenerationBudgetCard />
 
 			<Card>
 				<CardHeader>

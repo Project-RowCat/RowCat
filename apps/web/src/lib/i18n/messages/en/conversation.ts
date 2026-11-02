@@ -8,6 +8,8 @@ export const conversation = {
 		rateLimited: "Too many generation requests. Please try again in a moment.",
 		managedNotAllowed:
 			"This server's default AI is only for allowed accounts. Connect a personal API key in AI settings.",
+		managedBudgetExhausted:
+			"This server's default AI has used up its budget for now. Try again later, or connect a personal API key in AI settings.",
 		persistenceFailed: "Couldn't save the response on this device.",
 		emptyAnswer: "The response had no body, so it wasn't saved.",
 	},

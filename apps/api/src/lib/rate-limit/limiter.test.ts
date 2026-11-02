@@ -1,6 +1,11 @@
 import { describe, expect, test } from "vitest";
 import { ApiError } from "../errors.ts";
-import { enforceRateLimit, rateLimitKey, reserveRateLimit } from "./limiter.ts";
+import {
+	enforceRateLimit,
+	holdSlot,
+	rateLimitKey,
+	reserveRateLimit,
+} from "./limiter.ts";
 import { createMemoryRateLimitStore } from "./memory-store.ts";
 import type { RateLimitPolicy } from "./policy.ts";
 import type { RateLimitStore } from "./store.ts";
@@ -27,6 +32,9 @@ const brokenStore = (): RateLimitStore => ({
 	kind: "memory",
 	consume: () => Promise.reject(new Error("ECONNREFUSED 10.0.0.5:6379")),
 	release: () => Promise.reject(new Error("ECONNREFUSED 10.0.0.5:6379")),
+	acquire: () => Promise.reject(new Error("ECONNREFUSED 10.0.0.5:6379")),
+	releaseHolder: () => Promise.reject(new Error("ECONNREFUSED 10.0.0.5:6379")),
+	observe: () => Promise.reject(new Error("ECONNREFUSED 10.0.0.5:6379")),
 	close: () => Promise.resolve(),
 });
 
@@ -349,6 +357,97 @@ describe("reservation — bytes policy", () => {
 		await expect(
 			reserveRateLimit(store, { policy: policy(), subject: "m-1" }, 10),
 		).rejects.toThrow(/check/);
+		await store.close();
+	});
+});
+
+describe("reservation — tokens policy", () => {
+	const tokens = (over: Partial<RateLimitPolicy> = {}) =>
+		policy({ name: "test-tokens", unit: "tokens", max: 1_000, ...over });
+
+	/**
+	 * The input side of a token reservation is an estimate; the provider's count can be larger.
+	 * Capping at the reservation (what bytes do) would let a low estimate spend past the budget with
+	 * nothing recorded.
+	 */
+	test("a report above the reservation charges the overrun", async () => {
+		const store = createMemoryRateLimitStore();
+		const request = { policy: tokens(), subject: "instance" };
+		await (await reserveRateLimit(store, request, 300)).settle(700);
+		const key = rateLimitKey("test-tokens", "instance");
+		expect((await store.observe(key, "counter"))?.count).toBe(700);
+		await expect(reserveRateLimit(store, request, 301)).rejects.toMatchObject({
+			status: 429,
+		});
+		await store.close();
+	});
+
+	test("no report (NaN) charges the whole reservation; a report below gives the rest back", async () => {
+		const store = createMemoryRateLimitStore();
+		const request = { policy: tokens(), subject: "instance" };
+		const key = rateLimitKey("test-tokens", "instance");
+		await (await reserveRateLimit(store, request, 400)).settle(Number.NaN);
+		expect((await store.observe(key, "counter"))?.count).toBe(400);
+		await (await reserveRateLimit(store, request, 400)).settle(100);
+		expect((await store.observe(key, "counter"))?.count).toBe(500);
+		await store.close();
+	});
+});
+
+describe("slots", () => {
+	const slots = (over: Partial<RateLimitPolicy> = {}) =>
+		policy({
+			name: "test-slots",
+			unit: "slots",
+			max: 2,
+			windowMs: 5_000,
+			...over,
+		});
+
+	test("holds up to the cap; the next is a 429 quoting a short wait, and release lets it in", async () => {
+		const store = createMemoryRateLimitStore();
+		const request = { policy: slots(), subject: "instance" };
+		const a = await holdSlot(store, request, "a");
+		await holdSlot(store, request, "b");
+		const refused = await holdSlot(store, request, "c").catch((error) => error);
+		expect(refused).toMatchObject({ status: 429, code: "test_rate_limited" });
+		expect((refused as ApiError).retryAfterSeconds).toBe(5);
+		await a.release();
+		await a.release();
+		await expect(holdSlot(store, request, "c")).resolves.toBeDefined();
+		await expect(holdSlot(store, request, "d")).rejects.toMatchObject({
+			status: 429,
+		});
+		await store.close();
+	});
+
+	test("a dead store is the policy's call: 503 when deny, a no-op hold when allow", async () => {
+		await expect(
+			holdSlot(
+				brokenStore(),
+				{ policy: slots({ onStoreFailure: "deny" }), subject: "instance" },
+				"a",
+			),
+		).rejects.toMatchObject({ status: 503 });
+		const held = await holdSlot(
+			brokenStore(),
+			{ policy: slots(), subject: "instance" },
+			"a",
+		);
+		await expect(held.release()).resolves.toBeUndefined();
+	});
+
+	test("the count and amount doors refuse a slot policy, and the slot door refuses the rest", async () => {
+		const store = createMemoryRateLimitStore();
+		await expect(
+			enforceRateLimit(store, { policy: slots(), subject: "instance" }),
+		).rejects.toThrow(/holdSlot/);
+		await expect(
+			reserveRateLimit(store, { policy: slots(), subject: "instance" }, 1),
+		).rejects.toThrow(/holdSlot/);
+		await expect(
+			holdSlot(store, { policy: policy(), subject: "instance" }, "a"),
+		).rejects.toThrow(/not a slot policy/);
 		await store.close();
 	});
 });

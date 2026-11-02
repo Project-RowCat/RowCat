@@ -184,17 +184,29 @@ describe("units — calls and amounts", () => {
 	});
 
 	/**
-	 * A bytes policy called through `checkRateLimit` counts each request as 1 byte and blocks nothing.
-	 * The limiter also throws on the spot, but this catches the call before it reaches operation.
+	 * An amount or slot policy called through `checkRateLimit` counts each request as 1 and blocks
+	 * nothing. The limiter also throws on the spot, but this catches the call before it reaches
+	 * operation. Each unit has one door; the other two are wrong.
 	 */
+	const DOORS = {
+		requests: "checkRateLimit",
+		bytes: "reserveRateLimit",
+		tokens: "reserveRateLimit",
+		slots: "holdRateLimitSlot",
+	} as const;
 	test.each(
 		entries.map(([key, p]) => [key, unitOf(p)] as const),
 	)("%s (%s) is called only through the right door", (key, unit) => {
-		const wrongDoor =
-			unit === "bytes"
-				? new RegExp(`checkRateLimit\\(\\s*"${key}"`)
-				: new RegExp(`reserveRateLimit\\(\\s*"${key}"`);
-		const offenders = consumerSource.filter((source) => wrongDoor.test(source));
+		const wrongDoors = [
+			"checkRateLimit",
+			"reserveRateLimit",
+			"holdRateLimitSlot",
+		]
+			.filter((door) => door !== DOORS[unit])
+			.map((door) => new RegExp(`${door}\\(\\s*"${key}"`));
+		const offenders = consumerSource.filter((source) =>
+			wrongDoors.some((door) => door.test(source)),
+		);
 		expect(offenders).toEqual([]);
 	});
 

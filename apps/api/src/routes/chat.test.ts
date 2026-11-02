@@ -613,6 +613,10 @@ describe.skipIf(!databaseReady)("managed generation — no metering", () => {
 						}
 					: memory.consume(key, windowMs, cost),
 			release: (key, amount) => memory.release(key, amount),
+			acquire: (key, holder, max, leaseMs) =>
+				memory.acquire(key, holder, max, leaseMs),
+			releaseHolder: (key, holder) => memory.releaseHolder(key, holder),
+			observe: (key, kind) => memory.observe(key, kind),
 			close: () => memory.close(),
 		};
 		await __setRateLimitStoreForTest(full);
@@ -674,6 +678,10 @@ describe.skipIf(!databaseReady)("managed generation — allowlist", () => {
 				return memory.consume(key, windowMs, cost);
 			},
 			release: (key, amount) => memory.release(key, amount),
+			acquire: (key, holder, max, leaseMs) =>
+				memory.acquire(key, holder, max, leaseMs),
+			releaseHolder: (key, holder) => memory.releaseHolder(key, holder),
+			observe: (key, kind) => memory.observe(key, kind),
 			close: () => memory.close(),
 		});
 		const { cookie } = await unlisted();

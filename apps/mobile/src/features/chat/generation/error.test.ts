@@ -10,6 +10,7 @@ import {
 	EMPTY_ANSWER_MESSAGE,
 	generationFailureMessage,
 	generationRecovery,
+	MANAGED_BUDGET_EXHAUSTED_MESSAGE,
 	MANAGED_NOT_ALLOWED_MESSAGE,
 	MANAGED_UNAVAILABLE_MESSAGE,
 	OPAQUE_FAILURE_MESSAGE,
@@ -84,6 +85,39 @@ describe("outside the managed allowlist", () => {
 		expect(canRetryGeneration(error)).toBe(false);
 		expect(generationFailureMessage(error)).toBe(MANAGED_NOT_ALLOWED_MESSAGE);
 		expect(generationFailureMessage(error)).not.toContain("server sentence");
+		expect(
+			generationRecovery({
+				error,
+				unanswered: true,
+				continuable: true,
+				stopped: false,
+			})?.action,
+		).toEqual({ kind: "providers", label: PROVIDER_SETTINGS_LABEL });
+	});
+});
+
+/** The instance's token budget is spent (`chat_managed_budget_exhausted`, 429): AI settings, no retry. Same judgement as the web group. */
+describe("instance budget spent", () => {
+	const cases = [
+		[
+			"envelope",
+			new RowCatApiError({
+				status: 429,
+				code: "chat_managed_budget_exhausted",
+				message: "server sentence",
+			}),
+		],
+		[
+			"frame",
+			new ChatStreamFailure("chat_managed_budget_exhausted", "server sentence"),
+		],
+	] as const;
+
+	it.each(cases)("even arriving as %s it sends to AI settings", (_, error) => {
+		expect(canRetryGeneration(error)).toBe(false);
+		expect(generationFailureMessage(error)).toBe(
+			MANAGED_BUDGET_EXHAUSTED_MESSAGE,
+		);
 		expect(
 			generationRecovery({
 				error,

@@ -27,6 +27,7 @@ import {
 	FeatureFlagKey,
 	FeatureFlagSetRequest,
 	type FeatureFlagsDto,
+	type ManagedGenerationBudgetDto,
 	OPS_ERROR_CODE,
 } from "@rowcat/contracts";
 import { Hono } from "hono";
@@ -43,6 +44,7 @@ import {
 import { listAuditLog, recordReadAudit } from "../../services/admin/audit.ts";
 import { readDeploymentReadiness } from "../../services/admin/deployment-readiness.ts";
 import { setManagedGenerationAsAdmin } from "../../services/admin/managed-generation.ts";
+import { readManagedGenerationBudget } from "../../services/admin/managed-generation-budget.ts";
 import {
 	listAdminMembers,
 	readAdminMemberDetail,
@@ -283,6 +285,19 @@ export const admin = new Hono<AppEnv>()
 	.get("/deployment/readiness", async (c) => {
 		requireAdminViewer(await getViewer(c));
 		const body: DeploymentReadinessDto = readDeploymentReadiness();
+		noStore(c);
+		return c.json(body);
+	})
+
+	/**
+	 * The instance ceilings on the operator's key: what is left and which gate refuses now. Staff and
+	 * admin, like the switches below; counts and states only, never a credential
+	 * (`ManagedGenerationBudgetDto`).
+	 */
+	.get("/generation/budget", async (c) => {
+		requireModeratorViewer(await getViewer(c));
+		const body: ManagedGenerationBudgetDto =
+			await readManagedGenerationBudget();
 		noStore(c);
 		return c.json(body);
 	})

@@ -7,6 +7,8 @@ export const conversation: Messages["conversation"] = {
 		rateLimited: "생성 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
 		managedNotAllowed:
 			"이 서버의 기본 AI는 허용된 계정만 쓸 수 있어요. AI 설정에서 개인 API 키를 연결해 주세요.",
+		managedBudgetExhausted:
+			"이 서버의 기본 AI가 지금 쓸 수 있는 양을 다 썼어요. 나중에 다시 시도하거나 AI 설정에서 개인 API 키를 연결해 주세요.",
 		persistenceFailed: "응답을 이 기기에 저장하지 못했습니다.",
 		emptyAnswer: "응답에 본문이 없어 저장되지 않았습니다.",
 	},

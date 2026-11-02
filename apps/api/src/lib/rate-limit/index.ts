@@ -1,13 +1,22 @@
+import { randomUUID } from "node:crypto";
+import { env } from "../../env.ts";
 import { closeRedis, getRedis } from "../redis.ts";
 import {
 	enforceRateLimit,
+	holdSlot,
 	type RateLimitReservation,
+	type RateLimitSlotHold,
+	rateLimitKey,
 	reserveRateLimit as reserveRateLimitWith,
 } from "./limiter.ts";
 import { createMemoryRateLimitStore } from "./memory-store.ts";
-import { RATE_LIMIT_POLICIES, type RateLimitPolicyKey } from "./policy.ts";
+import {
+	RATE_LIMIT_POLICIES,
+	type RateLimitPolicy,
+	type RateLimitPolicyKey,
+} from "./policy.ts";
 import { createRedisRateLimitStore } from "./redis-store.ts";
-import type { RateLimitStore } from "./store.ts";
+import type { RateLimitObservation, RateLimitStore } from "./store.ts";
 
 /**
  * Assembly point for rate limiting, and the only door feature code sees.
@@ -49,6 +58,24 @@ export function rateLimitStore(): RateLimitStore {
 }
 
 /**
+ * Limits a deployment sets for itself. The table in `policy.ts` holds the code's defaults and stays
+ * pure; the few ceilings that are the operator's money (managed generation on their key) are read
+ * from the environment here, the assembly point, so an image deployment can set them without
+ * editing code. Every door below goes through this, and so does the console's report — the number
+ * shown is the number enforced.
+ */
+const DEPLOYMENT_LIMITS: Partial<Record<RateLimitPolicyKey, () => number>> = {
+	managedGenerationTokens: () => env.MANAGED_GENERATION_DAILY_TOKENS,
+	managedGenerationSlots: () => env.MANAGED_GENERATION_CONCURRENCY,
+};
+
+export function rateLimitPolicy(key: RateLimitPolicyKey): RateLimitPolicy {
+	const policy: RateLimitPolicy = RATE_LIMIT_POLICIES[key];
+	const max = DEPLOYMENT_LIMITS[key]?.();
+	return max === undefined ? policy : { ...policy, max };
+}
+
+/**
  * Throws 429 when over the limit; a dead store is decided by the policy. The caller names only the
  * policy, the subject and an optional scope; windows, keys, `Retry-After` and codes stay inside.
  *
@@ -62,7 +89,7 @@ export function checkRateLimit(
 	scope?: string,
 ): Promise<void> {
 	return enforceRateLimit(rateLimitStore(), {
-		policy: RATE_LIMIT_POLICIES[policy],
+		policy: rateLimitPolicy(policy),
 		subject,
 		scope,
 	});
@@ -88,8 +115,45 @@ export function reserveRateLimit(
 ): Promise<RateLimitReservation> {
 	return reserveRateLimitWith(
 		rateLimitStore(),
-		{ policy: RATE_LIMIT_POLICIES[policy], subject, scope },
+		{ policy: rateLimitPolicy(policy), subject, scope },
 		amount,
+	);
+}
+
+/**
+ * Door for slot policies: holds one of the policy's `max` slots until `release()`.
+ * ```ts
+ * const slot = await holdRateLimitSlot("managedGenerationSlots", DEPLOYMENT);
+ * try { … } finally { await slot.release(); }
+ * ```
+ * The holder id is minted here, so no caller can name (and release) another request's slot.
+ */
+export function holdRateLimitSlot(
+	policy: RateLimitPolicyKey,
+	subject: string,
+	scope?: string,
+): Promise<RateLimitSlotHold> {
+	return holdSlot(
+		rateLimitStore(),
+		{ policy: rateLimitPolicy(policy), subject, scope },
+		randomUUID(),
+	);
+}
+
+/**
+ * What a policy's counter or slots hold right now, for the operations console only. Never feed this
+ * into a decision (`store.ts` §observe; `boundaries.test.ts` pins its one caller). Throws when the
+ * store cannot be read; the caller reports that as unknown, never as 0.
+ */
+export function observeRateLimit(
+	policy: RateLimitPolicyKey,
+	subject: string,
+	scope?: string,
+): Promise<RateLimitObservation | null> {
+	const resolved = rateLimitPolicy(policy);
+	return rateLimitStore().observe(
+		rateLimitKey(resolved.name, subject, scope),
+		resolved.unit === "slots" ? "slots" : "counter",
 	);
 }
 

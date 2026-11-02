@@ -417,6 +417,42 @@ describe("chat_managed_not_allowed", () => {
 });
 
 /**
+ * The instance's token budget is spent (`chat_managed_budget_exhausted`, 429). Everyone is refused, not
+ * this account, but the remedy is the allowlist's: it refills in hours and a personal key does not
+ * draw on it. So AI settings, and no `Regenerate` — each press would be one more refusal.
+ */
+describe("chat_managed_budget_exhausted", () => {
+	const cases = [
+		[
+			"envelope",
+			apiError("chat_managed_budget_exhausted", "server sentence", 429),
+		],
+		[
+			"frame",
+			new ChatStreamFailure("chat_managed_budget_exhausted", "server sentence"),
+		],
+	] as const;
+
+	it.each(
+		cases,
+	)("sends to AI settings even when it arrives as an %s", (_, error) => {
+		expect(needsProviderSetup(error)).toBe(true);
+		expect(canRetryGeneration(error)).toBe(false);
+		expect(generationFailureMessage(error)).toContain("budget");
+		expect(generationFailureMessage(error)).toContain("AI settings");
+		expect(generationFailureMessage(error)).not.toContain("server sentence");
+		expect(
+			generationRecovery({
+				error,
+				unanswered: true,
+				continuable: true,
+				stopped: false,
+			})?.action,
+		).toEqual({ kind: "providers", label: providerSettingsLabel() });
+	});
+});
+
+/**
  * The local save failed. This is a different fact from a network failure: the response did arrive
  * and was read on screen, and on the next open it is gone.
  */

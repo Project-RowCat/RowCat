@@ -156,6 +156,28 @@ describe("rate-limit boundary", () => {
 	});
 
 	/** Only the limiter builds 429s. Feature code counting its own windows and assembling 429s would scatter the ceilings again, as before this slice. */
+	/**
+	 * `observe` is the store's one read, and it exists for the console only (`store.ts` §observe). A
+	 * caller that read a counter, decided, then consumed would reopen the race this port removes, so
+	 * exactly one file may ask the store and exactly one may ask that file.
+	 */
+	test("observe is reached from the console's budget report alone", () => {
+		const storeReads = productionFiles.filter((file) =>
+			/\.observe\(/.test(readFileSync(file, "utf8")),
+		);
+		expect(storeReads.map(rel)).toEqual([
+			join("lib", "rate-limit", "index.ts"),
+		]);
+		const callers = productionFiles.filter(
+			(file) =>
+				!file.includes(RATE_LIMIT_DIR) &&
+				/observeRateLimit\(/.test(readFileSync(file, "utf8")),
+		);
+		expect(callers.map(rel)).toEqual([
+			join("services", "admin", "managed-generation-budget.ts"),
+		]);
+	});
+
 	test("feature code does not build a 429 itself", () => {
 		/** Checking only `new ApiError(429` is not enough; wrapping in a local helper (`pairingError(429, …)`) escapes it, so the shape scanned is 429 passed as an argument. */
 		const violations = featureFiles.filter((file) =>

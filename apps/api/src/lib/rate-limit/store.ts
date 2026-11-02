@@ -32,12 +32,45 @@
  * admission is still one atomic increment, and `release` only shrinks an amount the same request
  * already reserved. The only effect of the window is that others get in slightly less; if `release`
  * fails the result is over-counting (the safe direction).
+ *
+ * ## Slots — a count of what is open now, not of what happened
+ *
+ * Concurrency (managed generation streams) is not a window: a fixed-window counter forgets every open
+ * stream the moment its window rolls over, and the streams' later give-backs then shrink the next
+ * window, so the cap quietly doubles. A slot is a **lease** instead: `acquire` adds a holder that
+ * expires on its own after `leaseMs` (so a process that dies mid-stream frees its slot by itself),
+ * and `releaseHolder` removes it.
+ *
+ * `acquire` takes the cap, which is where it departs from `consume`. Admission has to be one atomic
+ * step ("fewer than `max` live holders, then add me"), and splitting it into add-then-undo would let
+ * two replicas each see room for one and both stay. The cap is a number handed in, not a rule written
+ * into the script; changing it still never touches Lua.
+ *
+ * ## `observe` — for showing, never for deciding
+ *
+ * The one read. It exists for the operations console (how much of the instance budget is left, how
+ * many streams are open), and the rule above is why it is fenced: `boundaries.test.ts` allows only
+ * `observeRateLimit` in `index.ts` to call it, and only the admin budget service to call that. A
+ * caller that read, decided and then consumed would bring back exactly the race this port removes.
  */
 
 export interface RateLimitConsumption {
 	/** Hits in the window, including this call. Starts at 1. */
 	readonly count: number;
 	/** Milliseconds until the window ends; the raw material for `Retry-After`. */
+	readonly resetMs: number;
+}
+
+export interface RateLimitSlot {
+	readonly admitted: boolean;
+	/** Live holders after the call. */
+	readonly held: number;
+}
+
+export interface RateLimitObservation {
+	/** Counter value, or live holders for a slot key. */
+	readonly count: number;
+	/** Milliseconds until the counter's window ends, or until the last lease lapses. */
 	readonly resetMs: number;
 }
 
@@ -79,6 +112,31 @@ export interface RateLimitStore {
 	 * The expiry is left alone.
 	 */
 	release(key: string, amount: number): Promise<void>;
+
+	/**
+	 * Takes a slot for `holder` when fewer than `max` unexpired holders are present, in one atomic
+	 * step. Expired holders are dropped first, so a crashed process's slots come back after `leaseMs`.
+	 * `held` is the live count after the call (including this holder when admitted). Failures throw,
+	 * as `consume` does: the policy decides what a dead store means.
+	 */
+	acquire(
+		key: string,
+		holder: string,
+		max: number,
+		leaseMs: number,
+	): Promise<RateLimitSlot>;
+
+	/** Frees `holder`'s slot. A holder that already expired or was never admitted is a no-op. */
+	releaseHolder(key: string, holder: string): Promise<void>;
+
+	/**
+	 * What the key holds right now, without changing it: a counter's value or a slot key's live
+	 * holders, and how long until it lapses. `null` when nothing is there. For display only (header).
+	 */
+	observe(
+		key: string,
+		kind: "counter" | "slots",
+	): Promise<RateLimitObservation | null>;
 
 	/** Shutdown and test cleanup; the in-process adapter releases its timer here. */
 	close(): Promise<void>;

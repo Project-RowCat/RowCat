@@ -7,12 +7,13 @@ import { ApiError } from "../../lib/errors.ts";
  * **Who** may use managed generation — this file alone decides.
  *
  * In the public release, managed generation runs unmetered on the operator's provider key. There are
- * three spending defences:
+ * four spending defences:
  *
  * ```text
  * who        this file                        in allowlist mode, listed members and staff/admin only
  * how much   managedGeneration(Daily)         30/min · 400/24h per member (fail-closed)
  * how long   MANAGED_GENERATION_WALL_CLOCK_MS  wall-clock cap per stream
+ * all of us  budget.ts                         instance slots, tokens per 24 h, one request's size
  * ```
  *
  * Comparing role and column in every route means the day a path is added one place gets missed,

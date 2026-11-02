@@ -1949,7 +1949,10 @@ The only irreversible operation, so the boundaries are tighter than elsewhere. R
 
 **Managed generation is unmetered.** It runs on the operator's provider key and nothing charges for it, so what
 stands between a member and that key is this allowlist, the two rate-limit windows (`managedGeneration` 30/min,
-`managedGenerationDaily` 400/24h, both fail-closed — `## Rate limiting`) and the stream's wall-clock cap.
+`managedGenerationDaily` 400/24h, both fail-closed — `## Rate limiting`), the stream's wall-clock cap, and three
+**instance-wide** ceilings on the key itself (`services/generation/budget.ts`, fail-closed, counted across replicas):
+streams open at once, tokens per 24 h, and one request's reservation — `MANAGED_GENERATION_CONCURRENCY` ·
+`_DAILY_TOKENS` · `_REQUEST_TOKENS` (`docs/ops/RATE-LIMITING.md` §인스턴스 전체의 천장).
 
 ```text
 deployment   MANAGED_GENERATION_ACCESS          allowlist (default) | everyone
@@ -1978,6 +1981,13 @@ refusal      403 chat_managed_not_allowed       → the client sends the person 
   `adminSetManagedGenerationMutationOptions`). The row write and its audit row
   (`admin.member.managed_generation.set`) are one transaction, and the detail projection carries the current value
   as `operator.managedGenerationAllowed`.
+- **Tokens are reserved, then settled from the stream's `usage` frames** — an overrun is recorded, a stream that
+  ended with no usage is charged its whole reservation (unknown is not zero), and a failure before streaming gives
+  everything back. Concurrency is a **lease** (`holdRateLimitSlot`), not a window: a fixed window forgets open
+  streams when it rolls over. A spent budget is `chat_managed_budget_exhausted` — the AI-settings rung with no
+  `다시 생성` in both apps; a full instance reuses `chat_rate_limited`. The console reads what is left through the
+  store's one read (`observeRateLimit`), whose single caller `boundaries.test.ts` pins — a read that fed a decision
+  would bring back the read-then-increment race.
 - **Do not bring back a balance to "solve" cost.** Metering existed and left with billing (`docs/oss/PLAN.md`
   §3단계); the answer to "this member spends too much" is the allowlist or the rate-limit table, not a ledger.
 

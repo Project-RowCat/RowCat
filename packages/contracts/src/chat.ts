@@ -1202,6 +1202,21 @@ export const CHAT_ERROR_CODE = {
 	 */
 	managedNotAllowed: "chat_managed_not_allowed",
 	/**
+	 * This deployment's managed generation spent its token budget for the current window (429, with
+	 * Retry-After). The budget is the operator's ceiling on their own key across every member
+	 * (`MANAGED_GENERATION_DAILY_TOKENS`), so retrying in a minute brings the same answer; the screen
+	 * leads to AI settings (a personal key does not draw on it), not to a retry. Checked before any
+	 * upstream call.
+	 */
+	managedBudgetExhausted: "chat_managed_budget_exhausted",
+	/**
+	 * One managed upstream call would weigh more than the per-call ceiling allows (413): its estimated
+	 * input plus its output cap (`MANAGED_GENERATION_REQUEST_TOKENS`).
+	 * The clients in this repository never build such a request at the default ceiling, so they have
+	 * no sentence of their own for it and fold it into the generic failure.
+	 */
+	managedRequestTooLarge: "chat_managed_request_too_large",
+	/**
 	 * A non-protected story was sent to the server-assembly path (400). That path is for protected
 	 * stories only. If it were open, conversations for unprotected stories would silently move onto
 	 * it, and the rule that a room is a copy taken at acquisition would break for no reason.

@@ -53,9 +53,10 @@ export type RateLimitSubjectKind =
 	/** Verified guardian consent request row id; an arbitrary path token cannot become it. */
 	| "guardian-consent-request"
 	/**
-	 * The deployment itself, one counter for everyone. Only for a door that has no member yet and
-	 * opens only to requests from this computer (`claim-local`): there is no identity to count by, and
-	 * every caller it admits is the same machine anyway.
+	 * The deployment itself, one counter for everyone. Two uses: a door that has no member yet and
+	 * opens only to requests from this computer (`claim-local`), where there is no identity to count
+	 * by; and the instance-wide ceilings on the operator's key (managed generation tokens and slots),
+	 * where the thing being protected is shared by everyone, so the count must be too.
 	 */
 	| "deployment";
 
@@ -79,11 +80,16 @@ export interface RateLimitPolicy {
 	/** Maximum within the window, in `unit`; reaching it succeeds, the next is rejected. */
 	readonly max: number;
 	/**
-	 * Absent means requests (nearly all policies). A `bytes` policy must go through
-	 * `reserveRateLimit`, never `checkRateLimit` (`policy.test.ts` scans the pairing), or each request
-	 * counts as 1 byte and blocks nothing.
+	 * Absent means requests (nearly all policies). `bytes` and `tokens` are amounts and go through
+	 * `reserveRateLimit`; `slots` is concurrency and goes through `holdRateLimitSlot` (`max` is then
+	 * the number open at once and `windowMs` the lease). Any of them through `checkRateLimit` would
+	 * count each request as 1 and block nothing (`policy.test.ts` scans the pairing).
+	 *
+	 * `tokens` differs from `bytes` in one place: a request may use more than it reserved (input is
+	 * estimated before the provider counts it), so settling charges the overrun instead of capping at
+	 * the reservation (`limiter.ts`).
 	 */
-	readonly unit?: "requests" | "bytes";
+	readonly unit?: "requests" | "bytes" | "tokens" | "slots";
 	readonly windowMs: number;
 	readonly subject: RateLimitSubjectKind;
 	readonly onStoreFailure: RateLimitFailureMode;
@@ -222,7 +228,8 @@ export const RATE_LIMIT_POLICIES = {
 	/**
 	 * Managed generation rate: 30 / 1 min / member. Managed generation runs on the operator's key and
 	 * is unmetered, so this, the daily cap below and the stream wall-clock cap
-	 * (`MANAGED_GENERATION_WALL_CLOCK_MS`) are the only server-side guards on one member burning it.
+	 * (`MANAGED_GENERATION_WALL_CLOCK_MS`) are the server-side guards on one member burning it; the
+	 * instance ceilings further down guard the key against everyone together.
 	 *
 	 * The route runs the limiter before the upstream call, so a rejected request never goes out.
 	 *
@@ -259,6 +266,53 @@ export const RATE_LIMIT_POLICIES = {
 		code: CHAT_ERROR_CODE.rateLimited,
 		message:
 			"You've used all of today's generations. Please try again tomorrow.",
+	},
+
+	/**
+	 * The instance's token budget for managed generation: every member together, every replica
+	 * together, 24 hours from the window's first request. The per-member windows above bound one
+	 * account; this bounds the key. The value here is the default the code ships with — a deployment
+	 * sets its own with `MANAGED_GENERATION_DAILY_TOKENS`, which `index.ts` applies (a budget is the
+	 * operator's money, and an image deployment cannot edit this table).
+	 *
+	 * Reserved on entry (estimated input + output cap, times the rounds the request may take) and
+	 * settled to the provider's reported usage. A stream that ends with no usage report — timed out,
+	 * cut by the client, failed midway — is charged the whole reservation: unknown is not zero.
+	 *
+	 * Fail-closed, like the per-member windows: this is a spending ceiling.
+	 */
+	managedGenerationTokens: {
+		name: "managed-generation-tokens",
+		max: 2_000_000,
+		windowMs: 86_400_000,
+		unit: "tokens",
+		subject: "deployment",
+		onStoreFailure: "deny",
+		code: CHAT_ERROR_CODE.managedBudgetExhausted,
+		message:
+			"This server's default AI has used up its budget for now. Try again later, or connect your own API key in AI settings.",
+	},
+
+	/**
+	 * Managed generation streams open at once across the instance. Each stream holds a lease for as
+	 * long as it runs; the lease lapses on its own after `windowMs`, which is longer than the 14-minute
+	 * wall-clock cap on a stream (`MANAGED_GENERATION_WALL_CLOCK_MS`), so a replica that dies
+	 * mid-stream frees its slot without anyone releasing it. Default 8; a deployment sets
+	 * `MANAGED_GENERATION_CONCURRENCY`.
+	 *
+	 * A full instance is a 429 with the shared code: what the person can do is the same as for the
+	 * per-member window (wait a moment). The wait quoted is short because streams finish in seconds.
+	 */
+	managedGenerationSlots: {
+		name: "managed-generation-slots",
+		max: 8,
+		windowMs: 15 * 60_000,
+		unit: "slots",
+		subject: "deployment",
+		onStoreFailure: "deny",
+		code: CHAT_ERROR_CODE.rateLimited,
+		message:
+			"This server's default AI is busy right now. Please try again in a moment.",
 	},
 
 	/**

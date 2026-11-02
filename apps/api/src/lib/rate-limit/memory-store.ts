@@ -1,4 +1,9 @@
-import type { RateLimitConsumption, RateLimitStore } from "./store.ts";
+import type {
+	RateLimitConsumption,
+	RateLimitObservation,
+	RateLimitSlot,
+	RateLimitStore,
+} from "./store.ts";
 
 /**
  * In-process fixed-window counter: a fallback, not a bottleneck. Used when `REDIS_URL` is absent
@@ -71,10 +76,28 @@ export function createMemoryRateLimitStore(
 ): RateLimitStore {
 	const now = options.now ?? Date.now;
 	const windows = new Map<string, Window>();
+	/** Slot keys: holder -> absolute lease end. Kept apart from windows, as Redis keeps a sorted set apart from a string. */
+	const slots = new Map<string, Map<string, number>>();
+	const liveHolders = (
+		key: string,
+		at: number,
+	): Map<string, number> | undefined => {
+		const holders = slots.get(key);
+		if (!holders) return undefined;
+		for (const [holder, until] of holders)
+			if (until <= at) holders.delete(holder);
+		if (holders.size === 0) {
+			slots.delete(key);
+			return undefined;
+		}
+		return holders;
+	};
 
 	/** `unref()` keeps this interval from holding the process open, which would hang test runners and CLIs. */
 	const sweeper = setInterval(() => {
-		sweepExpired(windows, now());
+		const at = now();
+		sweepExpired(windows, at);
+		for (const key of [...slots.keys()]) liveHolders(key, at);
 	}, SWEEP_INTERVAL_MS);
 	sweeper.unref?.();
 
@@ -125,9 +148,48 @@ export function createMemoryRateLimitStore(
 				existing.count = Math.max(0, existing.count - amount);
 			return Promise.resolve();
 		},
+		acquire(
+			key: string,
+			holder: string,
+			max: number,
+			leaseMs: number,
+		): Promise<RateLimitSlot> {
+			const at = now();
+			const holders = liveHolders(key, at) ?? new Map<string, number>();
+			if (holders.size >= max)
+				return Promise.resolve({ admitted: false, held: holders.size });
+			holders.set(holder, at + leaseMs);
+			slots.set(key, holders);
+			return Promise.resolve({ admitted: true, held: holders.size });
+		},
+		releaseHolder(key: string, holder: string): Promise<void> {
+			const holders = slots.get(key);
+			holders?.delete(holder);
+			if (holders?.size === 0) slots.delete(key);
+			return Promise.resolve();
+		},
+		observe(
+			key: string,
+			kind: "counter" | "slots",
+		): Promise<RateLimitObservation | null> {
+			const at = now();
+			if (kind === "slots") {
+				const holders = liveHolders(key, at);
+				if (!holders) return Promise.resolve(null);
+				const last = Math.max(...holders.values());
+				return Promise.resolve({ count: holders.size, resetMs: last - at });
+			}
+			const window = windows.get(key);
+			if (!window || window.expiresAt <= at) return Promise.resolve(null);
+			return Promise.resolve({
+				count: window.count,
+				resetMs: window.expiresAt - at,
+			});
+		},
 		close(): Promise<void> {
 			clearInterval(sweeper);
 			windows.clear();
+			slots.clear();
 			return Promise.resolve();
 		},
 	};

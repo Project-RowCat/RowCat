@@ -10,6 +10,7 @@ export * from "./deployment-setup.ts";
 export * from "./gallery.ts";
 export * from "./http.ts";
 export * from "./identity.ts";
+export * from "./managed-generation-budget.ts";
 export * from "./me.ts";
 export * from "./media.ts";
 export * from "./membership.ts";

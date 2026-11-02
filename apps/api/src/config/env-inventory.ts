@@ -712,6 +712,57 @@ export const ENVIRONMENT_INVENTORY: readonly EnvironmentVariableDefinition[] = [
 	},
 
 	{
+		key: "MANAGED_GENERATION_CONCURRENCY",
+		group: "generation",
+		sensitivity: "non-secret",
+		surfaces: {
+			apiRuntime: true,
+			compose: api("operator"),
+			rootExample: "documented",
+			apiExample: "documented",
+		},
+		operator: {
+			productionRelevant: true,
+			description:
+				"Managed streams open at once across the instance (default 8). Fail-closed when the counter store is down",
+		},
+	},
+
+	{
+		key: "MANAGED_GENERATION_DAILY_TOKENS",
+		group: "generation",
+		sensitivity: "non-secret",
+		surfaces: {
+			apiRuntime: true,
+			compose: api("operator"),
+			rootExample: "documented",
+			apiExample: "documented",
+		},
+		operator: {
+			productionRelevant: true,
+			description:
+				"Tokens the operator's key may spend per 24 h, all members together (default 2000000). Fail-closed",
+		},
+	},
+
+	{
+		key: "MANAGED_GENERATION_REQUEST_TOKENS",
+		group: "generation",
+		sensitivity: "non-secret",
+		surfaces: {
+			apiRuntime: true,
+			compose: api("operator"),
+			rootExample: "documented",
+			apiExample: "documented",
+		},
+		operator: {
+			productionRelevant: true,
+			description:
+				"The most one managed upstream call may weigh: estimated input + output cap (default 300000). Above it, 413",
+		},
+	},
+
+	{
 		key: "IDENTITY_VERIFICATION_PROVIDER",
 		group: "identity",
 		sensitivity: "non-secret",

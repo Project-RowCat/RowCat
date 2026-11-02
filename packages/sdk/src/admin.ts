@@ -27,6 +27,7 @@ import {
 	type FeatureFlagKey,
 	type FeatureFlagSetRequest,
 	FeatureFlagsDto,
+	ManagedGenerationBudgetDto,
 	toAdminMemberSearchParams,
 	toAdminStorySearchParams,
 	toAuditLogSearchParams,
@@ -109,6 +110,11 @@ export interface AdminApi {
 	deploymentReadiness(
 		options?: RequestOptions,
 	): Promise<DeploymentReadinessDto>;
+
+	/** The instance ceilings on the operator's key: what is left and which gate refuses now (staff and admin). */
+	managedGenerationBudget(
+		options?: RequestOptions,
+	): Promise<ManagedGenerationBudgetDto>;
 
 	featureFlags(options?: RequestOptions): Promise<FeatureFlagsDto>;
 	setFeatureFlag(
@@ -299,6 +305,18 @@ export function createAdminApi(transport: RowCatTransport): AdminApi {
 			/** `.strict()`: a server that starts sending the doctor's `detail` is refused here, not drawn. */
 			const parsed = DeploymentReadinessDto.safeParse(json);
 			if (!parsed.success) throw invalidResponse("/admin/deployment/readiness");
+			return parsed.data;
+		},
+
+		async managedGenerationBudget(options) {
+			const json = await requestJson({
+				method: "GET",
+				path: "/admin/generation/budget",
+				signal: options?.signal,
+			});
+			/** `.strict()`: a field the contract does not name (a key fragment, a member) is refused here, not drawn. */
+			const parsed = ManagedGenerationBudgetDto.safeParse(json);
+			if (!parsed.success) throw invalidResponse("/admin/generation/budget");
 			return parsed.data;
 		},
 

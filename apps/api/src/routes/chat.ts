@@ -5,6 +5,7 @@ import {
 } from "@rowcat/chat/guards";
 import {
 	CHAT_ERROR_CODE,
+	CHAT_MAX_TOOL_ROUND_TRIPS,
 	CHAT_STREAM_CONTENT_TYPE,
 	type ChatStreamEvent,
 	ManagedChatGenerationRequest,
@@ -18,11 +19,18 @@ import { checkRateLimit } from "../lib/rate-limit/index.ts";
 import { getViewer } from "../middleware/viewer.ts";
 import { requireManagedGenerationAccess } from "../services/generation/access.ts";
 import {
+	inputCharsOf,
+	reserveManagedGeneration,
+} from "../services/generation/budget.ts";
+import {
 	MANAGED_GENERATION_WALL_CLOCK_MS,
 	startChatGeneration,
 } from "../services/generation/chat.ts";
 import { listGenerationModels } from "../services/generation/models.ts";
-import { startProtectedStoryGeneration } from "../services/generation/story.ts";
+import {
+	assembleProtectedStoryGeneration,
+	startProtectedStoryGeneration,
+} from "../services/generation/story.ts";
 import { requireFeatureEnabled } from "../services/ops.ts";
 import {
 	parseChatSeed,
@@ -126,13 +134,31 @@ export const chat = new Hono<AppEnv>()
 			AbortSignal.timeout(MANAGED_GENERATION_WALL_CLOCK_MS),
 		]);
 
+		/**
+		 * The instance ceilings (`services/generation/budget.ts`): one slot and a token reservation for
+		 * this request, weighed on what is about to be sent. After the per-member windows so a member at
+		 * their own cap holds nothing of the instance's, and before the upstream call so a refusal sends
+		 * nothing.
+		 */
+		const reservation = await reserveManagedGeneration({
+			inputChars: inputCharsOf(request),
+			maxOutputTokens: request.maxOutputTokens,
+			rounds: 1,
+		});
+
 		// Awaiting here is the point: missing provider config (503), unknown model (400) and upstream
 		// failure (502) surface before any 200 is sent, so they go out in the shared error envelope
 		// (`ApiErrorBody`) and the SDK receives a `RowCatApiError`. Opening the stream first would put
 		// them inside a 200, indistinguishable from a generation that produced nothing.
-		const events = await startChatGeneration(request, signal);
+		let events: AsyncGenerator<ChatStreamEvent>;
+		try {
+			events = await startChatGeneration(request, signal);
+		} catch (error) {
+			await reservation.abandon();
+			throw error;
+		}
 
-		return streamChatEvents(c, events, signal);
+		return streamChatEvents(c, reservation.meter(events), signal);
 	})
 	/**
 	 * Generation for prompt-protected stories, assembled by the server. The protected creative prompt
@@ -190,13 +216,28 @@ export const chat = new Hono<AppEnv>()
 			c.req.raw.signal,
 			AbortSignal.timeout(MANAGED_GENERATION_WALL_CLOCK_MS),
 		]);
-		const events = await startProtectedStoryGeneration({
+		const assembled = assembleProtectedStoryGeneration({
 			seed,
 			request: parsed.data,
 			allAges,
-			signal,
 		});
-		return streamChatEvents(c, events, signal);
+		/**
+		 * The tool loop may call upstream once per round, each time with the whole request, so the
+		 * reservation covers every round it may take; the per-call ceiling still judges one call.
+		 */
+		const reservation = await reserveManagedGeneration({
+			inputChars: inputCharsOf(assembled.firstRequest),
+			maxOutputTokens: assembled.firstRequest.maxOutputTokens,
+			rounds: assembled.tools.length > 0 ? CHAT_MAX_TOOL_ROUND_TRIPS + 1 : 1,
+		});
+		let events: AsyncGenerator<ChatStreamEvent>;
+		try {
+			events = await startProtectedStoryGeneration({ assembled, signal });
+		} catch (error) {
+			await reservation.abandon();
+			throw error;
+		}
+		return streamChatEvents(c, reservation.meter(events), signal);
 	});
 
 /**

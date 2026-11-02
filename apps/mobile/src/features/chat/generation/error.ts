@@ -40,6 +40,14 @@ export const RATE_LIMITED_MESSAGE =
 export const MANAGED_NOT_ALLOWED_MESSAGE =
 	"This server's default AI is only for allowed accounts. Connect a personal API key in AI settings.";
 
+/**
+ * The deployment's instance-wide token budget for managed generation is spent (429). It refills in
+ * hours, not a moment, and a personal key does not draw on it, so the sentence says both and the
+ * action is AI settings. Same sentence as web.
+ */
+export const MANAGED_BUDGET_EXHAUSTED_MESSAGE =
+	"This server's default AI has used up its budget for now. Try again later, or connect a personal API key in AI settings.";
+
 /** The response arrived but could not be written to the device: a storage failure, not a network one. */
 export const PERSISTENCE_FAILED_MESSAGE =
 	"Couldn't save the response on this device.";
@@ -194,6 +202,8 @@ export function generationFailureMessage(failure: Error | null): string {
 	if (code === CHAT_ERROR_CODE.rateLimited) return RATE_LIMITED_MESSAGE;
 	if (code === CHAT_ERROR_CODE.managedNotAllowed)
 		return MANAGED_NOT_ALLOWED_MESSAGE;
+	if (code === CHAT_ERROR_CODE.managedBudgetExhausted)
+		return MANAGED_BUDGET_EXHAUSTED_MESSAGE;
 
 	return OPAQUE_FAILURE_MESSAGE;
 }
@@ -239,7 +249,9 @@ export function canRetryGeneration(failure: Error | null): boolean {
 		code !== CHAT_ERROR_CODE.providerUnconfigured &&
 		code !== CHAT_ERROR_CODE.managedModelUnavailable &&
 		/** The allowlist does not change on retry; only an operator decision or the member's own key does. */
-		code !== CHAT_ERROR_CODE.managedNotAllowed
+		code !== CHAT_ERROR_CODE.managedNotAllowed &&
+		/** Nor does a spent instance budget: it refills in hours, and each press is one more refusal. */
+		code !== CHAT_ERROR_CODE.managedBudgetExhausted
 	);
 }
 
@@ -348,7 +360,9 @@ export function generationRecovery(input: {
 		 * Outside the managed allowlist: the remedy is the same as a rejected key (connect your own), so
 		 * the destination is the same AI settings and neither `Regenerate` nor `Continue generating` stands.
 		 */
-		failureCode(failure) === CHAT_ERROR_CODE.managedNotAllowed
+		failureCode(failure) === CHAT_ERROR_CODE.managedNotAllowed ||
+		/** A spent instance budget: same remedy, a personal key (`MANAGED_BUDGET_EXHAUSTED_MESSAGE`). */
+		failureCode(failure) === CHAT_ERROR_CODE.managedBudgetExhausted
 	)
 		return {
 			message,

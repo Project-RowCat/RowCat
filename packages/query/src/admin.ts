@@ -23,6 +23,7 @@ import type {
 	FeatureFlagKey,
 	FeatureFlagSetRequest,
 	FeatureFlagsDto,
+	ManagedGenerationBudgetDto,
 } from "@rowcat/contracts";
 import type { RowCatClient } from "@rowcat/sdk";
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
@@ -242,6 +243,26 @@ export const adminDeploymentReadinessQueryOptions = (client: RowCatClient) =>
 		queryKey: ADMIN_DEPLOYMENT_READINESS_QUERY_KEY,
 		queryFn: ({ signal }) => client.admin.deploymentReadiness({ signal }),
 		staleTime: 60_000,
+	});
+
+export const ADMIN_MANAGED_GENERATION_BUDGET_QUERY_KEY = [
+	"admin",
+	"generation",
+	"budget",
+] as const;
+
+/**
+ * The instance ceilings on the operator's key. It moves with every member's generation, so it is
+ * short-lived (15 s) rather than polled: the operations screen shows the last confirmed value and
+ * refetches when someone looks again.
+ */
+export const adminManagedGenerationBudgetQueryOptions = (
+	client: RowCatClient,
+) =>
+	queryOptions<ManagedGenerationBudgetDto>({
+		queryKey: ADMIN_MANAGED_GENERATION_BUDGET_QUERY_KEY,
+		queryFn: ({ signal }) => client.admin.managedGenerationBudget({ signal }),
+		staleTime: 15_000,
 	});
 
 export const ADMIN_FEATURES_QUERY_KEY = ["admin", "ops", "features"] as const;

@@ -666,16 +666,24 @@ export const MANAGED_GENERATION_WALL_CLOCK_MS = 14 * 60 * 1000;
  * Failures after the stream starts cannot use the envelope (200 and headers are already out) and
  * are reported as an `error` event inside the frame.
  */
-export async function startChatGeneration(
-	request: ManagedChatGenerationRequest,
-	signal: AbortSignal,
-): Promise<AsyncGenerator<ChatStreamEvent>> {
+/**
+ * Managed generation exists only with an operator key. Exported so the instance budget can ask first:
+ * a deployment with no key should answer this 503 without touching a counter (`budget.ts`).
+ */
+export function requireManagedProvider(): void {
 	if (!chatProviderEnabled)
 		throw new ApiError(
 			503,
 			CHAT_ERROR_CODE.providerUnconfigured,
 			"Conversation generation isn't configured.",
 		);
+}
+
+export async function startChatGeneration(
+	request: ManagedChatGenerationRequest,
+	signal: AbortSignal,
+): Promise<AsyncGenerator<ChatStreamEvent>> {
+	requireManagedProvider();
 
 	/**
 	 * The server re-resolves the chosen model: the browser sends only a public identity, and the

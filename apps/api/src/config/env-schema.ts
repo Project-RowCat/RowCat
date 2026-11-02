@@ -214,6 +214,35 @@ export const EnvSchema = z.object({
 	 * outside the vocabulary blocks boot so code never guesses which way to fold a typo.
 	 */
 	MANAGED_GENERATION_ACCESS: z.string().default(""),
+	/**
+	 * Instance-wide ceilings on the operator's key, across every member and every replica (they live
+	 * in the rate-limit store; with no `REDIS_URL` each process counts its own). All three fail closed:
+	 * a store that cannot be read refuses managed requests rather than running without a count.
+	 *
+	 * - `MANAGED_GENERATION_CONCURRENCY`: managed streams open at once. Default 8.
+	 * - `MANAGED_GENERATION_DAILY_TOKENS`: tokens charged per 24-hour window, all members together.
+	 *   Default 2,000,000. Reserved before the upstream call, settled to the provider's reported usage,
+	 *   and charged in full when no usage arrives.
+	 * - `MANAGED_GENERATION_REQUEST_TOKENS`: the most one upstream call may weigh (estimated input
+	 *   plus the output cap). Default 300,000. Above it the request is a 413 before anything is sent.
+	 *   A request that may make several calls (the protected story's tool loop) reserves one such
+	 *   weight per call against the daily budget, but each call is judged against this alone.
+	 *
+	 * Numbers, not a switch: the key itself is what turns managed generation on, and these say how
+	 * much of it the deployment can afford. An empty value means the default.
+	 */
+	MANAGED_GENERATION_CONCURRENCY: z.preprocess(
+		(value) => (value === "" || value === undefined ? undefined : value),
+		z.coerce.number().int().min(1).max(1_000).default(8),
+	),
+	MANAGED_GENERATION_DAILY_TOKENS: z.preprocess(
+		(value) => (value === "" || value === undefined ? undefined : value),
+		z.coerce.number().int().min(1).max(1_000_000_000_000).default(2_000_000),
+	),
+	MANAGED_GENERATION_REQUEST_TOKENS: z.preprocess(
+		(value) => (value === "" || value === undefined ? undefined : value),
+		z.coerce.number().int().min(1_000).max(100_000_000).default(300_000),
+	),
 
 	/**
 	 * Whether this deployment turns on the age-check gate: `on` | `off`; empty means off.

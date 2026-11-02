@@ -504,6 +504,9 @@ describe.skipIf(!databaseReady)("comments — authorization", () => {
 			kind: "memory",
 			consume: () => Promise.reject(new Error("ECONNREFUSED")),
 			release: () => Promise.reject(new Error("ECONNREFUSED")),
+			acquire: () => Promise.reject(new Error("ECONNREFUSED")),
+			releaseHolder: () => Promise.reject(new Error("ECONNREFUSED")),
+			observe: () => Promise.reject(new Error("ECONNREFUSED")),
 			close: () => Promise.resolve(),
 		});
 		try {
