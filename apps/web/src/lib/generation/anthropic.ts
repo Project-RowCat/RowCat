@@ -419,6 +419,40 @@ const ANTHROPIC_REASONING: Readonly<Record<string, AnthropicReasoningMode>> = {
 };
 
 /**
+ * How each model turns thinking off, for the models where that is offered (`off` in the catalogue's
+ * `efforts`, `BYO_EFFORT_OFF_AND_THREE` in apps/api `models.ts`; the two lists must name the same
+ * models, and tests pin both).
+ *
+ * Three shapes, per generation:
+ * - Sonnet 5.5: `{ type: "disabled" }` is a 400 there; `between_tools` is that model's off switch,
+ *   accepted at effort `high` or below (no effort is sent, and its default is `high`).
+ * - Sonnet 5: `{ type: "disabled" }`.
+ * - Opus 4.7, Opus 4.6, Sonnet 4.6 and the 4.5 generation: thinking is off unless asked for, so off is
+ *   sending no thinking parameter at all.
+ *
+ * Models absent from this table never receive an off switch. That is not a gap: Opus 5.5 and Fable
+ * reject every off value, and Opus 5 and Opus 4.8 degrade without thinking (see the catalogue). A
+ * stale `off` reaching one of them is treated like any level not in the tables: no parameter, which
+ * runs the model's own default.
+ *
+ * Checked against the Anthropic docs (thinking and effort pages) on 2026-11-02, and against the live
+ * API the same day: Sonnet 5.5 `between_tools`, Sonnet 5 `disabled` and Opus 4.7 with no parameter all
+ * answered with zero thinking tokens; Sonnet 5.5 `disabled` and Opus 5.5 `disabled` were 400s.
+ */
+const ANTHROPIC_THINKING_OFF: Readonly<
+	Record<string, Record<string, unknown>>
+> = {
+	"claude-sonnet-5-5": { thinking: { type: "between_tools" } },
+	"claude-sonnet-5": { thinking: { type: "disabled" } },
+	"claude-opus-4-7": {},
+	"claude-opus-4-6": {},
+	"claude-sonnet-4-6": {},
+	"claude-opus-4-5": {},
+	"claude-sonnet-4-5": {},
+	"claude-haiku-4-5": {},
+};
+
+/**
  * The thinking setting for this request. Only one scheme is sent, and when there is none the key is
  * absent. This function prevents exactly two leaks: `output_config.effort` reaching a manual model,
  * and `thinking.type: "enabled"` reaching an adaptive model. Both are 400s, and both disappear when
@@ -443,6 +477,12 @@ function anthropicThinkingFor(
 	effort: ReasoningEffortDto | null,
 ): AnthropicThinking {
 	if (effort === null) return { body: {} };
+	/**
+	 * Off is not a depth, so it does not go through the level tables. Only a model with a row here
+	 * gets a switch; for any other the result is the same as an unknown level.
+	 */
+	if (effort === "off")
+		return { body: { ...(ANTHROPIC_THINKING_OFF[model] ?? {}) } };
 	const mode = ANTHROPIC_REASONING[model];
 	if (mode === undefined || mode.kind === "none") return { body: {} };
 

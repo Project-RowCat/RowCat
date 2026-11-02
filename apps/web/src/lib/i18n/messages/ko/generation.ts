@@ -35,6 +35,7 @@ export const generation: Messages["generation"] = {
 	reasoning: {
 		label: "추론 정도",
 		description: "답변 전에 얼마나 깊게 생각할지 정합니다.",
+		off: "끔",
 		minimal: "최소",
 		low: "낮게",
 		medium: "표준",

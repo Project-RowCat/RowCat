@@ -73,8 +73,9 @@ describe("vocabulary", () => {
 	 * `budget_tokens` came in here, then on the day a provider appeared that does not accept the
 	 * value, saved preferences would lose their meaning.
 	 */
-	it("only four phases, in a fixed order", () => {
+	it("only five phases, in a fixed order", () => {
 		expect([...REASONING_EFFORTS]).toEqual([
+			"off",
 			"minimal",
 			"low",
 			"medium",

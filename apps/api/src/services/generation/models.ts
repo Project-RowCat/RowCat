@@ -73,6 +73,25 @@ const BYO_EFFORT_THREE: ModelReasoningDto = Object.freeze({
 }) as ModelReasoningDto;
 
 /**
+ * The same three levels plus `off`, for Anthropic models whose adapter can turn thinking off.
+ *
+ * Which models those are is a fact per model, not per company, and it is the adapter's table
+ * (`ANTHROPIC_THINKING_OFF` in `lib/generation/anthropic.ts`, web and mobile) that this list must
+ * match; a test compares them. Left out on purpose:
+ * - Fable 5.1, Fable 5, Opus 5.5: every way of disabling thinking is a 400; `low` is the floor.
+ * - Opus 5: accepts `disabled`, but the documented failure modes (a tool call written as reply
+ *   text, leaked thinking tags) would surface as a lore search that silently never runs.
+ * - Opus 4.8: with thinking off it may write its reasoning into the visible reply, which in a
+ *   conversation is the reply.
+ *
+ * The default stays `medium`: `off` is something a person chooses, never what an unset value runs.
+ */
+const BYO_EFFORT_OFF_AND_THREE: ModelReasoningDto = Object.freeze({
+	efforts: Object.freeze(["off", "low", "medium", "high"]),
+	defaultEffort: "medium",
+}) as ModelReasoningDto;
+
+/**
  * `minimal` stands only on models that really have that level.
  *
  * It differs within one company: Gemini 3.x splits into models with and without `minimal` on
@@ -151,19 +170,19 @@ const ANTHROPIC_MODELS: readonly {
 	{
 		model: "claude-sonnet-5-5",
 		label: "Claude Sonnet 5.5",
-		reasoning: BYO_EFFORT_THREE,
+		reasoning: BYO_EFFORT_OFF_AND_THREE,
 		promptPack: null,
 	},
 	{
 		model: "claude-sonnet-5",
 		label: "Claude Sonnet 5",
-		reasoning: BYO_EFFORT_THREE,
+		reasoning: BYO_EFFORT_OFF_AND_THREE,
 		promptPack: null,
 	},
 	{
 		model: "claude-haiku-4-5",
 		label: "Claude Haiku 4.5",
-		reasoning: BYO_EFFORT_THREE,
+		reasoning: BYO_EFFORT_OFF_AND_THREE,
 		promptPack: { lineage: "standard", densities: ["light"] },
 	},
 	{
@@ -175,31 +194,31 @@ const ANTHROPIC_MODELS: readonly {
 	{
 		model: "claude-opus-4-7",
 		label: "Claude Opus 4.7",
-		reasoning: BYO_EFFORT_THREE,
+		reasoning: BYO_EFFORT_OFF_AND_THREE,
 		promptPack: null,
 	},
 	{
 		model: "claude-opus-4-6",
 		label: "Claude Opus 4.6",
-		reasoning: BYO_EFFORT_THREE,
+		reasoning: BYO_EFFORT_OFF_AND_THREE,
 		promptPack: null,
 	},
 	{
 		model: "claude-sonnet-4-6",
 		label: "Claude Sonnet 4.6",
-		reasoning: BYO_EFFORT_THREE,
+		reasoning: BYO_EFFORT_OFF_AND_THREE,
 		promptPack: null,
 	},
 	{
 		model: "claude-sonnet-4-5",
 		label: "Claude Sonnet 4.5",
-		reasoning: BYO_EFFORT_THREE,
+		reasoning: BYO_EFFORT_OFF_AND_THREE,
 		promptPack: null,
 	},
 	{
 		model: "claude-opus-4-5",
 		label: "Claude Opus 4.5",
-		reasoning: BYO_EFFORT_THREE,
+		reasoning: BYO_EFFORT_OFF_AND_THREE,
 		promptPack: null,
 	},
 ];

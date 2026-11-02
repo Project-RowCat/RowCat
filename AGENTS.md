@@ -1817,8 +1817,12 @@ The only irreversible operation, so the boundaries are tighter than elsewhere. R
   `thinking.budget_tokens`, `output_config.effort`, `thinkingBudget` and `thinkingLevel` are the execution
   boundary's vocabulary — what contracts, preferences and the catalogue carry is one piece of product
   vocabulary, and putting a budget number on any of them creates code on the screen that reads it. **When
-  absent, the key itself is absent.** We also do not send a value that **disables** thinking (some models reject
-  it with a 400).
+  absent, the key itself is absent.** **`off` is a choice the catalogue offers per model, never what an absent
+  value means.** It is in the vocabulary (`REASONING_EFFORTS`) but a model lists it only when its adapter has an
+  off switch the provider accepts without degrading the reply (`ANTHROPIC_THINKING_OFF` ↔
+  `BYO_EFFORT_OFF_AND_THREE`, pinned by tests on both sides). Opus 5.5 and Fable reject every off value with a 400;
+  Opus 5 and Opus 4.8 accept one but misbehave without thinking (a tool call written as reply text; reasoning in
+  the visible reply), so neither lists it. No managed model lists it until each upstream is confirmed.
 - **⚠️ It is not one translation table per company — it differs per generation, and the newest generation
   rejects the old shape with a 400.**
 

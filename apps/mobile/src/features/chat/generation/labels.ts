@@ -30,12 +30,13 @@ export const responseLengthLabel = (length: ResponseLength): string =>
 	RESPONSE_LENGTH_LABEL[length];
 
 /**
- * Human names for reasoning effort; the same four words as web
+ * Human names for reasoning effort; the same five words as web
  * (`apps/web/src/features/generation/reasoning-effort-field.tsx`). `medium` is not called `Medium`: it
  * is the product default rather than a midpoint, and `Medium` reads as "so-so" and gives no reason to
- * pick it.
+ * pick it. `Off` appears only on models the catalogue lists it for.
  */
 const REASONING_EFFORT_LABEL: Record<ReasoningEffort, string> = {
+	off: "Off",
 	minimal: "Minimal",
 	low: "Low",
 	medium: "Standard",

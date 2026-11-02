@@ -326,7 +326,7 @@ export const isRowCatManagedModel = (
 export const DEFAULT_MANAGED_MODEL: RowCatManagedModel = "deepseek-v4-pro";
 
 /**
- * Reasoning effort, with four product-defined levels.
+ * Reasoning effort, with five product-defined levels.
  *
  * Provider parameters are not exposed directly, for the same reason as response length. The
  * provider fields differ in meaning and range: reasoning_effort is an enum, while
@@ -340,11 +340,26 @@ export const DEFAULT_MANAGED_MODEL: RowCatManagedModel = "deepseek-v4-pro";
  * Token budgets are not sent here. Their ceilings differ by model and interact with response limits
  * (Anthropic requires max_tokens > budget_tokens), so users do not pick them.
  *
- * `minimal` exists because it is not off. OpenAI-family models still reason at that level, only
- * minimally. A value meaning 'no reasoning' would be false for models that cannot disable
- * reasoning. 'Not set' is not in this vocabulary; it is `null` in the preference (@rowcat/chat).
+ * `minimal` is not off. OpenAI-family models still reason at that level, only minimally.
+ *
+ * `off` is: no reasoning at all. It was kept out of this vocabulary for a while because it would be
+ * false for models that cannot disable reasoning (Claude Opus 5.5 and Fable reject every way of
+ * turning it off with a 400). It stands now because the vocabulary is not what decides that; the
+ * catalogue is. A model lists `off` in `ModelReasoningDto.efforts` only when its execution boundary
+ * has a way to send it that the provider accepts and that does not degrade the reply, the same rule
+ * `minimal` already follows. So the screen never offers it where it would be a lie.
+ *
+ * 'Not set' is not in this vocabulary; it is `null` in the preference (@rowcat/chat). Not set means
+ * "the model's own default", which for most current models is to reason; `off` is an explicit
+ * choice and is never what an absent value means.
  */
-export const REASONING_EFFORTS = ["minimal", "low", "medium", "high"] as const;
+export const REASONING_EFFORTS = [
+	"off",
+	"minimal",
+	"low",
+	"medium",
+	"high",
+] as const;
 export const ReasoningEffortDto = z.enum(REASONING_EFFORTS);
 export type ReasoningEffortDto = z.infer<typeof ReasoningEffortDto>;
 

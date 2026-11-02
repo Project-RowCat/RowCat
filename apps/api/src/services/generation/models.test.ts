@@ -354,23 +354,38 @@ describe("reasoning capability", () => {
 		/**
 		 * Anthropic has no `minimal`: its effort vocabulary starts at `low` and the extended-thinking
 		 * budget floor is 1,024, so neither method has a slot for that level.
+		 *
+		 * `off` is listed only where the adapter has an off switch the model accepts without degrading
+		 * (`ANTHROPIC_THINKING_OFF` in the web and mobile adapters, whose tests pin the same list). Opus
+		 * 5.5 and Fable reject every off value; Opus 5 and Opus 4.8 accept one but misbehave without
+		 * thinking.
 		 */
 		it.each([
 			"claude-fable-5-1",
 			"claude-fable-5",
 			"claude-opus-5-5",
 			"claude-opus-5",
+			"claude-opus-4-8",
+		])("anthropic-byo:%s has neither minimal nor off", (model) => {
+			expect(effortsOf(`anthropic-byo:${model}`)).toEqual([
+				"low",
+				"medium",
+				"high",
+			]);
+		});
+
+		it.each([
 			"claude-sonnet-5-5",
 			"claude-sonnet-5",
 			"claude-haiku-4-5",
-			"claude-opus-4-8",
 			"claude-opus-4-7",
 			"claude-opus-4-6",
 			"claude-sonnet-4-6",
 			"claude-sonnet-4-5",
 			"claude-opus-4-5",
-		])("anthropic-byo:%s has no minimal", (model) => {
+		])("anthropic-byo:%s offers off before low", (model) => {
 			expect(effortsOf(`anthropic-byo:${model}`)).toEqual([
+				"off",
 				"low",
 				"medium",
 				"high",
@@ -416,6 +431,7 @@ describe("reasoning capability", () => {
 		])("%s is absent on managed and present on BYO", (model) => {
 			expect(effortsOf(`rowcat:${model}`)).toBeNull();
 			expect(effortsOf(`anthropic-byo:${model}`)).toEqual([
+				"off",
 				"low",
 				"medium",
 				"high",

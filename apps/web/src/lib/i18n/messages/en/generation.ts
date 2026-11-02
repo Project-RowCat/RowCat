@@ -36,6 +36,7 @@ export const generation = {
 	reasoning: {
 		label: "Reasoning effort",
 		description: "Sets how deeply the model thinks before answering.",
+		off: "Off",
 		minimal: "Minimal",
 		low: "Low",
 		medium: "Standard",

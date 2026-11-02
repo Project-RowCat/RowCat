@@ -294,6 +294,41 @@ describe("Anthropic adapter", () => {
 			expect(body.max_tokens).toBe(768);
 		});
 
+		/**
+		 * **Off is a switch per model, not a depth.** The list must name exactly the models the catalogue
+		 * offers `off` for (apps/api `models.test.ts` pins the same list). Sonnet 5.5 rejects `disabled`
+		 * and turns off with `between_tools`; the older generations are off when no thinking parameter
+		 * goes out.
+		 */
+		it.each([
+			["claude-sonnet-5-5", { type: "between_tools" }],
+			["claude-sonnet-5", { type: "disabled" }],
+			["claude-opus-4-7", undefined],
+			["claude-opus-4-6", undefined],
+			["claude-sonnet-4-6", undefined],
+			["claude-opus-4-5", undefined],
+			["claude-sonnet-4-5", undefined],
+			["claude-haiku-4-5", undefined],
+		] as const)("%s turns thinking off", async (model, thinking) => {
+			const body = await bodyFor(model, "off");
+			expect(body.thinking).toEqual(thinking);
+			expect("output_config" in body).toBe(false);
+			expect(body.max_tokens).toBe(768);
+		});
+
+		/** These reject or misbehave without thinking; a stale `off` gets no switch at all. */
+		it.each([
+			"claude-fable-5-1",
+			"claude-fable-5",
+			"claude-opus-5-5",
+			"claude-opus-5",
+			"claude-opus-4-8",
+		])("%s never receives an off switch", async (model) => {
+			const body = await bodyFor(model, "off");
+			expect("thinking" in body).toBe(false);
+			expect("output_config" in body).toBe(false);
+		});
+
 		it.each(ADAPTIVE)("%s is adaptive + effort level", async (model) => {
 			const body = await bodyFor(model, "medium");
 			expect(body.thinking).toEqual({ type: "adaptive" });

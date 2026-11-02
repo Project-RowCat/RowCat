@@ -209,6 +209,13 @@ export const rejectsPrefillWithReasoning = (model: string): boolean =>
  * Confirmed against OpenRouter docs (use-cases/reasoning-tokens) on 2026-08-29.
  */
 const REASONING_EFFORT_PARAM: Record<ReasoningEffortDto, string> = {
+	/**
+	 * The gateway's word for no reasoning. No managed model lists `off` yet (`managed-models.ts`): each
+	 * upstream would have to be confirmed to honor it, and until then the server folds a requested
+	 * `off` to the model's default like any other unsupported tier. The row exists so the table stays
+	 * total.
+	 */
+	off: "none",
 	minimal: "minimal",
 	low: "low",
 	medium: "medium",
