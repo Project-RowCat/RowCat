@@ -60,7 +60,11 @@ export default defineConfig({
 		 * under `vitest.mail.config.ts`; both runs share the DB but run sequentially and each cleans only
 		 * its own prefix.
 		 */
-		exclude: [...configDefaults.exclude, "src/**/*.verified.test.ts"],
+		exclude: [
+			...configDefaults.exclude,
+			"src/**/*.verified.test.ts",
+			"src/**/*.minimal.test.ts",
+		],
 		/**
 		 * The workspace budget, stated here because this package's script chains two `vitest run`s and
 		 * the root `pnpm test` flag (`turbo.json`, the `test` task) reaches only the second. These tests

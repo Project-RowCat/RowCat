@@ -484,8 +484,9 @@ export async function declineGuardianConsent(input: {
  *
  * No HTTP surface. Only the ops script (`guardian:revoke`) and tests call this. The requester is
  * the guardian, who has no account, and no stable reference exists to identify them again without
- * storing CI. Handling goes through the privacy policy's contact channel, which is more honest than
- * a self-service button that does not exist.
+ * storing CI. Handling goes through the deployment's own contact channel (named in its privacy
+ * policy; this repository ships none), which is more honest than a self-service button that does
+ * not exist.
  */
 export async function revokeGuardianConsent(input: {
 	memberId: string;

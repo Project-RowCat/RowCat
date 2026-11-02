@@ -26,7 +26,7 @@
 		"db:seed:moderator": "tsx --env-file-if-exists=.env src/db/seed-moderator.ts",
 		"guardian:revoke": "tsx --env-file-if-exists=.env src/db/revoke-guardian-consent.ts",
 		"mobile-updates": "tsx --env-file-if-exists=.env src/services/mobile-updates/cli.ts",
-		"test": "vitest run && vitest run --config vitest.mail.config.ts"
+		"test": "vitest run && vitest run --config vitest.mail.config.ts && vitest run --config vitest.minimal.config.ts"
 	},
 	"dependencies": {
 		"@apple/app-store-server-library": "^3.1.0",

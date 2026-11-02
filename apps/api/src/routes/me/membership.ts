@@ -36,8 +36,8 @@ import { declareMemberAge } from "../../services/membership.ts";
  *   (`routes/guardian.ts`).
  * - Offer a consent-withdrawal button. The person who can withdraw is the guardian, who has no
  *   account, and we keep no stable reference to re-identify them (that would mean storing the CI).
- *   The privacy policy points to the contact channel, handled by a service function and an
- *   operations script.
+ *   Withdrawal goes through the deployment's own contact channel (its privacy policy names it;
+ *   this repository ships none), handled by a service function and an operations script.
  */
 export const meMembership = new Hono<AppEnv>()
 	/**

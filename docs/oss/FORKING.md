@@ -155,6 +155,52 @@ manifest(`apps/mcp/package.json`의 `repository`·`bugs`·`homepage`)가 그 저
 내는 워크플로는 `desktop-release.yml` 하나여야 한다 — 업데이터는 태그를 가리지 않고 저장소의 「최신」 릴리스를
 받는다.
 
+## 17. 신원 확인 · 연령 · 성인 콘텐츠
+
+**이 저장소는 법률 판단을 하지 않는다.** 어느 나라의 법을 따를지, 성인 작품을 열지, 신원 확인 기관과 계약할지는
+배포의 결정이고, 아래는 각 설정에서 코드가 **무엇을 열고 무엇을 닫는지**다. 비어 있는 설정은 언제나 닫는 쪽이다
+(fail-closed) — 확인하지 않은 것을 확인했다고 적는 길은 어느 설정에도 없다.
+
+```text
+                          IDENTITY_VERIFICATION_PROVIDER 비움(기본)      portone(세 값 모두)          dev(개발에서만)
+회원 자신의 성인 확인     503 — 시도 행도 남지 않는다                     열린다(19세 이상이면 성인)   누구나 통과 — 운영 부팅을 막는다
+만 14세 미만 보호자 동의  503 — 동의 링크가 발급되지 않는다               열린다                       누구나 통과
+성인 작품 보기·공개 발행  운영자가 콘솔에서 손으로 인정한 회원만          확인한 성인 + 본인의 표시 선택
+가입 · 전체이용가 · 신고 · 제재 · 동기화 · 생성                          설정과 무관하게 그대로 돈다
+```
+
+- **수동 인정이 검증 수단 없는 배포의 유일한 성인 경로다.** 운영 콘솔 회원 상세의 성인 자격(관리자만)이 두 축을
+  켜고, 사유와 전후 값이 감사 기록에 남는다(`services/admin/adult-verification.ts`). 무엇을 근거로 인정하는지는
+  그 배포의 책임이다 — 코드는 아동에게는 켜지 않는다는 것만 막는다.
+- **두 스위치**(기본 꺼짐):
+
+  ```text
+  MEMBERSHIP_AGE_GATE=on            나이를 묻는 진입 게이트. 만 14세 미만은 보호자 동의를 마쳐야 들어온다
+                                    ⚠ 검증 수단 없이 켜면 그 회원들은 게이트에서 멈춘다(env:doctor가 degraded로 말한다)
+  ADULT_REVERIFICATION_ENABLED=on   마지막 성인 확인에서 1년이 지나면 성인 보기만 닫는다
+                                    ⚠ 검증 수단 없이 켜면 다시 확인할 길이 없다
+  ```
+
+- **코드에 박힌 한국 법의 값 — 설정이 아니다.** 숫자만 바꾸면 되는 일이 아니라서다: 두 앱의 문구, 보호자 동의라는
+  절차의 모양, 무엇을 저장하지 않는지가 그 법에 맞춰져 있다. 다른 관할(예: 13세 기준, 국가별 16세 기준)은 다른
+  절차이지 다른 숫자가 아니다.
+
+  ```text
+  GUARDIAN_CONSENT_AGE = 14     「개인정보 보호법」 제22조의2     packages/domain/src/membership.ts
+  LEGAL_ADULT_AGE = 19          「민법」 제4조                     같은 파일 — 성인 확인의 19세도 같은 조항
+  PRODUCT_TIME_ZONE             나이를 판정하는 날짜의 기준(KST)   @rowcat/domain
+  1년 재확인                    「청소년 보호법 시행령」 제17조 제2항   ADULT_REVERIFICATION_ENABLED
+  PortOne                       국내 본인확인 기관                 services/identity/ — 다른 기관은 어댑터 하나와 그 값 하나
+  ```
+
+  다른 관할로 옮기는 포크는 이 값과 함께 두 앱의 연령·보호자·성인 문구(`apps/{web,mobile}/src/features/
+  {onboarding,adult-verification,account}/`)를 같은 커밋에서 고치고, 그 법의 검토를 거친다.
+- **원래 서비스의 약관·개인정보처리방침·연락처는 싣지 않는다**(§10). 코드 주석이 "개인정보처리방침"을 말하는
+  자리는 그 배포의 문서가 무엇을 약속할 수 있는지를 가리킬 뿐, 유효한 정책 문장이 아니다.
+- **확인**: `pnpm env:doctor --mode production`의 `Identity verification`·`Age gate` 줄. 기본 구성(검증 수단 없음)의
+  위 표는 `apps/api/src/routes/minimal-policy.minimal.test.ts`가 별도 프로세스(`vitest.minimal.config.ts`)에서
+  값으로 확인하고, 검증 수단이 있는 쪽은 `routes/membership.test.ts`·`routes/me/adult-verification.test.ts`가 맡는다.
+
 ## 바꾸지 않아도 되는 것
 
 | 자리 | 이유 |

@@ -498,6 +498,12 @@ function identityCapability(config: ResolvedEnvironment): CapabilityFact {
 			detail: [
 				`both procedures are blocked with 503 — ${consumers.join(" · ")}`,
 				"fail-closed. There is no path that records consent without verification",
+				"adult works: no member can verify themselves, so everyone sees all-ages only unless an admin grants adult eligibility by hand (console member detail, audited) — that judgement is this deployment's own",
+				...(config.adultReverificationEnabled
+					? [
+							"ADULT_REVERIFICATION_ENABLED is on: adults lose adult viewing a year after their last check, and nothing here lets them check again",
+						]
+					: []),
 			],
 		};
 
@@ -603,7 +609,34 @@ function generationCapability(
 	};
 }
 
+/**
+ * Whether a verifier would actually answer: the same folding `resolveIdentityVerifier` does (a half
+ * PortOne config and `dev` in production are no verifier), so the doctor and the procedures agree.
+ */
+const verifierUsable = (config: ResolvedEnvironment): boolean =>
+	(config.identityVerificationProvider === "portone" &&
+		config.portOneIdentityConfig !== null) ||
+	(config.identityVerificationProvider === "dev" && !config.isProduction);
+
 function membershipCapability(config: ResolvedEnvironment): CapabilityFact {
+	/**
+	 * The gate on with nothing to verify a guardian is the one combination here that boots cleanly and
+	 * locks people out: a member who declares an age under 14 meets the guardian-consent step, and the
+	 * step's first request is a 503. Fail-closed is the right direction, but the operator should hear
+	 * it from this report, not from a family.
+	 */
+	if (config.ageGateEnabled && !verifierUsable(config))
+		return {
+			id: "ageGate",
+			group: "membership",
+			label: "Age gate",
+			status: "degraded",
+			summary: "on, but no identity verifier",
+			detail: [
+				"members who declare an age under 14 stay at the guardian-consent step — no guardian can verify, so no consent is ever recorded (fail-closed)",
+				"fill IDENTITY_VERIFICATION_PROVIDER, or leave the gate off until this deployment has a verifier",
+			],
+		};
 	return {
 		id: "ageGate",
 		group: "membership",

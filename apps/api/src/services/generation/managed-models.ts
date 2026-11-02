@@ -579,13 +579,14 @@ const MANAGED_MODELS: readonly ManagedModelRoute[] = [
 /**
  * OpenRouter providers a managed request may run on; all are US-based operators.
  *
- * The privacy policy's overseas-transfer disclosure names OpenRouter, Inc. (US) as recipient and says
- * OpenRouter re-delegates model execution to US operators. For "US" to stay true, every request
+ * The hosted service's overseas-transfer disclosure named OpenRouter, Inc. (US) as recipient and said
+ * OpenRouter re-delegates model execution to US operators. This repository ships no privacy policy;
+ * a deployment that publishes one can make the same statement, and for "US" to stay true every request
  * must carry this allow-list so the gateway's dynamic routing cannot pick hosts in other countries
  * (Alibaba, Baidu, SiliconFlow, Z.ai and so on; `buildProviderRequestBody` in
  * `services/generation/chat.ts`). The list enforces that promise, and adding a row here is the same
- * commit as verifying that slug's legal entity is in the US; the policy sentence names one country
- * and does not change.
+ * commit as verifying that slug's legal entity is in the US. A fork whose own policy names another
+ * jurisdiction changes this list in the same commit as that policy.
  *
  * Per-model vendor pinning (`only: [maker]`) is not used because it strands models with no
  * first-party endpoint (the DeepSeek V4 family). For the same reason a model served only by hosts

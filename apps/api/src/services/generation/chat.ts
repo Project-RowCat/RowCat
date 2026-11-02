@@ -251,10 +251,10 @@ export function resolveUpstreamReasoning(
  * Routing constraint that keeps upstream from retaining prompts.
  *
  * Without `provider`, OpenRouter picks among the providers serving a model by price, and
- * `data_collection` defaults to `"allow"`, so providers that may store data are candidates. That
- * contradicts the published privacy policy, whose overseas-transfer table gives the retention
- * period as "the period needed to generate the response". This line makes that promise true rather
- * than adding a product decision, and always favors the user.
+ * `data_collection` defaults to `"allow"`, so providers that may store data are candidates. The
+ * hosted service's privacy policy gave the retention period as "the period needed to generate the
+ * response"; this repository ships no policy, but the line stays so a deployment's own policy can
+ * make that promise and have it be true. It always favors the user.
  *
  * The provider allowlist (`only`) is `DISCLOSED_PROVIDERS` in `managed-models.ts`. The overseas-
  * transfer disclosure names the United States as the sub-processor country, so it is one US provider set sent with
@@ -520,7 +520,7 @@ export function buildProviderRequestBody(
 		model,
 		/**
 		 * The routing constraint rides on every managed request unconditionally; no model or setting
-		 * branch exists that could make the privacy policy false.
+		 * branch exists that could make a deployment's no-retention promise false.
 		 */
 		provider: { ...NO_STORAGE_ROUTING, only: [...DISCLOSED_PROVIDERS] },
 		/**

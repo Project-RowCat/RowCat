@@ -353,6 +353,38 @@ describe("Identity verification", () => {
 		expect(statusOf(portone, "identityVerification")).toBe("ready");
 	});
 
+	test("with no means, says how adult works behave and warns about re-verification", () => {
+		const detail = (env: Record<string, string>) =>
+			report(env)
+				.capabilities.find((entry) => entry.id === "identityVerification")
+				?.detail.join(" ") ?? "";
+		expect(detail(MINIMAL)).toContain("grants adult eligibility by hand");
+		expect(detail(MINIMAL)).not.toContain("ADULT_REVERIFICATION_ENABLED");
+		expect(
+			detail({ ...MINIMAL, ADULT_REVERIFICATION_ENABLED: "on" }),
+		).toContain("ADULT_REVERIFICATION_ENABLED is on");
+	});
+
+	/** Boots cleanly and locks under-14 members out: the one combination the doctor must name. */
+	test("the age gate on with no usable verifier is degraded, and ready again with one", () => {
+		const gated = { ...MINIMAL, MEMBERSHIP_AGE_GATE: "on" };
+		expect(statusOf(gated, "ageGate")).toBe("degraded");
+		expect(
+			statusOf({ ...gated, ...portone, MEMBERSHIP_AGE_GATE: "on" }, "ageGate"),
+		).toBe("ready");
+		expect(
+			statusOf(
+				{
+					...gated,
+					...portone,
+					MEMBERSHIP_AGE_GATE: "on",
+					PORTONE_V2_API_SECRET: "",
+				},
+				"ageGate",
+			),
+		).toBe("degraded");
+	});
+
 	test("half a config is invalid", () => {
 		expect(
 			statusOf(

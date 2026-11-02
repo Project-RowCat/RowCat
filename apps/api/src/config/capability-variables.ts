@@ -67,6 +67,10 @@ export const CAPABILITY_VARIABLES: Readonly<
 		"OPENROUTER_API_KEY",
 		"OPENROUTER_BASE_URL",
 		"MANAGED_GENERATION_ACCESS",
+		"MANAGED_GENERATION_CONCURRENCY",
+		"MANAGED_GENERATION_DAILY_TOKENS",
+		"MANAGED_GENERATION_REQUEST_TOKENS",
 	],
-	ageGate: ["MEMBERSHIP_AGE_GATE"],
+	/** The verifier too: the gate's degraded state is "on with nothing to verify a guardian". */
+	ageGate: ["MEMBERSHIP_AGE_GATE", "IDENTITY_VERIFICATION_PROVIDER"],
 };

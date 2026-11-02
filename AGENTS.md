@@ -4942,7 +4942,9 @@ adult content and direct-connection generation. Full rules and rollout order in
   the day a deployment changes provider we quietly follow the wrong procedure. The screen **does not proceed on an unknown
   kind.**
 - **The verification provider is fail-closed.** Unconfigured is 503 and **a half configuration is unconfigured.**
-  Production + `dev` **blocks boot.** **Do not build a dev-only verification HTTP route.**
+  Production + `dev` **blocks boot.** **Do not build a dev-only verification HTTP route.** The default test config
+  runs with `dev`, so the configuration most forks run — no verifier — has its own process
+  (`vitest.minimal.config.ts`, `*.minimal.test.ts`); what each setting opens is the table in `docs/oss/FORKING.md` §17.
 - **A non-adult cannot be a legal guardian** — without this line a child completes identity verification on their own
   phone and creates their own consent, and at that moment the whole procedure is a formality.
 - **A child loses exactly two things** (adult content, BYO — `MINOR_RESTRICTED_CAPABILITIES`). There used to be a
