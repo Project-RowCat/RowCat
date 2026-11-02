@@ -96,6 +96,29 @@ API · Postgres · CDN · 오브젝트 저장소   서명할 권한이 없다
 채널·플랫폼·런타임·시각·자산을 다시 읽어 컬럼과 견준다(`services/mobile-updates/registration.ts`).
 이것은 클라이언트 검증의 대체가 아니라, 어긋난 묶음이 **틀린 스트림에서 선택되는 것**을 막는 한 겹이다.
 
+### 업데이트 권한과 인스턴스
+
+**앱 코드를 바꿀 권한은 바이너리를 낸 쪽에 있고, 회원이 고른 서버를 따라가지 않는다.** 한 앱이 여러 배포에
+붙는 설계(`docs/mobile/INSTANCES.md`)의 전제이고, 그 설계가 없는 지금도 참이어야 하는 사실이다.
+
+```text
+업데이트 주소 · 채널 헤더 · 인증서   네이티브 설정 — 빌드 환경(EXPO_PUBLIC_API_ORIGIN · 채널)에서만 나온다
+회원이 고른 서버                    데이터와 화면의 내용 — 앱 코드에 대해서는 아무 권한이 없다
+```
+
+- **주소는 빌드의 API 오리진 하나에서 나온다**(`app.config.ts`의 `otaUpdatesConfig`). 웹 오리진도, 앞으로 생길
+  인스턴스 선택 설정도, 런타임 설정 응답도, 딥링크도 그 값에 닿지 않는다.
+- **JS가 그 설정을 바꾸는 길은 둘이고, 둘 다 막혀 있다.** 설치된 `expo-updates`에
+  `setUpdateURLAndRequestHeadersOverride`(주소)와 `setUpdateRequestHeadersOverride`(채널 헤더)가 있다. 서명이
+  여전히 남의 manifest를 거절하지만(그 서버에는 채널 키가 없다), 재정의가 서면 앱이 이야기하는 서버가 곧 코드를
+  묻는 곳이 되어 막는 겹이 하나 준다. 그래서 `expo-updates` 가져오기 금지 위에, 두 이름과 네이티브 모듈 이름
+  (`ExpoUpdates`)을 정적 검사가 따로 막는다.
+- **`ROWCAT_OTA=off`가 모든 것을 이긴다.** 서명 키 없이 스스로 짓는 앱이 적는 값이고, 명시한 채널과 디스크의
+  인증서보다 앞서며 주소를 남기지 않는다 — 그 바이너리는 누구에게도 코드를 묻지 않는다.
+- **시험**: `apps/mobile/src/lib/updates-boundaries.test.ts`(두 재정의 · 네이티브 모듈 · `require`),
+  `apps/mobile/src/lib/ota-config.test.ts`(빌드의 API 오리진만 주소를 움직인다 · 설정이 앱 상태를 읽지 않는다 ·
+  `off`가 채널과 인증서를 이긴다).
+
 ## 네이티브 런타임 세대
 
 OTA가 그 바이너리에서 돌아도 되는가는 **JS 판이 아니라 네이티브 계약의 판**이 정한다.

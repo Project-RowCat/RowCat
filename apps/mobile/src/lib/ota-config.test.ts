@@ -127,6 +127,24 @@ describe("where OTA turns off", () => {
 		expect((config as ExpoConfig).updates).toEqual({ enabled: false });
 	});
 
+	/**
+	 * A self-built client without the channel's signing key states `off`. It must win over everything
+	 * else that would turn OTA on — an explicit channel and a certificate present on disk included —
+	 * and leave no address behind, so the binary asks nobody for code.
+	 */
+	it("ROWCAT_OTA=off wins over an explicit channel with a certificate present", async () => {
+		const config = await withTemporaryCertificate("rowcat-preview-1", () =>
+			evaluate({
+				ROWCAT_OTA: "off",
+				ROWCAT_OTA_CHANNEL: "preview",
+				EXPO_PUBLIC_API_ORIGIN: "https://home.rowcat.test",
+			}),
+		);
+		if (config instanceof Error) throw config;
+		expect(config.updates).toEqual({ enabled: false });
+		expect(JSON.stringify(config)).not.toContain("/mobile/updates");
+	});
+
 	it("ROWCAT_OTA=off turns it off explicitly", async () => {
 		const config = await evaluate({
 			EAS_BUILD: "true",
@@ -244,6 +262,49 @@ describe("config of enabled channels", () => {
 				).toBeUndefined();
 			});
 		});
+});
+
+/**
+ * The update authority belongs to whoever built the binary (`docs/ota/ARCHITECTURE.md` §업데이트 권한과
+ * 인스턴스). The address is derived from the build's API origin and nothing else, so no setting that
+ * might later let the app talk to another server can move where it asks for code.
+ */
+describe("the update address belongs to the build", () => {
+	it("only the build's API origin moves it", async () => {
+		const ask = (env: Record<string, string>) =>
+			withTemporaryCertificate("rowcat-preview-1", () =>
+				evaluate({ ROWCAT_OTA_CHANNEL: "preview", ...env }),
+			);
+		const home = await ask({
+			EXPO_PUBLIC_API_ORIGIN: "https://home.rowcat.test",
+		});
+		const elsewhere = await ask({
+			EXPO_PUBLIC_API_ORIGIN: "https://home.rowcat.test",
+			EXPO_PUBLIC_WEB_ORIGIN: "https://elsewhere.rowcat.test",
+			EXPO_PUBLIC_INSTANCE_SELECTION: "on",
+		});
+		if (home instanceof Error) throw home;
+		if (elsewhere instanceof Error) throw elsewhere;
+		expect(home.updates?.url).toBe(
+			`${apiBaseUrl("https://home.rowcat.test")}/mobile/updates/manifest`,
+		);
+		expect(elsewhere.updates).toEqual(home.updates);
+	});
+
+	it("the config reads its origin from the build environment, never from app state", () => {
+		const source = readFileSync(join(MOBILE, "app.config.ts"), "utf8");
+		const block = source.slice(
+			source.indexOf("function otaUpdatesConfig"),
+			source.indexOf("\n}\n", source.indexOf("function otaUpdatesConfig")),
+		);
+		expect(block).toContain("easApiOrigin");
+		expect(block).not.toMatch(
+			/AsyncStorage|SecureStore|SQLite|fetch\(|runtime-config/,
+		);
+		expect(source).toMatch(
+			/const easApiOrigin = process\.env\.EXPO_PUBLIC_API_ORIGIN/,
+		);
+	});
 });
 
 describe("the same address as the server", () => {

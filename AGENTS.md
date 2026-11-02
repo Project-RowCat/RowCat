@@ -338,8 +338,11 @@ CDN           mobile-updates/assets/sha256/<hex>   immutable — the app downloa
 - **No state moves an install that already has a release.** Clients only accept a *newer* signed response, so
   `rollback` = mark `rolled_back` (no key needed) **then** re-sign the previous good release with a new
   timestamp (or a signed `rollBackToEmbedded`). Do not claim "reactivate the old release" restores anyone.
-- **The app's JS does not touch updates**: no `expo-updates` import, no `reloadAsync()`, no manifest fetch
-  (`src/lib/updates-boundaries.test.ts`). `checkAutomatically: ON_LOAD` + `fallbackToCacheTimeout: 0` means a
+- **The app's JS does not touch updates**: no `expo-updates` import, no `reloadAsync()`, no manifest fetch, and
+  neither override (`setUpdateURLAndRequestHeadersOverride` · `setUpdateRequestHeadersOverride`)
+  (`src/lib/updates-boundaries.test.ts`). **The update authority is the binary, not the server the app talks to** — the
+  address comes from the build's API origin alone, so choosing another server can never choose who ships code
+  (`docs/ota/ARCHITECTURE.md` §업데이트 권한과 인스턴스). `checkAutomatically: ON_LOAD` + `fallbackToCacheTimeout: 0` means a
   downloaded update runs on the **next cold start** — never mid-generation, mid-playback.
 - **Three "updates", never merged**: an OTA release, an **update note** (repository-authored, ships *inside* the
   JS bundle; the publisher only checks it exists), and **`app_update`** (the native floor rose). OTA publishing

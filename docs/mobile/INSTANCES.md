@@ -32,19 +32,10 @@ OTA updates.url            빌드 때 같은 오리진에서 만들어 네이티
 
 ### 업데이트 권한은 인스턴스를 따라가지 않는다 (DEV-17)
 
-- **OTA 주소는 네이티브 설정이고 JS는 그것을 만지지 않는다.** `expo-updates`는 `Expo.plist` ·
-  `AndroidManifest`에 박힌 `updates.url`을 읽고, 앱 코드는 `expo-updates`를 가져오지 않는다
-  (`lib/updates-boundaries.test.ts`). 인스턴스를 바꿔도 묻는 곳은 그대로다 — 이것이 지금 이미 참인 사실이고,
-  이 설계는 그것을 **지킬 대상으로 적는다.**
-- **그 사실이 깨지는 길은 둘이다**(설치된 판에서 확인): `Updates.setUpdateURLAndRequestHeadersOverride`와
-  `setUpdateRequestHeadersOverride`. 앞의 한 줄이면 고른 서버가 업데이트 주소가 되고, 뒤의 것은 채널 헤더를 바꾼다. 서명이 여전히 막아 주지만(그 서버는 채널 키가 없다), 막는 겹이 하나 준다. 그래서 그 이름을
-  정적 검사로 막는다 — `expo-updates` 가져오기 금지가 이미 덮지만, 이름으로도 고정한다.
-- **업데이트 주소의 출처는 빌드 환경뿐이다.** `app.config.ts`의 `otaUpdatesConfig`가 `EXPO_PUBLIC_API_ORIGIN`
-  (= 아래의 **본 인스턴스**)에서 만든다. 인스턴스 목록, 런타임 설정, 딥링크 어느 것도 그 값에 닿지 않는다.
-- **본 인스턴스와 업데이트 권한은 같은 배포다.** 바이너리를 낸 쪽이 자기 API에서 OTA를 낸다. 다른 인스턴스의
-  운영자는 이 앱의 코드에 대해 아무 권한이 없다 — 그들이 낼 수 있는 것은 데이터다.
-- **`ROWCAT_OTA=off`로 지은 앱은 업데이트를 묻지 않는다.** 스스로 지은 앱의 기본이어야 한다(서명 키가 없는
-  빌드). 그 빌드에서 `updates.enabled`가 거짓이고 주소가 없음을 값으로 고정한다.
+정본은 `docs/ota/ARCHITECTURE.md` §업데이트 권한과 인스턴스다. 요약하면: 업데이트 주소 · 채널 헤더 · 인증서는
+빌드 환경에서만 나오는 네이티브 설정이고, JS가 그것을 바꾸는 두 함수(`setUpdateURLAndRequestHeadersOverride` ·
+`setUpdateRequestHeadersOverride`)와 네이티브 모듈 이름을 정적 검사가 막으며, `ROWCAT_OTA=off`는 채널과 인증서를
+이긴다. **본 인스턴스와 업데이트 권한은 같은 배포다** — 다른 인스턴스의 운영자가 낼 수 있는 것은 데이터뿐이다.
 
 ### 악의적인 인스턴스가 할 수 있는 것과 없는 것
 
@@ -164,7 +155,7 @@ Apple(네이티브 시트)    본 인스턴스만 — 토큰의 aud가 이 앱�
 
 ```text
 0  세션 전달 검증된 링크 · 일회용 코드로(네이티브 재빌드 · 도메인 연결 파일) — §결정 4
-1  DEV-17   업데이트 권한의 정적 시험 · ROWCAT_OTA=off의 값 시험 · 이 문서의 §업데이트 권한을 docs/ota에 옮긴다
+1  DEV-17   업데이트 권한의 정적 시험 · ROWCAT_OTA=off의 값 시험 · docs/ota에 옮김 — 끝났다
 2  범위 키   scopeKeyFor + 본 인스턴스는 지금 이름 그대로(시험이 바이트로 고정)
 3  레지스트리 기기 저장소의 목록 · 활성 인스턴스 · 런타임 설정 검증(서버에 instanceProtocol)
 4  클라이언트 인스턴스마다 SDK · 인증 클라이언트 · 쿼리 캐시 리셋 · 인증 이미지

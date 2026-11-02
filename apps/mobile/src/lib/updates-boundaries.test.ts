@@ -57,6 +57,26 @@ describe("app code doesn't hold the update's lifetime", () => {
 		).toEqual([]);
 	});
 
+	/**
+	 * The update authority is the binary, not the server the member picked (`docs/ota/ARCHITECTURE.md`
+	 * §업데이트 권한과 인스턴스). `updates.url` and the channel header are native config from the build
+	 * environment, and two JS calls can replace them at runtime. Signing still refuses a foreign
+	 * server's manifest, but with an override the server the app talks to becomes the address it asks
+	 * for code — one defence layer gone, silently. The import ban above covers the usual shape; these
+	 * names also catch a `require()`, a re-export or the native module reached directly.
+	 */
+	it("no app code overrides the update address or headers", () => {
+		expect(
+			productSources
+				.filter(({ text }) =>
+					/setUpdateURLAndRequestHeadersOverride|setUpdateRequestHeadersOverride|["']ExpoUpdates["']|require\(\s*["']expo-updates["']/.test(
+						text,
+					),
+				)
+				.map(({ path }) => path),
+		).toEqual([]);
+	});
+
 	it("feature code doesn't fetch the manifest directly", () => {
 		expect(
 			productSources
