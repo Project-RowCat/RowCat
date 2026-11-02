@@ -762,7 +762,12 @@ response saved → maintain?.() → room gate → batch selection → utility ca
   most `CHAT_HISTORY_WINDOW_MAX` (60), and `CHAT_MAINTENANCE_TRIGGER` is derived from that cap. A fixed last-40
   window left up to nineteen messages outside both the transcript and the summary, and it dropped one message a
   turn, so the history prefix never matched the prompt cache. Both apps' room sessions and both playtests load
-  through that one function — do not slice history in an app.
+  through that one function — do not slice history in an app. **Past the cap the window steps, it does not
+  slide**: a room whose summary lags or fails (silently — maintenance swallows every failure) jumps its start
+  twenty messages from the frontier and holds it for ten turns. Keeping "the newest 60" instead brought the
+  per-turn full history rewrite back (seen 2026-11-03: reads stuck at the system block, ~100k written a turn).
+  The step needs the count after the frontier, so room sessions read through `loadChatHistoryWindow`, which
+  reads the whole room only when the newest 61 all follow the frontier.
 - **A rewind treats summary and memory differently** — a summary is prose and cannot be subtracted, so it is
   **discarded whole**; memories carry `originAt` so only those from the vanished span are deleted.
   **Human-written memories survive any rewrite.**

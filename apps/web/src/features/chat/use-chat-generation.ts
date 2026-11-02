@@ -1,13 +1,12 @@
 import {
 	type AssistantContinuation,
-	CHAT_HISTORY_WINDOW_MAX,
 	type ChatRoom,
 	type ChatStore,
-	chatHistoryWindow,
 	effectiveChatPersona,
 	type GeneratedAssistantMessage,
 	type GenerationPreference,
 	type GenerationPreferenceStore,
+	loadChatHistoryWindow,
 	protectedStoryIdOf,
 } from "@rowcat/chat";
 import { useMemo } from "react";
@@ -31,7 +30,7 @@ import { useMemoryMaintenance } from "./memory/use-maintenance.ts";
  * What remains here is the answer on persistence:
  * - User message save: store.appendMessage(...), which also advances the room's activity time in
  *   the same transaction.
- * - History: store.listRecentMessages; the store's order is the next turn's history.
+ * - History: loadChatHistoryWindow over the store's reads; the store's order is the next turn's history.
  * - Memory: store.listMemories, the room-level memory.
  * - Preference override for this layer: preferences.getRoom(room). It is a device-local
  *   preference, not a room record.
@@ -91,15 +90,16 @@ export function createChatConversation(input: {
 		 * The window starts at the summary frontier (`chatHistoryWindow`), so the summary is read here as
 		 * well as in `loadSummary`. The two reads are separate; if maintenance commits between them, this
 		 * turn's window starts at the older frontier and overlaps the new summary once. That is the safe
-		 * direction: an event seen twice, never one seen by neither.
+		 * direction: an event seen twice, never one seen by neither. How many messages to read is the
+		 * shared loader's rule (`loadChatHistoryWindow`), the same one mobile uses.
 		 */
-		loadHistory: async () => {
-			const [messages, summary] = await Promise.all([
-				store.listRecentMessages(room.id, { limit: CHAT_HISTORY_WINDOW_MAX }),
-				store.getSummary(room.id),
-			]);
-			return chatHistoryWindow(messages, summary?.frontier ?? null);
-		},
+		loadHistory: () =>
+			loadChatHistoryWindow({
+				recent: (limit) => store.listRecentMessages(room.id, { limit }),
+				all: () => store.listAllMessages(room.id),
+				frontier: async () =>
+					(await store.getSummary(room.id))?.frontier ?? null,
+			}),
 		loadMemories: () => store.listMemories(room.id),
 		/**
 		 * Characters introduced to this conversation are also read once, at start, like memory.

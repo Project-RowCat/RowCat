@@ -383,8 +383,9 @@ export function createChatStore(db: LocalDb): ChatStore {
 			/*
 			 * Walks the same composite index forward, once. The cursor is already ascending, so nothing
 			 * needs reversing or sorting in memory. This is the only query without a `limit`, so its cost
-			 * scales with room size. That is accepted because opening the search window is the only place
-			 * that pays it. The message history uses page queries.
+			 * scales with room size. That is accepted because only search, background maintenance and a
+			 * room past the history cap whose summary is not keeping up (`loadChatHistoryWindow`) pay it.
+			 * Every other history read uses page queries.
 			 */
 			const rows = await db.messages
 				.where("[roomId+createdAt+id]")

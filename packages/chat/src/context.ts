@@ -169,14 +169,17 @@ export type ChatRuntimeMessage = Pick<
  * history-window.ts). The legacy staged advance (steps of nine) was left out while no provider
  * adapter had a cache breakpoint on the system prompt; once both Anthropic paths did, a window that
  * moved every turn rewrote the whole history to the cache on every turn. Stepping with the frontier
- * rather than a fixed stride is what keeps the summary and the transcript from leaving a gap.
+ * rather than a fixed stride is what keeps the summary and the transcript from leaving a gap. A room
+ * whose summary falls behind steps by itself, twenty messages at a time from the frontier, rather
+ * than sliding at the cap.
  */
 export const CHAT_HISTORY_LIMIT = 40;
 
 /**
  * The most messages a turn sends verbatim, and the assembler's cap. The window reaches it exactly
  * when maintenance becomes due (`CHAT_MAINTENANCE_TRIGGER` is derived from it), so on the normal path
- * it is never exceeded; it only binds when maintenance lags or never runs. The contract allows far
+ * it is never exceeded; it only binds when maintenance lags or never runs, and then the window steps
+ * back to 41 messages instead of sliding (`chatHistoryWindow`). The contract allows far
  * more (`CHAT_MAX_MESSAGES`), so the protected-story request is unaffected.
  */
 export const CHAT_HISTORY_WINDOW_MAX = CHAT_HISTORY_LIMIT + 20;
