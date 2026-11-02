@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createMemorySecureStorage } from "../../test/sqlite-node.ts";
+import { homeScope } from "../local-scope.ts";
 import {
 	PROVIDER_CREDENTIAL_VERSION,
 	providerCredentialEntry,
@@ -39,8 +40,10 @@ beforeEach(() => {
 	secure = createMemorySecureStorage();
 });
 
-const aliceStore = () => createProviderConnectionStore(secure, ALICE);
-const aliceAccess = () => createProviderCredentialAccess(secure, ALICE);
+const aliceStore = () =>
+	createProviderConnectionStore(secure, homeScope(ALICE));
+const aliceAccess = () =>
+	createProviderCredentialAccess(secure, homeScope(ALICE));
 
 describe("connecting and unlinking", () => {
 	it("nothing is connected at first", async () => {
@@ -152,13 +155,15 @@ describe("connecting and unlinking", () => {
 	it("the connection remains after reopening", async () => {
 		await aliceStore().connect("anthropic-byo", SECRET_A);
 		expect(
-			await createProviderConnectionStore(secure, ALICE).has("anthropic-byo"),
+			await createProviderConnectionStore(secure, homeScope(ALICE)).has(
+				"anthropic-byo",
+			),
 		).toBe(true);
 	});
 });
 
 describe("a damaged entry is the same as no connection", () => {
-	const entry = providerCredentialEntry(ALICE, "anthropic-byo");
+	const entry = providerCredentialEntry(homeScope(ALICE), "anthropic-byo");
 
 	/** Does not throw. Throwing would fail the whole settings screen and remove the chance to reconnect. */
 	it("broken JSON", async () => {
@@ -229,48 +234,52 @@ describe("member isolation", () => {
 	 * same fact is caught even if the naming rule changes.
 	 */
 	it("each sees only their own", async () => {
-		await createProviderConnectionStore(secure, ALICE).connect(
+		await createProviderConnectionStore(secure, homeScope(ALICE)).connect(
 			"anthropic-byo",
 			SECRET_A,
 		);
-		await createProviderConnectionStore(secure, BOB).connect(
+		await createProviderConnectionStore(secure, homeScope(BOB)).connect(
 			"anthropic-byo",
 			SECRET_B,
 		);
 
 		expect(
-			await createProviderCredentialAccess(secure, ALICE).withCredential(
-				"anthropic-byo",
-				async (s) => s,
-			),
+			await createProviderCredentialAccess(
+				secure,
+				homeScope(ALICE),
+			).withCredential("anthropic-byo", async (s) => s),
 		).toBe(SECRET_A);
 		expect(
-			await createProviderCredentialAccess(secure, BOB).withCredential(
-				"anthropic-byo",
-				async (s) => s,
-			),
+			await createProviderCredentialAccess(
+				secure,
+				homeScope(BOB),
+			).withCredential("anthropic-byo", async (s) => s),
 		).toBe(SECRET_B);
 	});
 
 	it("one side's unlink doesn't touch the other", async () => {
-		await createProviderConnectionStore(secure, ALICE).connect(
+		await createProviderConnectionStore(secure, homeScope(ALICE)).connect(
 			"anthropic-byo",
 			SECRET_A,
 		);
-		await createProviderConnectionStore(secure, BOB).connect(
+		await createProviderConnectionStore(secure, homeScope(BOB)).connect(
 			"anthropic-byo",
 			SECRET_B,
 		);
 
-		await createProviderConnectionStore(secure, ALICE).disconnect(
+		await createProviderConnectionStore(secure, homeScope(ALICE)).disconnect(
 			"anthropic-byo",
 		);
 
 		expect(
-			await createProviderConnectionStore(secure, ALICE).has("anthropic-byo"),
+			await createProviderConnectionStore(secure, homeScope(ALICE)).has(
+				"anthropic-byo",
+			),
 		).toBe(false);
 		expect(
-			await createProviderConnectionStore(secure, BOB).has("anthropic-byo"),
+			await createProviderConnectionStore(secure, homeScope(BOB)).has(
+				"anthropic-byo",
+			),
 		).toBe(true);
 	});
 
@@ -281,25 +290,25 @@ describe("member isolation", () => {
 	 * fold to the same name, the leak above happens.
 	 */
 	it("entry names don't reveal the member id and differ from each other", () => {
-		const a = providerCredentialEntry(ALICE, "anthropic-byo");
-		const b = providerCredentialEntry(BOB, "anthropic-byo");
+		const a = providerCredentialEntry(homeScope(ALICE), "anthropic-byo");
+		const b = providerCredentialEntry(homeScope(BOB), "anthropic-byo");
 		expect(a).not.toContain(ALICE);
 		expect(b).not.toContain(BOB);
 		expect(a).not.toBe(b);
 		/** The same member's two providers also differ, so exactly one entry can be removed. */
-		expect(a).not.toBe(providerCredentialEntry(ALICE, "gemini-byo"));
+		expect(a).not.toBe(providerCredentialEntry(homeScope(ALICE), "gemini-byo"));
 		/** Deterministic: the same member logging in again opens the same entry. */
-		expect(providerCredentialEntry(ALICE, "anthropic-byo")).toBe(a);
+		expect(providerCredentialEntry(homeScope(ALICE), "anthropic-byo")).toBe(a);
 	});
 
 	/** Does not reuse the sync key's name space; this is a different security domain. */
 	it("doesn't overlap the sync key's namespace", () => {
-		expect(providerCredentialEntry(ALICE, "anthropic-byo")).toMatch(
+		expect(providerCredentialEntry(homeScope(ALICE), "anthropic-byo")).toMatch(
 			/^rowcat\.provider\./,
 		);
-		expect(providerCredentialEntry(ALICE, "anthropic-byo")).not.toContain(
-			"rowcat.sync.dek.",
-		);
+		expect(
+			providerCredentialEntry(homeScope(ALICE), "anthropic-byo"),
+		).not.toContain("rowcat.sync.dek.");
 	});
 });
 

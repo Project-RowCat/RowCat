@@ -1,5 +1,6 @@
 import type { ByoProvider } from "@rowcat/chat";
 import { newLocalId, nowIso } from "../local-data/clock.ts";
+import type { LocalScope } from "../local-scope.ts";
 import type { SecureKeyStorage } from "../local-sync/device-key.ts";
 import {
 	MOBILE_BYO_PROVIDERS,
@@ -95,11 +96,11 @@ export interface ProviderCredentialAccess {
  */
 export function createProviderConnectionStore(
 	storage: SecureKeyStorage,
-	viewerId: string,
+	scope: LocalScope,
 ): ProviderConnectionStore {
 	const read = async (provider: ByoProvider) =>
 		readStoredProviderCredential(
-			await storage.get(providerCredentialEntry(viewerId, provider)),
+			await storage.get(providerCredentialEntry(scope, provider)),
 			provider,
 		);
 
@@ -135,7 +136,7 @@ export function createProviderConnectionStore(
 			if (!trimmed) throw new Error("Empty credentials aren't saved");
 
 			await storage.set(
-				providerCredentialEntry(viewerId, provider),
+				providerCredentialEntry(scope, provider),
 				JSON.stringify({
 					version: PROVIDER_CREDENTIAL_VERSION,
 					provider,
@@ -148,7 +149,7 @@ export function createProviderConnectionStore(
 
 		/** Removing a missing connection succeeds (idempotent). Double taps really do happen. */
 		disconnect: async (provider) => {
-			await storage.remove(providerCredentialEntry(viewerId, provider));
+			await storage.remove(providerCredentialEntry(scope, provider));
 		},
 	};
 }
@@ -162,7 +163,7 @@ export function createProviderConnectionStore(
  */
 export function createProviderCredentialAccess(
 	storage: SecureKeyStorage,
-	viewerId: string,
+	scope: LocalScope,
 ): ProviderCredentialAccess {
 	return {
 		withCredential: async (provider, use) => {
@@ -172,7 +173,7 @@ export function createProviderCredentialAccess(
 			 * returns `null`.
 			 */
 			const row = readStoredProviderCredential(
-				await storage.get(providerCredentialEntry(viewerId, provider)),
+				await storage.get(providerCredentialEntry(scope, provider)),
 				provider,
 			);
 			if (!row) return null;

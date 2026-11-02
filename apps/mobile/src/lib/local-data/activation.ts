@@ -1,3 +1,4 @@
+import { homeScope } from "../local-scope.ts";
 import type { SecureKeyStorage } from "../local-sync/device-key.ts";
 import { openMobileDatabase, viewerDatabaseName } from "./database.ts";
 import type { DraftCoverFiles } from "./draft-cover-store.ts";
@@ -42,7 +43,7 @@ export const openScopeWith =
 		draftCoverFiles: DraftCoverFiles,
 	): ScopeOpener =>
 	async (viewerId: string): Promise<MobileLocalScope> => {
-		const driver = await openDriver(viewerDatabaseName(viewerId));
+		const driver = await openDriver(viewerDatabaseName(homeScope(viewerId)));
 		const db = await openMobileDatabase(driver);
 		return {
 			viewerId,

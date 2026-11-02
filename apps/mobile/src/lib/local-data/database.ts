@@ -1,5 +1,4 @@
-import { sha256 } from "@noble/hashes/sha2.js";
-import { bytesToHex, utf8ToBytes } from "@rowcat/sync";
+import { type LocalScope, localScopeKey } from "../local-scope.ts";
 import { migrate } from "./migrations.ts";
 import {
 	createMobileDatabase,
@@ -35,8 +34,8 @@ import {
  * **It must be deterministic.** When the same member signs in again, **the same file** must open,
  * so no random name or session value is mixed in.
  */
-export const viewerDatabaseName = (viewerId: string): string =>
-	`rowcat_vnext_${bytesToHex(sha256(utf8ToBytes(viewerId)))}.db`;
+export const viewerDatabaseName = (scope: LocalScope): string =>
+	`rowcat_vnext_${localScopeKey(scope)}.db`;
 
 /**
  * The **directory where this member's pre-publication cover files lie** (one name under the
@@ -51,8 +50,8 @@ export const viewerDatabaseName = (viewerId: string): string =>
  * **backed up with the device** (iCloud), and path names in it survive in backups even after we
  * delete the files. This is the same judgment as hashing the credential item name.
  */
-export const viewerDraftCoverDirName = (viewerId: string): string =>
-	`draft-covers-${bytesToHex(sha256(utf8ToBytes(viewerId)))}`;
+export const viewerDraftCoverDirName = (scope: LocalScope): string =>
+	`draft-covers-${localScopeKey(scope)}`;
 
 /**
  * Opens one connection and migrates the schema to the current version.

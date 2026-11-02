@@ -3,6 +3,7 @@ import {
 	createTempDirectory,
 	openNodeSqliteDriver,
 } from "../../test/sqlite-node.ts";
+import { homeScope } from "../local-scope.ts";
 import { openMobileDatabase, viewerDraftCoverDirName } from "./database.ts";
 import {
 	createMobileDraftCoverStore,
@@ -296,11 +297,15 @@ describe("cleanup on deletion and reset", () => {
 	it("clears only that member's place", async () => {
 		const { calls, ports } = targets();
 		await deleteLocalDataForViewer("viewer-1", ports);
-		expect(calls).toContain(`covers:${viewerDraftCoverDirName("viewer-1")}`);
+		expect(calls).toContain(
+			`covers:${viewerDraftCoverDirName(homeScope("viewer-1"))}`,
+		);
 		expect(calls).not.toContain(
-			`covers:${viewerDraftCoverDirName("viewer-2")}`,
+			`covers:${viewerDraftCoverDirName(homeScope("viewer-2"))}`,
 		);
 		/** The member id does not remain in plain text, because this place is backed up with the device. */
-		expect(viewerDraftCoverDirName("viewer-1")).not.toContain("viewer-1");
+		expect(viewerDraftCoverDirName(homeScope("viewer-1"))).not.toContain(
+			"viewer-1",
+		);
 	});
 });

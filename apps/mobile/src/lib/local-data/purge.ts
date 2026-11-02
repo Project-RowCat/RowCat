@@ -1,4 +1,5 @@
 import { providerCredentialEntries } from "../local-provider/record.ts";
+import { homeScope } from "../local-scope.ts";
 import type { SecureKeyStorage } from "../local-sync/device-key.ts";
 import { deviceKeyEntry } from "../local-sync/device-key.ts";
 import { viewerDatabaseName, viewerDraftCoverDirName } from "./database.ts";
@@ -45,9 +46,10 @@ export async function deleteLocalDataForViewer(
 	 * reverse order the worst case is "files gone, row still there", and that row is removed together
 	 * with the database right after.
 	 */
-	targets.deleteDraftCovers(viewerDraftCoverDirName(viewerId));
-	await targets.deleteDatabase(viewerDatabaseName(viewerId));
-	await targets.secureStorage.remove(deviceKeyEntry(viewerId));
+	const scope = homeScope(viewerId);
+	targets.deleteDraftCovers(viewerDraftCoverDirName(scope));
+	await targets.deleteDatabase(viewerDatabaseName(scope));
+	await targets.secureStorage.remove(deviceKeyEntry(scope));
 	/**
 	 * BYO provider API keys are local data on this device too.
 	 *
@@ -62,6 +64,6 @@ export async function deleteLocalDataForViewer(
 	 *
 	 * Deleting a missing entry is success. This cleanup must be re-runnable after a partial failure.
 	 */
-	for (const entry of providerCredentialEntries(viewerId))
+	for (const entry of providerCredentialEntries(scope))
 		await targets.secureStorage.remove(entry);
 }

@@ -1,12 +1,6 @@
-import { sha256 } from "@noble/hashes/sha2.js";
 import type { DeviceKeyStore } from "@rowcat/sync";
-import {
-	AEAD,
-	b64ToBytes,
-	bytesToB64,
-	bytesToHex,
-	utf8ToBytes,
-} from "@rowcat/sync";
+import { AEAD, b64ToBytes, bytesToB64 } from "@rowcat/sync";
+import { type LocalScope, localScopeKey } from "../local-scope.ts";
 
 /**
  * Mobile implementation of "trust this device": the DEK lives only in Keychain/Keystore.
@@ -51,14 +45,14 @@ const SECURE_KEY_PREFIX = "rowcat.sync.dek.";
  * names persist into backups and diagnostic tools, so there is no reason to write the member
  * identifier there in plain text.
  */
-export const deviceKeyEntry = (viewerId: string): string =>
-	`${SECURE_KEY_PREFIX}${bytesToHex(sha256(utf8ToBytes(viewerId)))}`;
+export const deviceKeyEntry = (scope: LocalScope): string =>
+	`${SECURE_KEY_PREFIX}${localScopeKey(scope)}`;
 
 export function createMobileDeviceKeyStore(
 	storage: SecureKeyStorage,
-	viewerId: string,
+	scope: LocalScope,
 ): DeviceKeyStore {
-	const entry = deviceKeyEntry(viewerId);
+	const entry = deviceKeyEntry(scope);
 	return {
 		/**
 		 * Written as base64. SecureStore handles strings, and this file does not invent its own

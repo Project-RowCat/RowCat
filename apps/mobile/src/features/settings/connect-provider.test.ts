@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { CredentialCheck } from "../../lib/generation/byo.ts";
 import { ProviderError } from "../../lib/generation/errors.ts";
 import { createProviderConnectionStore } from "../../lib/local-provider/store.ts";
+import { homeScope } from "../../lib/local-scope.ts";
 import { createMemorySecureStorage } from "../../test/sqlite-node.ts";
 import { connectProvider } from "./connect-provider.ts";
 
@@ -33,7 +34,7 @@ let store: ReturnType<typeof createProviderConnectionStore>;
 
 beforeEach(() => {
 	secure = createMemorySecureStorage();
-	store = createProviderConnectionStore(secure, ALICE);
+	store = createProviderConnectionStore(secure, homeScope(ALICE));
 });
 
 const ok = (): CredentialCheck => ({ ok: true });
@@ -260,8 +261,8 @@ describe("asks about ownership again right before the irreversible write", () =>
 	 * instances (`local-provider/persistence.test.ts` pins this by value).
 	 */
 	it("even for the same member, a different instance doesn't save", async () => {
-		const first = createProviderConnectionStore(secure, ALICE);
-		const second = createProviderConnectionStore(secure, ALICE);
+		const first = createProviderConnectionStore(secure, homeScope(ALICE));
+		const second = createProviderConnectionStore(secure, homeScope(ALICE));
 
 		const outcome = await connectProvider({
 			provider: PROVIDER,
@@ -281,7 +282,7 @@ describe("asks about ownership again right before the irreversible write", () =>
 
 	/** **Do not swap in "whichever store is open now"**; that only renames the problem. */
 	it("in someone else's session nothing is written to any store", async () => {
-		const bobStore = createProviderConnectionStore(secure, BOB);
+		const bobStore = createProviderConnectionStore(secure, homeScope(BOB));
 		await connectProvider({
 			provider: PROVIDER,
 			byoAllowed: true,

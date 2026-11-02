@@ -9,6 +9,7 @@ import {
 import type { LocalScopeController } from "../local-data/activation.ts";
 import { viewerDatabaseName } from "../local-data/database.ts";
 import { deleteLocalDataForViewer } from "../local-data/purge.ts";
+import { homeScope } from "../local-scope.ts";
 import { deviceKeyEntry } from "../local-sync/device-key.ts";
 import { providerCredentialEntry } from "./record.ts";
 
@@ -69,7 +70,9 @@ describe("secrets never touch SQLite", () => {
 		await scope.stores.chat.createPersona({ name: "role", description: "" });
 		await controller.release();
 
-		const file = readFileSync(join(temp.path, viewerDatabaseName(ALICE)));
+		const file = readFileSync(
+			join(temp.path, viewerDatabaseName(homeScope(ALICE))),
+		);
 		expect(file.includes(Buffer.from(SECRET))).toBe(false);
 		expect(file.includes(Buffer.from("anthropic-byo"))).toBe(false);
 	});
@@ -79,7 +82,7 @@ describe("secrets never touch SQLite", () => {
 		await connectAnthropic(ALICE, SECRET);
 		const stored = secure
 			.entries()
-			.get(providerCredentialEntry(ALICE, "anthropic-byo"));
+			.get(providerCredentialEntry(homeScope(ALICE), "anthropic-byo"));
 		expect(stored).toBeDefined();
 		expect(stored).toContain(SECRET);
 	});
@@ -154,12 +157,16 @@ describe("cleanup deletes provider keys too", () => {
 		});
 
 		expect(
-			secure.entries().has(providerCredentialEntry(ALICE, "anthropic-byo")),
+			secure
+				.entries()
+				.has(providerCredentialEntry(homeScope(ALICE), "anthropic-byo")),
 		).toBe(false);
 		expect(
-			secure.entries().has(providerCredentialEntry(ALICE, "gemini-byo")),
+			secure
+				.entries()
+				.has(providerCredentialEntry(homeScope(ALICE), "gemini-byo")),
 		).toBe(false);
-		expect(secure.entries().has(deviceKeyEntry(ALICE))).toBe(false);
+		expect(secure.entries().has(deviceKeyEntry(homeScope(ALICE)))).toBe(false);
 	});
 
 	/**
@@ -185,7 +192,9 @@ describe("cleanup deletes provider keys too", () => {
 		const after = await controller.activate(BOB);
 		expect(await after.stores.providers.has("gemini-byo")).toBe(true);
 		expect(
-			secure.entries().get(providerCredentialEntry(BOB, "gemini-byo")),
+			secure
+				.entries()
+				.get(providerCredentialEntry(homeScope(BOB), "gemini-byo")),
 		).toContain(BOB_SECRET);
 	});
 

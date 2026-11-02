@@ -10,6 +10,7 @@ import {
 import type { LocalScopeController } from "./local-data/activation.ts";
 import { viewerDatabaseName } from "./local-data/database.ts";
 import { deleteLocalDataForViewer } from "./local-data/purge.ts";
+import { homeScope } from "./local-scope.ts";
 import { deviceKeyEntry } from "./local-sync/device-key.ts";
 import { purgeDeletedViewer } from "./purge-deleted-viewer.ts";
 
@@ -95,7 +96,7 @@ async function seedBothAccounts() {
 }
 
 const fileOf = (viewerId: string): string =>
-	join(temp.path, viewerDatabaseName(viewerId));
+	join(temp.path, viewerDatabaseName(homeScope(viewerId)));
 
 describe("erases only the target member — multi-account isolation", () => {
 	it("erasing Alice leaves Bob's file, content and key as they are", async () => {
@@ -107,11 +108,11 @@ describe("erases only the target member — multi-account isolation", () => {
 		await purgeDeletedViewer(ALICE, p.build);
 
 		expect(existsSync(fileOf(ALICE))).toBe(false);
-		expect(secure.entries().has(deviceKeyEntry(ALICE))).toBe(false);
+		expect(secure.entries().has(deviceKeyEntry(homeScope(ALICE)))).toBe(false);
 
 		/** Bob's files, keys and contents are all unchanged. */
 		expect(existsSync(fileOf(BOB))).toBe(true);
-		expect(secure.entries().has(deviceKeyEntry(BOB))).toBe(true);
+		expect(secure.entries().has(deviceKeyEntry(homeScope(BOB)))).toBe(true);
 		const bob = await controller.activate(BOB);
 		expect((await bob.stores.chat.listRooms()).map((r) => r.title)).toEqual([
 			"Bob's room",
@@ -178,7 +179,7 @@ describe("sign-out regression — doesn't borrow deletion's destruction", () => 
 
 		/** Sign-out closes access; nothing is deleted. */
 		expect(existsSync(fileOf(ALICE))).toBe(true);
-		expect(secure.entries().has(deviceKeyEntry(ALICE))).toBe(true);
+		expect(secure.entries().has(deviceKeyEntry(homeScope(ALICE)))).toBe(true);
 
 		const again = await controller.activate(ALICE);
 		expect((await again.stores.chat.listRooms()).map((r) => r.title)).toEqual([

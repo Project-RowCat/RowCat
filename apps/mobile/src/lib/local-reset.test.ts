@@ -12,6 +12,7 @@ import type { LocalScopeController } from "./local-data/activation.ts";
 import { viewerDatabaseName } from "./local-data/database.ts";
 import { deleteLocalDataForViewer } from "./local-data/purge.ts";
 import { resetViewerLocalData } from "./local-reset.ts";
+import { homeScope } from "./local-scope.ts";
 import { deviceKeyEntry } from "./local-sync/device-key.ts";
 
 /**
@@ -116,18 +117,18 @@ describe("what remains and what disappears after erasing", () => {
 	 */
 	it("the remembered sync key disappears", async () => {
 		await seedViewer(ALICE, "Alice");
-		expect(secure.entries().has(deviceKeyEntry(ALICE))).toBe(true);
+		expect(secure.entries().has(deviceKeyEntry(homeScope(ALICE)))).toBe(true);
 
 		await resetViewerLocalData(ALICE, ports());
 
-		expect(secure.entries().has(deviceKeyEntry(ALICE))).toBe(false);
+		expect(secure.entries().has(deviceKeyEntry(homeScope(ALICE)))).toBe(false);
 		const after = await controller.activate(ALICE);
 		expect(await after.stores.deviceKey.recall()).toBeNull();
 	});
 
 	it("the file itself is deleted", async () => {
 		await seedViewer(ALICE, "Alice");
-		const file = join(temp.path, viewerDatabaseName(ALICE));
+		const file = join(temp.path, viewerDatabaseName(homeScope(ALICE)));
 		expect(existsSync(file)).toBe(true);
 
 		await resetViewerLocalData(ALICE, ports());
@@ -178,7 +179,7 @@ describe("doesn't erase someone else's data", () => {
 			"Bob's role",
 		]);
 		expect(await bob.stores.deviceKey.recall()).not.toBeNull();
-		expect(secure.entries().has(deviceKeyEntry(BOB))).toBe(true);
+		expect(secure.entries().has(deviceKeyEntry(homeScope(BOB)))).toBe(true);
 	});
 });
 

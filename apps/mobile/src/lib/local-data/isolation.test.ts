@@ -5,6 +5,7 @@ import {
 	createTempDirectory,
 	createTestScopeController,
 } from "../../test/sqlite-node.ts";
+import { homeScope } from "../local-scope.ts";
 import { deviceKeyEntry } from "../local-sync/device-key.ts";
 import type { LocalScopeController } from "./activation.ts";
 import { viewerDatabaseName } from "./database.ts";
@@ -42,13 +43,17 @@ const DEK = new Uint8Array(32).fill(7);
 
 describe("file name", () => {
 	it("differs per member, and the same member is always the same", () => {
-		expect(viewerDatabaseName(ALICE)).not.toBe(viewerDatabaseName(BOB));
-		expect(viewerDatabaseName(ALICE)).toBe(viewerDatabaseName(ALICE));
+		expect(viewerDatabaseName(homeScope(ALICE))).not.toBe(
+			viewerDatabaseName(homeScope(BOB)),
+		);
+		expect(viewerDatabaseName(homeScope(ALICE))).toBe(
+			viewerDatabaseName(homeScope(ALICE)),
+		);
 	});
 
 	it("doesn't write the member identifier in the file name as plain text", () => {
-		expect(viewerDatabaseName(ALICE)).not.toContain(ALICE);
-		expect(viewerDatabaseName(ALICE)).toMatch(
+		expect(viewerDatabaseName(homeScope(ALICE))).not.toContain(ALICE);
+		expect(viewerDatabaseName(homeScope(ALICE))).toMatch(
 			/^rowcat_vnext_[0-9a-f]{64}\.db$/,
 		);
 	});
@@ -161,10 +166,12 @@ describe("account security and file identity", () => {
 		 * The same member always gets the same name, whatever changed in between (email change, password
 		 * set, Google linked). This function has one input, so its answer cannot differ.
 		 */
-		expect(viewerDatabaseName(ALICE)).toBe(viewerDatabaseName(ALICE));
+		expect(viewerDatabaseName(homeScope(ALICE))).toBe(
+			viewerDatabaseName(homeScope(ALICE)),
+		);
 		/** Passing the auth account identity would open **a different file**, so it is not passed. */
-		expect(viewerDatabaseName("better-auth-user-id")).not.toBe(
-			viewerDatabaseName(ALICE),
+		expect(viewerDatabaseName(homeScope("better-auth-user-id"))).not.toBe(
+			viewerDatabaseName(homeScope(ALICE)),
 		);
 	});
 
@@ -235,9 +242,9 @@ describe("local deletion", () => {
 			deleteDraftCovers: () => undefined,
 		});
 
-		expect(deleted).toEqual([viewerDatabaseName(ALICE)]);
-		expect(secure.entries().has(deviceKeyEntry(ALICE))).toBe(false);
+		expect(deleted).toEqual([viewerDatabaseName(homeScope(ALICE))]);
+		expect(secure.entries().has(deviceKeyEntry(homeScope(ALICE)))).toBe(false);
 		// Bob's trust remains: Alice's departure must not unlock Bob's key.
-		expect(secure.entries().has(deviceKeyEntry(BOB))).toBe(true);
+		expect(secure.entries().has(deviceKeyEntry(homeScope(BOB)))).toBe(true);
 	});
 });

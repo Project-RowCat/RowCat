@@ -1,6 +1,7 @@
 import { AEAD, bytesToB64 } from "@rowcat/sync";
 import { describe, expect, it } from "vitest";
 import { createMemorySecureStorage } from "../../test/sqlite-node.ts";
+import { homeScope } from "../local-scope.ts";
 import { createMobileDeviceKeyStore, deviceKeyEntry } from "./device-key.ts";
 
 /**
@@ -15,12 +16,16 @@ const DEK = new Uint8Array(AEAD.keyBytes).map((_, i) => i);
 
 describe("key name", () => {
 	it("differs per member, and the same member is always the same", () => {
-		expect(deviceKeyEntry("alice")).not.toBe(deviceKeyEntry("bob"));
-		expect(deviceKeyEntry("alice")).toBe(deviceKeyEntry("alice"));
+		expect(deviceKeyEntry(homeScope("alice"))).not.toBe(
+			deviceKeyEntry(homeScope("bob")),
+		);
+		expect(deviceKeyEntry(homeScope("alice"))).toBe(
+			deviceKeyEntry(homeScope("alice")),
+		);
 	});
 
 	it("uses only characters SecureStore accepts and doesn't hold the member id in plain text", () => {
-		const entry = deviceKeyEntry("alice@example.com/../..");
+		const entry = deviceKeyEntry(homeScope("alice@example.com/../.."));
 		expect(entry).toMatch(/^[A-Za-z0-9._-]+$/);
 		expect(entry).not.toContain("alice");
 	});
@@ -29,7 +34,7 @@ describe("key name", () => {
 describe("remember · recall · release", () => {
 	it("after remembering, the same bytes come out", async () => {
 		const storage = createMemorySecureStorage();
-		const store = createMobileDeviceKeyStore(storage, "alice");
+		const store = createMobileDeviceKeyStore(storage, homeScope("alice"));
 
 		expect(await store.recall()).toBeNull();
 		await store.remember(DEK);
@@ -41,42 +46,48 @@ describe("remember · recall · release", () => {
 
 	it("Alice's key doesn't come out of Bob's store", async () => {
 		const storage = createMemorySecureStorage();
-		await createMobileDeviceKeyStore(storage, "alice").remember(DEK);
+		await createMobileDeviceKeyStore(storage, homeScope("alice")).remember(DEK);
 		expect(
-			await createMobileDeviceKeyStore(storage, "bob").recall(),
+			await createMobileDeviceKeyStore(storage, homeScope("bob")).recall(),
 		).toBeNull();
 	});
 
 	it("release deletes only this member's entry", async () => {
 		const storage = createMemorySecureStorage();
-		await createMobileDeviceKeyStore(storage, "alice").remember(DEK);
-		await createMobileDeviceKeyStore(storage, "bob").remember(DEK);
+		await createMobileDeviceKeyStore(storage, homeScope("alice")).remember(DEK);
+		await createMobileDeviceKeyStore(storage, homeScope("bob")).remember(DEK);
 
-		await createMobileDeviceKeyStore(storage, "alice").forget();
+		await createMobileDeviceKeyStore(storage, homeScope("alice")).forget();
 
-		expect(await createMobileDeviceKeyStore(storage, "bob").recall()).toEqual(
-			DEK,
-		);
+		expect(
+			await createMobileDeviceKeyStore(storage, homeScope("bob")).recall(),
+		).toEqual(DEK);
 	});
 
 	it("a value whose length differs from the spec **is the same as none** — it isn't trimmed to fit", async () => {
 		const storage = createMemorySecureStorage();
-		await storage.set(deviceKeyEntry("alice"), bytesToB64(new Uint8Array(16)));
+		await storage.set(
+			deviceKeyEntry(homeScope("alice")),
+			bytesToB64(new Uint8Array(16)),
+		);
 		expect(
-			await createMobileDeviceKeyStore(storage, "alice").recall(),
+			await createMobileDeviceKeyStore(storage, homeScope("alice")).recall(),
 		).toBeNull();
 	});
 
 	it("values that aren't base64 don't throw either and fold to none", async () => {
 		const storage = createMemorySecureStorage();
-		await storage.set(deviceKeyEntry("alice"), "this isn't base64!!");
+		await storage.set(
+			deviceKeyEntry(homeScope("alice")),
+			"this isn't base64!!",
+		);
 		/**
 		 * Throwing would fail the whole screen entry and the user would not even get a chance to enter
 		 * the recovery code. Returning null sends the controller to the locked state and opens the normal
 		 * unlock path.
 		 */
 		expect(
-			await createMobileDeviceKeyStore(storage, "alice").recall(),
+			await createMobileDeviceKeyStore(storage, homeScope("alice")).recall(),
 		).toBeNull();
 	});
 
@@ -88,8 +99,8 @@ describe("remember · recall · release", () => {
 		 * the Keychain/Keystore, not our code, so the whole rule is simply: do not put it in SQLite.
 		 */
 		const storage = createMemorySecureStorage();
-		await createMobileDeviceKeyStore(storage, "alice").remember(DEK);
-		expect(storage.entries().get(deviceKeyEntry("alice"))).toBe(
+		await createMobileDeviceKeyStore(storage, homeScope("alice")).remember(DEK);
+		expect(storage.entries().get(deviceKeyEntry(homeScope("alice")))).toBe(
 			bytesToB64(DEK),
 		);
 	});

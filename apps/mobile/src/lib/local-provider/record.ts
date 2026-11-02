@@ -1,6 +1,5 @@
-import { sha256 } from "@noble/hashes/sha2.js";
 import { type ByoProvider, isByoProviderName } from "@rowcat/chat";
-import { bytesToHex, utf8ToBytes } from "@rowcat/sync";
+import { type LocalScope, localScopeKey } from "../local-scope.ts";
 
 /**
  * The **physical shape** of a stored provider credential, and the read boundary for it.
@@ -160,13 +159,12 @@ const ENTRY_PREFIX = "rowcat.provider.";
  * of that is the rule that no deletion sweeps by prefix.
  */
 export const providerCredentialEntry = (
-	viewerId: string,
+	scope: LocalScope,
 	provider: ByoProvider,
-): string =>
-	`${ENTRY_PREFIX}${bytesToHex(sha256(utf8ToBytes(viewerId)))}.${provider}`;
+): string => `${ENTRY_PREFIX}${localScopeKey(scope)}.${provider}`;
 
 /** Every provider entry of this member. The side that deletes must be able to enumerate them. */
-export const providerCredentialEntries = (viewerId: string): string[] =>
+export const providerCredentialEntries = (scope: LocalScope): string[] =>
 	MOBILE_BYO_PROVIDERS.map((provider) =>
-		providerCredentialEntry(viewerId, provider),
+		providerCredentialEntry(scope, provider),
 	);

@@ -11,6 +11,7 @@ import {
 } from "../test/sqlite-node.ts";
 import type { LocalScopeController } from "./local-data/activation.ts";
 import { viewerDatabaseName } from "./local-data/database.ts";
+import { homeScope } from "./local-scope.ts";
 import { completeAuthentication } from "./session-transition.ts";
 
 /**
@@ -113,11 +114,11 @@ describe("the identity that picks the local scope", () => {
 
 		expect(scope.viewerId).toBe(MEMBER_A);
 		expect(scope.viewerId).not.toBe(AUTH_USER_A);
-		expect(viewerDatabaseName(scope.viewerId)).toBe(
-			viewerDatabaseName(MEMBER_A),
+		expect(viewerDatabaseName(homeScope(scope.viewerId))).toBe(
+			viewerDatabaseName(homeScope(MEMBER_A)),
 		);
-		expect(viewerDatabaseName(scope.viewerId)).not.toBe(
-			viewerDatabaseName(AUTH_USER_A),
+		expect(viewerDatabaseName(homeScope(scope.viewerId))).not.toBe(
+			viewerDatabaseName(homeScope(AUTH_USER_A)),
 		);
 	});
 

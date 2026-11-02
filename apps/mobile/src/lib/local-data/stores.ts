@@ -11,6 +11,7 @@ import {
 	type ProviderConnectionStore,
 	type ProviderCredentialAccess,
 } from "../local-provider/store.ts";
+import { homeScope } from "../local-scope.ts";
 import {
 	createMobileDeviceKeyStore,
 	type SecureKeyStorage,
@@ -204,6 +205,8 @@ export function createMobileLocalDataStores(
 	 */
 	draftCoverFiles: DraftCoverFiles,
 ): MobileLocalStores {
+	/** Today the home instance; the slice that adds instance selection passes the active one here (`local-scope.ts`). */
+	const scope = homeScope(viewerId);
 	const mutations = createLocalMutationSignal();
 	/**
 	 * Preference-only signal. The fact that this instance differs is the entire "does not wake sync"
@@ -220,7 +223,7 @@ export function createMobileLocalDataStores(
 	 * on sync to receive something?", and that value lives in SecureStore, not SQLite. The assembly
 	 * point is the only place that connects the two.
 	 */
-	const deviceKey = createMobileDeviceKeyStore(secureStorage, viewerId);
+	const deviceKey = createMobileDeviceKeyStore(secureStorage, scope);
 	return {
 		/**
 		 * The write signal is attached **at the assembly point.** If each store implementation signaled
@@ -250,7 +253,7 @@ export function createMobileLocalDataStores(
 		 * add either a pointless sync run or an unnecessary re-render.
 		 */
 		providers: withMutationSignal(
-			createProviderConnectionStore(secureStorage, viewerId),
+			createProviderConnectionStore(secureStorage, scope),
 			PROVIDER_READS,
 			providerConnections,
 		),
@@ -258,10 +261,7 @@ export function createMobileLocalDataStores(
 		 * The credential accessor is **not wrapped.** Opening a secret is a read, not a state change;
 		 * signaling it would make one generation re-run the whole screen subscription.
 		 */
-		providerCredentials: createProviderCredentialAccess(
-			secureStorage,
-			viewerId,
-		),
+		providerCredentials: createProviderCredentialAccess(secureStorage, scope),
 		/**
 		 * Player saves are **wrapped in `mutations`.** When progress changes there really is something to
 		 * upload. This is where they differ from the preferences and connections above: without wrapping,
@@ -296,7 +296,7 @@ export function createMobileLocalDataStores(
 		 * location.
 		 */
 		sync: createSqliteSyncStore(db, syncCodecRegistry, {
-			dirName: viewerDraftCoverDirName(viewerId),
+			dirName: viewerDraftCoverDirName(scope),
 			files: draftCoverFiles,
 		}),
 		/**
@@ -318,7 +318,7 @@ export function createMobileLocalDataStores(
 		draftCover: withMutationSignal(
 			createMobileDraftCoverStore(
 				db,
-				viewerDraftCoverDirName(viewerId),
+				viewerDraftCoverDirName(scope),
 				draftCoverFiles,
 			),
 			DRAFT_COVER_READS,
