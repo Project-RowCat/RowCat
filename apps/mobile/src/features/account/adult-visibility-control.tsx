@@ -7,7 +7,7 @@ import * as WebBrowser from "expo-web-browser";
 import { useState } from "react";
 import { Platform, StyleSheet, View } from "react-native";
 import { getRowCatClient } from "../../lib/api.ts";
-import { WEB_ORIGIN } from "../../lib/env.ts";
+import { activeWebOrigin } from "../../lib/instances/device-registry.ts";
 import { FeedbackLine } from "../../lib/motion/feedback.tsx";
 import { accountWebUrl } from "../../lib/public-web.ts";
 import {
@@ -69,7 +69,7 @@ export function AdultVisibilityControl({ viewer }: { viewer: Viewer }) {
 		Platform.OS as Parameters<typeof adultContentControl>[0],
 		adultVisibilityState(viewer),
 	);
-	const webUrl = accountWebUrl(WEB_ORIGIN);
+	const webUrl = accountWebUrl(activeWebOrigin());
 
 	/** Not drawn without entitlement; the composing side owns that sentence. */
 	if (control.kind === "ineligible") return null;

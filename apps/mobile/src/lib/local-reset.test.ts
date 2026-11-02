@@ -54,7 +54,7 @@ const ports = () => ({
 	resetScope: (viewerId: string, erase: () => Promise<void>) =>
 		controller.resetViewer(viewerId, erase),
 	deleteLocalData: (viewerId: string) =>
-		deleteLocalDataForViewer(viewerId, {
+		deleteLocalDataForViewer(homeScope(viewerId), {
 			async deleteDatabase(name) {
 				const { rmSync } = await import("node:fs");
 				rmSync(join(temp.path, name), { force: true });

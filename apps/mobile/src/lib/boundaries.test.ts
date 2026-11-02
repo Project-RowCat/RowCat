@@ -192,11 +192,16 @@ describe("auth secrets don't leak", () => {
 	});
 
 	it("the auth store's and sync key's prefixes don't collide", () => {
-		const auth = all.find((file) => file.path.endsWith("lib/auth.ts"));
+		/** The prefix moved into one per-instance derivation; the home value is unchanged. */
+		const auth = all.find((file) =>
+			file.path.endsWith("lib/instances/auth-storage.ts"),
+		);
+		const client = all.find((file) => file.path.endsWith("lib/auth.ts"));
 		const deviceKey = all.find((file) =>
 			file.path.endsWith("local-sync/device-key.ts"),
 		);
-		expect(auth?.text).toMatch(/"rowcat\.auth"/);
+		expect(auth?.text).toMatch(/HOME_AUTH_STORAGE_PREFIX = "rowcat\.auth"/);
+		expect(client?.text).toContain("authStoragePrefixFor(active.instance)");
 		expect(deviceKey?.text).toMatch(/"rowcat\.sync\.dek\."/);
 	});
 

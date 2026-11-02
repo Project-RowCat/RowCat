@@ -1,7 +1,7 @@
 import { runtimeConfigQueryOptions } from "@rowcat/query";
 import { useQuery } from "@tanstack/react-query";
 import { getRowCatClient } from "./api.ts";
-import { WEB_ORIGIN } from "./env.ts";
+import { activeWebOrigin } from "./instances/device-registry.ts";
 import { passwordResetWebUrl } from "./public-web.ts";
 
 /**
@@ -23,5 +23,5 @@ import { passwordResetWebUrl } from "./public-web.ts";
 export function usePasswordResetLink(): string | null {
 	const config = useQuery(runtimeConfigQueryOptions(getRowCatClient()));
 	if (config.data?.passwordReset !== true) return null;
-	return passwordResetWebUrl(WEB_ORIGIN);
+	return passwordResetWebUrl(activeWebOrigin());
 }

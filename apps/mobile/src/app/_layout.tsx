@@ -10,7 +10,8 @@
  * DeviceAppearanceProvider     device-chosen brightness + ThemeProvider; identity-independent, outermost
  *   SelectionFeedbackProvider  haptics on value selection; asks for neither identity nor storage
  *   UpdateNotesProvider        seen-state of release notes; a device value, so outside identity
- *     QueryClientProvider      server-state cache
+ *     ActiveInstanceRoot       keyed by the active server: switching remounts all below
+ *       QueryClientProvider    server-state cache, one per mounted server
  *       MobileIdentityProvider whose app is this: /v2/me answers
  *         ViewerThemeOverride  the account's saved colors; a no-op when none
  *           ViewerScopedLocalData  opens SQLite with that answer's member id
@@ -45,10 +46,8 @@ import {
 	SelectionFeedbackProvider,
 	useTheme,
 } from "@rowcat/ui-native";
-import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useMemo } from "react";
 import { StyleSheet, View } from "react-native";
 import {
 	AppGatePanel,
@@ -65,18 +64,14 @@ import {
 	MobileIdentityProvider,
 	ViewerScopedLocalData,
 } from "../lib/identity.tsx";
+import { ActiveInstanceRoot } from "../lib/instances/active-instance-root.tsx";
 import { MobileSyncRuntimeProvider } from "../lib/local-sync/provider.tsx";
 import { MembershipAgesSync } from "../lib/membership-ages-sync.tsx";
-import { createMobileQueryClient } from "../lib/query.ts";
 import { SECURE_RANDOM_READY } from "../lib/secure-random.ts";
 
 if (!SECURE_RANDOM_READY) throw new Error("the CSPRNG wiring wasn't loaded");
 
 export default function RootLayout() {
-	// Created once at the root: per-render creation discards the cache every time, and a module global
-	// keeps the previous person's values across account switches.
-	const queryClient = useMemo(() => createMobileQueryClient(), []);
-
 	// Product fonts: does not wait for loading. The value is deliberately not read, because blocking
 	// on `loaded` leaves a blank stretch on launch that the web does not have (`font-display: swap`).
 	// The hook re-renders on load, and an unknown `fontFamily` falls back to the system font. Called
@@ -98,7 +93,7 @@ export default function RootLayout() {
 				    neither consent nor confirmation, and making it a gate turns information into a block.
 				    The only way to open one is a row a person presses. */}
 				<UpdateNotesProvider>
-					<QueryClientProvider client={queryClient}>
+					<ActiveInstanceRoot>
 						{/* The deployment's guardian-consent and adult ages, for copy only (the API decides).
 						    First in the tree so the screens below read the numbers in the same render. */}
 						<MembershipAgesSync />
@@ -127,7 +122,7 @@ export default function RootLayout() {
 								</ViewerThemeOverride>
 							</MobilePushProvider>
 						</MobileIdentityProvider>
-					</QueryClientProvider>
+					</ActiveInstanceRoot>
 				</UpdateNotesProvider>
 			</SelectionFeedbackProvider>
 		</DeviceAppearanceProvider>

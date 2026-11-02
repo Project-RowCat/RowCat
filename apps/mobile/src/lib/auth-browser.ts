@@ -7,8 +7,9 @@ import {
 	newHandoffVerifier,
 	withHandoffBinding,
 } from "./app-session-handoff.ts";
-import { AUTH_BASE_URL, authClient } from "./auth.ts";
+import { authBaseUrlFor, authClientFor } from "./auth.ts";
 import type { AuthErrorLike } from "./auth-error.ts";
+import { activeInstance } from "./instances/device-registry.ts";
 
 /**
  * The browser round trip of sign-in and provider linking — **the one file that opens it**.
@@ -53,6 +54,12 @@ export async function openAuthRoundTrip(input: {
 	/** Starts the flow with this callback URL. Must pass `disableRedirect: true`. */
 	start: (callbackURL: string) => Promise<StartResult>;
 }): Promise<AuthRoundTrip> {
+	/**
+	 * One server for the whole trip. The proxy, the browser and the redeem all go to the instance that was
+	 * active when the press happened; if the active instance moved meanwhile, the code is not redeemed —
+	 * it would be spent against a server the screen no longer shows.
+	 */
+	const active = activeInstance();
 	const verifier = newHandoffVerifier();
 	const callbackURL = withHandoffBinding(
 		Linking.createURL(input.callbackPath),
@@ -69,7 +76,7 @@ export async function openAuthRoundTrip(input: {
 		WebBrowser.dismissAuthSession();
 	} catch {}
 
-	const proxyURL = `${AUTH_BASE_URL}/expo-authorization-proxy?${new URLSearchParams({ authorizationURL }).toString()}`;
+	const proxyURL = `${authBaseUrlFor(active.origin)}/expo-authorization-proxy?${new URLSearchParams({ authorizationURL }).toString()}`;
 	const browser = await WebBrowser.openAuthSessionAsync(
 		proxyURL,
 		Linking.createURL("/"),
@@ -79,10 +86,16 @@ export async function openAuthRoundTrip(input: {
 	const code = handoffCodeFrom(browser.url);
 	if (!code) return { status: "returned", handedOff: false };
 
-	const redeemed = await authClient.$fetch(APP_SESSION_HANDOFF_REDEEM_PATH, {
-		method: "POST",
-		body: { code, verifier },
-	});
+	if (activeInstance().origin !== active.origin)
+		return { status: "returned", handedOff: false };
+
+	const redeemed = await authClientFor(active).$fetch(
+		APP_SESSION_HANDOFF_REDEEM_PATH,
+		{
+			method: "POST",
+			body: { code, verifier },
+		},
+	);
 	if (redeemed.error)
 		return { status: "error", error: redeemed.error as AuthErrorLike };
 	return { status: "returned", handedOff: true };

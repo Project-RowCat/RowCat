@@ -83,11 +83,11 @@ describe("another instance", () => {
 });
 
 /**
- * Where a member id still enters as the home instance. The slice that adds instance selection replaces
- * exactly these with the active instance; a new site that wraps an id on its own would quietly keep
- * using the home names for every instance.
+ * The product opens every scope on **the active instance**; `homeScope` is for tests and the dev harness.
+ * A product file that wrapped a member id with `homeScope` on its own would quietly open the home server's
+ * files while the member is signed in to another one.
  */
-describe("homeScope is stated in a known set of places", () => {
+describe("the product's scopes follow the active instance", () => {
 	const SRC = fileURLToPath(new URL("../", import.meta.url));
 	const walk = (dir: string): string[] =>
 		readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -97,17 +97,33 @@ describe("homeScope is stated in a known set of places", () => {
 				? [path]
 				: [];
 		});
+	const product = walk(SRC)
+		.map((path) => ({
+			path: relative(SRC, path),
+			text: readFileSync(path, "utf8"),
+		}))
+		.filter(({ path }) => !path.startsWith("test/"));
 
-	it("activation, purge and the store assembly — nothing else", () => {
-		const users = walk(SRC)
-			.filter((path) => /\bhomeScope\(/.test(readFileSync(path, "utf8")))
-			.map((path) => relative(SRC, path))
-			.filter((path) => path !== "lib/local-scope.ts")
-			.sort();
-		expect(users).toEqual([
-			"lib/local-data/activation.ts",
-			"lib/local-data/purge.ts",
-			"lib/local-data/stores.ts",
+	it("homeScope appears only where it is defined and in the dev harness", () => {
+		expect(
+			product
+				.filter(({ text }) => /\bhomeScope\b/.test(text))
+				.map(({ path }) => path)
+				.sort(),
+		).toEqual(["lib/local-data/dev-harness.ts", "lib/local-scope.ts"]);
+	});
+
+	it("the scope opener, account deletion and local reset use the active instance", () => {
+		expect(
+			product
+				.filter(({ text }) => /\bactiveLocalScope\b/.test(text))
+				.map(({ path }) => path)
+				.sort(),
+		).toEqual([
+			"lib/account-deletion.ts",
+			"lib/instances/device-registry.ts",
+			"lib/local-data/scope.tsx",
+			"lib/local-reset-ports.ts",
 		]);
 	});
 });

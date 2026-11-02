@@ -286,7 +286,7 @@ describe("cleanup on deletion and reset", () => {
 	 */
 	it("clears the cover place before the database", async () => {
 		const { calls, ports } = targets();
-		await deleteLocalDataForViewer("viewer-1", ports);
+		await deleteLocalDataForViewer(homeScope("viewer-1"), ports);
 		const covers = calls.findIndex((call) => call.startsWith("covers:"));
 		const database = calls.findIndex((call) => call.startsWith("db:"));
 		expect(covers).toBeGreaterThan(-1);
@@ -296,7 +296,7 @@ describe("cleanup on deletion and reset", () => {
 	/** The place name belongs to **that member**. Its derivation is the same function as the database name's. */
 	it("clears only that member's place", async () => {
 		const { calls, ports } = targets();
-		await deleteLocalDataForViewer("viewer-1", ports);
+		await deleteLocalDataForViewer(homeScope("viewer-1"), ports);
 		expect(calls).toContain(
 			`covers:${viewerDraftCoverDirName(homeScope("viewer-1"))}`,
 		);

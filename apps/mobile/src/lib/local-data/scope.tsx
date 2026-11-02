@@ -15,6 +15,7 @@ import {
 	useState,
 } from "react";
 import { expoDraftCoverFiles } from "../draft-cover-files.ts";
+import { activeLocalScope } from "../instances/device-registry.ts";
 import type {
 	ProviderConnectionStore,
 	ProviderCredentialAccess,
@@ -132,6 +133,7 @@ const defaultOpener: ScopeOpener = openScopeWith(
 	openExpoSqliteDriver,
 	expoSecureKeyStorage,
 	expoDraftCoverFiles,
+	activeLocalScope,
 );
 
 export function MobileLocalDataProvider({

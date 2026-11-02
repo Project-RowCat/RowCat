@@ -1,5 +1,5 @@
 import { providerCredentialEntries } from "../local-provider/record.ts";
-import { homeScope } from "../local-scope.ts";
+import type { LocalScope } from "../local-scope.ts";
 import type { SecureKeyStorage } from "../local-sync/device-key.ts";
 import { deviceKeyEntry } from "../local-sync/device-key.ts";
 import { viewerDatabaseName, viewerDraftCoverDirName } from "./database.ts";
@@ -34,7 +34,7 @@ export interface LocalPurgeTargets {
 }
 
 export async function deleteLocalDataForViewer(
-	viewerId: string,
+	scope: LocalScope,
 	targets: LocalPurgeTargets,
 ): Promise<void> {
 	/**
@@ -46,7 +46,6 @@ export async function deleteLocalDataForViewer(
 	 * reverse order the worst case is "files gone, row still there", and that row is removed together
 	 * with the database right after.
 	 */
-	const scope = homeScope(viewerId);
 	targets.deleteDraftCovers(viewerDraftCoverDirName(scope));
 	await targets.deleteDatabase(viewerDatabaseName(scope));
 	await targets.secureStorage.remove(deviceKeyEntry(scope));

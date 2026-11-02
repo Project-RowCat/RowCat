@@ -159,8 +159,10 @@ Apple(네이티브 시트)    본 인스턴스만 — 토큰의 aud가 이 앱�
 1  DEV-17   업데이트 권한의 정적 시험 · ROWCAT_OTA=off의 값 시험 · docs/ota에 옮김 — 끝났다
 2  범위 키   localScopeKey(apps/mobile/src/lib/local-scope.ts) — 본 인스턴스는 지금 이름 그대로(시험이 바이트로 고정) — 끝났다
 3  레지스트리 기기 저장소의 목록 · 활성 인스턴스 · 런타임 설정 검증(서버에 instanceProtocol) — 끝났다
-           apps/mobile/src/lib/instances/ · 아직 어느 클라이언트도 화면도 읽지 않는다(4 · 5단계)
-4  클라이언트 인스턴스마다 SDK · 인증 클라이언트 · 쿼리 캐시 리셋 · 인증 이미지
+           apps/mobile/src/lib/instances/
+4  클라이언트 인스턴스마다 SDK · 인증 클라이언트 · 쿼리 캐시 리셋 · 인증 이미지 — 끝났다
+           활성 인스턴스(instances/active-instance.ts) · 뿌리의 경계(active-instance-root.tsx)가 그 아래를 오리진으로
+           키를 매겨 전환이 재마운트가 된다 · 다른 인스턴스의 웹 오리진은 없다(링크를 그리지 않는다)
 5  화면      인스턴스 추가(주소 · QR) · 전환 · 제거 — 플래그 뒤
 6  푸시(활성 인스턴스 하나) · 기기 시험
 ```

@@ -8,6 +8,7 @@ import {
 	openScopeWith,
 } from "../lib/local-data/activation.ts";
 import type { SqliteDriver, SqlValue } from "../lib/local-data/sqlite.ts";
+import { homeScope } from "../lib/local-scope.ts";
 import type { SecureKeyStorage } from "../lib/local-sync/device-key.ts";
 
 /**
@@ -117,6 +118,7 @@ export function createTestScopeController(
 				remove: () => undefined,
 				candidates: (draftId) => [`${draftId}.jpg`],
 			},
+			homeScope,
 		),
 	);
 }

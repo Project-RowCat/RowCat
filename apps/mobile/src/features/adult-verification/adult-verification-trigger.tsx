@@ -2,7 +2,7 @@ import { space } from "@rowcat/design";
 import { Button, Notice, Text } from "@rowcat/ui-native";
 import * as WebBrowser from "expo-web-browser";
 import { StyleSheet, View } from "react-native";
-import { WEB_ORIGIN } from "../../lib/env.ts";
+import { activeWebOrigin } from "../../lib/instances/device-registry.ts";
 import { accountWebUrl } from "../../lib/public-web.ts";
 import {
 	ADULT_RENEW_NOTE,
@@ -54,7 +54,7 @@ export function AdultVerificationTrigger({
 	 * The web is the canonical place; the origin is not guessed and the guidance is not drawn without
 	 * it. This path stands only when a deployment picks a method this app does not know.
 	 */
-	const webUrl = accountWebUrl(WEB_ORIGIN);
+	const webUrl = accountWebUrl(activeWebOrigin());
 
 	/**
 	 * Re-asks the server only, and never reopens the authority's window. It takes its own branch

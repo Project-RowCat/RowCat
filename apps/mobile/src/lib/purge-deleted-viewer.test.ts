@@ -56,7 +56,7 @@ const ports = (options?: { failDelete?: boolean }) => {
 			deleteLocalData: (viewerId: string) => {
 				steps.push(`delete:${viewerId}`);
 				if (options?.failDelete) return Promise.reject(new Error("disk"));
-				return deleteLocalDataForViewer(viewerId, {
+				return deleteLocalDataForViewer(homeScope(viewerId), {
 					deleteDatabase: async (name) => {
 						const { rmSync } = await import("node:fs");
 						rmSync(join(temp.path, name), { force: true });

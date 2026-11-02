@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { removeDraftCoverDirectory } from "./draft-cover-files.ts";
+import { activeLocalScope } from "./instances/device-registry.ts";
 import { deleteExpoSqliteDatabase } from "./local-data/expo-driver.ts";
 import { deleteLocalDataForViewer } from "./local-data/purge.ts";
 import { useMobileLocalScope } from "./local-data/scope.tsx";
@@ -24,7 +25,7 @@ export function useLocalResetPorts(): ResetLocalDataPorts {
 		() => ({
 			resetScope: resetViewerData,
 			deleteLocalData: (viewerId) =>
-				deleteLocalDataForViewer(viewerId, {
+				deleteLocalDataForViewer(activeLocalScope(viewerId), {
 					deleteDatabase: deleteExpoSqliteDatabase,
 					secureStorage: expoSecureKeyStorage,
 					deleteDraftCovers: removeDraftCoverDirectory,

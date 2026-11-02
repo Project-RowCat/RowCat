@@ -2,7 +2,7 @@ import { space } from "@rowcat/design";
 import { Button, Text } from "@rowcat/ui-native";
 import * as WebBrowser from "expo-web-browser";
 import { StyleSheet, View } from "react-native";
-import { WEB_ORIGIN } from "../../lib/env.ts";
+import { activeWebOrigin } from "../../lib/instances/device-registry.ts";
 import { accountDeletionGuideUrl } from "../../lib/public-web.ts";
 import {
 	DELETE_GUIDE_LINK_LABEL,
@@ -35,7 +35,7 @@ export function DeleteAccountSection({
 	deletion: AccountDeletion;
 }) {
 	/** The canonical guide lives on web; the origin is not guessed, and without it no link is drawn. */
-	const guideUrl = accountDeletionGuideUrl(WEB_ORIGIN);
+	const guideUrl = accountDeletionGuideUrl(activeWebOrigin());
 
 	return (
 		<AccountSection title={DELETE_SECTION_TITLE}>

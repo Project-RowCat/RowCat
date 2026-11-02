@@ -11,7 +11,7 @@ import {
 	type ProviderConnectionStore,
 	type ProviderCredentialAccess,
 } from "../local-provider/store.ts";
-import { homeScope } from "../local-scope.ts";
+import type { LocalScope } from "../local-scope.ts";
 import {
 	createMobileDeviceKeyStore,
 	type SecureKeyStorage,
@@ -195,7 +195,7 @@ export interface MobileLocalStores {
 
 export function createMobileLocalDataStores(
 	db: MobileDatabase,
-	viewerId: string,
+	scope: LocalScope,
 	secureStorage: SecureKeyStorage,
 	/**
 	 * The four operations that touch the cover file location. **Injected**, with the same shape and
@@ -205,8 +205,6 @@ export function createMobileLocalDataStores(
 	 */
 	draftCoverFiles: DraftCoverFiles,
 ): MobileLocalStores {
-	/** Today the home instance; the slice that adds instance selection passes the active one here (`local-scope.ts`). */
-	const scope = homeScope(viewerId);
 	const mutations = createLocalMutationSignal();
 	/**
 	 * Preference-only signal. The fact that this instance differs is the entire "does not wake sync"

@@ -233,7 +233,7 @@ describe("local deletion", () => {
 		await controller.release();
 
 		const deleted: string[] = [];
-		await deleteLocalDataForViewer(ALICE, {
+		await deleteLocalDataForViewer(homeScope(ALICE), {
 			deleteDatabase: async (name) => {
 				deleted.push(name);
 			},

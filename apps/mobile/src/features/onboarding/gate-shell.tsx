@@ -10,8 +10,8 @@ import {
 import * as WebBrowser from "expo-web-browser";
 import type { ReactNode } from "react";
 import { StyleSheet, View } from "react-native";
-import { WEB_ORIGIN } from "../../lib/env.ts";
 import { useMobileIdentity } from "../../lib/identity.tsx";
+import { activeWebOrigin } from "../../lib/instances/device-registry.ts";
 import { accountDeletionGuideUrl } from "../../lib/public-web.ts";
 import { DeleteAccountTrigger } from "../account/delete-account-trigger.tsx";
 import type { AccountDeletion } from "../account/use-account-deletion.ts";
@@ -74,7 +74,7 @@ export function GateExit({
 	const signingOut = identity.pending === "sign-out";
 	const disabled = Boolean(busy) || signingOut || deletion.phase === "deleting";
 
-	const guideUrl = accountDeletionGuideUrl(WEB_ORIGIN);
+	const guideUrl = accountDeletionGuideUrl(activeWebOrigin());
 
 	return (
 		<View style={surface.exit}>

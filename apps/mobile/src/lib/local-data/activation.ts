@@ -1,4 +1,4 @@
-import { homeScope } from "../local-scope.ts";
+import type { LocalScope } from "../local-scope.ts";
 import type { SecureKeyStorage } from "../local-sync/device-key.ts";
 import { openMobileDatabase, viewerDatabaseName } from "./database.ts";
 import type { DraftCoverFiles } from "./draft-cover-store.ts";
@@ -41,16 +41,23 @@ export const openScopeWith =
 		openDriver: (name: string) => Promise<SqliteDriver>,
 		secureStorage: SecureKeyStorage,
 		draftCoverFiles: DraftCoverFiles,
+		/**
+		 * Whose files a member id opens: `(instance, member)` (`local-scope.ts`). **Required** — the product
+		 * passes the active instance (`local-data/scope.tsx`), tests and the dev harness pass the home scope; a
+		 * default here would quietly open the home server's files on every instance.
+		 */
+		scopeOf: (viewerId: string) => LocalScope,
 	): ScopeOpener =>
 	async (viewerId: string): Promise<MobileLocalScope> => {
-		const driver = await openDriver(viewerDatabaseName(homeScope(viewerId)));
+		const scope = scopeOf(viewerId);
+		const driver = await openDriver(viewerDatabaseName(scope));
 		const db = await openMobileDatabase(driver);
 		return {
 			viewerId,
 			db,
 			stores: createMobileLocalDataStores(
 				db,
-				viewerId,
+				scope,
 				secureStorage,
 				draftCoverFiles,
 			),

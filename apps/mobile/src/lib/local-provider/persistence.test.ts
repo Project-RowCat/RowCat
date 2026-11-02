@@ -146,7 +146,7 @@ describe("cleanup deletes provider keys too", () => {
 		await scope.stores.deviceKey.remember(DEK);
 		await controller.release();
 
-		await deleteLocalDataForViewer(ALICE, {
+		await deleteLocalDataForViewer(homeScope(ALICE), {
 			async deleteDatabase(name) {
 				const { rmSync } = await import("node:fs");
 				rmSync(join(temp.path, name), { force: true });
@@ -179,7 +179,7 @@ describe("cleanup deletes provider keys too", () => {
 		await bob.stores.providers.connect("gemini-byo", BOB_SECRET);
 		await controller.release();
 
-		await deleteLocalDataForViewer(ALICE, {
+		await deleteLocalDataForViewer(homeScope(ALICE), {
 			async deleteDatabase(name) {
 				const { rmSync } = await import("node:fs");
 				rmSync(join(temp.path, name), { force: true });
@@ -211,9 +211,9 @@ describe("cleanup deletes provider keys too", () => {
 			/** The cover slot is not this harness's concern: when called it does nothing. */
 			deleteDraftCovers: () => undefined,
 		};
-		await deleteLocalDataForViewer(ALICE, targets);
+		await deleteLocalDataForViewer(homeScope(ALICE), targets);
 		await expect(
-			deleteLocalDataForViewer(ALICE, targets),
+			deleteLocalDataForViewer(homeScope(ALICE), targets),
 		).resolves.toBeUndefined();
 	});
 });

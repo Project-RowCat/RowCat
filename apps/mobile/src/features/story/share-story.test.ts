@@ -169,7 +169,7 @@ describe("wiring", () => {
 	 * from the pure function, and the diverged side sends the link.
 	 */
 	it("the screen doesn't re-read the visibility state", () => {
-		expect(control).toContain("storySharePayload(story, WEB_ORIGIN)");
+		expect(control).toContain("storySharePayload(story, activeWebOrigin())");
 		expect(control).not.toMatch(/isPrivate|visibility/);
 	});
 

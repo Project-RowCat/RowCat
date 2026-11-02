@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { readAuthCookie } from "./auth.ts";
-import { API_ORIGIN } from "./env.ts";
 import { useMobileIdentity } from "./identity.tsx";
+import { activeInstance } from "./instances/device-registry.ts";
 
 /**
  * Request headers for images that need a session — **`Image` does not go through the SDK's
@@ -91,7 +91,11 @@ export function useAuthImageHeaders(): AuthImageCredentials {
 	return { ready: true, headers: cookie ? { Cookie: cookie } : undefined };
 }
 
-/** Whether this address is our API — the only destination a session header may be sent to. */
+/**
+ * Whether this address is **the active instance's** API — the only destination its session header may be
+ * sent to. With several servers this is the quietest leak in the slice: a picture hosted by one server
+ * fetched with another server's cookie (`docs/mobile/INSTANCES.md` §격리).
+ */
 export function isApiOrigin(uri: string): boolean {
-	return uri.startsWith(`${API_ORIGIN}/`);
+	return uri.startsWith(`${activeInstance().origin}/`);
 }

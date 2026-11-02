@@ -10,7 +10,7 @@ import * as Clipboard from "expo-clipboard";
 import { useEffect, useState } from "react";
 import { AccessibilityInfo, Share, StyleSheet, View } from "react-native";
 import { getRowCatClient } from "../../lib/api.ts";
-import { WEB_ORIGIN } from "../../lib/env.ts";
+import { activeWebOrigin } from "../../lib/instances/device-registry.ts";
 import { guardianConsentUrl } from "../../lib/public-web.ts";
 import { DeletionTerminal } from "../account/deletion-terminal.tsx";
 import { useAccountDeletion } from "../account/use-account-deletion.ts";
@@ -122,7 +122,7 @@ export function GuardianPanel() {
 	 * that fact is stated. A child who hands a dead address to a guardian cannot tell why it fails.
 	 */
 	const consentUrl = consentPath
-		? guardianConsentUrl(WEB_ORIGIN, consentPath)
+		? guardianConsentUrl(activeWebOrigin(), consentPath)
 		: null;
 	const originMissing = consentPath !== null && consentUrl === null;
 	const error = guardianRequestError(request.error);

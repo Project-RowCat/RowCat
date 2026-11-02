@@ -2,6 +2,7 @@ import {
 	expoDraftCoverFiles,
 	removeDraftCoverDirectory,
 } from "../draft-cover-files.ts";
+import { homeScope } from "../local-scope.ts";
 import { expoSecureKeyStorage } from "../local-sync/secure-store.ts";
 import { openScopeWith } from "./activation.ts";
 import { seedFromTitle } from "./dev-harness-seed.ts";
@@ -47,6 +48,7 @@ const openScope = openScopeWith(
 	openExpoSqliteDriver,
 	expoSecureKeyStorage,
 	expoDraftCoverFiles,
+	homeScope,
 );
 
 /**
@@ -158,6 +160,6 @@ export async function clearSelfCheckData(): Promise<void> {
 		secureStorage: expoSecureKeyStorage,
 		deleteDraftCovers: removeDraftCoverDirectory,
 	};
-	await deleteLocalDataForViewer(VIEWER_A, targets);
-	await deleteLocalDataForViewer(VIEWER_B, targets);
+	await deleteLocalDataForViewer(homeScope(VIEWER_A), targets);
+	await deleteLocalDataForViewer(homeScope(VIEWER_B), targets);
 }

@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { requestAccountDeletion } from "./account-deletion-auth.ts";
 import type { AuthErrorLike } from "./auth-error.ts";
 import { removeDraftCoverDirectory } from "./draft-cover-files.ts";
+import { activeLocalScope } from "./instances/device-registry.ts";
 import { deleteExpoSqliteDatabase } from "./local-data/expo-driver.ts";
 import { deleteLocalDataForViewer } from "./local-data/purge.ts";
 import { useMobileLocalScope } from "./local-data/scope.tsx";
@@ -45,7 +46,7 @@ export function useAccountDeletionPorts(): AccountDeletionPorts {
 				purgeDeletedViewer(viewerId, {
 					abandonViewer,
 					deleteLocalData: (id) =>
-						deleteLocalDataForViewer(id, {
+						deleteLocalDataForViewer(activeLocalScope(id), {
 							deleteDatabase: deleteExpoSqliteDatabase,
 							deleteDraftCovers: removeDraftCoverDirectory,
 							secureStorage: expoSecureKeyStorage,

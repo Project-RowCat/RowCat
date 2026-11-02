@@ -3,7 +3,7 @@ import type { Story } from "@rowcat/domain";
 import { controlHeight, Icon, Text, targetSlop } from "@rowcat/ui-native";
 import { useCallback, useState } from "react";
 import { Pressable, Share, StyleSheet, View } from "react-native";
-import { WEB_ORIGIN } from "../../lib/env.ts";
+import { activeWebOrigin } from "../../lib/instances/device-registry.ts";
 import {
 	STORY_SHARE_FAILURE,
 	STORY_SHARE_LABEL,
@@ -47,7 +47,7 @@ import {
  * report. Another filled button would read as this screen suggesting two things.
  */
 export function StoryShareControl({ story }: { story: Story }) {
-	const payload = storySharePayload(story, WEB_ORIGIN);
+	const payload = storySharePayload(story, activeWebOrigin());
 	/**
 	 * The failure is this component's local state. It lives in neither the query cache nor a global:
 	 * moving to another work remounts this component wholesale, so that fact disappears on its own.
