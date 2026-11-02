@@ -191,15 +191,16 @@ test("a personal Anthropic key generates from the browser and never reaches RowC
 	]);
 	expect(provider[0]?.apiKey).toBe(key);
 
+	/** The generation target's selects; the summary and suggestion fields below carry the same two. */
 	const settings = page.getByRole("main");
 	await chooseOption(
 		page,
-		settings.getByRole("combobox", { name: /Provider$/ }),
+		settings.getByRole("combobox", { name: /^Generation target Provider$/ }),
 		"Anthropic",
 	);
 	await chooseOption(
 		page,
-		settings.getByRole("combobox", { name: /Model$/ }),
+		settings.getByRole("combobox", { name: /^Generation target Model$/ }),
 		"Claude Fable 5.1",
 	);
 

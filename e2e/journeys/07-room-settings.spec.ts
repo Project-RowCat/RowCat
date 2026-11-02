@@ -21,12 +21,15 @@ import {
  * chose.
  */
 
-/** Model select on the global settings screen, matched by a name ending in `Model`. */
+/**
+ * The generation target's two selects, matched by the whole name. Ending in `Model` is not enough:
+ * `/settings/ai` also draws the summary and reply-suggestion model fields with the same two selects.
+ */
 const modelSelect = (scope: import("@playwright/test").Locator) =>
-	scope.getByRole("combobox", { name: /Model$/ });
+	scope.getByRole("combobox", { name: /^Generation target Model$/ });
 
 const providerSelect = (scope: import("@playwright/test").Locator) =>
-	scope.getByRole("combobox", { name: /Provider$/ });
+	scope.getByRole("combobox", { name: /^Generation target Provider$/ });
 
 /**
  * Opens the list and picks one item, matching the name exactly. A partial match would also catch
