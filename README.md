@@ -118,6 +118,11 @@ them, and the API refuses to boot in production on a short session key or on the
 build with `ROWCAT_IMAGE_TAG=sha-<commit>`; a fork that publishes its own images points
 `ROWCAT_IMAGE_REGISTRY` at them (`docs/oss/FORKING.md` §15).
 
+For a public domain, `deploy/caddy/` puts the stack behind HTTPS: set `ROWCAT_DOMAIN` (and
+`COMPOSE_FILE=docker-compose.yml:deploy/caddy/compose.yml`) in `.env`, and Caddy serves web, API and console
+on three host names with certificates it renews itself, deriving every origin and the cookie domain from that
+one value and closing the apps' plain-HTTP ports (`docs/ops/HTTPS.md`).
+
 ### On one computer, without Docker
 
 `apps/desktop` packages the whole deployment as a desktop app — a bundled Postgres and the same three

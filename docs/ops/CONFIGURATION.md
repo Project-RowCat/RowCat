@@ -152,7 +152,8 @@ API_ORIGIN           공개 API 주소. 콜백과 절대 URL의 근거다 — �
 **`docker compose up`이 운영자에게 요구하는 값은 `BETTER_AUTH_SECRET`과 `POSTGRES_PASSWORD` 둘이다**(`:?`).
 둘 다 운영자가 생성하는 시크릿이고, 공개 저장소가 대신 적어 줄 수 있는 값이 아니다(아래 「개발 기본값은
 운영 시크릿이 아니다」). 데이터베이스 주소는 컴포즈가 그 비밀번호로 조립하고, 두 오리진은 루프백으로 접혀 로컬 스택은 그대로 뜬다(부팅은 경고만 한다).
-공개 도메인에 세울 때 `.env`에 `WEB_ORIGIN`·`API_ORIGIN`을 더한다. 컴포즈는 `REDIS_URL`과
+공개 도메인에 세울 때 `.env`에 `WEB_ORIGIN`·`API_ORIGIN`을 더한다 — `deploy/caddy/` 오버레이를 쓰면
+`ROWCAT_DOMAIN` 하나에서 두 오리진과 쿠키 도메인, 신뢰할 프록시가 나온다(`HTTPS.md`). 컴포즈는 `REDIS_URL`과
 `BACKGROUND_JOBS_ENABLED=on`을 스스로 채우므로 아래 표의 앞 두 줄은 컴포즈 밖 배포의 이야기다.
 
 ### 개발 기본값은 운영 시크릿이 아니다

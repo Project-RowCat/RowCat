@@ -1,0 +1,31 @@
+# Three host names for the stack in deploy/caddy/compose.yml. docs/ops/HTTPS.md explains each line.
+#
+# Caddy obtains and renews a certificate for each name on its own (ACME, ports 80 and 443) and
+# redirects http to https. Nothing here is per deployment: ROWCAT_DOMAIN comes from .env.
+
+{
+	{$ROWCAT_CADDY_OPTIONS}
+}
+
+# Web. Compression is safe here: the server render and the static bundle are plain responses.
+{$ROWCAT_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy web:3000
+}
+
+# API. No `encode`: the sync wake-up stream (SSE) must reach the browser frame by frame, and media and
+# remote images are already compressed formats. Caddy flushes `text/event-stream` immediately and sets
+# no response timeout, so the stream stays open between heartbeats without extra settings.
+#
+# X-Forwarded-For is replaced, not appended: Caddy trusts no upstream proxy here, so whatever a client
+# sent in that header is dropped and the API reads Caddy's own record of the client address.
+api.{$ROWCAT_DOMAIN} {
+	reverse_proxy api:3001
+}
+
+# Operations console. Static files; access control is the API's (a session without a role gets 403
+# from every lookup), so this name being public is not what protects it.
+admin.{$ROWCAT_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy admin:3002
+}

@@ -1,0 +1,103 @@
+# HTTPS in front of the production stack: one Caddy, three host names, certificates by ACME.
+# docs/ops/HTTPS.md is the guide; this file is what it runs.
+#
+#   ROWCAT_DOMAIN=rowcat.example.com   in .env, then
+#   docker compose -f docker-compose.yml -f deploy/caddy/compose.yml up -d
+#   (or COMPOSE_FILE=docker-compose.yml:deploy/caddy/compose.yml in .env, and plain `docker compose`)
+#
+#   https://rowcat.example.com         web
+#   https://api.rowcat.example.com     API
+#   https://admin.rowcat.example.com   operations console
+#
+# One value names the deployment, and every origin is derived from it below. Writing the origins by
+# hand as well is the mistake this file exists to remove: a console origin missing from WEB_ORIGIN, a
+# cookie domain that does not cover the API, or an API_ORIGIN still on http each boot cleanly and fail
+# only in a browser. A value set in .env still wins (`${WEB_ORIGIN:-…}`), for a layout this file does
+# not describe.
+#
+# The three apps lose their host ports. With them published, http://<server>:3000-3002 reaches every
+# app over plain HTTP from anywhere the server's firewall allows, around the TLS this file adds, and
+# the API would trust nothing about the client address (it sees the proxy or the attacker, not both).
+
+services:
+  caddy:
+    image: caddy:2.11.7-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      ROWCAT_DOMAIN: ${ROWCAT_DOMAIN:?ROWCAT_DOMAIN is required - the web host name, e.g. rowcat.example.com}
+      # One extra global option for the Caddyfile, e.g. `email ops@example.com`. `local_certs` makes Caddy sign with its own CA instead of
+      # ACME, for a test on a machine no public DNS points at (docs/ops/HTTPS.md §로컬에서 시험하기).
+      ROWCAT_CADDY_OPTIONS: ${ROWCAT_CADDY_OPTIONS:-}
+    volumes:
+      # Relative to the project directory (the first -f file's), not to this file.
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and the ACME account. Losing it means re-issuing every certificate on the next
+      # start, and the authority's rate limits count those.
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      edge:
+        ipv4_address: 172.31.250.2
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+      admin:
+        condition: service_healthy
+
+  api:
+    ports: !reset []
+    networks:
+      - default
+      - edge
+    environment:
+      API_ORIGIN: ${API_ORIGIN:-https://api.${ROWCAT_DOMAIN}}
+      # The console calls the API from its own origin, so it is listed here too.
+      WEB_ORIGIN: ${WEB_ORIGIN:-https://${ROWCAT_DOMAIN},https://admin.${ROWCAT_DOMAIN}}
+      # Web sits on ROWCAT_DOMAIN and the API on a subdomain of it, so the session cookie goes on
+      # ROWCAT_DOMAIN: the browser then sends it to both, and the web's server render can read it.
+      AUTH_COOKIE_DOMAIN: ${AUTH_COOKIE_DOMAIN:-${ROWCAT_DOMAIN}}
+      # Forwarding headers are believed from Caddy's address only (the edge network below). The
+      # login limiters then count each visitor, not one bucket for everyone behind the proxy, and
+      # no other container on any network can claim to be a client.
+      AUTH_TRUSTED_PROXIES: ${AUTH_TRUSTED_PROXIES:-172.31.250.2}
+      # Empty already means "the web host". Stated so the passkey domain is visible next to the rest.
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-${ROWCAT_DOMAIN}}
+
+  web:
+    ports: !reset []
+    networks:
+      - default
+      - edge
+    environment:
+      VITE_API_ORIGIN: ${VITE_API_ORIGIN:-https://api.${ROWCAT_DOMAIN}}
+      VITE_ADMIN_ORIGIN: ${VITE_ADMIN_ORIGIN:-https://admin.${ROWCAT_DOMAIN}}
+
+  admin:
+    ports: !reset []
+    networks:
+      - default
+      - edge
+    environment:
+      VITE_API_ORIGIN: ${VITE_API_ORIGIN:-https://api.${ROWCAT_DOMAIN}}
+
+networks:
+  # Only Caddy and the three apps. The subnet is fixed so Caddy's address can be the one trusted
+  # proxy, and `ip_range` keeps every other container out of the lower half: without it, whichever
+  # container starts first can be handed .2 and Caddy then fails with "Address already in use". If
+  # the subnet collides with a network this host already has, change the subnet, the range and the
+  # two addresses above (ipv4_address, AUTH_TRUSTED_PROXIES) together.
+  edge:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/28
+          ip_range: 172.31.250.8/29
+
+volumes:
+  caddy-data:
+  caddy-config:
