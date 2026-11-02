@@ -59,7 +59,7 @@ import { planSetup } from "./setup.ts";
  * would be automatic, but that line is where the bundler rewrites paths and a failure would show up
  * only in the installed package. `version.test.ts` guards the pairing instead.
  */
-const VERSION = "0.1.0-alpha.3";
+const VERSION = "0.1.0-alpha.4";
 
 /**
  * All human-facing output goes to stderr; stdout belongs to JSON-RPC.

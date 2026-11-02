@@ -40,6 +40,17 @@ ROWCAT_API_BASE_URL=http://localhost:3001/v2 \
   pnpm exec tsx apps/mcp/scripts/verify-installed-loop.ts "$(which rowcat-mcp)"
 ```
 
+그 스크립트는 키를 `ROWCAT_SYNC_KEY`로 넣으므로 **페어링은 지나지 않습니다.** 포크의 사용자가
+실제로 지나는 길(`rowcat-mcp pair`가 코드를 띄우고 이미 연결된 기기가 승인하는 것)은 따로
+돌립니다 — 이 스크립트가 신뢰 기기 쪽을 웹과 같은 `sealPairingDek`으로 맡고, 설치본이 받아 적은
+키가 봉인한 키와 같은지까지 봅니다. `HOME`을 임시 디렉터리로 바꿔 돌리므로 내 `~/.rowcat`은
+건드리지 않습니다. 가입 메일 인증이 꺼진 깨끗한 인스턴스를 가리킵니다.
+
+```bash
+ROWCAT_API_BASE_URL=http://localhost:3001/v2 \
+  pnpm exec tsx apps/mcp/scripts/verify-installed-pairing.ts "$(which rowcat-mcp)"
+```
+
 ### 배포
 
 배포는 **명령 하나로 일어나지 않습니다.** 판정은 `scripts/release-policy.mjs` 하나가 갖고,
@@ -50,7 +61,7 @@ ROWCAT_API_BASE_URL=http://localhost:3001/v2 \
 
 ```bash
 # 판을 올린 커밋이 main에 있고 나서
-git tag mcp-v0.1.0-alpha.3 && git push origin mcp-v0.1.0-alpha.3
+git tag mcp-v0.1.0-alpha.4 && git push origin mcp-v0.1.0-alpha.4
 ```
 
 첫 외부 판은 **`next` dist-tag의 프리릴리스**입니다. 안정판은 `distTagFor`가 아직
@@ -83,9 +94,22 @@ rowcat-mcp setup && rowcat-mcp pair && rowcat-mcp doctor
 잘못 올라간 판은 **덮지 않습니다.** npm의 판은 불변이라 되돌릴 수 없고, 답은 언제나
 다음 판(`alpha.N+1`)입니다.
 
-⚠️ **`0.1.0-alpha.1`은 회수 대상입니다.** 그 판은 이 워크플로가 서기 전에 손으로 올라갔고,
-소스맵에 `packages/*`의 TypeScript 원본 133개가 `sourcesContent`로 실려 있습니다(당시 비공개였던
-저장소의 소스가 공개 레지스트리에 놓인 상태). `tsdown.config.ts`의 `sourcemapExcludeSources`가
-그것을 막지만 npm의 판은 불변이라 **덮을 수 없고**, 남은 것은 72시간 안의 `npm unpublish`뿐입니다.
-지우는 것은 `alpha.2`가 올라간 **뒤**입니다 — alpha.1이 유일한 판인 동안 지우면 패키지가
-통째로 사라지고 이름이 24시간 잠깁니다.
+`0.1.0-alpha.1`은 회수됐습니다(2026-11-02 레지스트리에 없음을 확인). 그 판은 이 워크플로가 서기 전에
+손으로 올라갔고, 소스맵에 `packages/*`의 TypeScript 원본이 `sourcesContent`로 실려 있었습니다 —
+`tsdown.config.ts`의 `sourcemapExcludeSources`가 그 재발을 막습니다.
+
+⚠️ **`0.1.0-alpha.2`·`alpha.3`은 운영 서비스 시절의 빌드입니다.** `homepage`가 문을 닫은 서비스의
+도메인이고 `license`가 `SEE LICENSE IN LICENSE`이며, 그 뒤 소스에서 기본 API 주소가 사라졌습니다.
+게다가 npm은 첫 게시 때 `latest`를 스스로 붙이므로 지금 `latest`와 `next`가 둘 다 alpha.3을
+가리킵니다 — `npx @rowcat/mcp@next`가 공개 소스가 아닌 그 판을 받습니다. 이 저장소의 첫 공개 판
+(`alpha.4`)이 올라간 **뒤에** 레지스트리를 정리합니다. 레지스트리에 닿는 조작이라 사람이 합니다.
+
+```bash
+npm dist-tag add @rowcat/mcp@0.1.0-alpha.4 latest
+npm deprecate @rowcat/mcp@"0.1.0-alpha.2 || 0.1.0-alpha.3" \
+  "Built for the RowCat hosted service, which has shut down. Use 0.1.0-alpha.4 or later with your own instance."
+```
+
+`latest`는 지울 수 없어(npm이 거절합니다) 옮기는 것이 답입니다. `distTagFor`가 `latest`로 게시하는
+것을 여전히 거절하는 것과는 다른 일입니다 — 저것은 워크플로의 게시이고 이것은 이미 남은 꼬리표를
+최신 프리릴리스로 맞추는 일입니다.

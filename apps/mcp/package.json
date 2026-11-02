@@ -1,6 +1,6 @@
 {
 	"name": "@rowcat/mcp",
-	"version": "0.1.0-alpha.3",
+	"version": "0.1.0-alpha.4",
 	"description": "The MCP server for the RowCat creator runtime: coding agents author runtime stories.",
 	"keywords": ["rowcat", "mcp", "model-context-protocol", "creator-runtime"],
 	"license": "AGPL-3.0-only",
