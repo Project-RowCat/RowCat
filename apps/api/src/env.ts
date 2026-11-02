@@ -40,6 +40,13 @@ export const isProduction = config.isProduction;
 export const ageGateEnabled = config.ageGateEnabled;
 
 /**
+ * The guardian-consent and adult ages (`MEMBERSHIP_GUARDIAN_CONSENT_AGE`, `MEMBERSHIP_ADULT_AGE`).
+ * Every membership rule on the server takes them from here; clients learn them from the runtime
+ * config and only print them.
+ */
+export const membershipAges = config.membershipAges;
+
+/**
  * Whether the one-year adult re-verification is on. When off, the viewer projection's
  * `adultRecheckRequired` is always `false`; the decision lives only in `auth/viewer.ts`.
  */

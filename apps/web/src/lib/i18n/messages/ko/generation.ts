@@ -20,7 +20,7 @@ export const generation: Messages["generation"] = {
 		managedOnly:
 			"이 작품은 프롬프트를 보호하고 있어 {{app}} 제공 모델로만 대화할 수 있습니다. 대화 설정에서 {{app}} 제공 모델을 선택해 주세요.",
 		byoNotPermitted:
-			"만 14세 미만 회원은 개인 API 키({{provider}})로 대화를 생성할 수 없습니다. 대화 설정에서 {{app}} 제공 모델을 선택해 주세요.",
+			"만 {{guardianAge}}세 미만 회원은 개인 API 키({{provider}})로 대화를 생성할 수 없습니다. 대화 설정에서 {{app}} 제공 모델을 선택해 주세요.",
 		providerNotConnected:
 			"이 대화에서 선택한 AI 제공자({{provider}})가 이 기기에 연결되어 있지 않습니다.",
 		modelUnavailable:
@@ -57,13 +57,13 @@ export const generation: Messages["generation"] = {
 		model: "모델",
 		catalogFailed: "모델 목록을 불러오지 못했습니다.",
 		loading: "불러오는 중…",
-		byoNotPermitted: " · 만 14세 미만 이용 불가",
+		byoNotPermitted: " · 만 {{guardianAge}}세 미만 이용 불가",
 		providerNotConnected: " · 먼저 제공자 연결",
 		missingFromCatalog: " · 목록에 없음",
 		managedOnly:
 			"이 작품은 {{app}} 제공 모델로만 대화할 수 있습니다. 제공자에서 {{app}}을 선택해 주세요.",
 		byoNotPermittedMessage:
-			"만 14세 미만 회원은 개인 API 키({{provider}})를 사용할 수 없습니다. 제공자에서 {{app}}을 선택해 주세요.",
+			"만 {{guardianAge}}세 미만 회원은 개인 API 키({{provider}})를 사용할 수 없습니다. 제공자에서 {{app}}을 선택해 주세요.",
 		providerNotConnectedMessage:
 			"현재 이 기기에서 사용할 수 없음 · {{provider}} 연결이 필요합니다.",
 		missingMessage: "이 모델은 현재 목록에서 사용할 수 없습니다.",

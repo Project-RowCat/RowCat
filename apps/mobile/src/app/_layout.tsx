@@ -66,6 +66,7 @@ import {
 	ViewerScopedLocalData,
 } from "../lib/identity.tsx";
 import { MobileSyncRuntimeProvider } from "../lib/local-sync/provider.tsx";
+import { MembershipAgesSync } from "../lib/membership-ages-sync.tsx";
 import { createMobileQueryClient } from "../lib/query.ts";
 import { SECURE_RANDOM_READY } from "../lib/secure-random.ts";
 
@@ -98,6 +99,9 @@ export default function RootLayout() {
 				    The only way to open one is a row a person presses. */}
 				<UpdateNotesProvider>
 					<QueryClientProvider client={queryClient}>
+						{/* The deployment's guardian-consent and adult ages, for copy only (the API decides).
+						    First in the tree so the screens below read the numbers in the same render. */}
+						<MembershipAgesSync />
 						<MobileIdentityProvider>
 							{/* Second theme layer carrying the account's saved colors. The outer `ThemeProvider` is
 							    not moved here because the default appearance must not depend on identity; with

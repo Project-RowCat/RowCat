@@ -290,8 +290,8 @@ export const account: Messages["account"] = {
 			"끄면 갤러리와 작품에서 성인향 작품이 보이지 않습니다.",
 		thisAccountHasnTCompleted: "본인확인을 마치지 않은 계정입니다.",
 		adultContentIsnTShown: "성인 콘텐츠는 표시되지 않습니다.",
-		thisAccountIsUnder14: "만 14세 미만 계정입니다.",
-		thisAccountIsUnder19: "만 19세 미만 계정입니다.",
+		thisAccountIsUnder14: "만 {{guardianAge}}세 미만 계정입니다.",
+		thisAccountIsUnder19: "만 {{adultAge}}세 미만 계정입니다.",
 		showAdultContent: "성인 콘텐츠 표시",
 		contentDisplay: "콘텐츠 표시",
 	},
@@ -466,7 +466,7 @@ export const account: Messages["account"] = {
 		couldnTCompleteIdentityVerification:
 			"본인확인을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.",
 		accountsUnder14CanT:
-			"만 14세 미만 계정은 성인 콘텐츠를 이용할 수 없습니다.",
+			"만 {{guardianAge}}세 미만 계정은 성인 콘텐츠를 이용할 수 없습니다.",
 		theIdentityVerificationWindowExpired:
 			"본인확인의 유효 시간이 지났습니다. 다시 시작해 주세요.",
 		identityVerificationDidnTComplete:
@@ -545,11 +545,11 @@ export const account: Messages["account"] = {
 	},
 	adultVerification: {
 		verifyingYourIdentityForExample:
-			"휴대전화 등으로 본인확인을 하면 만 19세 이상인지 확인됩니다. 확인을 마쳐도 성인 콘텐츠 표시는 자동으로 켜지지 않습니다.",
+			"휴대전화 등으로 본인확인을 하면 만 {{adultAge}}세 이상인지 확인됩니다. 확인을 마쳐도 성인 콘텐츠 표시는 자동으로 켜지지 않습니다.",
 		verifyYourIdentityAgainTo:
 			"성인 콘텐츠를 보려면 본인확인을 다시 해 주세요. 다시 확인하기 전까지는 표시를 켜 두어도 성인향 작품이 보이지 않습니다.",
 		onceYouTurn19Verify:
-			"만 19세가 된 뒤에는 본인확인을 다시 하면 성인 콘텐츠를 이용할 수 있습니다.",
+			"만 {{adultAge}}세가 된 뒤에는 본인확인을 다시 하면 성인 콘텐츠를 이용할 수 있습니다.",
 		identityVerificationIsRequiredTo:
 			"성인 콘텐츠를 이용하려면 본인확인이 필요합니다.",
 		itSBeenAYear: "본인확인 후 1년이 지났습니다.",

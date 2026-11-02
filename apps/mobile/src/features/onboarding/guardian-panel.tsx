@@ -21,7 +21,6 @@ import {
 	GUARDIAN_CREATE_LABEL,
 	GUARDIAN_CREATING_LABEL,
 	GUARDIAN_DECLINED,
-	GUARDIAN_DESCRIPTION,
 	GUARDIAN_EXIT_NOTE,
 	GUARDIAN_LINK_TITLE,
 	GUARDIAN_NEW_LINK_LABEL,
@@ -33,6 +32,7 @@ import {
 	GUARDIAN_STEPS,
 	GUARDIAN_TITLE,
 	GUARDIAN_WAITING,
+	guardianDescription,
 } from "./gate-copy.ts";
 import { GateExit, GateSurface } from "./gate-shell.tsx";
 import { guardianRequestError } from "./membership-gate-state.ts";
@@ -141,7 +141,7 @@ export function GuardianPanel() {
 				{GUARDIAN_TITLE}
 			</Text>
 			<Text variant="body" tone="muted-foreground">
-				{GUARDIAN_DESCRIPTION}
+				{guardianDescription()}
 			</Text>
 
 			{/** States what is being consented to, on the child's screen too (the intent of art. 22-2(3)). */}

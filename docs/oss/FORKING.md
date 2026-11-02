@@ -175,31 +175,38 @@ manifest(`apps/mcp/package.json`의 `repository`·`bugs`·`homepage`)가 그 저
 - **두 스위치**(기본 꺼짐):
 
   ```text
-  MEMBERSHIP_AGE_GATE=on            나이를 묻는 진입 게이트. 만 14세 미만은 보호자 동의를 마쳐야 들어온다
+  MEMBERSHIP_AGE_GATE=on            나이를 묻는 진입 게이트. 보호자 동의 나이 미만은 보호자 동의를 마쳐야 들어온다
                                     ⚠ 검증 수단 없이 켜면 그 회원들은 게이트에서 멈춘다(env:doctor가 degraded로 말한다)
   ADULT_REVERIFICATION_ENABLED=on   마지막 성인 확인에서 1년이 지나면 성인 보기만 닫는다
                                     ⚠ 검증 수단 없이 켜면 다시 확인할 길이 없다
   ```
 
-- **코드에 박힌 한국 법의 값 — 설정이 아니다.** 숫자만 바꾸면 되는 일이 아니라서다: 두 앱의 문구, 보호자 동의라는
-  절차의 모양, 무엇을 저장하지 않는지가 그 법에 맞춰져 있다. 다른 관할(예: 13세 기준, 국가별 16세 기준)은 다른
-  절차이지 다른 숫자가 아니다.
+- **두 나이는 배포의 설정이고, 그 나머지는 한국 법의 모양이다.** 기본값은 한국 법이고, 다른 관할의 배포는
+  두 숫자를 바꾼다(API가 부팅 때 읽는다):
 
   ```text
-  GUARDIAN_CONSENT_AGE = 14     「개인정보 보호법」 제22조의2     packages/domain/src/membership.ts
-  LEGAL_ADULT_AGE = 19          「민법」 제4조                     같은 파일 — 성인 확인의 19세도 같은 조항
-  PRODUCT_TIME_ZONE             나이를 판정하는 날짜의 기준(KST)   @rowcat/domain
-  1년 재확인                    「청소년 보호법 시행령」 제17조 제2항   ADULT_REVERIFICATION_ENABLED
-  PortOne                       국내 본인확인 기관                 services/identity/ — 다른 기관은 어댑터 하나와 그 값 하나
+  MEMBERSHIP_GUARDIAN_CONSENT_AGE=14   이 나이 미만은 보호자 동의를 거친다    기본: 「개인정보 보호법」 제22조의2
+  MEMBERSHIP_ADULT_AGE=19              이 나이부터 성인으로 본다              기본: 「민법」 제4조
   ```
 
-  다른 관할로 옮기는 포크는 이 값과 함께 두 앱의 연령·보호자·성인 문구(`apps/{web,mobile}/src/features/
-  {onboarding,adult-verification,account}/`)를 같은 커밋에서 고치고, 그 법의 검토를 거친다.
+  판정은 API만 한다. 세 앱의 문구는 그 값을 받아 같은 숫자를 말할 뿐이다 — 웹은 서버가 쓴 `<meta>`에서
+  (`apps/web/src/lib/membership-ages.ts`), 모바일은 공개 런타임 설정에서(`apps/mobile/src/lib/membership-ages.ts`),
+  운영 콘솔은 숫자를 쓰지 않는다. 정수 년만 받고, 보호자 동의 나이 1–21, 성인 나이 15–25, 동의 나이 ≤ 성인 나이를
+  벗어나면 **부팅이 막힌다**. 확인은 `pnpm env:doctor`의 `Age gate` 줄이다.
+
+  ⚠ **숫자만 바뀐다.** 보호자가 본인확인으로 동의한다는 절차의 모양, 생년월일을 저장하지 않는다는 것, 나이를
+  판정하는 날짜의 기준(`PRODUCT_TIME_ZONE`, KST), 성인 1년 재확인(「청소년 보호법 시행령」 제17조 제2항,
+  `ADULT_REVERIFICATION_ENABLED`), 국내 본인확인 기관(PortOne, `services/identity/`)은 그대로다. 다른 관할의 법이
+  다른 절차를 요구하면(예: 동의 방식, 보관 의무) 그것은 숫자가 아니라 코드로 고칠 일이고, 그 법의 검토를 거친다.
+
+  ⚠ **이미 판정된 회원은 다시 판정하지 않는다.** 생년월일을 저장하지 않으므로, 아동으로 판정된 회원은 판정 때의
+  나이로 정해진 전환일에 아동을 벗어나고, 아동이 아니라고 판정된 회원은 그대로다. 운영 중에 숫자를 바꾸면 그
+  뒤에 나이를 밝히는 회원부터 새 숫자가 적용된다 — 배포를 처음 세울 때 정한다.
 - **원래 서비스의 약관·개인정보처리방침·연락처는 싣지 않는다**(§10). 코드 주석이 "개인정보처리방침"을 말하는
   자리는 그 배포의 문서가 무엇을 약속할 수 있는지를 가리킬 뿐, 유효한 정책 문장이 아니다.
 - **확인**: `pnpm env:doctor --mode production`의 `Identity verification`·`Age gate` 줄. 기본 구성(검증 수단 없음)의
   위 표는 `apps/api/src/routes/minimal-policy.minimal.test.ts`가 별도 프로세스(`vitest.minimal.config.ts`)에서
-  값으로 확인하고, 검증 수단이 있는 쪽은 `routes/membership.test.ts`·`routes/me/adult-verification.test.ts`가 맡는다.
+  값으로 확인하고, 다른 나이(13·18)는 `routes/membership-ages.jurisdiction.test.ts`(`vitest.jurisdiction.config.ts`)가, 검증 수단이 있는 쪽은 `routes/membership.test.ts`·`routes/me/adult-verification.test.ts`가 맡는다.
 
 ## 바꾸지 않아도 되는 것
 

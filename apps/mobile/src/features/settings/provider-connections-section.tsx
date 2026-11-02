@@ -16,7 +16,6 @@ import {
 	resolveProviderConnectionsState,
 } from "./provider-connections-state.ts";
 import {
-	PROVIDER_BYO_LOCKED,
 	PROVIDER_CANCEL_LABEL,
 	PROVIDER_CONNECT_LABEL,
 	PROVIDER_CONNECTED,
@@ -29,6 +28,7 @@ import {
 	PROVIDER_SECTION_DESCRIPTION,
 	PROVIDER_SECTION_TITLE,
 	PROVIDER_TITLE,
+	providerByoLocked,
 	providerConnectedSince,
 	providerDisconnectDescription,
 	providerDisconnectTitle,
@@ -78,7 +78,7 @@ export function ProviderConnectionsSection() {
 		loading: connections.loading,
 		byoAllowed: capability.byo,
 		capabilityLoading: capability.loading,
-		lockedMessage: PROVIDER_BYO_LOCKED,
+		lockedMessage: providerByoLocked(),
 	});
 
 	/** The form open right now. `null` means closed; dialogs are not created per provider. */

@@ -27,6 +27,7 @@ const load = async (env: {
 		isProduction: env.production,
 		// PortOne config is not this file's subject; `portone.test.ts` covers that branch.
 		portOneIdentityConfig: env.portOne ?? null,
+		membershipAges: { guardianConsent: 14, adult: 19 },
 	}));
 	return import("./provider.ts");
 };

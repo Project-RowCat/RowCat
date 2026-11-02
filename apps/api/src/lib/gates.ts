@@ -10,6 +10,7 @@ import {
 	type MobileUpdateCapability,
 } from "@rowcat/domain/mobile-update-access";
 import type { Viewer } from "../auth/viewer.ts";
+import { membershipAges } from "../env.ts";
 import { forbidden, unauthorized } from "./errors.ts";
 
 /**
@@ -68,8 +69,8 @@ export function requireNonChild(
 	if (!isChildViewer(viewer)) return viewer;
 	throw forbidden(
 		capability === "byo"
-			? "Members under 14 can't connect a personal API key."
-			: "Members under 14 can't use adult content.",
+			? `Members under ${membershipAges.guardianConsent} can't connect a personal API key.`
+			: `Members under ${membershipAges.guardianConsent} can't use adult content.`,
 		capability === "byo"
 			? MEMBERSHIP_ERROR_CODE.minorByoRestricted
 			: MEMBERSHIP_ERROR_CODE.minorAdultRestricted,
@@ -154,7 +155,7 @@ export function rejectAdultFilter(viewer: Viewer | null): never {
 	// procedure that does not exist.
 	if (isChildViewer(viewer))
 		throw forbidden(
-			"Members under 14 can't view adult stories.",
+			`Members under ${membershipAges.guardianConsent} can't view adult stories.`,
 			MEMBERSHIP_ERROR_CODE.minorAdultRestricted,
 		);
 	// Eligible but the last check is over a year old: do not say display is off, since turning it on

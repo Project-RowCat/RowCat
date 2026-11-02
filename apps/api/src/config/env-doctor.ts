@@ -484,7 +484,7 @@ function pushCapability(config: ResolvedEnvironment): CapabilityFact {
 
 function identityCapability(config: ResolvedEnvironment): CapabilityFact {
 	const consumers = [
-		"guardian consent (sign-up under 14)",
+		`guardian consent (sign-up under ${config.membershipAges.guardianConsent})`,
 		"the member's own adult verification",
 	];
 
@@ -613,6 +613,13 @@ function generationCapability(
  * Whether a verifier would actually answer: the same folding `resolveIdentityVerifier` does (a half
  * PortOne config and `dev` in production are no verifier), so the doctor and the procedures agree.
  */
+/** Which law's numbers this deployment runs; said on every age-gate verdict so the operator sees the jurisdiction. */
+const ages = (config: ResolvedEnvironment): string => {
+	const { guardianConsent, adult } = config.membershipAges;
+	const korean = guardianConsent === 14 && adult === 19;
+	return `guardian consent under ${guardianConsent}, adult at ${adult}${korean ? " — the defaults, Korean law" : " — set by MEMBERSHIP_GUARDIAN_CONSENT_AGE · MEMBERSHIP_ADULT_AGE"}`;
+};
+
 const verifierUsable = (config: ResolvedEnvironment): boolean =>
 	(config.identityVerificationProvider === "portone" &&
 		config.portOneIdentityConfig !== null) ||
@@ -633,8 +640,9 @@ function membershipCapability(config: ResolvedEnvironment): CapabilityFact {
 			status: "degraded",
 			summary: "on, but no identity verifier",
 			detail: [
-				"members who declare an age under 14 stay at the guardian-consent step — no guardian can verify, so no consent is ever recorded (fail-closed)",
+				`members who declare an age under ${config.membershipAges.guardianConsent} stay at the guardian-consent step — no guardian can verify, so no consent is ever recorded (fail-closed)`,
 				"fill IDENTITY_VERIFICATION_PROVIDER, or leave the gate off until this deployment has a verifier",
+				ages(config),
 			],
 		};
 	return {
@@ -643,13 +651,16 @@ function membershipCapability(config: ResolvedEnvironment): CapabilityFact {
 		label: "Age gate",
 		status: config.ageGateEnabled ? "ready" : "disabled",
 		summary: config.ageGateEnabled ? "on" : "off",
-		detail: config.ageGateEnabled
-			? [
-					"an entry gate stands in front of members whose age has not been checked",
-				]
-			: [
-					"age is not asked yet — this switch does not apply to members already confirmed as under 14",
-				],
+		detail: [
+			...(config.ageGateEnabled
+				? [
+						"an entry gate stands in front of members whose age has not been checked",
+					]
+				: [
+						`age is not asked yet — this switch does not apply to members already confirmed as under ${config.membershipAges.guardianConsent}`,
+					]),
+			ages(config),
+		],
 	};
 }
 

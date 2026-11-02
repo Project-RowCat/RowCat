@@ -10,7 +10,7 @@ export const onboarding = {
 		invalid:
 			"Please check your date of birth. A date after today can't be entered.",
 		title: "Tell us your date of birth",
-		body: "Members under 14 need a guardian's consent, so we ask this once. RowCat doesn't store your date of birth; it records only whether you're under 14 and the date you turn 14.",
+		body: "Members under {{guardianAge}} need a guardian's consent, so we ask this once. RowCat doesn't store your date of birth; it records only whether you're under {{guardianAge}} and the date you turn {{guardianAge}}.",
 		label: "Date of birth",
 		checking: "Checking…",
 		confirm: "Confirm",
@@ -18,8 +18,8 @@ export const onboarding = {
 			"Without your date of birth, you can't use the service. You can sign out, or delete your account right from this screen.",
 	},
 	minor: {
-		byo: "Members under 14 can't connect a personal API key. Conversations are available with RowCat-provided models.",
-		adult: "Members under 14 can't use adult content.",
+		byo: "Members under {{guardianAge}} can't connect a personal API key. Conversations are available with RowCat-provided models.",
+		adult: "Members under {{guardianAge}} can't use adult content.",
 	},
 	guardianRequest: {
 		unavailable:
@@ -58,9 +58,9 @@ export const onboarding = {
 		opening: "Opening…",
 		verify: "Verify guardian identity",
 		intro:
-			"RowCat is a service for reading stories people make and chatting with AI. Children under 14 need a legal guardian's consent to use it.",
+			"RowCat is a service for reading stories people make and chatting with AI. Children under {{guardianAge}} need a legal guardian's consent to use it.",
 		collected:
-			"<b>Information collected</b> — sign-in method (email or social account), nickname and service usage records. Your child's date of birth isn't stored; only whether they're under 14 and the date they turn 14 are recorded.",
+			"<b>Information collected</b> — sign-in method (email or social account), nickname and service usage records. Your child's date of birth isn't stored; only whether they're under {{guardianAge}} and the date they turn {{guardianAge}} are recorded.",
 		guardianInfo:
 			"<b>Guardian information</b> — facts confirmed by the identity verification provider (a verification reference, name and contact) are kept only to confirm consent.",
 		ai: "<b>AI processing</b> — conversation content is sent to the external AI providers the company contracts with, for generation.",
@@ -77,7 +77,7 @@ export const onboarding = {
 	},
 	guardianPanel: {
 		title: "A guardian's consent is needed",
-		body: "If you're under 14, you need consent from a guardian (legal representative) to use RowCat. Send the link below to your guardian. Once they verify their identity and consent, you can start right away.",
+		body: "If you're under {{guardianAge}}, you need consent from a guardian (legal representative) to use RowCat. Send the link below to your guardian. Once they verify their identity and consent, you can start right away.",
 		step1:
 			"Your guardian verifies their identity, for example with a mobile phone.",
 		step2: "Your guardian consents to your use of RowCat.",

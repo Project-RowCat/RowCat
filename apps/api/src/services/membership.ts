@@ -2,6 +2,7 @@ import { declareAge } from "@rowcat/domain/membership";
 import { eq } from "drizzle-orm";
 import { db } from "../db/client.ts";
 import { member } from "../db/schema.ts";
+import { membershipAges } from "../env.ts";
 
 /**
  * Age declaration: the only place the server sees a birth date, and it never stores it. The value
@@ -41,7 +42,11 @@ export async function declareMemberAge(input: {
 	now?: Date;
 }): Promise<AgeDeclarationOutcome> {
 	const now = input.now ?? new Date();
-	const declaration = declareAge(input.birthDate, now);
+	const declaration = declareAge(
+		input.birthDate,
+		now,
+		membershipAges.guardianConsent,
+	);
 	if (declaration.status === "invalid")
 		return { status: "invalid", reason: declaration.reason };
 

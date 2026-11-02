@@ -4894,7 +4894,7 @@ product event → durable notification row → push delivery → Expo → OS ban
 
 ## Membership eligibility — age and guardian consent
 
-The slice that lets someone under 14 **use the product normally** while making that account structurally unable to reach
+The slice that lets someone under the guardian-consent age (14 by default) **use the product normally** while making that account structurally unable to reach
 adult content and direct-connection generation. Full rules and rollout order in
 `docs/membership/ARCHITECTURE.md`.
 
@@ -4911,6 +4911,16 @@ adult content and direct-connection generation. Full rules and rollout order in
   whose birthday passed stays a child for the day that job is down. The computation is always a calendar date in the
   product timezone (KST; counted in UTC the decision is off by a day for nine hours, and one of those directions passes
   someone not yet 14), and 14 years after a Feb 29 birth is **March 1** in a non-leap year.
+- **The two ages are the deployment's, and only the numbers move** (`MEMBERSHIP_GUARDIAN_CONSENT_AGE` 14 ·
+  `MEMBERSHIP_ADULT_AGE` 19 — Korean law by default; an invalid pair blocks boot). The domain takes the threshold as a
+  **required argument** (`declareAge`, `isLegalAdultOn`), so no call site can fall back to 14 quietly. The API decides;
+  the apps only print the same number — the web through a `<meta>` the server wrote (`lib/membership-ages.ts`, read by
+  i18next's `defaultVariables` so `{{guardianAge}}`/`{{adultAge}}` resolve at translation time), mobile through a
+  module value the root sets from the runtime config (`lib/membership-ages.ts`, pure, so copy stays testable), and the
+  console uses no number at all. **A member already judged is not re-judged** — no birth date is stored, so changing
+  the numbers applies from the next declaration. The procedure (identity-verified guardian consent, what is not
+  stored, KST, PortOne) stays Korean-shaped; a jurisdiction that needs a different procedure changes code, not a
+  number. `vitest.jurisdiction.config.ts` runs the routes at 13/18.
 - **There is one entry gate and `resolveMembershipGate` owns the priority** — the screen reads one server-computed
   `viewer.membershipGate`.
 - **There is no terms gate — and a fork that adds one does not put it in front of a child.** Consent a child pressed

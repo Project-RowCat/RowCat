@@ -7,6 +7,7 @@ import { isChildAge, resolveAgeStatus } from "@rowcat/domain/membership";
 import { and, desc, eq } from "drizzle-orm";
 import { type Db, db } from "../db/client.ts";
 import { identity_verification, member } from "../db/schema.ts";
+import { membershipAges } from "../env.ts";
 import { ApiError } from "../lib/errors.ts";
 import { newId } from "../lib/id.ts";
 import {
@@ -351,7 +352,7 @@ export async function completeAdultVerification(input: {
 			throw new ApiError(
 				403,
 				"minor_adult_restricted",
-				"Members under 14 can't use adult content.",
+				`Members under ${membershipAges.guardianConsent} can't use adult content.`,
 			);
 
 		/** Consumes the attempt; this conditional UPDATE is the replay defence (a concurrent second request gets 0 rows). */

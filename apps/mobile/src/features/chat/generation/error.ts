@@ -5,6 +5,7 @@ import {
 	ProviderError,
 	type ProviderErrorCode,
 } from "../../../lib/generation/errors.ts";
+import { membershipAges } from "../../../lib/membership-ages.ts";
 
 /**
  * Generation failure -> the sentence the user reads and the next action.
@@ -90,7 +91,7 @@ function blockedMessage(
 	if (execution.reason === "managed_only")
 		return "This story protects its prompt, so you can only chat with RowCat-provided models.";
 	if (execution.reason === "byo_not_permitted")
-		return "Members under 14 can't generate conversations with a personal API key.";
+		return `Members under ${membershipAges().guardianConsent} can't generate conversations with a personal API key.`;
 	/** A connect screen exists now, so this names the next step (the link itself is drawn by `generationRecovery`). */
 	if (execution.reason === "provider_not_connected")
 		return "The AI provider set for this conversation isn't connected on this device.";

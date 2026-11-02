@@ -1,4 +1,5 @@
 import type { ByoProvider } from "@rowcat/chat";
+import { membershipAges } from "../../lib/membership-ages.ts";
 
 /**
  * Copy for AI provider connections. What this file guards is that each sentence states a fact.
@@ -131,8 +132,8 @@ export const PROVIDER_FOREIGN_SESSION =
  * this screen reads as if conversation itself were blocked. Its job is to tell this person **what
  * still works**.
  */
-export const PROVIDER_BYO_LOCKED =
-	"Members under 14 can't connect a personal API key. Conversations are available with RowCat-provided models.";
+export const providerByoLocked = (): string =>
+	`Members under ${membershipAges().guardianConsent} can't connect a personal API key. Conversations are available with RowCat-provided models.`;
 
 /** Disconnect confirmation — **what happens and what does not.** */
 export const providerDisconnectTitle = (provider: ByoProvider): string =>

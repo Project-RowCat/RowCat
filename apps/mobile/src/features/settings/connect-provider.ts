@@ -3,10 +3,10 @@ import type { CredentialCheck } from "../../lib/generation/byo.ts";
 import type { ProviderError } from "../../lib/generation/errors.ts";
 import type { ProviderConnectionStore } from "../../lib/local-provider/store.ts";
 import {
-	PROVIDER_BYO_LOCKED,
 	PROVIDER_EMPTY_KEY,
 	PROVIDER_FOREIGN_SESSION,
 	PROVIDER_SAVE_FAILURE,
+	providerByoLocked,
 } from "./provider-copy.ts";
 
 /**
@@ -127,7 +127,7 @@ export async function connectProvider(
 	 * before the guard is set is also intended: nothing has started, so there is nothing to release.
 	 */
 	if (!input.byoAllowed)
-		return { status: "not_permitted", message: PROVIDER_BYO_LOCKED };
+		return { status: "not_permitted", message: providerByoLocked() };
 
 	/**
 	 * Empty values also come before the probe. Asking the provider about an empty key returns 401,

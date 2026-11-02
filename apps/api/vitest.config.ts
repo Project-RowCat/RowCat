@@ -64,6 +64,7 @@ export default defineConfig({
 			...configDefaults.exclude,
 			"src/**/*.verified.test.ts",
 			"src/**/*.minimal.test.ts",
+			"src/**/*.jurisdiction.test.ts",
 		],
 		/**
 		 * The workspace budget, stated here because this package's script chains two `vitest run`s and

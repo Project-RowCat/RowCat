@@ -1,5 +1,6 @@
 import { createInstance, type i18n } from "i18next";
 import { initReactI18next } from "react-i18next";
+import { membershipAges } from "../membership-ages.ts";
 import { DEFAULT_LOCALE, type Locale } from "./locale.ts";
 import { en } from "./messages/en/index.ts";
 import { ko } from "./messages/ko/index.ts";
@@ -30,8 +31,24 @@ export function i18nFor(locale: Locale): i18n {
 		resources,
 		defaultNS: "common",
 		ns: Object.keys(en),
-		// React escapes text already; escaping here as well would draw `&amp;`.
-		interpolation: { escapeValue: false },
+		interpolation: {
+			// React escapes text already; escaping here as well would draw `&amp;`.
+			escapeValue: false,
+			/**
+			 * The deployment's ages, available to every string as `{{guardianAge}}` and `{{adultAge}}`
+			 * without each call site passing them. Getters, because i18next spreads this object on every
+			 * translation: the value read is the one current now (`lib/membership-ages.ts`), not the one
+			 * when this instance was created.
+			 */
+			defaultVariables: {
+				get guardianAge() {
+					return membershipAges().guardianConsent;
+				},
+				get adultAge() {
+					return membershipAges().adult;
+				},
+			},
+		},
 		// Synchronous init: the resources are in memory, and the first render must not wait.
 		initAsync: false,
 		returnNull: false,

@@ -18,7 +18,7 @@ describe("applyAdultAxis", () => {
 		).toEqual({ verified: true, adult: true });
 	});
 
-	/** A verified account under 19 is a normal state. */
+	/** A verified account under the adult age is a normal state. */
 	it("turning on identity verification alone does not turn on adult eligibility", () => {
 		expect(
 			applyAdultAxis({ verified: false, adult: false }, "verified", true),

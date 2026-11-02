@@ -1,4 +1,5 @@
 import { APP_NAME } from "@rowcat/domain";
+import { runtimeConfigQueryOptions } from "@rowcat/query";
 import { Toaster } from "@rowcat/ui-web/components/toast";
 import { TanStackDevtools } from "@tanstack/react-devtools";
 import type { QueryClient } from "@tanstack/react-query";
@@ -20,6 +21,13 @@ import { currentLocale } from "#/lib/i18n/current.ts";
 import { I18nProvider } from "#/lib/i18n/provider.tsx";
 import { LocalDataScopeProvider } from "#/lib/local-data/scope.tsx";
 import { SyncRuntimeProvider } from "#/lib/local-sync/provider.tsx";
+import {
+	encodeMembershipAges,
+	MEMBERSHIP_AGES_META,
+	membershipAges,
+	serverMembershipAgesStale,
+	setServerMembershipAges,
+} from "#/lib/membership-ages.ts";
 import { MotionProvider } from "#/lib/motion/provider.tsx";
 import { preloadViewer } from "#/lib/query/viewer-preload.ts";
 import { ADMIN_ORIGIN_META, API_ORIGIN_META } from "#/lib/runtime-meta.ts";
@@ -28,6 +36,23 @@ import appCss from "../styles/globals.css?url";
 
 interface MyRouterContext {
 	queryClient: QueryClient;
+}
+
+/**
+ * Server only, and at most once a minute per process: the ages are deployment facts, so re-reading
+ * them per request would be one API call per page view for a value that changes on restart. A read
+ * that fails keeps the last value; copy printing an age must not break a page.
+ */
+async function loadMembershipAges(queryClient: QueryClient): Promise<void> {
+	if (typeof document !== "undefined" || !serverMembershipAgesStale()) return;
+	try {
+		const config = await queryClient.ensureQueryData(
+			runtimeConfigQueryOptions(getRowCatClient()),
+		);
+		setServerMembershipAges(config.membershipAges);
+	} catch {
+		/* keep the last known value */
+	}
 }
 
 export const Route = createRootRouteWithContext<MyRouterContext>()({
@@ -50,8 +75,12 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 	 * auth failure into an error screen for every route, including the public gallery. preloadViewer
 	 * keeps the success path and drops failures to guest.
 	 */
-	loader: ({ context }) =>
-		preloadViewer(context.queryClient, getRowCatClient()),
+	loader: async ({ context }) => {
+		await Promise.all([
+			preloadViewer(context.queryClient, getRowCatClient()),
+			loadMembershipAges(context.queryClient),
+		]);
+	},
 	/**
 	 * Replaces the router's two default screens here: not-found and unhandled errors. Their defaults
 	 * and rationale are in the components/route-fallback.tsx header (summary: a single `Not Found`
@@ -90,6 +119,11 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 			 * same tag is what keeps the two sides from disagreeing.
 			 */
 			{ name: API_ORIGIN_META, content: API_ORIGIN },
+			/** The ages copy prints, as the server rendered them (`lib/membership-ages.ts`). */
+			{
+				name: MEMBERSHIP_AGES_META,
+				content: encodeMembershipAges(membershipAges()),
+			},
 			...(ADMIN_CONSOLE_ORIGIN
 				? [{ name: ADMIN_ORIGIN_META, content: ADMIN_CONSOLE_ORIGIN }]
 				: []),

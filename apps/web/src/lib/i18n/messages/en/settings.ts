@@ -84,7 +84,7 @@ export const settings = {
 	},
 	connect: {
 		notPermitted:
-			"Members under 14 can't connect a personal API key. You can still converse with RowCat's models.",
+			"Members under {{guardianAge}} can't connect a personal API key. You can still converse with RowCat's models.",
 		saveFailed: "Couldn't save the connection. Please try again.",
 		invalidCredential:
 			"The provider rejected this API key. Please check the key.",
@@ -190,7 +190,7 @@ export const settings = {
 		deletesTheApiKeyStored:
 			"Deletes the API key stored on this device. Conversations that chose this provider can't generate until you reconnect, but the chosen model settings stay. The key in your provider account and other devices' connections stay.",
 		membersUnder14CanT:
-			"Members under 14 can't connect a personal API key. You can keep conversing with RowCat's models, and this opens when you turn 14.",
+			"Members under {{guardianAge}} can't connect a personal API key. You can keep conversing with RowCat's models, and this opens when you turn {{guardianAge}}.",
 		connectAPersonalApiKey:
 			"Connect a personal API key to choose that provider's models. The connection is used only on this device, and the API key is never sent to RowCat's server.",
 		couldnTDisconnectPleaseTry: "Couldn't disconnect. Please try again.",

@@ -365,6 +365,30 @@ describe("Identity verification", () => {
 		).toContain("ADULT_REVERIFICATION_ENABLED is on");
 	});
 
+	test("the ages are said with the jurisdiction they come from, and an impossible pair blocks boot", () => {
+		const detail = (env: Record<string, string>) =>
+			report(env)
+				.capabilities.find((entry) => entry.id === "ageGate")
+				?.detail.join(" ") ?? "";
+		expect(detail(MINIMAL)).toContain(
+			"under 14, adult at 19 — the defaults, Korean law",
+		);
+		expect(
+			detail({
+				...MINIMAL,
+				MEMBERSHIP_GUARDIAN_CONSENT_AGE: "13",
+				MEMBERSHIP_ADULT_AGE: "18",
+			}),
+		).toContain("under 13, adult at 18 — set by");
+		expect(
+			resolveEnvironment({
+				...MINIMAL,
+				MEMBERSHIP_GUARDIAN_CONSENT_AGE: "20",
+				MEMBERSHIP_ADULT_AGE: "18",
+			}).ok,
+		).toBe(false);
+	});
+
 	/** Boots cleanly and locks under-14 members out: the one combination the doctor must name. */
 	test("the age gate on with no usable verifier is degraded, and ready again with one", () => {
 		const gated = { ...MINIMAL, MEMBERSHIP_AGE_GATE: "on" };

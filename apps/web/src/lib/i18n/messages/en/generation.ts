@@ -21,7 +21,7 @@ export const generation = {
 		managedOnly:
 			"This work protects its prompt, so you can only chat with {{app}}-provided models. Choose an {{app}}-provided model in conversation settings.",
 		byoNotPermitted:
-			"Members under 14 can't generate conversations with a personal API key ({{provider}}). Choose an {{app}}-provided model in conversation settings.",
+			"Members under {{guardianAge}} can't generate conversations with a personal API key ({{provider}}). Choose an {{app}}-provided model in conversation settings.",
 		providerNotConnected:
 			"The AI provider chosen for this conversation ({{provider}}) isn't connected on this device.",
 		modelUnavailable:
@@ -58,13 +58,13 @@ export const generation = {
 		model: "Model",
 		catalogFailed: "Couldn't load the model list.",
 		loading: "Loading…",
-		byoNotPermitted: " · Not available under 14",
+		byoNotPermitted: " · Not available under {{guardianAge}}",
 		providerNotConnected: " · Connect the provider first",
 		missingFromCatalog: " · Not in the list",
 		managedOnly:
 			"This work can only be used with {{app}}-provided models. Choose {{app}} as the provider.",
 		byoNotPermittedMessage:
-			"Members under 14 can't use a personal API key ({{provider}}). Choose {{app}} as the provider.",
+			"Members under {{guardianAge}} can't use a personal API key ({{provider}}). Choose {{app}} as the provider.",
 		providerNotConnectedMessage:
 			"Not available on this device right now · {{provider}} needs to be connected.",
 		missingMessage: "This model isn't available in the current list.",

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ProviderConnectionSummary } from "../../lib/local-provider/record.ts";
 import { resolveProviderConnectionsState } from "./provider-connections-state.ts";
-import { PROVIDER_BYO_LOCKED } from "./provider-copy.ts";
+import { providerByoLocked } from "./provider-copy.ts";
 
 /**
  * State of the provider connections section: **there are always two rows, and only the upper half
@@ -31,7 +31,7 @@ const resolve = (
 		loading: false,
 		byoAllowed: true,
 		capabilityLoading: false,
-		lockedMessage: PROVIDER_BYO_LOCKED,
+		lockedMessage: providerByoLocked(),
 		...overrides,
 	});
 
@@ -107,7 +107,7 @@ describe("without eligibility", () => {
 		const state = locked();
 		expect(state.kind === "ready" && state.rows).toHaveLength(2);
 		expect(state.kind === "ready" && state.lockedReason).toBe(
-			PROVIDER_BYO_LOCKED,
+			providerByoLocked(),
 		);
 	});
 
@@ -134,7 +134,7 @@ describe("without eligibility", () => {
 			loading: false,
 			byoAllowed: false,
 			capabilityLoading: false,
-			lockedMessage: PROVIDER_BYO_LOCKED,
+			lockedMessage: providerByoLocked(),
 		});
 		expect(
 			state.kind === "ready" && state.rows.every((row) => row.canDisconnect),

@@ -1,3 +1,4 @@
+import { membershipAges } from "../../lib/membership-ages.ts";
 /**
  * Copy for the membership gate. No rules live here.
  *
@@ -23,8 +24,10 @@ export const AGE_TITLE = "Tell us your date of birth";
  * The screen states that the birth date is not stored. If it does not say what is kept, people
  * assume the worst, and that assumption is usually right.
  */
-export const AGE_DESCRIPTION =
-	"Members under 14 need a guardian's consent, so we ask this once. RowCat doesn't store your date of birth; it records only whether you're under 14 and the date you turn 14.";
+export const ageDescription = (): string => {
+	const age = membershipAges().guardianConsent;
+	return `Members under ${age} need a guardian's consent, so we ask this once. RowCat doesn't store your date of birth; it records only whether you're under ${age} and the date you turn ${age}.`;
+};
 
 export const AGE_FIELD_LABEL = "Date of birth";
 export const AGE_FIELD_PLACEHOLDER = "YYYY-MM-DD";
@@ -37,8 +40,8 @@ export const AGE_EXIT_NOTE =
 
 export const GUARDIAN_TITLE = "A guardian's consent is needed";
 
-export const GUARDIAN_DESCRIPTION =
-	"If you're under 14, you need consent from a guardian (legal representative) to use RowCat. Send the link below to your guardian. Once they verify their identity and consent, you can start right away.";
+export const guardianDescription = (): string =>
+	`If you're under ${membershipAges().guardianConsent}, you need consent from a guardian (legal representative) to use RowCat. Send the link below to your guardian. Once they verify their identity and consent, you can start right away.`;
 
 /** The child's screen also states what they are consenting to (the intent of PIPA 22-2(3)). */
 export const GUARDIAN_STEPS = [

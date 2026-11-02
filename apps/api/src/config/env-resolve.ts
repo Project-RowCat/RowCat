@@ -1,5 +1,9 @@
 import { isIP } from "node:net";
 import { API_BASE_PATH } from "@rowcat/contracts/http";
+import {
+	checkMembershipAges,
+	type MembershipAges,
+} from "@rowcat/domain/membership";
 import { z } from "zod";
 import {
 	type AppleSignInConfig,
@@ -67,6 +71,8 @@ export interface ResolvedEnvironment {
 	env: EnvValues;
 	isProduction: boolean;
 	ageGateEnabled: boolean;
+	/** The guardian-consent and adult ages this deployment runs (`MEMBERSHIP_*_AGE`, Korean law by default). */
+	membershipAges: MembershipAges;
 	/** Whether the one-year adult re-verification is on (`ADULT_REVERIFICATION_ENABLED=on`). */
 	adultReverificationEnabled: boolean;
 	identityVerificationProvider: string | null;
@@ -216,6 +222,15 @@ export function resolveEnvironment(
 		const isProduction = env.NODE_ENV === "production";
 
 		const ageGateEnabled = env.MEMBERSHIP_AGE_GATE === "on";
+		const membershipAges: MembershipAges = {
+			guardianConsent: env.MEMBERSHIP_GUARDIAN_CONSENT_AGE,
+			adult: env.MEMBERSHIP_ADULT_AGE,
+		};
+		const agesProblem = checkMembershipAges(membershipAges);
+		if (agesProblem)
+			fail(
+				`MEMBERSHIP_GUARDIAN_CONSENT_AGE=${membershipAges.guardianConsent} and MEMBERSHIP_ADULT_AGE=${membershipAges.adult}: ${agesProblem}`,
+			);
 		const adultReverificationEnabled =
 			env.ADULT_REVERIFICATION_ENABLED === "on";
 
@@ -523,6 +538,7 @@ export function resolveEnvironment(
 				env,
 				isProduction,
 				ageGateEnabled,
+				membershipAges,
 				adultReverificationEnabled,
 				identityVerificationProvider,
 				portOneIdentityConfig,

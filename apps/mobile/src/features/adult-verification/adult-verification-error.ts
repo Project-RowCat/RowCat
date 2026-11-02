@@ -1,4 +1,5 @@
 import { isRowCatApiError } from "@rowcat/sdk";
+import { membershipAges } from "../../lib/membership-ages.ts";
 
 /**
  * Failure vocabulary for adult verification; the axis is the next action, not the sentence. Folding
@@ -113,7 +114,7 @@ export function adultVerificationErrorMessage(error: unknown): string {
 		// Under 14. This screen does not draw that button, but an account re-judged while the window was
 		// open can exist; the server refuses then.
 		case "minor_adult_restricted":
-			return "Accounts under 14 can't use adult content.";
+			return `Accounts under ${membershipAges().guardianConsent} can't use adult content.`;
 		case "login_required":
 			return "You've been signed out. Please sign in again.";
 		default:

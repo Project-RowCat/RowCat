@@ -9,13 +9,13 @@
 
 export interface AdultAxes {
 	verified: boolean;
-	/** Whether the person is 19 or older — a judgment attached to that verification. */
+	/** Whether the person had reached the adult age — a judgment attached to that verification. */
 	adult: boolean;
 }
 
 /**
  * Turning `verified` off also turns `adult` off, and turning `adult` on also turns `verified` on.
- * The other two directions leave the other axis alone: a verified account under 19 is a normal
+ * The other two directions leave the other axis alone: a verified account under the adult age is a normal
  * state, and revoking only adult entitlement is a real operator action.
  */
 export function applyAdultAxis(

@@ -2,6 +2,7 @@ import type { IdentityVerificationHandoff } from "@rowcat/contracts";
 import {
 	identityVerificationProvider,
 	isProduction,
+	membershipAges,
 	portOneIdentityConfig,
 } from "../../env.ts";
 import { newId } from "../../lib/id.ts";
@@ -182,7 +183,9 @@ export function resolveIdentityVerifier(): IdentityVerificationProvider | null {
 		// (or lookup works but no window opens), and that surfaces after the guardian is halfway through,
 		// when the child has already handed over the link.
 		const config = portOneIdentityConfig;
-		return config ? createPortOneVerifier(config, newId) : null;
+		return config
+			? createPortOneVerifier(config, newId, membershipAges.adult)
+			: null;
 	}
 	// Name configured but no adapter: do not pass. A typo must not become a path to consent without
 	// verification. Adding another authority adds a branch here, in the same commit as its adapter.

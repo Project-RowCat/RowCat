@@ -72,5 +72,10 @@ export const CAPABILITY_VARIABLES: Readonly<
 		"MANAGED_GENERATION_REQUEST_TOKENS",
 	],
 	/** The verifier too: the gate's degraded state is "on with nothing to verify a guardian". */
-	ageGate: ["MEMBERSHIP_AGE_GATE", "IDENTITY_VERIFICATION_PROVIDER"],
+	ageGate: [
+		"MEMBERSHIP_AGE_GATE",
+		"IDENTITY_VERIFICATION_PROVIDER",
+		"MEMBERSHIP_GUARDIAN_CONSENT_AGE",
+		"MEMBERSHIP_ADULT_AGE",
+	],
 };

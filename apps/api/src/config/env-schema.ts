@@ -257,6 +257,28 @@ export const EnvSchema = z.object({
 	 */
 	MEMBERSHIP_AGE_GATE: z.string().default(""),
 	/**
+	 * The two ages the membership rules use, in whole years. Empty means the code's defaults, which are
+	 * Korean law: guardian consent under 14 (PIPA art. 22-2) and adulthood at 19 (Civil Act art. 4).
+	 *
+	 * - `MEMBERSHIP_GUARDIAN_CONSENT_AGE`: below it a member needs a legal guardian's consent (only
+	 *   asked while `MEMBERSHIP_AGE_GATE=on`).
+	 * - `MEMBERSHIP_ADULT_AGE`: from it a verified member may use adult content and act as a guardian.
+	 *
+	 * Which law applies is the deployment's call, not this code's. The numbers move the rule; they do
+	 * not change the procedure (guardian consent is still identity verification of an adult guardian),
+	 * so a jurisdiction whose procedure differs needs more than a number. A guardian-consent age above
+	 * the adult age blocks boot. Changing the guardian-consent age does not re-decide members who
+	 * already declared: the server keeps only the date they reach it, computed when they declared.
+	 */
+	MEMBERSHIP_GUARDIAN_CONSENT_AGE: z.preprocess(
+		(value) => (value === "" || value === undefined ? undefined : value),
+		z.coerce.number().int().default(14),
+	),
+	MEMBERSHIP_ADULT_AGE: z.preprocess(
+		(value) => (value === "" || value === undefined ? undefined : value),
+		z.coerce.number().int().default(19),
+	),
+	/**
 	 * Whether the one-year adult re-verification is on: `on`, or empty meaning off.
 	 *
 	 * When on, members whose last adult verification is over a year old lose adult viewing until they

@@ -15,7 +15,11 @@ import {
 import { eq } from "drizzle-orm";
 import { db } from "../db/client.ts";
 import { ops_app_version_floor, ops_feature_flag } from "../db/schema.ts";
-import { localOwnerEnabled, passwordResetEnabled } from "../env.ts";
+import {
+	localOwnerEnabled,
+	membershipAges,
+	passwordResetEnabled,
+} from "../env.ts";
 import { ApiError } from "../lib/errors.ts";
 import { recordAudit } from "./admin/audit.ts";
 import { hasLocalOwner } from "./setup/index.ts";
@@ -423,6 +427,7 @@ export async function readRuntimeConfig(): Promise<RuntimeConfigDto> {
 		 */
 		localSignIn:
 			localOwnerEnabled && (await hasLocalOwner().catch(() => false)),
+		membershipAges,
 	};
 }
 

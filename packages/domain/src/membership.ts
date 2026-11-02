@@ -34,13 +34,49 @@ export const AGE_STATUSES = ["unknown", "child", "standard"] as const;
 export type AgeStatus = (typeof AGE_STATUSES)[number];
 
 /**
- * The age (14) below which legal guardian consent is required. Taken from Article 22-2(1) of the
+ * The default age (14) below which legal guardian consent is required, from Article 22-2(1) of the
  * Personal Information Protection Act.
  *
- * Kept as one constant so the number does not scatter through the code. Changing it means the law
- * changed.
+ * A default, not the rule: the number is the deployment's (`MEMBERSHIP_GUARDIAN_CONSENT_AGE`), because
+ * which law applies is the operator's jurisdiction, not this code's. The server reads it once and
+ * passes it to every function below; clients learn it from the runtime config and only print it. The
+ * functions take it as a **required** argument so no caller can fall back to this constant by
+ * forgetting to pass the deployment's value.
  */
 export const GUARDIAN_CONSENT_AGE = 14;
+
+/**
+ * The two ages a deployment sets. `guardianConsent` decides who is a child (guardian consent needed);
+ * `adult` decides adult content eligibility and who may act as a guardian.
+ */
+export interface MembershipAges {
+	readonly guardianConsent: number;
+	readonly adult: number;
+}
+
+/** What a deployment that sets nothing runs: Korean law. */
+export const DEFAULT_MEMBERSHIP_AGES: MembershipAges = {
+	guardianConsent: 14,
+	adult: 19,
+};
+
+/**
+ * Why a pair of ages cannot be a deployment's, or `null`. Whole years; a guardian-consent age above
+ * the adult age would make someone an adult who still needs a guardian; and the bounds keep a typo
+ * (140, 0) from booting. Boot refuses on a non-null answer, so the two never disagree at runtime.
+ */
+export function checkMembershipAges(ages: MembershipAges): string | null {
+	const { guardianConsent, adult } = ages;
+	if (!Number.isInteger(guardianConsent) || !Number.isInteger(adult))
+		return "ages are whole years";
+	if (guardianConsent < 1 || guardianConsent > 21)
+		return "the guardian-consent age must be between 1 and 21";
+	if (adult < 15 || adult > 25)
+		return "the adult age must be between 15 and 25";
+	if (guardianConsent > adult)
+		return "the guardian-consent age cannot be above the adult age";
+	return null;
+}
 
 /**
  * Product time zone (UTC+9). Age decisions always use the calendar date in this zone, not the
@@ -129,7 +165,8 @@ export function addYears(date: CalendarDate, years: number): CalendarDate {
 }
 
 /**
- * Age of majority (19) under Article 4 of the Civil Act. Deliberately a separate constant from
+ * Default age of majority (19) under Article 4 of the Civil Act — the deployment's
+ * `MEMBERSHIP_ADULT_AGE` replaces it, like `GUARDIAN_CONSENT_AGE`. Deliberately a separate constant from
  * GUARDIAN_CONSENT_AGE. The two numbers come from different laws (Civil Act Art. 4, and Personal
  * Information Protection Act Art. 22-2), so they must not be tied together.
  *
@@ -149,17 +186,25 @@ export const LEGAL_ADULT_AGE = 19;
  * It uses the same calendar, time zone and leap-day rules as the age-14 check. Otherwise a guardian
  * born on Feb 29 could read as not adult for a day.
  */
-export const isLegalAdultOn = (birthDate: CalendarDate, now: Date): boolean =>
-	productDate(now) >= addYears(birthDate, LEGAL_ADULT_AGE);
+export const isLegalAdultOn = (
+	birthDate: CalendarDate,
+	now: Date,
+	adultAge: number,
+): boolean => productDate(now) >= addYears(birthDate, adultAge);
 
 /**
- * The date this person turns 14. This is the only age information stored, and only while the status
- * is `child`. The birth date itself is discarded after this value is computed (see
- * docs/membership/ARCHITECTURE.md).
+ * The date this person reaches the guardian-consent age. This is the only age information stored,
+ * and only while the status is `child`. The birth date itself is discarded after this value is
+ * computed (see docs/membership/ARCHITECTURE.md).
+ *
+ * The age is the one in force **at declaration**. A deployment that later changes it does not
+ * re-decide anyone already declared — no birth date remains to re-decide from — and this stored date
+ * keeps that member on the rule they declared under.
  */
 export const guardianConsentThresholdDate = (
 	birthDate: CalendarDate,
-): CalendarDate => addYears(birthDate, GUARDIAN_CONSENT_AGE);
+	guardianConsentAge: number,
+): CalendarDate => addYears(birthDate, guardianConsentAge);
 
 /**
  * Result of declaring a birth date. Failure reasons are split because the screen acts differently
@@ -182,7 +227,11 @@ export type AgeDeclaration =
  * The result does not carry the date, so callers cannot read it again. Code that wants to 'store
  * the date in the column for now' would first have to change this signature.
  */
-export function declareAge(birthDate: string, now: Date): AgeDeclaration {
+export function declareAge(
+	birthDate: string,
+	now: Date,
+	guardianConsentAge: number,
+): AgeDeclaration {
 	if (!isCalendarDate(birthDate))
 		return { status: "invalid", reason: "malformed" };
 
@@ -193,7 +242,10 @@ export function declareAge(birthDate: string, now: Date): AgeDeclaration {
 	if (year < EARLIEST_BIRTH_YEAR)
 		return { status: "invalid", reason: "implausible" };
 
-	const thresholdDate = guardianConsentThresholdDate(birthDate);
+	const thresholdDate = guardianConsentThresholdDate(
+		birthDate,
+		guardianConsentAge,
+	);
 	return today < thresholdDate
 		? { status: "ok", ageStatus: "child", thresholdDate }
 		: { status: "ok", ageStatus: "standard", thresholdDate: null };

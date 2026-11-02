@@ -4,6 +4,7 @@ import { isChildAge, resolveAgeStatus } from "@rowcat/domain/membership";
 import { eq } from "drizzle-orm";
 import { db } from "../../db/client.ts";
 import { member } from "../../db/schema.ts";
+import { membershipAges } from "../../env.ts";
 import { ApiError } from "../../lib/errors.ts";
 import { recordAudit } from "./audit.ts";
 
@@ -101,7 +102,7 @@ export async function setAdultVerificationAsAdmin(
 			throw new ApiError(
 				403,
 				"minor_adult_restricted",
-				"Adult eligibility can't be granted to members under 14.",
+				`Adult eligibility can't be granted to members under ${membershipAges.guardianConsent}.`,
 			);
 
 		const changed =

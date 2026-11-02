@@ -43,6 +43,7 @@ const VERIFIED_BODY = {
 const verifierWith = (
 	handler: (url: string, init?: RequestInit) => Response | Promise<Response>,
 	nonce = "nonce-1",
+	adultAge = 19,
 ) =>
 	createPortOneVerifier(
 		{
@@ -51,6 +52,7 @@ const verifierWith = (
 				Promise.resolve(handler(String(input), init))) as typeof fetch,
 		},
 		() => nonce,
+		adultAge,
 	);
 
 const json = (body: unknown, status = 200): Response =>
@@ -183,6 +185,25 @@ describe("verify — looks up, then discards", () => {
 			reference: "rowcat-req-1-nonce-1",
 		});
 		expect(outcome).toMatchObject({ verified: true, adult: false });
+	});
+
+	/** The adult age is the deployment's: the same 18-year-old is a minor at 19 and an adult at 18. */
+	test("the adult boolean follows the deployment's adult age", async () => {
+		const year = new Date().getUTCFullYear() - 18;
+		const eighteen = {
+			...VERIFIED_BODY,
+			verifiedCustomer: {
+				...VERIFIED_BODY.verifiedCustomer,
+				birthDate: `${year}-01-01`,
+			},
+		};
+		const ask = (adultAge: number) =>
+			verifierWith(() => json(eighteen), "nonce-1", adultAge).verify({
+				requestId: "req-1",
+				reference: "rowcat-req-1-nonce-1",
+			});
+		expect(await ask(19)).toMatchObject({ adult: false });
+		expect(await ask(18)).toMatchObject({ adult: true });
 	});
 
 	// A missing birth date is not adult: passing would turn an unverified fact true, and that fact

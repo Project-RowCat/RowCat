@@ -5,6 +5,7 @@ import type {
 	TargetUnavailability,
 } from "@rowcat/chat";
 import { buildModelOptions as buildShared } from "@rowcat/chat";
+import { membershipAges } from "../../../lib/membership-ages.ts";
 import { providerLabel } from "./labels.ts";
 
 /**
@@ -31,7 +32,9 @@ const LABELS: ModelOptionLabels = {
 	 * (generation failure wording reached the same judgement first, see `blockedMessage` in
 	 * `error.ts`).
 	 */
-	byoNotPermitted: " · Not available under 14",
+	get byoNotPermitted() {
+		return ` · Not available under ${membershipAges().guardianConsent}`;
+	},
 	providerNotConnected: " · Connect the provider first",
 	missingFromCatalog: " · Not in the list",
 };
@@ -73,7 +76,7 @@ export function unavailableMessage(
 	if (unavailable.reason === "managed_only")
 		return `This story can only be chatted with using RowCat-provided models. Choose RowCat as the provider.`;
 	if (unavailable.reason === "byo_not_permitted")
-		return `Members under 14 can't use a personal API key (${label}). Choose RowCat as the provider.`;
+		return `Members under ${membershipAges().guardianConsent} can't use a personal API key (${label}). Choose RowCat as the provider.`;
 	/**
 	 * A connect screen exists, so this names the next step. It once ended at `Choose RowCat under the provider`
 	 * because the app had no connect screen. The user can now do two things, connect a key or pick a

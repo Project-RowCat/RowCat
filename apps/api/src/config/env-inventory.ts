@@ -835,6 +835,38 @@ export const ENVIRONMENT_INVENTORY: readonly EnvironmentVariableDefinition[] = [
 		},
 	},
 	{
+		key: "MEMBERSHIP_GUARDIAN_CONSENT_AGE",
+		group: "membership",
+		sensitivity: "non-secret",
+		surfaces: {
+			apiRuntime: true,
+			compose: api("operator"),
+			rootExample: "documented",
+			apiExample: "documented",
+		},
+		operator: {
+			productionRelevant: true,
+			description:
+				"Below this age a member needs a guardian's consent (default 14, Korean law). The jurisdiction is the deployment's",
+		},
+	},
+	{
+		key: "MEMBERSHIP_ADULT_AGE",
+		group: "membership",
+		sensitivity: "non-secret",
+		surfaces: {
+			apiRuntime: true,
+			compose: api("operator"),
+			rootExample: "documented",
+			apiExample: "documented",
+		},
+		operator: {
+			productionRelevant: true,
+			description:
+				"From this age a verified member may use adult content and act as a guardian (default 19, Korean law)",
+		},
+	},
+	{
 		key: "ADULT_REVERIFICATION_ENABLED",
 		group: "membership",
 		sensitivity: "non-secret",

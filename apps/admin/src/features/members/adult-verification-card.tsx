@@ -166,8 +166,9 @@ export function AdultVerificationCard({
 
 				{operator.ageStatus === "child" ? (
 					<p className="text-destructive text-xs">
-						This account is under 14. The age decision governs all three adult
-						axes, so eligibility can't be granted (revoking is possible).
+						This account is under the guardian-consent age. The age decision
+						governs all three adult axes, so eligibility can't be granted
+						(revoking is possible).
 					</p>
 				) : null}
 

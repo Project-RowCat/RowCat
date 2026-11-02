@@ -47,8 +47,8 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 const AGE_LABEL: Record<string, string> = {
 	unknown: "Unconfirmed",
-	child: "Under 14",
-	standard: "14 or older",
+	child: "Under the guardian-consent age",
+	standard: "At or over the guardian-consent age",
 };
 
 export function MemberDetailPage() {

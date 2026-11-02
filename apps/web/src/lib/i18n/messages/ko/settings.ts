@@ -82,7 +82,7 @@ export const settings: Messages["settings"] = {
 	},
 	connect: {
 		notPermitted:
-			"만 14세 미만 회원은 개인 API 키를 연결할 수 없습니다. 대화는 RowCat 제공 모델로 이용할 수 있습니다.",
+			"만 {{guardianAge}}세 미만 회원은 개인 API 키를 연결할 수 없습니다. 대화는 RowCat 제공 모델로 이용할 수 있습니다.",
 		saveFailed: "연결을 저장하지 못했습니다. 다시 시도해 주세요.",
 		invalidCredential: "제공자가 이 API 키를 거절했습니다. 키를 확인해 주세요.",
 		rateLimited:
@@ -183,7 +183,7 @@ export const settings: Messages["settings"] = {
 		deletesTheApiKeyStored:
 			"이 기기에 저장된 API 키를 지웁니다. 이 제공자를 선택한 대화는 다시 연결하기 전까지 생성할 수 없지만, 선택해 둔 모델 설정은 그대로 유지됩니다. 제공자 계정의 키와 다른 기기의 연결은 그대로입니다.",
 		membersUnder14CanT:
-			"만 14세 미만 회원은 개인 API 키를 연결할 수 없어요. 대화는 RowCat 제공 모델로 그대로 이용할 수 있고, 만 14세가 되면 이 기능이 열립니다.",
+			"만 {{guardianAge}}세 미만 회원은 개인 API 키를 연결할 수 없어요. 대화는 RowCat 제공 모델로 그대로 이용할 수 있고, 만 {{guardianAge}}세가 되면 이 기능이 열립니다.",
 		connectAPersonalApiKey:
 			"개인 API 키를 연결하면 그 제공자의 모델을 선택할 수 있습니다. 연결은 이 기기에서만 사용되며, API 키는 RowCat 서버로 전송되지 않습니다.",
 		couldnTDisconnectPleaseTry:

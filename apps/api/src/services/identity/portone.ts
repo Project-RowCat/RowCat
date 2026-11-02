@@ -67,6 +67,8 @@ interface PortOneIdentityVerification {
 export function createPortOneVerifier(
 	config: PortOneIdentityConfig,
 	newNonce: () => string,
+	/** The deployment's adult age (`MEMBERSHIP_ADULT_AGE`): the birth date is folded against it and dropped. */
+	adultAge: number,
 ): IdentityVerificationProvider {
 	const origin = config.origin ?? PORTONE_API_ORIGIN;
 	const call = config.fetchImpl ?? fetch;
@@ -136,7 +138,7 @@ export function createPortOneVerifier(
 			if (body.status !== "VERIFIED")
 				return { verified: false, reason: "failed" };
 
-			return toVerification(body, reference);
+			return toVerification(body, reference, adultAge);
 		},
 	};
 }
@@ -150,6 +152,7 @@ export function createPortOneVerifier(
 function toVerification(
 	body: PortOneIdentityVerification,
 	reference: string,
+	adultAge: number,
 ): IdentityVerification {
 	const customer = body.verifiedCustomer ?? {};
 	const birthDate = customer.birthDate ?? null;
@@ -157,7 +160,9 @@ function toVerification(
 	// A missing birth date is not adult. Docs say every channel provides it, but passing when absent
 	// would turn an unverified fact true, and this is the only value separating "the child verified in
 	// their own name" from not.
-	const adult = birthDate ? isLegalAdultOn(birthDate, new Date()) : false;
+	const adult = birthDate
+		? isLegalAdultOn(birthDate, new Date(), adultAge)
+		: false;
 
 	// Use the provider's clock: stamping ours would make the value to reconcile in a dispute one we
 	// made, which is not evidence. Falls back to now only if absent or unparsable (verification itself

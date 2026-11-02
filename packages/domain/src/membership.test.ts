@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
 	addYears,
+	checkMembershipAges,
+	DEFAULT_MEMBERSHIP_AGES,
 	declareAge,
+	GUARDIAN_CONSENT_AGE,
 	isCalendarDate,
 	isLegalAdultOn,
 	LEGAL_ADULT_AGE,
@@ -139,7 +142,7 @@ describe("age declaration", () => {
 	const today = kst("2026-08-20T12:00:00");
 
 	it("the day before the 14th birthday is a child", () => {
-		const result = declareAge("2012-08-21", today);
+		const result = declareAge("2012-08-21", today, GUARDIAN_CONSENT_AGE);
 		expect(result).toEqual({
 			status: "ok",
 			ageStatus: "child",
@@ -152,7 +155,7 @@ describe("age declaration", () => {
 	 * in the age calculation, so the 14th birthday is the day they become 14 and stop being a child.
 	 */
 	it("the 14th birthday itself is not a child", () => {
-		expect(declareAge("2012-08-20", today)).toEqual({
+		expect(declareAge("2012-08-20", today, GUARDIAN_CONSENT_AGE)).toEqual({
 			status: "ok",
 			ageStatus: "standard",
 			thresholdDate: null,
@@ -160,48 +163,56 @@ describe("age declaration", () => {
 	});
 
 	it("the day after turning 14 is not a child", () => {
-		expect(declareAge("2012-08-19", today).status).toBe("ok");
-		expect(declareAge("2012-08-19", today)).toMatchObject({
-			ageStatus: "standard",
-		});
+		expect(declareAge("2012-08-19", today, GUARDIAN_CONSENT_AGE).status).toBe(
+			"ok",
+		);
+		expect(declareAge("2012-08-19", today, GUARDIAN_CONSENT_AGE)).toMatchObject(
+			{
+				ageStatus: "standard",
+			},
+		);
 	});
 
 	/**
 	 * From age 14 on, not even a transition date is recorded. There is no reason to keep the value.
 	 */
 	it("no transition date is kept for 14 and over", () => {
-		expect(declareAge("1990-01-01", today)).toMatchObject({
-			thresholdDate: null,
-		});
+		expect(declareAge("1990-01-01", today, GUARDIAN_CONSENT_AGE)).toMatchObject(
+			{
+				thresholdDate: null,
+			},
+		);
 	});
 
 	it("someone born today can declare too (a child)", () => {
-		expect(declareAge("2026-08-20", today)).toMatchObject({
-			ageStatus: "child",
-			thresholdDate: "2040-08-20",
-		});
+		expect(declareAge("2026-08-20", today, GUARDIAN_CONSENT_AGE)).toMatchObject(
+			{
+				ageStatus: "child",
+				thresholdDate: "2040-08-20",
+			},
+		);
 	});
 
 	it("a future date has its own reason", () => {
-		expect(declareAge("2026-08-21", today)).toEqual({
+		expect(declareAge("2026-08-21", today, GUARDIAN_CONSENT_AGE)).toEqual({
 			status: "invalid",
 			reason: "future",
 		});
 	});
 
 	it("a malformed value says it is malformed", () => {
-		expect(declareAge("2026-02-30", today)).toEqual({
+		expect(declareAge("2026-02-30", today, GUARDIAN_CONSENT_AGE)).toEqual({
 			status: "invalid",
 			reason: "malformed",
 		});
-		expect(declareAge("", today)).toEqual({
+		expect(declareAge("", today, GUARDIAN_CONSENT_AGE)).toEqual({
 			status: "invalid",
 			reason: "malformed",
 		});
 	});
 
 	it("an impossible year is yet another reason", () => {
-		expect(declareAge("1899-12-31", today)).toEqual({
+		expect(declareAge("1899-12-31", today, GUARDIAN_CONSENT_AGE)).toEqual({
 			status: "invalid",
 			reason: "implausible",
 		});
@@ -209,11 +220,23 @@ describe("age declaration", () => {
 
 	/** Leap-year birth boundary: the folding rule gives the same answer at declaration. */
 	it("a February 29 birthday turns 14 on March 1 of a common year", () => {
-		expect(declareAge("2012-02-29", kst("2026-02-28T23:00:00"))).toMatchObject({
+		expect(
+			declareAge(
+				"2012-02-29",
+				kst("2026-02-28T23:00:00"),
+				GUARDIAN_CONSENT_AGE,
+			),
+		).toMatchObject({
 			ageStatus: "child",
 			thresholdDate: "2026-03-01",
 		});
-		expect(declareAge("2012-02-29", kst("2026-03-01T00:00:00"))).toMatchObject({
+		expect(
+			declareAge(
+				"2012-02-29",
+				kst("2026-03-01T00:00:00"),
+				GUARDIAN_CONSENT_AGE,
+			),
+		).toMatchObject({
 			ageStatus: "standard",
 		});
 	});
@@ -223,10 +246,22 @@ describe("age declaration", () => {
 	 * this in UTC would be off by a day.
 	 */
 	it("leaves child status at the KST midnight boundary", () => {
-		expect(declareAge("2012-08-21", kst("2026-08-20T23:59:59"))).toMatchObject({
+		expect(
+			declareAge(
+				"2012-08-21",
+				kst("2026-08-20T23:59:59"),
+				GUARDIAN_CONSENT_AGE,
+			),
+		).toMatchObject({
 			ageStatus: "child",
 		});
-		expect(declareAge("2012-08-21", kst("2026-08-21T00:00:00"))).toMatchObject({
+		expect(
+			declareAge(
+				"2012-08-21",
+				kst("2026-08-21T00:00:00"),
+				GUARDIAN_CONSENT_AGE,
+			),
+		).toMatchObject({
 			ageStatus: "standard",
 		});
 	});
@@ -415,9 +450,15 @@ describe("adulthood decision", () => {
 
 	it("an adult from the day of turning 19", () => {
 		const birth = "2007-08-21";
-		expect(isLegalAdultOn(birth, kstNoon("2026-08-20"))).toBe(false);
-		expect(isLegalAdultOn(birth, kstNoon("2026-08-21"))).toBe(true);
-		expect(isLegalAdultOn(birth, kstNoon("2026-08-22"))).toBe(true);
+		expect(isLegalAdultOn(birth, kstNoon("2026-08-20"), LEGAL_ADULT_AGE)).toBe(
+			false,
+		);
+		expect(isLegalAdultOn(birth, kstNoon("2026-08-21"), LEGAL_ADULT_AGE)).toBe(
+			true,
+		);
+		expect(isLegalAdultOn(birth, kstNoon("2026-08-22"), LEGAL_ADULT_AGE)).toBe(
+			true,
+		);
 	});
 
 	/**
@@ -427,9 +468,13 @@ describe("adulthood decision", () => {
 	it("crosses at KST midnight", () => {
 		const birth = "2007-08-21";
 		/** UTC 2026-08-20T14:59:59Z is KST 2026-08-20 23:59:59: not yet adult. */
-		expect(isLegalAdultOn(birth, new Date("2026-08-20T14:59:59Z"))).toBe(false);
+		expect(
+			isLegalAdultOn(birth, new Date("2026-08-20T14:59:59Z"), LEGAL_ADULT_AGE),
+		).toBe(false);
 		/** UTC 2026-08-20T15:00:00Z is KST 2026-08-21 00:00:00: adult from this instant. */
-		expect(isLegalAdultOn(birth, new Date("2026-08-20T15:00:00Z"))).toBe(true);
+		expect(
+			isLegalAdultOn(birth, new Date("2026-08-20T15:00:00Z"), LEGAL_ADULT_AGE),
+		).toBe(true);
 	});
 
 	/**
@@ -440,14 +485,22 @@ describe("adulthood decision", () => {
 	it("a February 29 birthday becomes an adult on March 1 of a common year", () => {
 		const birth = "2008-02-29";
 		expect(addYears(birth, LEGAL_ADULT_AGE)).toBe("2027-03-01");
-		expect(isLegalAdultOn(birth, kstNoon("2027-02-28"))).toBe(false);
-		expect(isLegalAdultOn(birth, kstNoon("2027-03-01"))).toBe(true);
+		expect(isLegalAdultOn(birth, kstNoon("2027-02-28"), LEGAL_ADULT_AGE)).toBe(
+			false,
+		);
+		expect(isLegalAdultOn(birth, kstNoon("2027-03-01"), LEGAL_ADULT_AGE)).toBe(
+			true,
+		);
 	});
 
 	it("no off-by-one at year end", () => {
 		const birth = "2007-01-01";
-		expect(isLegalAdultOn(birth, kstNoon("2025-12-31"))).toBe(false);
-		expect(isLegalAdultOn(birth, kstNoon("2026-01-01"))).toBe(true);
+		expect(isLegalAdultOn(birth, kstNoon("2025-12-31"), LEGAL_ADULT_AGE)).toBe(
+			false,
+		);
+		expect(isLegalAdultOn(birth, kstNoon("2026-01-01"), LEGAL_ADULT_AGE)).toBe(
+			true,
+		);
 	});
 
 	/**
@@ -455,6 +508,60 @@ describe("adulthood decision", () => {
 	 * guardian' to 'needs guardian consent', and different laws set those two.
 	 */
 	it("14 is not an adult", () => {
-		expect(isLegalAdultOn("2012-08-21", kstNoon("2026-08-21"))).toBe(false);
+		expect(
+			isLegalAdultOn("2012-08-21", kstNoon("2026-08-21"), LEGAL_ADULT_AGE),
+		).toBe(false);
+	});
+});
+
+describe("the ages are the deployment's", () => {
+	const today = new Date("2026-08-20T03:00:00Z");
+
+	/** The same birth date is a child under one jurisdiction's age and not under another's. */
+	it("the guardian-consent age decides who is a child, and the stored date follows it", () => {
+		expect(declareAge("2013-03-01", today, 14)).toEqual({
+			status: "ok",
+			ageStatus: "child",
+			thresholdDate: "2027-03-01",
+		});
+		expect(declareAge("2013-03-01", today, 13)).toEqual({
+			status: "ok",
+			ageStatus: "standard",
+			thresholdDate: null,
+		});
+		expect(declareAge("2013-03-01", today, 16)).toMatchObject({
+			ageStatus: "child",
+			thresholdDate: "2029-03-01",
+		});
+	});
+
+	it("the adult age decides adulthood", () => {
+		expect(isLegalAdultOn("2008-01-01", today, 19)).toBe(false);
+		expect(isLegalAdultOn("2008-01-01", today, 18)).toBe(true);
+	});
+
+	it("the defaults are Korean law, and the two constants agree with them", () => {
+		expect(DEFAULT_MEMBERSHIP_AGES).toEqual({
+			guardianConsent: GUARDIAN_CONSENT_AGE,
+			adult: LEGAL_ADULT_AGE,
+		});
+		expect(checkMembershipAges(DEFAULT_MEMBERSHIP_AGES)).toBeNull();
+	});
+
+	it("refuses a pair no deployment can mean", () => {
+		expect(checkMembershipAges({ guardianConsent: 13, adult: 18 })).toBeNull();
+		expect(checkMembershipAges({ guardianConsent: 16, adult: 18 })).toBeNull();
+		expect(checkMembershipAges({ guardianConsent: 20, adult: 18 })).toMatch(
+			/above/,
+		);
+		expect(
+			checkMembershipAges({ guardianConsent: 0, adult: 18 }),
+		).not.toBeNull();
+		expect(checkMembershipAges({ guardianConsent: 13.5, adult: 18 })).toMatch(
+			/whole/,
+		);
+		expect(
+			checkMembershipAges({ guardianConsent: 13, adult: 140 }),
+		).not.toBeNull();
 	});
 });

@@ -295,8 +295,8 @@ export const account = {
 		thisAccountHasnTCompleted:
 			"This account hasn't completed identity verification.",
 		adultContentIsnTShown: "Adult content isn't shown.",
-		thisAccountIsUnder14: "This account is under 14.",
-		thisAccountIsUnder19: "This account is under 19.",
+		thisAccountIsUnder14: "This account is under {{guardianAge}}.",
+		thisAccountIsUnder19: "This account is under {{adultAge}}.",
 		showAdultContent: "Show adult content",
 		contentDisplay: "Content display",
 	},
@@ -471,7 +471,8 @@ export const account = {
 			"No identity verification is in progress. Please start again from the beginning.",
 		couldnTCompleteIdentityVerification:
 			"Couldn't complete identity verification. Please try again in a moment.",
-		accountsUnder14CanT: "Accounts under 14 can't use adult content.",
+		accountsUnder14CanT:
+			"Accounts under {{guardianAge}} can't use adult content.",
 		theIdentityVerificationWindowExpired:
 			"The identity verification window expired. Please start again.",
 		identityVerificationDidnTComplete:
@@ -552,10 +553,11 @@ export const account = {
 	},
 	adultVerification: {
 		verifyingYourIdentityForExample:
-			"Verifying your identity, for example with a mobile phone, confirms whether you're 19 or older. Finishing it doesn't turn adult content display on automatically.",
+			"Verifying your identity, for example with a mobile phone, confirms whether you're {{adultAge}} or older. Finishing it doesn't turn adult content display on automatically.",
 		verifyYourIdentityAgainTo:
 			"Verify your identity again to see adult content. Until then, adult stories stay hidden even with the display on.",
-		onceYouTurn19Verify: "Once you turn 19, verify again to use adult content.",
+		onceYouTurn19Verify:
+			"Once you turn {{adultAge}}, verify again to use adult content.",
 		identityVerificationIsRequiredTo:
 			"Identity verification is required to use adult content.",
 		itSBeenAYear: "It's been a year since identity verification.",

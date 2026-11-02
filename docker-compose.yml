@@ -199,6 +199,10 @@ services:
       PORTONE_V2_API_SECRET: ${PORTONE_V2_API_SECRET:-}
       # Age gate rollout switch. Empty is off; turn it on after the screens and legal documents are deployed.
       MEMBERSHIP_AGE_GATE: ${MEMBERSHIP_AGE_GATE:-}
+      # The two ages those rules use, in whole years. Empty is Korean law (guardian consent under 14,
+      # adult at 19). Which law applies is the deployment's call (docs/oss/FORKING.md §17).
+      MEMBERSHIP_GUARDIAN_CONSENT_AGE: ${MEMBERSHIP_GUARDIAN_CONSENT_AGE:-}
+      MEMBERSHIP_ADULT_AGE: ${MEMBERSHIP_ADULT_AGE:-}
       # Yearly adult re-verification. Leave it empty in a deployment whose published documents do not state it.
       ADULT_REVERIFICATION_ENABLED: ${ADULT_REVERIFICATION_ENABLED:-}
     # The api applies migrations at boot, so it must start only once the database is really ready.

@@ -1,4 +1,5 @@
 import type { LoginMethodProvider } from "@rowcat/domain";
+import { membershipAges } from "../../lib/membership-ages.ts";
 
 /**
  * Copy for the account screen. This app's tests do not render screens, so copy as values lets pure
@@ -132,10 +133,14 @@ export const SHOW_ADULT_DESCRIPTION =
  * server refuses with `requireNonChild`.
  */
 export const ADULT_UNAVAILABLE_TITLE = {
-	child: "This account is under 14.",
+	get child() {
+		return `This account is under ${membershipAges().guardianConsent}.`;
+	},
 	unverified: "This account hasn't completed identity verification.",
-	minor: "This account is under 19.",
-} as const;
+	get minor() {
+		return `This account is under ${membershipAges().adult}.`;
+	},
+};
 
 export const ADULT_UNAVAILABLE_NOTE = {
 	/** Does not say 'once you complete verification'; that sentence is false for under-14s. */

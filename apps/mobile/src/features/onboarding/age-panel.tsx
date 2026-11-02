@@ -9,7 +9,6 @@ import { DeletionTerminal } from "../account/deletion-terminal.tsx";
 import { useAccountDeletion } from "../account/use-account-deletion.ts";
 import { formatBirthDateInput } from "./birth-date-input.ts";
 import {
-	AGE_DESCRIPTION,
 	AGE_EMPTY_ERROR,
 	AGE_EXIT_NOTE,
 	AGE_FIELD_HINT,
@@ -18,6 +17,7 @@ import {
 	AGE_SUBMIT_LABEL,
 	AGE_SUBMITTING_LABEL,
 	AGE_TITLE,
+	ageDescription,
 } from "./gate-copy.ts";
 import { GateExit, GateSurface } from "./gate-shell.tsx";
 import { ageDeclarationError } from "./membership-gate-state.ts";
@@ -95,7 +95,7 @@ export function AgePanel() {
 				{AGE_TITLE}
 			</Text>
 			<Text variant="body" tone="muted-foreground">
-				{AGE_DESCRIPTION}
+				{ageDescription()}
 			</Text>
 
 			<View style={age.field}>

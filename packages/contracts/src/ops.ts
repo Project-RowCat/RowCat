@@ -290,6 +290,20 @@ export const RuntimeConfigDto = z.object({
 	 * by the sign-in door itself, and a browser elsewhere that tries is answered 404.
 	 */
 	localSignIn: z.boolean().default(false),
+	/**
+	 * The guardian-consent and adult ages this deployment runs (`MEMBERSHIP_*_AGE`). Clients only
+	 * **print** them — every decision is the server's — so a screen that says "under 14" while the
+	 * server decides at 13 is the one mismatch this field exists to remove.
+	 *
+	 * The default is Korean law, which is what every server before this field ran: an older server's
+	 * response reads exactly as it behaved.
+	 */
+	membershipAges: z
+		.object({
+			guardianConsent: z.number().int().positive(),
+			adult: z.number().int().positive(),
+		})
+		.default({ guardianConsent: 14, adult: 19 }),
 });
 export type RuntimeConfigDto = z.infer<typeof RuntimeConfigDto>;
 
