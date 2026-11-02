@@ -82,6 +82,7 @@ the `packageManager` field in the root `package.json` (`pnpm@10.34.5`) — do no
 | `docs/moderation/` · `docs/profile/` · `docs/membership/` | Reports, enforcement, appeals / public profiles, relations / age, guardian consent |
 | `docs/notifications/` · `docs/updates/` · `docs/jobs/` | The two notification planes / update notes / background jobs |
 | `docs/ops/` | `RATE-LIMITING.md` · `CONFIGURATION.md` · `CLEAN-INSTALL.md` (fresh-clone production install and first admin, run before a release) · `HTTPS.md` (the `deploy/caddy/` overlay — TLS, origins, cookie domain, trusted proxy) · `BACKUP.md` (backup, restore, upgrade, rollback boundaries) |
+| `docs/mobile/INSTANCES.md` | One app, several instances (design) — update authority stays with the binary, local state isolated per (origin, member), the home instance keeps today's names |
 | `docs/ota/` | Self-hosted mobile OTA — `ARCHITECTURE.md` (trust model, runtime generation, rollout, rollback) · `OPERATIONS.md` (publish, canary, pause, rollback, new runtime, key rotation) |
 
 ## Layer rules
