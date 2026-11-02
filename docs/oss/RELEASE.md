@@ -29,7 +29,7 @@ MCP       태그 mcp-v<semver>               mcp-publish.yml — npm 패키지
 
 | 항목 | 증거 | 태그 전에 닫을 것 |
 | --- | --- | --- |
-| 재배포 권리 | `docs/oss/RIGHTS-AUDIT.md` | §남은 결정 — 권리자(공개 전 기여자의 동의, 앱 아이콘을 누가 그렸는가). **옮길 수 없다** |
+| 재배포 권리 | `docs/oss/RIGHTS-AUDIT.md` | §권리자가 답한 것 — 지난 태그 뒤에 다른 사람의 코드나 새 자산이 들어왔으면 권리자가 다시 답한다. **옮길 수 없다** |
 | 비밀 · 노출 | `docs/oss/DISCLOSURE-AUDIT.md` | §저장소 밖에서 할 일 — 옛 `@rowcat/mcp` 판 `npm deprecate`, 비공개 취약점 신고 켜기, 로컬 빌드 설치본의 `.env` 확인 |
 | 인증 · 첫 설정 · 오리진 | `docs/oss/SECURITY-REVIEW.md` §인증 | §남은 결정 — 노트의 한계로 옮긴다(아래) |
 | 동기화 · 페어링 · MCP 기기 | 같은 문서 §암호화 동기화 | §남은 것 — 한계로 옮긴다 |
