@@ -1,197 +1,135 @@
+<div align="center">
+
+<img src="apps/mobile/assets/icon.png" width="96" height="96" alt="RowCat app icon">
+
 # RowCat
 
-RowCat was a user-generated story platform: people published interactive stories to a shared gallery and
-played them as AI conversations, or as small programs written against a sandboxed creator runtime. The
-hosted service has been shut down. **This repository is the code**, released so anyone can read it, learn
-from it, or run their own deployment under a different name. There is no hosted instance behind it.
+**An open-source platform for interactive stories.**<br>
+Publish a story to a shared gallery and play it as an AI conversation —<br>
+or write it as a small TSX program that runs in a sandbox on the web and on mobile.
 
-[한국어](README.ko.md)
+[![CI](https://github.com/Project-RowCat/RowCat/actions/workflows/ci.yml/badge.svg)](https://github.com/Project-RowCat/RowCat/actions/workflows/ci.yml)
+[![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-blue)](LICENSE)
+[![Runtime packages: Apache-2.0](https://img.shields.io/badge/runtime_packages-Apache--2.0-green)](#license)
+[![Sponsor](https://img.shields.io/badge/sponsor-astra--void-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/astra-void)
 
-## What is in here
+[Quick start](#quick-start) · [Self-hosting guide](docs/oss/SELF-HOSTING.md) · [Creator runtime docs](docs/public/runtime/index.md) · [Forking](docs/oss/FORKING.md) · [한국어](README.ko.md)
 
-- **Story gallery** — publish, discover (search, tags, related works, popular ranking), favourite, comment
-  with one level of replies, follow and block creators, public creator profiles.
-- **Local-first conversations and drafts** — conversations and story drafts live in the device's own
-  database (IndexedDB on the web, SQLite on mobile) and sync between a member's devices with end-to-end
-  encryption. The server stores ciphertext it cannot open; new devices are paired with a short code.
-- **AI generation, two ways** — a server-side "managed" path that uses the operator's provider key
-  (OpenRouter), gated by an allowlist and rate limits, and a bring-your-own-key path where the browser or
-  app calls Anthropic or Gemini directly with the member's own key. Per-room memory, personas, characters
-  and rolling summaries are assembled on the device.
-- **Creator runtime** — creators write TSX against `@rowcat/runtime`; the server compiles it at
-  publication, and players run it inside an isolated QuickJS/WASM virtual machine. The same patch bundles
-  are rendered to a shadow DOM on the web and to React Native views on mobile. A Monaco-based studio
-  previews it while authoring.
-- **Clients** — a web app (TanStack Start, SSR), an Expo mobile app with a self-hosted, signed OTA update
-  server, an operations console for moderation and deployment settings, and an MCP server
-  (`apps/mcp`) that lets a coding agent author runtime projects as one of the member's devices.
-- **The rest of a real product** — passkeys, two-factor authentication, Google/Apple/Kakao sign-in,
-  moderation with appeals, in-app and native push notifications, guardian consent and age gating.
-  No terms of service or privacy policy ship with it — a deployment writes its own (`docs/oss/FORKING.md`).
+</div>
 
-Most of the design rationale is written down: `AGENTS.md` is the index, `docs/` holds the decision
-records, and file headers explain the boundaries they enforce. `AGENTS.md` and the code comments are in
-English; the decision records in `docs/` are in Korean.
+> [!NOTE]
+> RowCat ran as a hosted service, and that service has shut down. This repository is its complete code,
+> released so anyone can learn from it or run their own deployment under a different name. No hosted
+> instance runs it today.
+
+## Highlights
+
+- **Your conversations stay on your devices.** Conversations, memories and story drafts live in the
+  device's own database (IndexedDB on the web, SQLite on mobile) and sync across your devices with
+  end-to-end encryption. The server only stores ciphertext it cannot read. You add a new device with a short pairing code.
+- **Use your own AI key or the operator's.** Members can connect their own Anthropic or Gemini key, and the browser or app then calls the provider directly. An operator can also offer a managed model through
+  OpenRouter, limited by an allowlist and rate limits.
+- **Stories can be programs.** With the creator runtime, authors write TSX against `@rowcat/runtime`. The
+  server compiles it when the story is published, and players run it inside an isolated QuickJS/WASM
+  virtual machine. The web draws it to the DOM and mobile draws it as native views.
+- **A gallery built for discovery.** Search, tags, related works, popular rankings, favourites,
+  comments with replies, follows and public creator profiles.
+- **Every client you need.** The repository includes an SSR web app, an Expo mobile app with its own signed OTA updates, an
+  operations console, a one-computer desktop installer, and an MCP server that lets a coding agent write
+  runtime stories.
+- **The less glamorous essentials are covered too.** Passkeys, two-factor authentication, Google/Apple/Kakao sign-in,
+  moderation with appeals, push notifications, guardian consent and age gating.
+
+## A story in a few lines of TSX
+
+```tsx
+import { Button, Screen, Stack, Text, color, defineStoryState, useStoryState } from "@rowcat/runtime";
+
+const game = defineStoryState({ key: "game", version: 1, initial: { chapter: 1 } });
+
+export default function App() {
+	const [state, setState] = useStoryState(game);
+
+	return (
+		<Screen background={color("#0b0d12")}>
+			<Stack gap={12} style={{ padding: 24 }}>
+				<Text style={{ color: color("#f5f7fa"), fontSize: 22 }}>Chapter {state.chapter}</Text>
+				<Button onPress={() => setState((s) => ({ chapter: s.chapter + 1 }))}>Continue</Button>
+			</Stack>
+		</Screen>
+	);
+}
+```
+
+The `useStoryState` state above persists across sessions, syncs between devices, and runs the same way on web and mobile. The
+[creator runtime docs](docs/public/runtime/index.md) cover components, state, AI generation and publishing.
+They are written in Korean.
 
 ## Quick start
 
-The minimal configuration is **Postgres plus one secret**. Everything else (mail, push, social sign-in,
-identity verification, the managed-generation key, Redis) is optional and reported as off rather than
-blocking startup.
-
-Prerequisites: Node.js 22 or newer (the container images use Node 26), pnpm at the version pinned in
-`package.json`'s `packageManager` field (`corepack enable` picks it up — do not install with npm or yarn),
-and Docker with Compose.
+You need Node.js 22+, pnpm (`corepack enable`) and Docker.
 
 ```bash
 pnpm install
-pnpm dev:setup   # env files, one shared secret, Postgres in Docker, schema, a development account
-pnpm dev:all     # web, API and the operations console together
+pnpm dev:setup   # env files, a generated secret, Postgres in Docker, schema, a dev account
+pnpm dev:all     # web on :3000, API on :3001, operations console on :3002
 ```
 
-`pnpm dev:setup` is safe to run again — it never overwrites a file or a secret that already exists. It
-creates `.env` (read by docker compose) and `apps/api/.env` (read by the API on the host) from their
-examples, generates one `BETTER_AUTH_SECRET` into both and a `POSTGRES_PASSWORD` into `.env` (with
-`DATABASE_URL` in `apps/api/.env` following it), and writes a gitignored
-`docker-compose.override.yml` that publishes Postgres on loopback only — on 5432, or the next free port
-when a Postgres already runs on this machine (then `DATABASE_URL` follows it). `--no-docker` uses your own
-Postgres instead (whatever `DATABASE_URL` in `apps/api/.env` points at); `--no-seed` skips the development
-account. To see what this configuration turns on: `pnpm env:doctor --file apps/api/.env` (add
-`--mode production` to see release blockers).
+Open <http://localhost:3000> and sign in as `dev@rowcat.test` / `rowcat-dev`. AI replies need a key: either
+set `OPENROUTER_API_KEY` in `apps/api/.env`, or connect your own Anthropic or Gemini key under AI settings.
 
-**Or open it in a Dev Container** (`.devcontainer/`): the container runs the same `pnpm dev:setup` when it
-is created, with Postgres in Docker inside it. Use a fresh clone ("Clone Repository in Container Volume" or
-a Codespace opened in the desktop editor).
+## Self-hosting
 
-| Port | Service |
-| --- | --- |
-| 3000 | Web app |
-| 3001 | API (`/v2`) |
-| 3002 | Operations console |
-
-**The first administrator comes from the operations console.** While a deployment has no admin, the API
-prints a one-time setup code each time it starts (`docker compose logs api | grep "\[setup\]"`, or the
-terminal running `pnpm dev:api`). Open `/setup` in the console (`http://localhost:3002/setup` locally),
-create or sign in to the account that will run the deployment, and enter the code. That account becomes
-`admin`, setup closes for good, and the page ends with what the deployment has turned on and which
-variables turn on the rest. A deployment that already has an admin when it boots never opens setup.
-
-`db:seed:dev-user` creates `dev@rowcat.test` with password `rowcat-dev` (pass an email and password as
-arguments to choose others). It marks the email as verified, opens the identity and adult gates, and puts
-the account on the managed-generation allowlist. It refuses to run with `NODE_ENV=production`.
-
-**AI generation needs a key from somewhere.** Managed generation uses `OPENROUTER_API_KEY` in
-`apps/api/.env`; without it, managed requests answer 503 and everything else keeps working. Any member can
-instead connect their own Anthropic or Gemini key under AI settings — that path never touches this server.
-`MANAGED_GENERATION_ACCESS` decides who may use the operator's key (`allowlist`, the default, or
-`everyone`).
-
-**Deploying is four values, not two.** Locally the origins fall back to localhost; a production deployment
-also sets `WEB_ORIGIN` and `API_ORIGIN` (and `AUTH_COOKIE_DOMAIN` when web and API sit on different hosts).
-With those four, `pnpm env:doctor --mode production --file <env file>` reports no release blockers and names
-every feature that stays off — see `docs/ops/CONFIGURATION.md` (최소 구성).
-
-To reach Postgres from a shell without the override: `docker compose exec db psql -U rowcat rowcat`.
-
-### Running the published images
-
-Every push to `main` publishes the three app images to GHCR (`.github/workflows/images.yml`), and they
-carry no deployment value — web and the operations console take the API origin from their environment
-when they start. So a deployment needs no build:
+The published images contain no deployment-specific values. For a basic deployment, you need Postgres and one secret:
 
 ```bash
-cp .env.example .env   # set BETTER_AUTH_SECRET and POSTGRES_PASSWORD, and for a real domain WEB_ORIGIN, API_ORIGIN, VITE_API_ORIGIN
-docker compose up -d   # pulls api, web and admin; Postgres and Redis come along
+cp .env.example .env   # generate BETTER_AUTH_SECRET and POSTGRES_PASSWORD; set your origins
+docker compose up -d   # api, web and admin, with Postgres and Redis
 ```
 
-The pull needs the GHCR packages to be public (a setting the repository owner flips once). While they are
-not, the pull is refused and compose builds this checkout instead — slower, and it says so only by starting
-a build. `docs/ops/CLEAN-INSTALL.md` checks which of the two a deployment actually ran.
+The [self-hosting guide](docs/oss/SELF-HOSTING.md) covers the first administrator, HTTPS with Caddy,
+backups and upgrades, the desktop installer, and every optional integration. Before you deploy under your own name,
+read [FORKING.md](docs/oss/FORKING.md). It lists every place that carries the RowCat name and identity.
 
-Both secrets are generated, never copied: `openssl rand -base64 32` for `BETTER_AUTH_SECRET`, `openssl rand
--hex 24` for `POSTGRES_PASSWORD` (hex goes into the database URL unescaped). Compose will not start without
-them, and the API refuses to boot in production on a short session key or on the old example password
-`rowcat` — a database first created with that password needs `ALTER ROLE` before the upgrade
-(`docs/ops/CONFIGURATION.md`, 개발 기본값은 운영 시크릿이 아니다).
+## How it's built
 
-`docker compose up --build` runs this checkout instead of the published images. Pin a deployment to one
-build with `ROWCAT_IMAGE_TAG=sha-<commit>`; a fork that publishes its own images points
-`ROWCAT_IMAGE_REGISTRY` at them (`docs/oss/FORKING.md` §15).
+A pnpm monorepo in strict TypeScript.
 
-For a public domain, `deploy/caddy/` puts the stack behind HTTPS: set `ROWCAT_DOMAIN` (and
-`COMPOSE_FILE=docker-compose.yml:deploy/caddy/compose.yml`) in `.env`, and Caddy serves web, API and console
-on three host names with certificates it renews itself, deriving every origin and the cookie domain from that
-one value and closing the apps' plain-HTTP ports (`docs/ops/HTTPS.md`).
-
-`scripts/backup.sh` dumps the database — which holds everything, media bytes included — and `scripts/restore.sh`
-puts a dump into an empty one; keep `.env` with the dumps, since `BETTER_AUTH_SECRET` also encrypts 2FA secrets.
-Upgrades, rollback boundaries and what no backup can recover (lost end-to-end keys) are in `docs/ops/BACKUP.md`.
-
-### On one computer, without Docker
-
-`apps/desktop` packages the whole deployment as a desktop app — a bundled Postgres and the same three
-builds, opened in its own window on `localhost`. Build the three apps, then
-`pnpm --filter @rowcat/desktop package` writes an installer for the OS you run it on to `apps/desktop/out/`.
-It is unsigned until a deployment signs it with its own certificates (`apps/desktop/README.md`). A `desktop-<date>`
-tag publishes the Windows installer as a GitHub release (`.github/workflows/desktop-release.yml`), and installed
-Windows copies update themselves from those releases.
-
-## Repository map
-
-pnpm workspaces (`apps/*`, `packages/*`), TypeScript strict, Biome, Turborepo for task ordering.
-
-| Path | What |
+| | |
 | --- | --- |
-| `apps/api` | Hono + Better Auth + Drizzle (Postgres). The one public API, `/v2` |
-| `apps/web` | TanStack Start (SSR) + React 19 + TanStack Router/Query + Tailwind 4 |
-| `apps/admin` | Operations console (Vite SPA, no SSR) |
-| `apps/mobile` | Expo native client — SQLite, SecureStore, self-hosted OTA |
-| `apps/mcp` | `@rowcat/mcp`, the stdio MCP server (`rowcat-mcp`) |
-| `apps/desktop` | One-computer installer (Electron): bundled Postgres + the three builds |
-| `packages/contracts` · `domain` · `sdk` · `query` | Wire shapes (zod) · product model · API client · TanStack Query policy |
-| `packages/chat` · `authoring` · `markdown` | Pure rules for conversations, story drafts and message bodies |
-| `packages/sync` | The sync protocol: envelope crypto, keyring, HLC, engine |
-| `packages/runtime` · `runtime-compiler` · `runtime-host` | The creator language contract · source → artifact (no execution) · the QuickJS/WASM host |
-| `packages/runtime-renderer-web` · `runtime-renderer-native` · `runtime-persistence` | Patch bundles → DOM / React Native · player saves |
-| `packages/runtime-ai-docs` · `runtime-mcp` | The AI-readable runtime docs corpus · the MCP tool layer |
-| `packages/design` · `ui-web` · `ui-native` | Design tokens · shared web components · shared native components |
-| `docs/` | Decision records (Korean); `docs/public/runtime` is the creator-facing runtime documentation |
+| **API** | Hono, Better Auth, Drizzle on Postgres — one public API, `/v2` |
+| **Web** | TanStack Start (SSR), React 19, TanStack Router/Query, Tailwind 4 |
+| **Mobile** | Expo, SQLite, SecureStore, a self-hosted signed OTA server |
+| **Console** | Vite SPA for moderation and deployment settings |
+| **Runtime** | TypeScript compiler → artifact, a QuickJS/WASM host, DOM and React Native renderers |
+| **Sync** | AES-256-GCM envelopes, a keyring with recovery codes, hybrid logical clocks |
 
-Layer rules — which package may import which — are the table in `AGENTS.md` ("Layer rules"), and each
-package's `src/index.ts` header restates them.
+Most of the design reasoning is written down. [AGENTS.md](AGENTS.md) indexes it and states which packages
+may import which. `docs/` holds the decision records (in Korean). File headers explain the boundaries
+each file enforces.
 
-## Verifying a change
+## Contributing
+
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first; commits need a DCO sign-off.
+Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md), not in public issues. This
+project follows a [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ```bash
 pnpm check && pnpm typecheck && pnpm test
 ```
 
-`pnpm check` runs Biome plus the drift checks for configuration and generated artifacts. The API tests use
-a real Postgres (each test worker creates its own database) and skip when none is reachable.
-`pnpm test:e2e` runs the Playwright browser journeys and starts the stack it needs. `pnpm test:compose`
-boots the production compose stack, claims first-run setup and tears it down (`--build` to build this
-checkout first). CI runs all three, and images and npm releases publish only a commit CI passed on.
-
 ## License
 
-The repository is licensed under the **GNU Affero General Public License v3.0 only** (`AGPL-3.0-only`),
-see `LICENSE`.
+RowCat is licensed under the **GNU Affero General Public License v3.0 only** ([LICENSE](LICENSE)). Eight
+reusable packages are licensed under the **Apache License 2.0**, each with its own `LICENSE` file:
+`packages/runtime`, `runtime-compiler`, `runtime-host`, `runtime-renderer-web`, `runtime-renderer-native`,
+`runtime-persistence`, `runtime-ai-docs` and `contracts`. Third-party assets are listed in
+[NOTICE](NOTICE).
 
-Eight packages that form reusable building blocks are licensed under the **Apache License 2.0** instead,
-each with its own `LICENSE` file: `packages/runtime`, `runtime-compiler`, `runtime-host`,
-`runtime-renderer-web`, `runtime-renderer-native`, `runtime-persistence`, `runtime-ai-docs` and
-`contracts`. Bundled third-party assets and their licenses are listed in `NOTICE`.
+The licenses cover the code, not the name or the app icon. "RowCat" stays with this project, so a fork
+ships under its own name and identity ([NOTICE](NOTICE), "Trademarks").
 
-## Trademark
+## Sponsoring
 
-The code is yours to use under its license; the name and the app icon are not (`NOTICE`, "Trademarks").
-"RowCat" stays with this project. If you
-deploy a fork, publish it under a different name and identity — `docs/oss/FORKING.md` lists every place
-that carries the name, the app identity and operator-specific settings.
-
-## Contributing and security
-
-- [CONTRIBUTING.md](CONTRIBUTING.md) — how to propose changes (DCO sign-off required)
-- [SECURITY.md](SECURITY.md) — report vulnerabilities privately, not in public issues
-- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-- [docs/oss/FORKING.md](docs/oss/FORKING.md) — running your own deployment
+If RowCat is useful to you, you can support its maintainer on
+[GitHub Sponsors](https://github.com/sponsors/astra-void).
