@@ -26,23 +26,41 @@ import type { ChatSummary } from "./summary.ts";
  */
 
 /**
- * Maps the turn's generation target to the target maintenance uses. Summaries never use the
- * roleplay model.
+ * The two kinds of auxiliary request. Each has its own device setting, because what they are for
+ * differs: a summary is read back on every later turn (accuracy matters, a cheap model is usually
+ * enough), a suggestion becomes the person's own line once picked (style matters, the room's model
+ * is often what they want).
+ */
+export const UTILITY_GENERATION_KINDS = ["summary", "suggestion"] as const;
+export type UtilityGenerationKind = (typeof UTILITY_GENERATION_KINDS)[number];
+
+/**
+ * Maps the turn's generation target, and the model this device chose for this kind of auxiliary
+ * request, to the target the request uses.
+ *
  * - Managed stays managed and BYO stays BYO. If a BYO user's summary passed through the RowCat
  *   server, that server would receive a conversation the user chose not to send there, and the
- *   billed party would change silently. The reverse cannot happen.
- * - The product picks the model. Managed always uses the product default, since a summary needs
- *   accuracy, not style. BYO uses the same model as the turn: which model is cheap on a given
- *   provider is not known here (catalogs change), and an invented model name would fail the
- *   request. No separate utility-model setting exists. Such a screen would ask users to trade
- *   summary quality against cost, but it would show neither how often summaries run nor what they
- *   cost.
+ *   billed party would change silently. So the choice applies only to rooms that already run on a
+ *   personal key, and only a personal-key target is accepted as the choice: a managed room ignores
+ *   it, and a managed choice is ignored.
+ * - Managed always uses the product default, since a summary needs accuracy, not style.
+ * - BYO uses the chosen model when there is one, else the room's own model. Nothing is invented:
+ *   which model is cheap on a provider is not a fact known here, and the choice comes from the
+ *   catalogue the person picked from. It may sit at a different provider than the room (a Gemini
+ *   room summarized by Claude Haiku); that is the person's explicit choice, and the setting says
+ *   where the conversation goes.
+ * - An explicit choice is never substituted. When it cannot run (its provider was disconnected),
+ *   execution resolution blocks it like any BYO target, so maintenance waits and a suggestion
+ *   names the cause. Falling back to the room's model would move the cost onto the model the person
+ *   chose to avoid.
  */
 export function resolveUtilityTarget(
 	target: GenerationTarget,
+	chosen: GenerationTarget | null,
 ): GenerationTarget {
 	if (target.provider === "rowcat")
 		return { provider: "rowcat", model: DEFAULT_MANAGED_MODEL };
+	if (chosen && chosen.provider !== "rowcat") return chosen;
 	return target;
 }
 

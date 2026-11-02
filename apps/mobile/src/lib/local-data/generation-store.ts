@@ -12,6 +12,7 @@ import {
 	readGenerationTarget,
 	roomPreferenceKey,
 	runtimePreferenceKey,
+	utilityPreferenceKey,
 } from "@rowcat/chat";
 import type { MobileDatabase } from "./sqlite.ts";
 
@@ -172,5 +173,15 @@ export function createGenerationPreferenceStore(
 		getRuntime: (storyId) => read(runtimePreferenceKey(storyId)),
 		setRuntime: (storyId, preference) =>
 			write(runtimePreferenceKey(storyId), preference),
+		/**
+		 * Auxiliary-request models, on the same row shape with only the target set (web's store does the
+		 * same). `null` deletes the row through `write`'s empty rule.
+		 */
+		getUtility: async (kind) => (await read(utilityPreferenceKey(kind))).target,
+		setUtility: (kind, target) =>
+			write(utilityPreferenceKey(kind), {
+				...EMPTY_GENERATION_PREFERENCE,
+				target,
+			}),
 	};
 }

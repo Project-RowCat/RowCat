@@ -371,7 +371,7 @@ const CHAT_READS: ReadonlySet<keyof ChatStore & string> = new Set([
  * removes that room's overrides, and if the settings screen is open it must learn of that.
  */
 const GENERATION_READS: ReadonlySet<keyof GenerationPreferenceStore & string> =
-	new Set(["getGlobal", "getRoom", "getRuntime"]);
+	new Set(["getGlobal", "getRoom", "getRuntime", "getUtility"]);
 
 /**
  * The connection store's query methods. The other two (`connect`, `disconnect`) emit signals.

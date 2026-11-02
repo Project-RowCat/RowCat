@@ -66,7 +66,7 @@ const scheduler = new MemoryMaintenanceScheduler();
  */
 export function useMemoryMaintenance(room: ChatRoom | null): () => void {
 	const { store, viewerId } = useChatScope();
-	const requestUtility = useUtilityGeneration();
+	const requestUtility = useUtilityGeneration("summary");
 
 	/**
 	 * The ownership axis is **fixed in a ref.**

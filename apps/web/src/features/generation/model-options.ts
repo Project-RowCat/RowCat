@@ -35,6 +35,7 @@ const labels = (): ModelOptionLabels => {
 	const t = translator("generation");
 	return {
 		inherit: (providerName) => t("inherit", { value: providerName }),
+		inheritUnnamed: t("utility.followsConversation"),
 		/**
 		 * Account restriction comes before connection. The shared module enforces that order; this file
 		 * only ensures the two messages state different facts. Showing `Connect the provider first` to a child sends them

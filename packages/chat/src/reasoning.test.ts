@@ -12,6 +12,7 @@ import {
 	reconcileReasoningOverride,
 	resolveExecutableReasoning,
 	supportsReasoningEffort,
+	utilityReasoningEffort,
 } from "./reasoning.ts";
 
 /**
@@ -568,5 +569,37 @@ describe("screen and execution converge", () => {
 		expect(view.value ?? view.inheritedEffort).toBe(
 			executed(null, CLAUDE, "high"),
 		);
+	});
+});
+
+describe("utilityReasoningEffort", () => {
+	it("is off when the target offers it", () => {
+		expect(
+			utilityReasoningEffort({
+				efforts: ["off", "low", "medium", "high"],
+				defaultEffort: "medium",
+			}),
+		).toBe("off");
+	});
+
+	it("is the lowest level otherwise, by vocabulary order", () => {
+		expect(
+			utilityReasoningEffort({
+				efforts: ["high", "low", "medium"],
+				defaultEffort: "medium",
+			}),
+		).toBe("low");
+		expect(
+			utilityReasoningEffort({
+				efforts: ["minimal", "low", "medium", "high"],
+				defaultEffort: "medium",
+			}),
+		).toBe("minimal");
+	});
+
+	/** Unknown capability leaves the parameter out: the request from before this rule. */
+	it("is nothing without a capability", () => {
+		expect(utilityReasoningEffort(null)).toBeNull();
+		expect(utilityReasoningEffort(undefined)).toBeNull();
 	});
 });

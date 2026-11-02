@@ -1,11 +1,17 @@
 import {
+	reasoningCapabilityFor,
 	resolveEffectiveGeneration,
 	resolveGenerationExecution,
 	resolveUtilityTarget,
+	type UtilityGenerationKind,
+	utilityReasoningEffort,
 } from "@rowcat/chat";
 import type { ChatGenerationRequest } from "@rowcat/contracts/chat";
 import { canUseByoProvider } from "@rowcat/domain";
-import { viewerQueryOptions } from "@rowcat/query";
+import {
+	generationModelsQueryOptions,
+	viewerQueryOptions,
+} from "@rowcat/query";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useRef } from "react";
 import { ChatStreamFailure } from "#/features/conversation/generation-error.ts";
@@ -58,7 +64,13 @@ export type RequestUtilityGeneration = (
 	signal: AbortSignal,
 ) => Promise<string>;
 
-export function useUtilityGeneration(): RequestUtilityGeneration {
+/**
+ * `kind` picks which device choice applies (`GenerationPreferenceStore.getUtility`): a summary and
+ * a suggestion may run on different models.
+ */
+export function useUtilityGeneration(
+	kind: UtilityGenerationKind,
+): RequestUtilityGeneration {
 	const { store: preferences } = useGenerationScope();
 	/**
 	 * Reads the same store as conversation turns, so the two paths cannot return different answers.
@@ -68,6 +80,8 @@ export function useUtilityGeneration(): RequestUtilityGeneration {
 	const { store: credentials } = useProviderCredentialScope();
 	const client = getRowCatClient();
 	const viewer = useQuery(viewerQueryOptions(client)).data ?? null;
+	/** Read only for the reasoning floor below; target resolution does not consult it. */
+	const catalog = useQuery(generationModelsQueryOptions(client));
 
 	/**
 	 * Dependencies are frozen in a ref so the returned function keeps its identity across queries.
@@ -75,14 +89,18 @@ export function useUtilityGeneration(): RequestUtilityGeneration {
 	 * identity shifts, the session object is rebuilt each render and the shared hook's effects re-run
 	 * on every render.
 	 */
-	const depsRef = useRef({
+	const deps = {
+		kind,
 		preferences,
 		providers,
 		credentials,
 		client,
 		viewer,
-	});
-	depsRef.current = { preferences, providers, credentials, client, viewer };
+		models: catalog.data ?? [],
+		catalogLoaded: catalog.isSuccess,
+	};
+	const depsRef = useRef(deps);
+	depsRef.current = deps;
 
 	return useCallback(async (roomId, request, signal) => {
 		const deps = depsRef.current;
@@ -96,7 +114,10 @@ export function useUtilityGeneration(): RequestUtilityGeneration {
 			room: await deps.preferences?.getRoom(roomId),
 		});
 		const execution = resolveGenerationExecution({
-			target: resolveUtilityTarget(effective.target),
+			target: resolveUtilityTarget(
+				effective.target,
+				(await deps.preferences?.getUtility(deps.kind)) ?? null,
+			),
 			connectedProviders:
 				(await deps.providers?.list())?.map(
 					(connection) => connection.provider,
@@ -110,8 +131,23 @@ export function useUtilityGeneration(): RequestUtilityGeneration {
 			client: deps.client,
 			credentials: deps.credentials ?? null,
 		});
+		/**
+		 * Neither request needs deep thinking, and thinking is billed as output: off where the target
+		 * offers it, else its lowest level (`utilityReasoningEffort`). Set here, at execution, because
+		 * the builders do not know which model runs them.
+		 */
+		const reasoningEffort = utilityReasoningEffort(
+			reasoningCapabilityFor({
+				models: deps.models,
+				catalogLoaded: deps.catalogLoaded,
+				target: execution.target,
+			}),
+		);
 		let text = "";
-		for await (const event of transport.stream(request, { signal })) {
+		for await (const event of transport.stream(
+			{ ...request, reasoningEffort },
+			{ signal },
+		)) {
 			if (event.type === "delta") text += event.text;
 			/**
 			 * Carries the failure code through the frame, same as conversation turns. Folding it into new

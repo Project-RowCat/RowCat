@@ -1211,8 +1211,14 @@ screen     features/chat/suggestion/                  the panel above the compos
   both rate-limit windows — `### Managed generation access` under `## Settings and preferences`) and counts
   against them like one.
 - **The model is the utility target** (`resolveUtilityTarget`, the same function maintenance uses) —
-  managed is the product default model, BYO is **the same model that room already uses** (what is cheap
-  at that provider is not a fact we know, and an invented model name fails the request).
+  managed is the product default model, BYO is **the model this device chose for suggestions, else the model
+  that room already uses**. The choice is a device setting per kind (`GenerationPreferenceStore.getUtility`,
+  `summary` and `suggestion` separately, `/settings/ai` in both apps), personal-key models only, and a managed
+  room ignores it. **We still invent nothing** — which model is cheap at a provider is not a fact we know, so
+  the person picks it from the catalogue. **A choice that cannot run is not substituted**: execution resolution
+  blocks it like any BYO target (maintenance waits, a suggestion names the cause), because falling back to the
+  room's model moves the cost onto the model the person chose to avoid. Both requests run at the target's
+  lowest reasoning (off where offered, `utilityReasoningEffort`), set at the one utility door.
 - **⚠️ The rating follows the room, and that is where it splits from maintenance.** Maintenance is always
   all-ages because its answer is **stored and re-sent on every request**. A suggestion has none of that:
   it is not stored, it disappears unless picked, and once picked it is **the user's own utterance** they

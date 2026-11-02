@@ -85,7 +85,7 @@ export function useReplySuggestion(
 	const { store, viewerId } = useChatScope();
 	const client = getRowCatClient();
 	const viewer = useQuery(viewerQueryOptions(client)).data ?? null;
-	const requestUtility = useUtilityGeneration();
+	const requestUtility = useUtilityGeneration("suggestion");
 
 	const [state, setState] = useState<ReplySuggestionState>({ status: "idle" });
 

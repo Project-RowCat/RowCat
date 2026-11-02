@@ -71,8 +71,18 @@ export interface ModelTargetFieldProps {
 	 * The effective target when following the parent. The screen does not compute it: it takes the
 	 * value the priority resolver returned (`lib/local-generation/hooks.ts`). Writing `global ??
 	 * default` here would create a second copy of that rule.
+	 *
+	 * `null` when the parent is not one nameable target (an auxiliary-request model follows each
+	 * room's own model); the inherit entry then says so instead of naming a model.
 	 */
-	inherited: GenerationTarget;
+	inherited: GenerationTarget | null;
+	/** The row title. Defaults to `Generation target`. */
+	title?: string;
+	/**
+	 * List personal-key models only. Auxiliary-request models apply to BYO rooms alone
+	 * (`resolveUtilityTarget`), so offering RowCat models there would offer a choice that never runs.
+	 */
+	byoOnly?: boolean;
 	description?: string;
 	/** The stored value has not arrived yet. This is different from 'not chosen'. */
 	loading?: boolean;
@@ -90,6 +100,8 @@ export interface ModelTargetFieldProps {
 export function ModelTargetField({
 	value,
 	inherited,
+	title,
+	byoOnly,
 	description,
 	loading,
 	disabled,
@@ -121,7 +133,9 @@ export function ModelTargetField({
 	 */
 	const capability = useViewerCapability();
 
-	const models = catalog.data ?? [];
+	const models = (catalog.data ?? []).filter(
+		(model) => !byoOnly || model.requiresConnection,
+	);
 	/**
 	 * Wait for both sources. If drawn once only the catalog has arrived, a connected provider's
 	 * entries would briefly show `Connect the provider first` and then change, which users would read as the connection
@@ -189,7 +203,7 @@ export function ModelTargetField({
 		<div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
 			<div className="min-w-0">
 				<span id={titleId} className="text-sm font-medium">
-					{t("target.label")}
+					{title ?? t("target.label")}
 				</span>
 				{description && (
 					<p id={descriptionId} className="mt-1 text-sm text-muted-foreground">

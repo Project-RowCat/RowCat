@@ -313,3 +313,23 @@ export function buildReasoningOptions(
 			capability.defaultEffort,
 	};
 }
+
+/**
+ * The reasoning effort an auxiliary request (summary, reply suggestion) runs at: off when the
+ * target offers it, else its lowest level, else nothing.
+ *
+ * Neither request needs deep thinking — a summary restates what happened, a suggestion is one line —
+ * and thinking tokens are billed as output, the most expensive part of a call. The lowest level is
+ * found by this vocabulary's order, not the catalogue's, so a catalogue listing levels in another
+ * order cannot raise it. `null` (unknown capability, or a catalogue not yet received) leaves the
+ * parameter out, which is the request from before this rule existed.
+ */
+export function utilityReasoningEffort(
+	capability: ModelReasoningCapability | null | undefined,
+): ReasoningEffort | null {
+	if (!capability) return null;
+	return (
+		REASONING_EFFORTS.find((effort) => capability.efforts.includes(effort)) ??
+		null
+	);
+}

@@ -673,3 +673,38 @@ describe("room deletion cleanup", () => {
 		).toBeUndefined();
 	});
 });
+
+describe("auxiliary-request models", () => {
+	const haiku = {
+		provider: "anthropic-byo",
+		model: "claude-haiku-4-5",
+	} as const;
+
+	it("is the room's own model until chosen, and each kind keeps its own value", async () => {
+		const store = open(nextViewer("alice"));
+		expect(await store.getUtility("summary")).toBeNull();
+		await store.setUtility("summary", haiku);
+		expect(await store.getUtility("summary")).toEqual(haiku);
+		expect(await store.getUtility("suggestion")).toBeNull();
+	});
+
+	/** A separate key: choosing a summary model must not touch the global or any room preference. */
+	it("does not touch the generation preferences", async () => {
+		const store = open(nextViewer("alice"));
+		await store.setUtility("summary", haiku);
+		expect(await store.getGlobal()).toEqual({
+			responseLength: null,
+			target: null,
+			reasoningEffort: null,
+		});
+	});
+
+	/** `null` deletes the row, the same "not chosen is not stored" rule as the other keys. */
+	it("clearing returns to the room's own model", async () => {
+		const alice = nextViewer("alice");
+		await open(alice).setUtility("suggestion", haiku);
+		await open(alice).setUtility("suggestion", null);
+		resetLocalDbScope();
+		expect(await open(alice).getUtility("suggestion")).toBeNull();
+	});
+});

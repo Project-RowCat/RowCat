@@ -1,4 +1,9 @@
-import type { EffectiveGeneration, GenerationPreference } from "@rowcat/chat";
+import type {
+	EffectiveGeneration,
+	GenerationPreference,
+	GenerationTarget,
+	UtilityGenerationKind,
+} from "@rowcat/chat";
 import {
 	EMPTY_GENERATION_PREFERENCE,
 	resolveEffectiveGeneration,
@@ -112,4 +117,24 @@ export function useRoomGenerationState(roomId: string): RoomGenerationState {
 			store,
 		};
 	}, [inheritedState, room.value, room.status, store]);
+}
+
+/**
+ * The model this device chose for one kind of auxiliary request; `null` is "the room's own model".
+ * Same signal as the other preference reads, so a save on the settings screen redraws it.
+ */
+export function useUtilityGenerationTarget(kind: UtilityGenerationKind): {
+	value: GenerationTarget | null;
+	loading: boolean;
+} {
+	const { store, signal, loading: opening } = useGenerationScope();
+	const load = useMemo(
+		() => (store ? () => store.getUtility(kind) : null),
+		[store, kind],
+	);
+	const target = useLocalLiveOn<GenerationTarget | null>(signal, load, null);
+	return {
+		value: target.value,
+		loading: opening || target.status === "loading",
+	};
 }

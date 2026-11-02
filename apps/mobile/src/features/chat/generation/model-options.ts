@@ -20,6 +20,7 @@ import { providerLabel } from "./labels.ts";
 /** Suffixes appended to an item name; which position they take is decided by the shared module. */
 const LABELS: ModelOptionLabels = {
 	inherit: (providerName) => `Use default (${providerName})`,
+	inheritUnnamed: "Same as the conversation",
 	/**
 	 * The child restriction outranks the missing connection; the shared module keeps that order, and
 	 * here the two texts only need to say different facts (showing a child `Connect the provider first` sends them to

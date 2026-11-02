@@ -7,6 +7,7 @@ import {
 	isRowCatManagedModel,
 	type RowCatManagedModel,
 } from "@rowcat/contracts/chat";
+import type { UtilityGenerationKind } from "./maintenance-runner.ts";
 import type { ReasoningEffort } from "./reasoning.ts";
 
 /**
@@ -503,6 +504,16 @@ export const runtimePreferenceKey = (storyId: string): string =>
 	`${RUNTIME_PREFERENCE_KEY_PREFIX}${storyId}`;
 
 /**
+ * Prefix for the auxiliary-request models (`utility:summary`, `utility:suggestion`). Device-global,
+ * like the global preference: a room does not choose its summary model, because the person deciding
+ * "summaries on a cheap model" is deciding it for their key, not for one story.
+ */
+export const UTILITY_PREFERENCE_KEY_PREFIX = "utility:";
+
+export const utilityPreferenceKey = (kind: UtilityGenerationKind): string =>
+	`${UTILITY_PREFERENCE_KEY_PREFIX}${kind}`;
+
+/**
  * The port for generation preferences. The device owns these values.
  *
  * The key difference from `ChatStore` is the absence of sync fields (`dirty`, `rev`,
@@ -564,4 +575,16 @@ export interface GenerationPreferenceStore {
 	 */
 	getRuntime(storyId: string): Promise<GenerationPreference>;
 	setRuntime(storyId: string, preference: GenerationPreference): Promise<void>;
+	/**
+	 * The model this device chose for one kind of auxiliary request (`resolveUtilityTarget`). `null`
+	 * means "the room's own model". It lives in this store for the reason the runtime override does:
+	 * it answers which model to generate with on this device, it depends on this device's
+	 * connections, and it does not sync. Only the target axis exists; length and reasoning of these
+	 * requests are product rules (`utilityReasoningEffort`).
+	 */
+	getUtility(kind: UtilityGenerationKind): Promise<GenerationTarget | null>;
+	setUtility(
+		kind: UtilityGenerationKind,
+		target: GenerationTarget | null,
+	): Promise<void>;
 }

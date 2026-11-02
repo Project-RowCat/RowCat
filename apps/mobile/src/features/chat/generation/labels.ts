@@ -102,6 +102,26 @@ export const MODEL_TARGET_FIELD = {
 } as const;
 
 /**
+ * The two auxiliary-request models; the same sentences as web (`utility.*` in the generation
+ * messages). The descriptions say where the conversation goes, because the choice may sit at a
+ * different provider than the room.
+ */
+export const UTILITY_MODEL_FIELDS = {
+	summary: {
+		label: "Summary model",
+		description:
+			"Writes the running summary of a long conversation, about every ten turns. Applies only to conversations on your own API key, and the conversation is sent to this model's provider.",
+		subject: "summaries",
+	},
+	suggestion: {
+		label: "Reply suggestion model",
+		description:
+			"Drafts the lines offered when you ask for a reply suggestion. Applies only to conversations on your own API key, and the conversation is sent to this model's provider.",
+		subject: "reply suggestions",
+	},
+} as const;
+
+/**
  * Label and description of the third axis; the same sentences as web. Unlike the other two this row
  * is sometimes absent: for models whose effort cannot be adjusted it is not drawn, and no disabled
  * `Not supported` control stands in. That wording reads as "supported someday", and a row that can never

@@ -156,13 +156,30 @@ describe("maintenance runs", () => {
 });
 
 describe("utility target", () => {
+	const haiku = {
+		provider: "anthropic-byo",
+		model: "claude-haiku-4-5",
+	} as const;
+
 	it("managed goes to the product default model", () => {
 		expect(
-			resolveUtilityTarget({ provider: "rowcat", model: "claude-sonnet-5" }),
+			resolveUtilityTarget(
+				{ provider: "rowcat", model: "claude-sonnet-5" },
+				null,
+			),
 		).toEqual({ provider: "rowcat", model: expect.any(String) });
+	});
+
+	/**
+	 * A managed room's conversation already goes to RowCat; a device choice must not send it to a
+	 * personal key's provider the room never used. Managed stays managed.
+	 */
+	it("a managed room ignores the device's choice", () => {
 		expect(
-			resolveUtilityTarget({ provider: "rowcat", model: "claude-sonnet-5" })
-				.provider,
+			resolveUtilityTarget(
+				{ provider: "rowcat", model: "claude-sonnet-5" },
+				haiku,
+			).provider,
 		).toBe("rowcat");
 	});
 
@@ -174,8 +191,31 @@ describe("utility target", () => {
 		for (const target of [
 			{ provider: "anthropic-byo", model: "claude-x" } as const,
 			{ provider: "gemini-byo", model: "gemini-x" } as const,
-		])
-			expect(resolveUtilityTarget(target)).toEqual(target);
+		]) {
+			expect(resolveUtilityTarget(target, null)).toEqual(target);
+			expect(
+				resolveUtilityTarget(target, {
+					provider: "rowcat",
+					model: "claude-sonnet-5",
+				}),
+			).toEqual(target);
+		}
+	});
+
+	/** The choice wins on a BYO room, even across providers; it is the person's explicit pick. */
+	it("a BYO room uses the device's choice", () => {
+		expect(
+			resolveUtilityTarget(
+				{ provider: "anthropic-byo", model: "claude-opus-5-5" },
+				haiku,
+			),
+		).toEqual(haiku);
+		expect(
+			resolveUtilityTarget(
+				{ provider: "gemini-byo", model: "gemini-x" },
+				haiku,
+			),
+		).toEqual(haiku);
 	});
 });
 

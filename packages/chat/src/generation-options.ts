@@ -130,7 +130,12 @@ export interface ModelOptionsInput {
 	models: readonly GenerationModelDto[];
 	/** The target this layer chose; `null` means inherit from the layer above. */
 	value: GenerationTarget | null;
-	inherited: GenerationTarget;
+	/**
+	 * What `null` falls back to. `null` here means the fallback is not one target this screen can name
+	 * (an auxiliary-request model follows each room's own model): the inherit entry then wears
+	 * `labels.inheritUnnamed`, and availability is judged only for an explicit choice.
+	 */
+	inherited: GenerationTarget | null;
 	connected: readonly GenerationProvider[];
 	/**
 	 * Whether this account may use BYO (false if under 14). Kept separate from `connected`.
@@ -165,6 +170,8 @@ export interface ModelOptionsInput {
 
 export interface ModelOptionLabels {
 	inherit: (providerName: string) => string;
+	/** The inherit entry when what it falls back to has no single name (`inherited: null`). */
+	inheritUnnamed: string;
 	byoNotPermitted: string;
 	providerNotConnected: string;
 	missingFromCatalog: string;
@@ -359,36 +366,44 @@ export function buildModelOptions(input: ModelOptionsInput): ModelOptions {
 	 * price cell is silent on both.
 	 */
 	const effectiveTarget = selected ?? input.inherited;
-	const effectiveModel = input.catalogLoaded
-		? (input.models.find(
-				(model) => model.id === generationTargetKey(effectiveTarget),
-			) ?? null)
-		: null;
+	const effectiveModel =
+		input.catalogLoaded && effectiveTarget
+			? (input.models.find(
+					(model) => model.id === generationTargetKey(effectiveTarget),
+				) ?? null)
+			: null;
 
-	const inheritedModel = input.models.find(
-		(model) => model.id === generationTargetKey(input.inherited),
-	);
-	const inheritedModelLabel = inheritedModel?.label ?? input.inherited.model;
-	const inheritLabel = input.labels.inherit(
-		buckets.find((bucket) => bucket.provider === input.inherited.provider)
-			?.label ?? input.providerLabel(input.inherited.provider),
-	);
+	const inherited = input.inherited;
+	const inheritedModel = inherited
+		? input.models.find((model) => model.id === generationTargetKey(inherited))
+		: undefined;
+	const inheritedModelLabel = inherited
+		? (inheritedModel?.label ?? inherited.model)
+		: input.labels.inheritUnnamed;
+	const inheritLabel = inherited
+		? input.labels.inherit(
+				buckets.find((bucket) => bucket.provider === inherited.provider)
+					?.label ?? input.providerLabel(inherited.provider),
+			)
+		: input.labels.inheritUnnamed;
 
 	/**
 	 * The verdict is the same function the generation hook uses. The catalog is passed only when it
 	 * was received (see `catalogLoaded`).
 	 */
-	const execution = resolveGenerationExecution({
-		target: selected ?? input.inherited,
-		connectedProviders: input.connected,
-		byoAllowed: input.byoAllowed,
-		catalog: input.catalogLoaded
-			? input.models.map((model) => ({
-					provider: model.provider,
-					model: model.model,
-				}))
-			: undefined,
-	});
+	const execution = effectiveTarget
+		? resolveGenerationExecution({
+				target: effectiveTarget,
+				connectedProviders: input.connected,
+				byoAllowed: input.byoAllowed,
+				catalog: input.catalogLoaded
+					? input.models.map((model) => ({
+							provider: model.provider,
+							model: model.model,
+						}))
+					: undefined,
+			})
+		: null;
 
 	return {
 		providerItems: [
@@ -410,7 +425,7 @@ export function buildModelOptions(input: ModelOptionsInput): ModelOptions {
 		modelValue: selectedKey,
 		inheritedModelLabel,
 		unavailable:
-			execution.status === "blocked"
+			execution?.status === "blocked"
 				? {
 						target: execution.target,
 						provider: execution.target.provider,

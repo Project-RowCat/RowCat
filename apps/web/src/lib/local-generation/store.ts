@@ -3,10 +3,12 @@ import type {
 	GenerationPreferenceStore,
 } from "@rowcat/chat";
 import {
+	EMPTY_GENERATION_PREFERENCE,
 	GLOBAL_PREFERENCE_KEY,
 	isEmptyGenerationPreference,
 	roomPreferenceKey,
 	runtimePreferenceKey,
+	utilityPreferenceKey,
 } from "@rowcat/chat";
 import type { LocalDb } from "#/lib/local-data/db.ts";
 import {
@@ -81,5 +83,15 @@ export function createGenerationPreferenceStore(
 		getRuntime: (storyId) => read(runtimePreferenceKey(storyId)),
 		setRuntime: (storyId, preference) =>
 			write(runtimePreferenceKey(storyId), preference),
+		/**
+		 * Auxiliary-request models ride the same row shape with only the target axis set, so the read is
+		 * just as lenient and `null` deletes the row (`write`'s empty rule).
+		 */
+		getUtility: async (kind) => (await read(utilityPreferenceKey(kind))).target,
+		setUtility: (kind, target) =>
+			write(utilityPreferenceKey(kind), {
+				...EMPTY_GENERATION_PREFERENCE,
+				target,
+			}),
 	};
 }

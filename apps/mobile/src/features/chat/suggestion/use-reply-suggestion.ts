@@ -76,7 +76,7 @@ export function useReplySuggestion(
 	const { room, characters, store, viewerId, turnKey } = input;
 	const client = getRowCatClient();
 	const viewer = useQuery(viewerQueryOptions(client)).data ?? null;
-	const requestUtility = useUtilityGeneration();
+	const requestUtility = useUtilityGeneration("suggestion");
 
 	const [state, setState] = useState<ReplySuggestionState>({ status: "idle" });
 

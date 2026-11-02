@@ -2,7 +2,9 @@ import {
 	type EffectiveGeneration,
 	EMPTY_GENERATION_PREFERENCE,
 	type GenerationPreference,
+	type GenerationTarget,
 	resolveEffectiveGeneration,
+	type UtilityGenerationKind,
 } from "@rowcat/chat";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useGenerationScope } from "./scope.ts";
@@ -163,5 +165,23 @@ export function useGlobalGenerationState(): GlobalGenerationState {
 		inherited: resolveEffectiveGeneration({}),
 		effective: resolveEffectiveGeneration({ global: global.value }),
 		loading: global.loading,
+	};
+}
+
+/**
+ * The model this device chose for one kind of auxiliary request; `null` is "the room's own model".
+ * Same subscription as the others, so a choice made in another tab shows up without a refresh.
+ */
+export function useUtilityGenerationTarget(
+	kind: UtilityGenerationKind,
+): LocalPreferenceState<GenerationTarget | null> {
+	const { store, status } = useGenerationScope();
+	const value = useLiveQuery(
+		() => (store ? store.getUtility(kind) : Promise.resolve(undefined)),
+		[store, kind],
+	);
+	return {
+		value: value ?? null,
+		loading: status !== "ready" || value === undefined,
 	};
 }

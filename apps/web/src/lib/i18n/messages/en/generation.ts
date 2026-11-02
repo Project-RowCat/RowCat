@@ -43,6 +43,15 @@ export const generation = {
 		high: "High",
 	},
 	inherit: "Use default ({{value}})",
+	utility: {
+		followsConversation: "Same as the conversation",
+		summaryLabel: "Summary model",
+		summaryDescription:
+			"Writes the running summary of a long conversation, about every ten turns. Applies only to conversations on your own API key, and the conversation is sent to this model's provider.",
+		suggestionLabel: "Reply suggestion model",
+		suggestionDescription:
+			"Drafts the lines offered when you ask for a reply suggestion. Applies only to conversations on your own API key, and the conversation is sent to this model's provider.",
+	},
 	target: {
 		label: "Generation target",
 		provider: "Provider",

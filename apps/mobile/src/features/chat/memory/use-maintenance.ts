@@ -50,7 +50,7 @@ export function useMemoryMaintenance(
 	input: MemoryMaintenanceInput,
 ): () => void {
 	const { roomId, store, viewerId } = input;
-	const requestUtility = useUtilityGeneration();
+	const requestUtility = useUtilityGeneration("summary");
 
 	/**
 	 * Ownership is pinned in a ref. Maintenance takes seconds and the account can change meanwhile:

@@ -2,6 +2,8 @@ import type {
 	GenerationTarget,
 	ReasoningEffort,
 	ResponseLength,
+	TargetUnavailability,
+	UtilityGenerationKind,
 } from "@rowcat/chat";
 import {
 	buildReasoningOptions,
@@ -10,6 +12,7 @@ import {
 	reconcileReasoningOverride,
 	targetForKey,
 } from "@rowcat/chat";
+import type { GenerationModelDto } from "@rowcat/contracts/chat";
 import { space } from "@rowcat/design";
 import { generationModelsQueryOptions } from "@rowcat/query";
 import {
@@ -33,16 +36,21 @@ import {
 	inheritLabel,
 	MODEL_CATALOG_FAILURE_MESSAGE,
 	MODEL_TARGET_FIELD,
+	providerLabel,
 	REASONING_EFFORT_FIELD,
 	RESPONSE_LENGTH_FIELD,
 	responseLengthLabel,
+	UTILITY_MODEL_FIELDS,
 } from "../chat/generation/labels.ts";
 import {
 	buildModelOptions,
 	unavailableMessage,
 } from "../chat/generation/model-options.ts";
 import { ReasoningEffortSelect } from "../chat/generation/reasoning-effort-select.tsx";
-import { useGlobalGenerationState } from "../chat/generation/use-room-generation.ts";
+import {
+	useGlobalGenerationState,
+	useUtilityGenerationTarget,
+} from "../chat/generation/use-room-generation.ts";
 import { useStaleReasoningReconcile } from "../generation/use-stale-reasoning-reconcile.ts";
 import {
 	GENERATION_DEFAULTS_DESCRIPTION,
@@ -361,6 +369,26 @@ export function GenerationDefaultsSection() {
 			) : null}
 
 			{/**
+			 * Auxiliary-request models: personal-key models only, since the choice applies only to rooms on a
+			 * personal key (`resolveUtilityTarget`). Each falls back to the room's own model, which no single
+			 * name here describes, so the inherit entry says that instead.
+			 */}
+			{(["summary", "suggestion"] as const).map((kind) => (
+				<View key={kind}>
+					<Separator />
+					<UtilityModelField
+						kind={kind}
+						models={models}
+						catalogLoaded={catalog.isSuccess}
+						connected={connections.providers}
+						byoAllowed={capability.byo}
+						disabled={!store}
+						onFailure={() => setError(GENERATION_SAVE_FAILURE_MESSAGE)}
+					/>
+				</View>
+			))}
+
+			{/**
 			 * Failures **end here**. Sending them to a global notice would show text after the user has left the
 			 * screen, and that text could not say what was not saved.
 			 */}
@@ -371,6 +399,122 @@ export function GenerationDefaultsSection() {
 			</Text>
 		</SettingsSection>
 	);
+}
+
+/**
+ * One auxiliary-request model row. Writes on selection, like the rows above; `null` clears the choice
+ * back to the room's own model. A choice whose provider was disconnected stays and says so: it is
+ * never swapped for another model, because the person picked it to keep cost off the room's model.
+ */
+function UtilityModelField({
+	kind,
+	models,
+	catalogLoaded,
+	connected,
+	byoAllowed,
+	disabled,
+	onFailure,
+}: {
+	kind: UtilityGenerationKind;
+	models: readonly GenerationModelDto[];
+	catalogLoaded: boolean;
+	connected: Parameters<typeof buildModelOptions>[0]["connected"];
+	byoAllowed: boolean;
+	disabled: boolean;
+	onFailure: () => void;
+}) {
+	const { store } = useGenerationScope();
+	const chosen = useUtilityGenerationTarget(kind);
+	const copy = UTILITY_MODEL_FIELDS[kind];
+	/** Personal-key models: the catalogue's own flag, not a provider comparison. */
+	const byoModels = models.filter((model) => model.requiresConnection);
+	const options = buildModelOptions({
+		models: byoModels,
+		value: chosen.value,
+		inherited: null,
+		connected,
+		byoAllowed,
+		catalogLoaded,
+	});
+	const choose = (next: GenerationTarget | null): void => {
+		if (!store) return;
+		void store.setUtility(kind, next).catch(onFailure);
+	};
+	const providerValueLabel =
+		options.providerItems.find((item) => item.value === options.providerValue)
+			?.label ?? options.inheritLabel;
+
+	return (
+		<SettingsField label={copy.label} description={copy.description}>
+			<SubField label="Provider">
+				<Select
+					label={`${copy.label} provider`}
+					value={providerValueLabel}
+					disabled={disabled || chosen.loading}
+				>
+					<SelectOption
+						label={options.inheritLabel}
+						selected={options.providerValue === INHERIT_VALUE}
+						onSelect={() => choose(null)}
+					/>
+					{options.providers.map((entry) => (
+						<SelectOption
+							key={entry.provider}
+							label={entry.label}
+							selected={entry.provider === options.providerValue}
+							disabled={entry.disabled}
+							onSelect={() => choose(entry.defaultTarget)}
+						/>
+					))}
+				</Select>
+			</SubField>
+			<SubField label="Model">
+				<Select
+					label={`${copy.label} model`}
+					value={
+						options.models.find((entry) => entry.key === options.modelValue)
+							?.label ?? options.inheritedModelLabel
+					}
+					disabled={disabled || options.modelValue === null}
+				>
+					{options.modelGroups.map((group) => (
+						<View key={group.label ?? "__flat__"}>
+							{group.label ? <SelectGroupLabel label={group.label} /> : null}
+							{group.entries.map((entry) => (
+								<SelectOption
+									key={entry.key}
+									label={entry.label}
+									selected={entry.key === options.modelValue}
+									disabled={entry.disabled}
+									onSelect={() =>
+										choose(targetForKey(entry.key, models) ?? chosen.value)
+									}
+								/>
+							))}
+						</View>
+					))}
+				</Select>
+			</SubField>
+			{options.unavailable ? (
+				<Text variant="label" tone="destructive">
+					{utilityUnavailableMessage(options.unavailable, copy.subject)}
+				</Text>
+			) : null}
+		</SettingsField>
+	);
+}
+
+/**
+ * Why a chosen auxiliary model cannot run, and what to do. Not `unavailableMessage`: that sentence
+ * offers a RowCat model, which this personal-key-only row cannot pick.
+ */
+function utilityUnavailableMessage(
+	unavailable: TargetUnavailability,
+	subject: string,
+): string {
+	if (unavailable.reason === "provider_not_connected")
+		return `The personal API key (${providerLabel(unavailable.provider)}) chosen for ${subject} isn't connected on this device. Connect it in Settings → AI, or choose Same as the conversation. Until then ${subject} wait.`;
+	return unavailableMessage(unavailable);
 }
 
 /** One control inside a field; the same name and hierarchy as in conversation settings. */

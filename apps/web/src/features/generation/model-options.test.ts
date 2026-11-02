@@ -718,3 +718,46 @@ describe("chosen key → target", () => {
 		expect(targetForKey("rowcat:default", CATALOG)).toBeNull();
 	});
 });
+
+/**
+ * An auxiliary-request model falls back to each room's own model, which no single name describes
+ * (`inherited: null`). The inherit entry says so, and nothing is judged unavailable until a model is
+ * explicitly chosen.
+ */
+describe("an unnamed fallback", () => {
+	const haiku = model(
+		"anthropic-byo",
+		"claude-haiku-4-5",
+		"Claude Haiku 4.5",
+		true,
+	);
+
+	it("names the fallback instead of a model", () => {
+		const options = buildModelOptions({
+			models: [haiku],
+			value: null,
+			inherited: null,
+			connected: [],
+			byoAllowed: true,
+			catalogLoaded: true,
+		});
+		expect(options.providerValue).toBe(INHERIT_VALUE);
+		expect(options.inheritLabel).toBe(options.inheritedModelLabel);
+		expect(options.inheritLabel).not.toContain("Claude");
+		expect(options.unavailable).toBeNull();
+		expect(options.effectiveModel).toBeNull();
+	});
+
+	/** An explicit choice is judged like any target: a disconnected provider says so. */
+	it("judges an explicit choice", () => {
+		const options = buildModelOptions({
+			models: [haiku],
+			value: { provider: "anthropic-byo", model: "claude-haiku-4-5" },
+			inherited: null,
+			connected: [],
+			byoAllowed: true,
+			catalogLoaded: true,
+		});
+		expect(options.unavailable?.reason).toBe("provider_not_connected");
+	});
+});

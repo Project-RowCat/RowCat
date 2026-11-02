@@ -2,6 +2,7 @@ import type {
 	GenerationTarget,
 	ReasoningEffort,
 	ResponseLength,
+	UtilityGenerationKind,
 } from "@rowcat/chat";
 import { PRODUCT_GENERATION_TARGET } from "@rowcat/chat";
 import { Button } from "@rowcat/ui-web/components/button";
@@ -23,7 +24,10 @@ import {
 	useStaleReasoningReconcile,
 } from "#/features/generation/use-reasoning-reconcile.ts";
 import { providerLabel } from "#/lib/generation/availability.ts";
-import { useGlobalGenerationState } from "#/lib/local-generation/hooks.ts";
+import {
+	useGlobalGenerationState,
+	useUtilityGenerationTarget,
+} from "#/lib/local-generation/hooks.ts";
 import { useGenerationScope } from "#/lib/local-generation/scope.ts";
 import { feedbackEnter, feedbackExit } from "#/lib/motion/feedback.ts";
 import {
@@ -124,8 +128,11 @@ function GenerationDefaults({
 	providerHeadingRef: RefObject<HTMLHeadingElement | null>;
 }) {
 	const { t } = useTranslation(["settings", "common"]);
+	const { t: tGeneration } = useTranslation("generation");
 	const { store } = useGenerationScope();
 	const { global, inherited, loading } = useGlobalGenerationState();
+	const summaryTarget = useUtilityGenerationTarget("summary");
+	const suggestionTarget = useUtilityGenerationTarget("suggestion");
 	const [error, setError] = useState<string | null>(null);
 	const reconcileReasoning = useReasoningReconcile();
 
@@ -153,6 +160,24 @@ function GenerationDefaults({
 				"[settings] couldn't save the generation defaults",
 				failure,
 			);
+			setError(t("generationDefaults.couldnTSaveTheSettings"));
+		}
+	};
+
+	/**
+	 * Auxiliary-request models are written one key at a time, like the axes above, and `null` clears
+	 * the choice back to "the room's own model". Failures share this section's one error line.
+	 */
+	const applyUtility = async (
+		kind: UtilityGenerationKind,
+		target: GenerationTarget | null,
+	): Promise<void> => {
+		if (!store) return;
+		setError(null);
+		try {
+			await store.setUtility(kind, target);
+		} catch (failure) {
+			console.error("[settings] couldn't save the utility model", failure);
 			setError(t("generationDefaults.couldnTSaveTheSettings"));
 		}
 	};
@@ -263,6 +288,39 @@ function GenerationDefaults({
 				disabled={!store}
 				onChange={(next) => void apply({ reasoningEffort: next })}
 			/>
+
+			{/*
+			 * Auxiliary-request models: personal-key models only, since the choice applies only to rooms on
+			 * a personal key (`resolveUtilityTarget`). `inherited` is `null` because what they fall back to
+			 * is each room's own model, which no single name on this screen describes. A choice whose
+			 * provider was disconnected stays as it is and says so; it is never swapped for another model.
+			 */}
+			<SettingsRowFrame>
+				<ModelTargetField
+					title={tGeneration("utility.summaryLabel")}
+					description={tGeneration("utility.summaryDescription")}
+					value={summaryTarget.value}
+					inherited={null}
+					byoOnly
+					loading={summaryTarget.loading}
+					disabled={!store}
+					onChange={(next) => void applyUtility("summary", next)}
+					renderRecovery={renderRecovery}
+				/>
+			</SettingsRowFrame>
+			<SettingsRowFrame>
+				<ModelTargetField
+					title={tGeneration("utility.suggestionLabel")}
+					description={tGeneration("utility.suggestionDescription")}
+					value={suggestionTarget.value}
+					inherited={null}
+					byoOnly
+					loading={suggestionTarget.loading}
+					disabled={!store}
+					onChange={(next) => void applyUtility("suggestion", next)}
+					renderRecovery={renderRecovery}
+				/>
+			</SettingsRowFrame>
 
 			{/*
 			 * A save failure appears just below the row that was just picked (`lib/motion/feedback.ts`). In
