@@ -370,7 +370,7 @@ describe.skipIf(!databaseReady)("prompt caching", () => {
 		// These two lines pin that the decision stands after resolution: the public identity in the
 		// request has no `anthropic/`.
 		expect(body.model).toBe("anthropic/claude-sonnet-5");
-		expect(body.cache_control).toEqual({ type: "ephemeral" });
+		expect(body.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
 	});
 
 	test("sends no response-caching headers", async () => {

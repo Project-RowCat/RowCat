@@ -234,10 +234,11 @@ const continuationModeFor = (model: string): AnthropicContinuationMode =>
 /**
  * The system prompt as one text block carrying its own cache breakpoint.
  *
- * The automatic breakpoint sits on the last block, and the history window drops its oldest message
- * once a conversation passes `CHAT_HISTORY_LIMIT`. From then on the previous request's entry is never
- * a prefix of the next one, so without this breakpoint every turn wrote the whole prompt to the cache
- * and read nothing back — the system prompt included, although it had not changed.
+ * The automatic breakpoint sits on the last block. Whenever the history in front of it changes (the
+ * window moves at a summary, a room without one slides at its cap, an earlier message is edited or
+ * regenerated), the previous request's entry is no longer a prefix of the next one, and without this
+ * breakpoint that turn rewrote the whole prompt to the cache — the system prompt included, although
+ * it had not changed. This breakpoint keeps that part readable.
  *
  * This is not a breakpoint placed by hand inside the prompt: the adapter already receives the system
  * prompt as one opaque string and marks the end of it, so it still knows nothing about the guards,
@@ -247,9 +248,11 @@ const continuationModeFor = (model: string): AnthropicContinuationMode =>
  * lifetime counts from the start of the request, generation included, and a person reading a long
  * reply and writing the next line often takes longer than that; every such turn wrote the whole
  * system prompt again. A one-hour write costs 2x input instead of 1.25x and a read refreshes the
- * timer for free, so one avoided miss pays for it. The automatic breakpoint keeps the default five
- * minutes: a longer TTL must come before a shorter one, which this order satisfies (the reverse is a
- * 400), and the tail moves every turn, so a longer lifetime there buys nothing.
+ * timer for free, so one avoided miss pays for it. The automatic breakpoint carries the same hour:
+ * the history window starts at the summary frontier (`chatHistoryWindow`) and stays put for about ten
+ * turns, so the cached history is worth keeping across a pause too, and each turn only writes its own
+ * new messages at the higher rate. A longer TTL must come before a shorter one; equal TTLs satisfy
+ * that, but this marker must never be shorter than the automatic one (that order is a 400).
  *
  * An empty string stays a string — the API rejects an empty text block.
  */
@@ -709,9 +712,9 @@ async function* stream(
 				 * transport optimization users have no reason to understand, so it is not a config option.
 				 *
 				 * This automatic breakpoint is one of two; the other sits on the system block
-				 * (`anthropicSystem`).
+				 * (`anthropicSystem`). Both live an hour, for the reason given there.
 				 */
-				cache_control: { type: "ephemeral" },
+				cache_control: { type: "ephemeral", ttl: "1h" },
 				stream: true,
 			}),
 		});

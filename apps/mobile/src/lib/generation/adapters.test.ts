@@ -185,9 +185,9 @@ describe("Anthropic adapter", () => {
 	});
 
 	/**
-	 * **Two breakpoints: the automatic one and the end of the system block.** Past `CHAT_HISTORY_LIMIT`
-	 * the history window drops its oldest message every turn, so the automatic breakpoint alone never
-	 * finds its previous entry again. Dropping either is silent — the symptom is the bill.
+	 * **Two breakpoints: the automatic one and the end of the system block, both an hour.** Whenever the
+	 * history in front of the automatic breakpoint changes (the window moving, an edit), it alone no
+	 * longer finds its previous entry. Dropping either is silent — the symptom is the bill.
 	 */
 	it("caches the system prompt on its own breakpoint as well as automatically", async () => {
 		const transport = respondWith(fakeResponse({ body: anthropicStream() }));
@@ -199,7 +199,7 @@ describe("Anthropic adapter", () => {
 			fetch: transport.fetch,
 		});
 		const sent = bodyOf(transport.calls[0]?.body);
-		expect(sent.cache_control).toEqual({ type: "ephemeral" });
+		expect(sent.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
 		expect(
 			(sent.system as Array<{ cache_control: unknown }>)[0]?.cache_control,
 		).toEqual({ type: "ephemeral", ttl: "1h" });

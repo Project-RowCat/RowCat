@@ -121,7 +121,7 @@ describe("cache decision ← resolved upstream", () => {
 			String(resolveManagedModel("deepseek-v4-pro")?.upstream),
 		);
 		expect(anthropic.model).toBe("anthropic/claude-sonnet-5");
-		expect(anthropic.cache_control).toEqual({ type: "ephemeral" });
+		expect(anthropic.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
 		expect(deepseek.model).toBe("deepseek/deepseek-v4-pro");
 		expect(deepseek).not.toHaveProperty("cache_control");
 	});
@@ -130,7 +130,7 @@ describe("cache decision ← resolved upstream", () => {
 describe("buildProviderRequestBody", () => {
 	it("turns on automatic prompt caching for Anthropic models", () => {
 		const body = buildProviderRequestBody(request, "anthropic/claude-sonnet-5");
-		expect(body.cache_control).toEqual({ type: "ephemeral" });
+		expect(body.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
 	});
 
 	it("non-Anthropic models still generate as is — just without cache control", () => {
@@ -157,7 +157,7 @@ describe("buildProviderRequestBody", () => {
 			request,
 			"other/x",
 		);
-		expect(cache_control).toEqual({ type: "ephemeral" });
+		expect(cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
 		expect(cached).toEqual({ ...plain, model: "anthropic/x" });
 		/** The system block's breakpoint marks the text; the text itself is the same string. */
 		const [system, ...rest] = messages as SentMessages;
@@ -168,9 +168,9 @@ describe("buildProviderRequestBody", () => {
 	});
 
 	/**
-	 * The top-level breakpoint sits on the last block only, and past `CHAT_HISTORY_LIMIT` the window
-	 * drops its oldest message every turn, so that prefix never matches. Marking the end of the system
-	 * prompt is what lets the unchanged system prompt be read back on those turns.
+	 * The top-level breakpoint sits on the last block only, so any change in the history in front of it
+	 * (the window moving, an edit) breaks that prefix. Marking the end of the system prompt is what lets
+	 * the unchanged system prompt be read back on those turns.
 	 */
 	it("marks the end of the system prompt for Anthropic models", () => {
 		const body = buildProviderRequestBody(request, "anthropic/claude-sonnet-5");
@@ -470,7 +470,7 @@ describe("buildProviderRequestBody — routing session", () => {
 	 */
 	it("stands together with cache_control on the Anthropic path", () => {
 		const body = buildProviderRequestBody(routed, "anthropic/claude-sonnet-5");
-		expect(body.cache_control).toEqual({ type: "ephemeral" });
+		expect(body.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
 		expect(body.session_id).toBe("0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0");
 	});
 
@@ -724,7 +724,7 @@ describe("continuation body — what both shapes share", () => {
 			shape,
 		);
 		expect((body.messages as SentMessages)[0]).toEqual(cachedSystem);
-		expect(body.cache_control).toEqual({ type: "ephemeral" });
+		expect(body.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
 		expect(body.provider).toEqual({
 			data_collection: "deny",
 			only: [...DISCLOSED_PROVIDERS],

@@ -138,7 +138,7 @@ describe("Anthropic adapter", () => {
 		const call = seen[0];
 		if (!call) throw new Error("no request");
 		const sent = body(call);
-		expect(sent.cache_control).toEqual({ type: "ephemeral" });
+		expect(sent.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
 		// Turning caching on must not change the prompt. This slice depends on that.
 		expect(sent.model).toBe("claude-sonnet-5");
 		expect(sent.max_tokens).toBe(1024);
@@ -153,25 +153,30 @@ describe("Anthropic adapter", () => {
 		expect(sent.stream).toBe(true);
 	});
 
-	/** No TTL is set. The default lifetime is this product's choice and is not a config axis. */
-	it("does not set a cache TTL", async () => {
+	/**
+	 * The lifetime is this product's choice, not a config axis: one hour on both breakpoints. They must
+	 * stay equal or the system's longer, since a shorter TTL ahead of a longer one is a 400.
+	 */
+	it("keeps both cache breakpoints for an hour", async () => {
 		const { seen, fetchMock } = recorder(() => sseResponse(ANTHROPIC_STREAM));
 		await collect(anthropicAdapter, {
 			model: "claude-sonnet-5",
 			secret: "sk-ant",
 			fetch: fetchMock,
 		});
+		const sent = body(seen[0] as { init: RequestInit });
+		expect(sent.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
 		expect(
-			body(seen[0] as { init: RequestInit }).cache_control,
-		).not.toHaveProperty("ttl");
+			(sent.system as Array<{ cache_control: unknown }>)[0]?.cache_control,
+		).toEqual(sent.cache_control);
 	});
 
 	/**
-	 * The second breakpoint. Past `CHAT_HISTORY_LIMIT` the history window drops its oldest message every
-	 * turn, so the automatic breakpoint alone never finds its previous entry again; this one keeps the
-	 * unchanged system prompt readable. Dropping it is silent too — the symptom is the bill.
+	 * The second breakpoint. Whenever the history in front of the automatic breakpoint changes (the
+	 * window moving, an edit), that breakpoint alone no longer finds its previous entry; this one keeps
+	 * the unchanged system prompt readable. Dropping it is silent too — the symptom is the bill.
 	 */
-	it("marks the end of the system prompt as a cache breakpoint, without a TTL", async () => {
+	it("marks the end of the system prompt as a cache breakpoint", async () => {
 		const { seen, fetchMock } = recorder(() => sseResponse(ANTHROPIC_STREAM));
 		await collect(anthropicAdapter, {
 			model: "claude-sonnet-5",
