@@ -5,10 +5,10 @@ This repository is distributed under two licenses. The full text of each is in
 the LICENSE file at the place named below; the summary here does not replace it.
 
 GNU Affero General Public License v3.0 only (AGPL-3.0-only)
-  Everything in this repository, unless it is listed under Apache-2.0 below or
-  under "Third-party material" further down. Full text: LICENSE (repository
-  root). This includes every app in apps/ (api, web, admin, mobile, mcp, desktop) and
-  every package in packages/ not listed below.
+  Everything in this repository, unless it is listed under Apache-2.0 below,
+  under "Trademarks" or under "Third-party material" further down. Full text:
+  LICENSE (repository root). This includes every app in apps/ (api, web, admin,
+  mobile, mcp, desktop) and every package in packages/ not listed below.
 
 Apache License 2.0 (Apache-2.0)
   The creator-runtime language, its toolchain and the wire contracts. Each of
@@ -30,6 +30,23 @@ Apache License 2.0 (Apache-2.0)
 
 The "license" field of every package.json in this repository states which of
 the two applies to that package.
+
+
+Trademarks
+----------
+
+The name "RowCat" and the RowCat app icon are not licensed under either of the
+licenses above. The icon files are:
+
+  apps/mobile/assets/icon.png
+  apps/mobile/assets/adaptive-icon.png
+
+They are in this repository so that this project's own builds carry its
+identity. Neither license grants the right to use the name or the icon to
+identify another product or deployment. A fork replaces both before it
+distributes builds or runs a deployment (docs/oss/FORKING.md lists every place
+that carries them). Nominal use, such as saying that a fork is based on
+RowCat, is not restricted by this section.
 
 
 Third-party material committed to this repository

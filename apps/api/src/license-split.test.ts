@@ -158,6 +158,21 @@ describe("license texts", () => {
 		expect(notice).toContain("Copyright (c) 2026 astra-void");
 		for (const dir of APACHE_PACKAGES) expect(notice).toContain(dir);
 	});
+
+	/**
+	 * The name and the app icon sit outside both licenses. If an icon is renamed or added and NOTICE
+	 * still names the old path, the new file falls back under AGPL with nobody deciding that.
+	 */
+	test("the root NOTICE keeps the app icons out of both licenses", () => {
+		const notice = read("NOTICE");
+		expect(notice).toContain("Trademarks");
+		const icons = readdirSync(join(REPO_ROOT, "apps/mobile/assets")).filter(
+			(file) => file.endsWith(".png"),
+		);
+		expect(icons.sort()).toEqual(["adaptive-icon.png", "icon.png"]);
+		for (const file of icons)
+			expect(notice).toContain(`apps/mobile/assets/${file}`);
+	});
 });
 
 describe("dependency direction — Apache packages do not take AGPL packages", () => {

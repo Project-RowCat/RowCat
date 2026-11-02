@@ -175,7 +175,8 @@ each with its own `LICENSE` file: `packages/runtime`, `runtime-compiler`, `runti
 
 ## Trademark
 
-The code is yours to use under its license; the name is not. "RowCat" stays with this project. If you
+The code is yours to use under its license; the name and the app icon are not (`NOTICE`, "Trademarks").
+"RowCat" stays with this project. If you
 deploy a fork, publish it under a different name and identity — `docs/oss/FORKING.md` lists every place
 that carries the name, the app identity and operator-specific settings.
 
