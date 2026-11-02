@@ -1,8 +1,8 @@
 import type { AuthoringStore, PlaytestSnapshot } from "@rowcat/authoring";
 import {
-	CHAT_HISTORY_LIMIT,
 	type ConversationDebugState,
 	type ConversationDebugStore,
+	chatHistoryWindow,
 	createConversationDebugStore,
 	type GeneratedAssistantMessage,
 	type GenerationPreference,
@@ -219,11 +219,12 @@ export function usePlaytest(initial: PlaytestState): PlaytestController {
 			 */
 			loadPreference: async () => stateRef.current.preference,
 			/**
-			 * History is cut at the same limit as a real conversation. A different value here would give
-			 * long playtests and long conversations different context.
+			 * History goes through the same window as a real conversation. A test has no summary, so the
+			 * frontier is null: the same window a real room has before its first summary. A different rule
+			 * here would give long playtests and long conversations different context.
 			 */
 			loadHistory: async () =>
-				stateRef.current.messages.slice(-CHAT_HISTORY_LIMIT),
+				chatHistoryWindow(stateRef.current.messages, null),
 			/**
 			 * Playtests have no memory. An empty array means the assembler builds no memory block at all, so
 			 * the prompt is byte-for-byte the same as a real room that has no memories.

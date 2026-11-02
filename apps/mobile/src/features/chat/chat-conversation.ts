@@ -1,9 +1,10 @@
 import {
 	type AssistantContinuation,
-	CHAT_HISTORY_LIMIT,
+	CHAT_HISTORY_WINDOW_MAX,
 	type ChatRoom,
 	type ChatStore,
 	type ConversationSession,
+	chatHistoryWindow,
 	effectiveChatPersona,
 	type GeneratedAssistantMessage,
 	type GenerationPreferenceStore,
@@ -85,8 +86,16 @@ export function createChatConversation(input: {
 		// A direct read, not a subscription, frozen into the request when generation starts. Going
 		// through render state would make "which settings this request used" depend on render timing.
 		loadPreference: async () => (await preferences?.getRoom(room.id)) ?? null,
-		loadHistory: () =>
-			store.listRecentMessages(room.id, { limit: CHAT_HISTORY_LIMIT }),
+		// The window starts at the summary frontier (`chatHistoryWindow`), so the summary is read here
+		// as well as in `loadSummary`. If maintenance commits between the two reads, this turn's window
+		// overlaps the new summary once: an event seen twice, never one seen by neither.
+		loadHistory: async () => {
+			const [messages, summary] = await Promise.all([
+				store.listRecentMessages(room.id, { limit: CHAT_HISTORY_WINDOW_MAX }),
+				store.getSummary(room.id),
+			]);
+			return chatHistoryWindow(messages, summary?.frontier ?? null);
+		},
 		loadMemories: () => store.listMemories(room.id),
 		// Characters added in this conversation are frozen at start, like memory.
 		loadCharacters: () => store.listCharacters(room.id),

@@ -2,7 +2,7 @@ import type {
 	ConversationSession,
 	GeneratedAssistantMessage,
 } from "@rowcat/chat";
-import { CHAT_HISTORY_LIMIT } from "@rowcat/chat";
+import { chatHistoryWindow } from "@rowcat/chat";
 import {
 	appendPlaytestAssistantMessage,
 	appendPlaytestUserMessage,
@@ -85,11 +85,12 @@ export function createPlaytestConversation({
 		// build its layer.
 		loadPreference: async () => read().preference,
 		/**
-		 * History, cut to the same cap as a real conversation. A different value here would give long
-		 * tests and long conversations different context, and this screen could then not reproduce
+		 * History, through the same window as a real conversation. A test has no summary, so the frontier
+		 * is null: the window a real room has before its first summary. A different rule here would give
+		 * long tests and long conversations different context, and this screen could then not reproduce
 		 * playback after publishing.
 		 */
-		loadHistory: async () => read().messages.slice(-CHAT_HISTORY_LIMIT),
+		loadHistory: async () => chatHistoryWindow(read().messages, null),
 		/**
 		 * No memories in a test. An empty array means the assembler builds no memory block at all, so the
 		 * prompt is byte-identical to a real room without memories.

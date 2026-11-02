@@ -1,8 +1,9 @@
 import {
 	type AssistantContinuation,
-	CHAT_HISTORY_LIMIT,
+	CHAT_HISTORY_WINDOW_MAX,
 	type ChatRoom,
 	type ChatStore,
+	chatHistoryWindow,
 	effectiveChatPersona,
 	type GeneratedAssistantMessage,
 	type GenerationPreference,
@@ -86,8 +87,19 @@ export function createChatConversation(input: {
 		...(protectedStoryId ? { protectedStoryId } : {}),
 		loadPreference: async (): Promise<GenerationPreference | null> =>
 			(await preferences?.getRoom(room.id)) ?? null,
-		loadHistory: () =>
-			store.listRecentMessages(room.id, { limit: CHAT_HISTORY_LIMIT }),
+		/**
+		 * The window starts at the summary frontier (`chatHistoryWindow`), so the summary is read here as
+		 * well as in `loadSummary`. The two reads are separate; if maintenance commits between them, this
+		 * turn's window starts at the older frontier and overlaps the new summary once. That is the safe
+		 * direction: an event seen twice, never one seen by neither.
+		 */
+		loadHistory: async () => {
+			const [messages, summary] = await Promise.all([
+				store.listRecentMessages(room.id, { limit: CHAT_HISTORY_WINDOW_MAX }),
+				store.getSummary(room.id),
+			]);
+			return chatHistoryWindow(messages, summary?.frontier ?? null);
+		},
 		loadMemories: () => store.listMemories(room.id),
 		/**
 		 * Characters introduced to this conversation are also read once, at start, like memory.

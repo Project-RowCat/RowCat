@@ -164,11 +164,22 @@ export type ChatRuntimeMessage = Pick<
  * transcript and summary, and history rewrites would invalidate the summary on every ordinary edit.
  * Lowering it requires splitting the two constants, a separate decision to accept that duplication.
  *
- * The legacy staged advance (moving the start point in steps of nine to preserve the cache prefix)
- * was not added. It optimizes prompt-cache cost and only matters once a cache breakpoint exists in
- * the server provider adapter. Adding it now would add complexity that cannot be verified.
+ * This is the floor of the window, not its size. The window starts at the summary frontier and
+ * grows to `CHAT_HISTORY_WINDOW_MAX` before the next summary pulls it back (`chatHistoryWindow` in
+ * history-window.ts). The legacy staged advance (steps of nine) was left out while no provider
+ * adapter had a cache breakpoint on the system prompt; once both Anthropic paths did, a window that
+ * moved every turn rewrote the whole history to the cache on every turn. Stepping with the frontier
+ * rather than a fixed stride is what keeps the summary and the transcript from leaving a gap.
  */
 export const CHAT_HISTORY_LIMIT = 40;
+
+/**
+ * The most messages a turn sends verbatim, and the assembler's cap. The window reaches it exactly
+ * when maintenance becomes due (`CHAT_MAINTENANCE_TRIGGER` is derived from it), so on the normal path
+ * it is never exceeded; it only binds when maintenance lags or never runs. The contract allows far
+ * more (`CHAT_MAX_MESSAGES`), so the protected-story request is unaffected.
+ */
+export const CHAT_HISTORY_WINDOW_MAX = CHAT_HISTORY_LIMIT + 20;
 
 /**
  * The character budget that memory may take in the system prompt. It exists so memory does not
@@ -990,9 +1001,10 @@ function assembleChatGenerationRequest(
 	);
 	const userInput = (input.userInput ?? "").trim();
 
-	// Trims history beyond the cap. The trimmed span is not summarized here. Summarizing the cut-off
-	// span is handled in a later slice.
-	const window = messages.slice(-CHAT_HISTORY_LIMIT);
+	// Trims history beyond the cap. Which messages make up the window is the caller's choice
+	// (`chatHistoryWindow`, which needs the stored positions this input does not carry); this is only
+	// the upper bound, so a caller that passes everything still sends a bounded request.
+	const window = messages.slice(-CHAT_HISTORY_WINDOW_MAX);
 
 	/**
 	 * The lore scan text is the current input plus the last few turns. The whole window is not

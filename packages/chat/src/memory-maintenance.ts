@@ -1,4 +1,4 @@
-import { CHAT_HISTORY_LIMIT } from "./context.ts";
+import { CHAT_HISTORY_LIMIT, CHAT_HISTORY_WINDOW_MAX } from "./context.ts";
 import {
 	CHAT_AUTO_MEMORY_MAX_PER_ROOM,
 	CHAT_MEMORY_MAX_PER_ROOM,
@@ -46,8 +46,14 @@ export const CHAT_MAINTENANCE_RECENT_KEEP = CHAT_HISTORY_LIMIT;
  * conversation cost. 20 is roughly 10 turns, so the first run comes around message 60 and then
  * about every 10 turns. The legacy value was not ported. Its window was centered on 25 and this one
  * is 40, so copying the value would summarize stretches not yet pushed out of the window.
+ *
+ * It is derived from the history window's cap, not written as a number: the window starts at the
+ * frontier and grows until maintenance runs, so a run is due exactly when the window is full. Were
+ * the two set separately, a smaller cap would open a gap between the window and the frontier again,
+ * and a larger one would let the window sit past the point where it should have been summarized.
  */
-export const CHAT_MAINTENANCE_TRIGGER = 20;
+export const CHAT_MAINTENANCE_TRIGGER =
+	CHAT_HISTORY_WINDOW_MAX - CHAT_MAINTENANCE_RECENT_KEEP;
 
 /**
  * Maximum messages per run. This is the catch-up step size. A room far behind (for example, 300

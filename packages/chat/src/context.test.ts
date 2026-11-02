@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import type { ChatCharacter } from "./character.ts";
 import {
 	buildChatGenerationRequest,
-	CHAT_HISTORY_LIMIT,
+	CHAT_HISTORY_WINDOW_MAX,
 	resolveAllAges,
 	selectLore,
 } from "./context.ts";
@@ -264,25 +264,30 @@ describe("selectLore", () => {
 });
 
 describe("buildChatGenerationRequest: history", () => {
+	/**
+	 * The assembler only bounds the window; which messages fill it is `chatHistoryWindow`'s choice at
+	 * the caller. A caller that passes everything still sends a bounded request.
+	 */
 	it("cuts the past beyond the cap", () => {
-		const messages = Array.from({ length: CHAT_HISTORY_LIMIT + 10 }, (_, i) =>
-			message(i % 2 === 0 ? "user" : "assistant", `turn-${i}`, i),
+		const messages = Array.from(
+			{ length: CHAT_HISTORY_WINDOW_MAX + 10 },
+			(_, i) => message(i % 2 === 0 ? "user" : "assistant", `turn-${i}-`, i),
 		);
 		const request = buildChatGenerationRequest({
 			room: room(),
 			messages,
 			allAges: true,
 		});
-		// A nudge may be attached, so the limit plus one is allowed.
-		expect(request.messages.length).toBeLessThanOrEqual(CHAT_HISTORY_LIMIT + 1);
-		expect(request.messages.some((m) => m.content.includes("turn-0"))).toBe(
+		// A nudge may be attached, so the cap plus one is allowed.
+		expect(request.messages.length).toBeLessThanOrEqual(
+			CHAT_HISTORY_WINDOW_MAX + 1,
+		);
+		expect(request.messages.some((m) => m.content.includes("turn-9-"))).toBe(
 			false,
 		);
-		expect(
-			request.messages.some((m) =>
-				m.content.includes(`turn-${CHAT_HISTORY_LIMIT + 9}`),
-			),
-		).toBe(true);
+		expect(request.messages.some((m) => m.content.includes("turn-10-"))).toBe(
+			true,
+		);
 	});
 
 	it("user turns carry the speaker name", () => {

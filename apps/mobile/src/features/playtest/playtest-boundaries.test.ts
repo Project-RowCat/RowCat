@@ -274,9 +274,9 @@ describe("there's one generation engine", () => {
 	});
 
 	/** No history cap re-declared; it must be the same window as a real conversation. */
-	it("the history cap is the shared constant", () => {
+	it("the history window is the shared rule", () => {
 		const adapter = fileAt("features/playtest/playtest-conversation.ts");
-		expect(adapter).toContain("CHAT_HISTORY_LIMIT");
+		expect(adapter).toContain("chatHistoryWindow");
 		for (const file of playtest)
 			expect(file.text, file.path).not.toMatch(/slice\(-\d+\)/);
 	});
@@ -295,7 +295,9 @@ describe("there's one generation engine", () => {
 		 * it.
 		 */
 		const adapter = fileAt("features/playtest/playtest-conversation.ts");
-		expect(adapter).toContain("loadHistory: async () => read().messages");
+		expect(adapter).toContain(
+			"loadHistory: async () => chatHistoryWindow(read().messages",
+		);
 		expect(adapter).toContain("loadPreference: async () => read().preference");
 
 		/** The hook plugs a ref into that slot, not render state. */

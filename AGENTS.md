@@ -754,6 +754,11 @@ response saved → maintain?.() → room gate → batch selection → utility ca
 - **The frontier cannot pass the recent verbatim window** (`CHAT_MAINTENANCE_RECENT_KEEP` =
   `CHAT_HISTORY_LIMIT` = 40). That equality buys two things: the same event never rides in both verbatim and
   summary, and ordinary edits, regenerations and delete-from-here **do not cause a rewind.**
+- **The verbatim window starts at the frontier, not at "the last 40"** (`chatHistoryWindow`): at least 40, at
+  most `CHAT_HISTORY_WINDOW_MAX` (60), and `CHAT_MAINTENANCE_TRIGGER` is derived from that cap. A fixed last-40
+  window left up to nineteen messages outside both the transcript and the summary, and it dropped one message a
+  turn, so the history prefix never matched the prompt cache. Both apps' room sessions and both playtests load
+  through that one function — do not slice history in an app.
 - **A rewind treats summary and memory differently** — a summary is prose and cannot be subtracted, so it is
   **discarded whole**; memories carry `originAt` so only those from the vanished span are deleted.
   **Human-written memories survive any rewrite.**
@@ -6243,7 +6248,8 @@ continues.**
 
 **Changing an auto-maintenance rule**: first find which file in `@rowcat/chat` holds that rule. **If it becomes fixing an
 app, you found the wrong place.** Be especially careful changing constants —
-`CHAT_MAINTENANCE_RECENT_KEEP` **must equal** `CHAT_HISTORY_LIMIT`, and raising `CHAT_AUTO_MEMORY_MAX_PER_ROOM` to the
+`CHAT_MAINTENANCE_RECENT_KEEP` **must equal** `CHAT_HISTORY_LIMIT`, `CHAT_MAINTENANCE_TRIGGER` is **derived from**
+`CHAT_HISTORY_WINDOW_MAX` (change the cap, not the trigger), and raising `CHAT_AUTO_MEMORY_MAX_PER_ROOM` to the
 per-room ceiling lets one long conversation fill that room's slots so **the user can no longer write new memories.**
 Adding a new operation kind moves four things in one commit: the vocabulary → the schema and the instructions →
 `planMemoryMaintenance`'s validation → **both store implementations.**

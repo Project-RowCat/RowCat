@@ -28,6 +28,7 @@ export * from "./generation-options.ts";
 export * from "./generation-preference.ts";
 export * from "./generation-summary.ts";
 export * from "./guards.ts";
+export * from "./history-window.ts";
 export * from "./intensity.ts";
 export * from "./lore.ts";
 export * from "./maintenance-prompt.ts";
