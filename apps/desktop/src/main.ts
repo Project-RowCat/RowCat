@@ -1,4 +1,10 @@
-import { appendFileSync, mkdirSync } from "node:fs";
+import {
+	appendFileSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { APP_NAME } from "@rowcat/domain";
 import {
@@ -7,22 +13,41 @@ import {
 	dialog,
 	Menu,
 	type MenuItemConstructorOptions,
+	nativeTheme,
+	screen,
 	shell,
 } from "electron";
-import { PortsBusyError, type RunningStack, startStack } from "./stack.ts";
+import {
+	PortsBusyError,
+	type RunningStack,
+	type ServerEvent,
+	startStack,
+} from "./stack.ts";
+import {
+	type LaunchStage,
+	type StatusPage,
+	stageScript,
+	statusPageUrl,
+	WINDOW_BACKGROUND,
+} from "./status-page.ts";
 import { createUpdater, type DesktopUpdater } from "./updater.ts";
+import { restoreBounds, type SavedWindow } from "./window-state.ts";
 
 /**
  * The desktop shell: start the deployment on this computer, show it in a window, stop it on quit.
  *
- * **The window is the product's own web app, loaded from `localhost`.** Nothing is drawn here but a
- * waiting screen and the menu — conversations, settings and the console are the same pages the
+ * **The window is the product's own web app, loaded from `localhost`.** Nothing is drawn here but the
+ * status pages (`status-page.ts`), the menu and native dialogs — conversations, settings and the console are the same pages the
  * browser serves. A second UI in this file would be a fourth client to keep in step.
  *
  * **It is shown in Electron's Chromium, not the default browser**, for one concrete reason: the API
  * runs as production, so its session cookie is `Secure`, and Chromium stores `Secure` cookies on
  * `http://localhost` while Safari does not reliably — a Mac whose default browser is Safari would
  * never stay signed in. `기본 브라우저에서 열기` stays in the menu for people who prefer theirs.
+ *
+ * **Two windows, one per app.** The web app is the main window and the operations console has its own,
+ * so opening the console does not navigate the person away from the conversation they were in; a link
+ * from one app to the other lands in the other's window (`windowFor`).
  *
  * Copy here is Korean because the people this installer is for read Korean; the product's own pages
  * follow its language setting.
@@ -40,9 +65,18 @@ app.setAppLogsPath();
 
 const dataDir = join(app.getPath("userData"), "deployment");
 const logFile = join(app.getPath("logs"), "rowcat.log");
+const windowStateFile = join(app.getPath("userData"), "window-state.json");
+
+type WindowKind = "main" | "console";
 
 let stack: RunningStack | null = null;
-let mainWindow: BrowserWindow | null = null;
+const windows = new Map<WindowKind, BrowserWindow>();
+/** Where launch is, so a launch page that finishes loading after a stage moved can catch up. */
+let launchStage: LaunchStage | null = "database";
+/** The page the main window showed when its server stopped, to return to once it is back. */
+let interruptedUrl: string | null = null;
+/** One 「멈췄습니다」 box at a time: both servers can give up at once. */
+let failureShown = false;
 let updater: DesktopUpdater | null = null;
 /** Set once the servers start stopping — by a quit, or by installing an update. Never cleared. */
 let stopping = false;
@@ -84,27 +118,23 @@ function artifacts() {
 	};
 }
 
-/** A page drawn while there is no server to show — starting up, or installing a new version. */
-function statusPage(message: string): string {
-	return `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html>
-<html lang="ko"><meta charset="utf-8"><title>RowCat</title>
-<style>
-:root{color-scheme:light dark}
-body{margin:0;height:100vh;display:grid;place-items:center;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:Canvas;color:CanvasText}
-p{margin:0;opacity:.7}
-</style>
-<body><main><h1 style="font-size:20px;margin:0 0 6px">RowCat</h1><p>${message}</p></main></body></html>`)}`;
-}
-
-const WAITING_PAGE = statusPage(
-	"준비하고 있습니다… 처음에는 1분쯤 걸릴 수 있습니다.",
-);
-const CHECKING_PAGE = statusPage(
-	"시작하지 못했습니다. 새 버전이 있는지 확인하고 있습니다…",
-);
-const UPDATING_PAGE = statusPage(
-	"새 버전을 설치하고 있습니다… 끝나면 RowCat이 다시 열립니다.",
-);
+const CHECKING_PAGE: StatusPage = {
+	kind: "message",
+	title: "시작하지 못했습니다",
+	detail:
+		"새 버전이 있는지 확인하고 있습니다. 새 버전에서 고쳐졌을 수 있습니다.",
+};
+const UPDATING_PAGE: StatusPage = {
+	kind: "message",
+	title: "새 버전을 설치하고 있습니다",
+	detail: "끝나면 RowCat이 다시 열립니다.",
+};
+const RESTARTING_PAGE: StatusPage = {
+	kind: "message",
+	title: "다시 연결하고 있습니다",
+	detail:
+		"화면 서버가 멈춰서 다시 시작하고 있습니다. 보던 화면으로 곧 돌아갑니다.",
+};
 
 function isLocal(url: string): boolean {
 	try {
@@ -114,36 +144,148 @@ function isLocal(url: string): boolean {
 	}
 }
 
-function createWindow(): BrowserWindow {
+/** The managed window a local URL belongs to, by origin; null for pages neither app serves. */
+function windowFor(url: string): WindowKind | null {
+	if (!stack) return null;
+	try {
+		const origin = new URL(url).origin;
+		if (origin === stack.origins.console) return "console";
+		if (origin === stack.origins.web) return "main";
+	} catch {
+		// Not a URL: nothing to route.
+	}
+	return null;
+}
+
+const MIN_SIZE = { width: 900, height: 600 };
+
+function readWindowState(): Partial<Record<WindowKind, unknown>> {
+	try {
+		return JSON.parse(readFileSync(windowStateFile, "utf8"));
+	} catch {
+		return {};
+	}
+}
+
+function saveWindowState(kind: WindowKind, window: BrowserWindow): void {
+	const saved: SavedWindow = {
+		bounds: window.getNormalBounds(),
+		maximized: window.isMaximized(),
+	};
+	try {
+		writeFileSync(
+			windowStateFile,
+			JSON.stringify({ ...readWindowState(), [kind]: saved }),
+		);
+	} catch {
+		// A window that opens in the default place next time is not worth an error.
+	}
+}
+
+function backgroundColor(): string {
+	return nativeTheme.shouldUseDarkColors
+		? WINDOW_BACKGROUND.dark
+		: WINDOW_BACKGROUND.light;
+}
+
+function createWindow(kind: WindowKind): BrowserWindow {
+	const saved = restoreBounds(
+		readWindowState()[kind],
+		screen.getAllDisplays().map((display) => display.workArea),
+		MIN_SIZE,
+	);
 	const window = new BrowserWindow({
-		width: 1280,
-		height: 860,
-		minWidth: 900,
-		minHeight: 600,
-		title: APP_NAME,
+		...(saved?.bounds ?? { width: 1280, height: 860 }),
+		minWidth: MIN_SIZE.width,
+		minHeight: MIN_SIZE.height,
+		title: kind === "console" ? `${APP_NAME} 운영 콘솔` : APP_NAME,
+		/**
+		 * Hidden until the first page has painted, on the theme's background: shown at once, the window
+		 * flashes white before a dark page draws.
+		 */
+		show: false,
+		backgroundColor: backgroundColor(),
 		webPreferences: { contextIsolation: true, sandbox: true },
+	});
+	window.once("ready-to-show", () => {
+		if (saved?.maximized) window.maximize();
+		window.show();
 	});
 	// Pages on this computer open here; everything else (provider key pages, docs) in the browser.
 	window.webContents.setWindowOpenHandler(({ url }) => {
-		if (isLocal(url)) return { action: "allow" };
-		void shell.openExternal(url);
-		return { action: "deny" };
+		if (!isLocal(url)) {
+			void shell.openExternal(url);
+			return { action: "deny" };
+		}
+		const target = windowFor(url);
+		if (target && target !== kind) {
+			openWindow(target, url);
+			return { action: "deny" };
+		}
+		return { action: "allow" };
 	});
 	window.webContents.on("will-navigate", (event, url) => {
-		if (isLocal(url) || url.startsWith("data:")) return;
-		event.preventDefault();
-		void shell.openExternal(url);
+		if (url.startsWith("data:")) return;
+		if (!isLocal(url)) {
+			event.preventDefault();
+			void shell.openExternal(url);
+			return;
+		}
+		const target = windowFor(url);
+		if (target && target !== kind) {
+			event.preventDefault();
+			openWindow(target, url);
+		}
 	});
+	if (kind === "main")
+		window.webContents.on("did-finish-load", () => applyLaunchStage());
+	window.on("close", () => saveWindowState(kind, window));
 	window.on("closed", () => {
-		if (mainWindow === window) mainWindow = null;
+		if (windows.get(kind) === window) windows.delete(kind);
 	});
+	windows.set(kind, window);
 	return window;
 }
 
-function openWindow(url: string): void {
-	if (!mainWindow) mainWindow = createWindow();
-	void mainWindow.loadURL(url);
-	mainWindow.show();
+function openWindow(kind: WindowKind, url: string): void {
+	const existing = windows.get(kind);
+	const window = existing ?? createWindow(kind);
+	void window.loadURL(url);
+	if (existing) {
+		if (existing.isMinimized()) existing.restore();
+		existing.show();
+		existing.focus();
+	}
+}
+
+function showPage(page: StatusPage): void {
+	openWindow("main", statusPageUrl(page));
+}
+
+function applyLaunchStage(): void {
+	const window = windows.get("main");
+	if (!launchStage || !window?.webContents.getURL().startsWith("data:")) return;
+	window.webContents
+		.executeJavaScript(stageScript(launchStage))
+		.catch(() => {});
+}
+
+/** The main window when there is one, so a box opens as its sheet rather than on its own. */
+async function messageBox(
+	options: Electron.MessageBoxOptions,
+): Promise<Electron.MessageBoxReturnValue> {
+	const window = windows.get("main");
+	return window
+		? dialog.showMessageBox(window, options)
+		: dialog.showMessageBox(options);
+}
+
+function focusedHistory(): Electron.NavigationHistory | undefined {
+	return BrowserWindow.getFocusedWindow()?.webContents.navigationHistory;
+}
+
+function revealLog(): void {
+	shell.showItemInFolder(logFile);
 }
 
 /** Asks the API rather than remembering the log line: setup closes the moment someone claims it. */
@@ -159,7 +301,7 @@ async function setupOpen(running: RunningStack): Promise<boolean> {
 async function showSetupCode(running: RunningStack): Promise<void> {
 	const code = running.setupCode();
 	if (!code || !(await setupOpen(running))) {
-		await dialog.showMessageBox({
+		await messageBox({
 			type: "info",
 			message: "관리자가 이미 정해졌습니다",
 			detail:
@@ -176,10 +318,8 @@ async function showSetupCode(running: RunningStack): Promise<void> {
 		detail:
 			"운영 콘솔에서 계정을 만들거나 로그인한 뒤 이 코드를 입력하면 그 계정이 이 컴퓨터의 RowCat 관리자가 됩니다. 코드는 한 번만 쓸 수 있습니다.\n\n관리자는 꼭 필요하지 않습니다. 혼자 쓰신다면 나중에 해도 됩니다.",
 	};
-	const { response } = mainWindow
-		? await dialog.showMessageBox(mainWindow, options)
-		: await dialog.showMessageBox(options);
-	if (response === 0) openWindow(`${running.origins.console}/setup`);
+	const { response } = await messageBox(options);
+	if (response === 0) openWindow("console", `${running.origins.console}/setup`);
 }
 
 /** The menu's part for the installed release: its date, and what the updater can do now. */
@@ -239,8 +379,7 @@ async function checkForUpdate(): Promise<void> {
 							detail:
 								"RowCat 메뉴의 「다시 시작해서 업데이트」를 누르거나, 앱을 끄면 설치됩니다.",
 						};
-	if (mainWindow) await dialog.showMessageBox(mainWindow, options);
-	else await dialog.showMessageBox(options);
+	await messageBox(options);
 }
 
 /**
@@ -251,7 +390,7 @@ async function restartToUpdate(): Promise<void> {
 	if (!updater || stopping) return;
 	stopping = true;
 	buildMenu(null);
-	if (mainWindow) void mainWindow.loadURL(UPDATING_PAGE);
+	if (windows.has("main")) showPage(UPDATING_PAGE);
 	try {
 		await stack?.stop();
 	} catch (error) {
@@ -271,10 +410,15 @@ async function restartToUpdate(): Promise<void> {
 function buildMenu(running: RunningStack | null): void {
 	const rowcat: MenuItemConstructorOptions[] = running
 		? [
-				{ label: "RowCat 열기", click: () => openWindow(running.origins.web) },
+				{
+					label: "RowCat 열기",
+					accelerator: "CmdOrCtrl+1",
+					click: () => openWindow("main", running.origins.web),
+				},
 				{
 					label: "운영 콘솔 열기",
-					click: () => openWindow(running.origins.console),
+					accelerator: "CmdOrCtrl+2",
+					click: () => openWindow("console", running.origins.console),
 				},
 				{
 					label: "기본 브라우저에서 열기",
@@ -299,17 +443,38 @@ function buildMenu(running: RunningStack | null): void {
 					label: "데이터 폴더 열기",
 					click: () => void shell.openPath(dataDir),
 				},
-				{
-					label: "로그 폴더 열기",
-					click: () => void shell.openPath(app.getPath("logs")),
-				},
+				{ label: "로그 보기", click: revealLog },
 				...(process.platform === "darwin"
 					? []
 					: [{ role: "quit" as const, label: "종료" }]),
 			],
 		},
 		{ role: "editMenu" },
-		{ role: "viewMenu" },
+		{
+			label: "보기",
+			submenu: [
+				{ role: "reload", label: "새로 고침" },
+				{
+					label: "뒤로",
+					accelerator: "CmdOrCtrl+[",
+					click: () => focusedHistory()?.goBack(),
+				},
+				{
+					label: "앞으로",
+					accelerator: "CmdOrCtrl+]",
+					click: () => focusedHistory()?.goForward(),
+				},
+				{ type: "separator" },
+				{ role: "resetZoom", label: "실제 크기" },
+				{ role: "zoomIn", label: "확대" },
+				{ role: "zoomOut", label: "축소" },
+				{ type: "separator" },
+				{ role: "togglefullscreen", label: "전체 화면" },
+				...(app.isPackaged
+					? []
+					: [{ role: "toggleDevTools" as const, label: "개발자 도구" }]),
+			],
+		},
 		{ role: "windowMenu" },
 	];
 	Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -326,18 +491,19 @@ const FAILED_LAUNCH_UPDATE_WAIT_MS = 3 * 60 * 1000;
  */
 async function offerUpdateAfterFailure(): Promise<boolean> {
 	if (!updater || updater.state().kind === "off") return false;
-	if (mainWindow) void mainWindow.loadURL(CHECKING_PAGE);
+	if (windows.has("main")) showPage(CHECKING_PAGE);
 	if (!(await updater.whenReady(FAILED_LAUNCH_UPDATE_WAIT_MS))) return false;
 	const state = updater.state();
 	const date = state.kind === "ready" ? state.date : "";
 	const { response } = await dialog.showMessageBox({
 		type: "error",
-		buttons: ["업데이트하고 다시 시작", "닫기"],
+		buttons: ["업데이트하고 다시 시작", "로그 보기", "닫기"],
 		defaultId: 0,
-		cancelId: 1,
+		cancelId: 2,
 		message: "RowCat을 시작하지 못했습니다",
-		detail: `새 버전(${date})을 받아 두었습니다. 이 문제가 새 버전에서 고쳐졌을 수 있습니다.\n\n자세한 내용은 로그 폴더의 rowcat.log에 있습니다.\n${logFile}`,
+		detail: `새 버전(${date})을 받아 두었습니다. 이 문제가 새 버전에서 고쳐졌을 수 있습니다.`,
 	});
+	if (response === 1) revealLog();
 	if (response !== 0) {
 		// Exits 0 so the downloaded update still installs on this quit.
 		app.exit(0);
@@ -350,13 +516,77 @@ async function offerUpdateAfterFailure(): Promise<boolean> {
 	return true;
 }
 
+/**
+ * A server stopped after launch (`stack.ts` starts it again). The web server is what the main window
+ * shows, so the window waits on a status page and returns to the same address; the API stopping is
+ * left to the web app, which already says when it cannot reach its server and recovers on its own.
+ * Giving up is said once, with the way out: start the whole app again, or read the log.
+ */
+async function onServerEvent(event: ServerEvent): Promise<void> {
+	log("desktop", `${event.server} ${event.kind}`);
+	const main = windows.get("main");
+	if (event.server === "web" && event.kind === "restarting" && main && stack) {
+		const url = main.webContents.getURL();
+		if (url.startsWith(stack.origins.web)) interruptedUrl = url;
+		showPage(RESTARTING_PAGE);
+		return;
+	}
+	if (event.server === "web" && event.kind === "running" && stack) {
+		openWindow("main", interruptedUrl ?? stack.origins.web);
+		interruptedUrl = null;
+		return;
+	}
+	if (event.kind !== "failed" || failureShown || stopping) return;
+	failureShown = true;
+	const { response } = await messageBox({
+		type: "error",
+		buttons: ["RowCat 다시 시작", "로그 보기", "닫기"],
+		defaultId: 0,
+		cancelId: 2,
+		message: "RowCat의 서버가 멈췄습니다",
+		detail:
+			"몇 번 다시 시작해 보았지만 계속 멈춥니다. RowCat을 다시 시작하면 대부분 해결됩니다. 대화와 초안은 이 컴퓨터에 그대로 있습니다.",
+	});
+	failureShown = false;
+	if (response === 1) revealLog();
+	if (response === 0) {
+		app.relaunch();
+		app.quit();
+	}
+}
+
+/**
+ * A development run shows Electron's own icon in the Dock; the staged icon replaces it so `pnpm dev`
+ * looks like what ships. A packaged app carries its icon in the bundle.
+ */
+function showDevelopmentIcon(): void {
+	if (app.isPackaged || process.platform !== "darwin") return;
+	const icon = join(app.getAppPath(), ".stage", "icons", "mac.png");
+	if (existsSync(icon)) app.dock?.setIcon(icon);
+}
+
 async function launch(): Promise<void> {
 	mkdirSync(app.getPath("logs"), { recursive: true });
 	updater = createUpdater({ log, onChange: () => buildMenu(stack) });
+	app.setAboutPanelOptions({
+		applicationName: APP_NAME,
+		applicationVersion: updater.installedDate() ?? "개발 빌드",
+		version: "",
+	});
+	showDevelopmentIcon();
 	buildMenu(null);
-	openWindow(WAITING_PAGE);
+	showPage({ kind: "launch" });
 	try {
-		stack = await startStack({ dataDir, artifacts: artifacts(), log });
+		stack = await startStack({
+			dataDir,
+			artifacts: artifacts(),
+			log,
+			onStage: (stage) => {
+				launchStage = stage;
+				applyLaunchStage();
+			},
+			onServerEvent: (event) => void onServerEvent(event),
+		});
 	} catch (error) {
 		log(
 			"desktop",
@@ -364,17 +594,22 @@ async function launch(): Promise<void> {
 		);
 		if (!(error instanceof PortsBusyError) && (await offerUpdateAfterFailure()))
 			return;
-		await dialog.showMessageBox({
+		const portsBusy = error instanceof PortsBusyError;
+		const { response } = await dialog.showMessageBox({
 			type: "error",
+			buttons: portsBusy ? ["닫기"] : ["닫기", "로그 보기"],
+			defaultId: 0,
+			cancelId: 0,
 			message: "RowCat을 시작하지 못했습니다",
-			detail:
-				error instanceof PortsBusyError
-					? `이 컴퓨터의 다른 프로그램이 RowCat이 쓰는 포트(${error.ports.join(", ")})를 쓰고 있습니다. 그 프로그램을 끄거나 컴퓨터를 다시 시작한 뒤 열어 주세요.\n\n포트를 바꾸지 않는 이유: 주소가 바뀌면 이 컴퓨터에 저장된 대화와 초안이 보이지 않게 됩니다.`
-					: `자세한 내용은 로그 폴더의 rowcat.log에 있습니다.\n${logFile}`,
+			detail: portsBusy
+				? `이 컴퓨터의 다른 프로그램이 RowCat이 쓰는 포트(${error.ports.join(", ")})를 쓰고 있습니다. 그 프로그램을 끄거나 컴퓨터를 다시 시작한 뒤 열어 주세요.\n\n포트를 바꾸지 않는 이유: 주소가 바뀌면 이 컴퓨터에 저장된 대화와 초안이 보이지 않게 됩니다.`
+				: "무엇이 잘못됐는지는 로그(rowcat.log)에 적혀 있습니다. 문의할 때 이 파일을 함께 보내 주세요.",
 		});
+		if (response === 1) revealLog();
 		app.exit(1);
 		return;
 	}
+	launchStage = null;
 	buildMenu(stack);
 	/**
 	 * The setup code is not raised on launch. A native box is modal, and macOS refuses to quit an app
@@ -382,7 +617,7 @@ async function launch(): Promise<void> {
 	 * administrator needed to use the app: conversations, drafts and a personal AI key all work for
 	 * any member. The menu holds it for whoever wants the console.
 	 */
-	openWindow(stack.origins.web);
+	openWindow("main", stack.origins.web);
 	/**
 	 * Asked once the servers are up, and again when the window comes forward, at most every few hours
 	 * (`update-policy.ts`) — there is no timer. A launch that failed asks on its own path above.
@@ -396,10 +631,11 @@ if (!app.requestSingleInstanceLock()) {
 	app.quit();
 } else {
 	app.on("second-instance", () => {
-		if (mainWindow) {
-			if (mainWindow.isMinimized()) mainWindow.restore();
-			mainWindow.focus();
-		} else if (stack) openWindow(stack.origins.web);
+		const main = windows.get("main");
+		if (main) {
+			if (main.isMinimized()) main.restore();
+			main.focus();
+		} else if (stack) openWindow("main", stack.origins.web);
 	});
 
 	app.whenReady().then(launch);
@@ -413,7 +649,11 @@ if (!app.requestSingleInstanceLock()) {
 		if (process.platform !== "darwin") app.quit();
 	});
 	app.on("activate", () => {
-		if (!mainWindow && stack) openWindow(stack.origins.web);
+		if (!windows.has("main") && stack) openWindow("main", stack.origins.web);
+	});
+	nativeTheme.on("updated", () => {
+		for (const window of windows.values())
+			window.setBackgroundColor(backgroundColor());
 	});
 
 	/**
@@ -424,6 +664,9 @@ if (!app.requestSingleInstanceLock()) {
 	 * starts its installer — after the servers are down, which is the order it needs.
 	 */
 	app.on("before-quit", (event) => {
+		// Quitting ends in `app.exit`, which closes the windows without their `close` event.
+		if (!stopping)
+			for (const [kind, window] of windows) saveWindowState(kind, window);
 		if (stopping) {
 			// A quit while the servers are still stopping waits for that stop (see `stopped`).
 			if (!stopped) event.preventDefault();

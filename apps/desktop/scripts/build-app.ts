@@ -23,6 +23,7 @@ import { execFileSync } from "node:child_process";
 import {
 	cpSync,
 	existsSync,
+	mkdirSync,
 	readdirSync,
 	readFileSync,
 	rmSync,
@@ -32,6 +33,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { APP_BUNDLE_ID, APP_NAME } from "@rowcat/domain";
 import { build, type Configuration } from "electron-builder";
+import sharp from "sharp";
 import { updateFeedFrom, windowsInstallerName } from "../src/update-policy.ts";
 
 const desktop = resolve(fileURLToPath(import.meta.url), "../..");
@@ -121,6 +123,7 @@ cpSync(join(appDeploy, "package.json"), join(app, "package.json"));
 rmSync(appDeploy, { recursive: true, force: true });
 cpSync(join(desktop, "dist"), join(app, "dist"), { recursive: true });
 relinkPostgresLibraries(join(app, "node_modules", "@embedded-postgres"));
+const icons = await writeIcons(join(stage, "icons"));
 
 /**
  * `pnpm deploy` copies symlinks as files, and the Postgres build names each library three ways
@@ -144,6 +147,61 @@ function relinkPostgresLibraries(scope: string): void {
 			symlinkSync(relative(dirname(linkPath), join(root, source)), linkPath);
 		}
 	}
+}
+
+/**
+ * The app icon, drawn from the mobile app's icon rather than kept as a file of its own: a fork that
+ * replaces that one picture (`docs/oss/FORKING.md`) gets a desktop app wearing it too, instead of an
+ * installer that still carries this project's logo.
+ *
+ * The source is a full-bleed square, which is right for a phone (the OS masks it) and wrong on a
+ * desktop, where the icon is drawn as it is. macOS gets Apple's grid — an 824 px rounded body inside
+ * a 1024 px canvas, with the soft shadow every Dock icon has; Windows and Linux get the same rounded
+ * body with no margin, as their icons usually fill the tile. electron-builder turns each PNG into
+ * `.icns` / `.ico` itself.
+ */
+async function writeIcons(dir: string): Promise<{ mac: string; other: string }> {
+	const source = join(repo, "apps/mobile/assets/icon.png");
+	mkdirSync(dir, { recursive: true });
+	const canvas = 1024;
+	const rounded = async (size: number, radius: number) =>
+		sharp(source)
+			.resize(size, size)
+			.composite([
+				{
+					input: Buffer.from(
+						`<svg width="${size}" height="${size}"><rect width="${size}" height="${size}" rx="${radius}" ry="${radius}"/></svg>`,
+					),
+					blend: "dest-in",
+				},
+			])
+			.png()
+			.toBuffer();
+
+	const body = 824;
+	const inset = (canvas - body) / 2;
+	const shadow = Buffer.from(
+		`<svg width="${canvas}" height="${canvas}"><defs><filter id="s" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="14"/></filter></defs><rect x="${inset}" y="${inset + 12}" width="${body}" height="${body}" rx="185" fill="black" fill-opacity="0.3" filter="url(#s)"/></svg>`,
+	);
+	const mac = join(dir, "mac.png");
+	await sharp({
+		create: {
+			width: canvas,
+			height: canvas,
+			channels: 4,
+			background: { r: 0, g: 0, b: 0, alpha: 0 },
+		},
+	})
+		.composite([
+			{ input: shadow },
+			{ input: await rounded(body, 185), left: inset, top: inset },
+		])
+		.png()
+		.toFile(mac);
+
+	const other = join(dir, "icon.png");
+	await sharp(await rounded(canvas, 180)).toFile(other);
+	return { mac, other };
 }
 
 if (mode === "stage") {
@@ -189,15 +247,20 @@ const config: Configuration = {
 				verbatimSymlinks: true,
 			});
 	},
-	mac: { target: ["dmg"], category: "public.app-category.entertainment", identity: null },
-	win: { target: ["nsis"] },
+	mac: {
+		target: ["dmg"],
+		category: "public.app-category.entertainment",
+		identity: null,
+		icon: icons.mac,
+	},
+	win: { target: ["nsis"], icon: icons.other },
 	nsis: {
 		oneClick: true,
 		perMachine: false,
 		// The name the release attaches and `latest.yml` points at — the release must not rename it.
 		...(version ? { artifactName: windowsInstallerName(APP_NAME, version) } : {}),
 	},
-	linux: { target: ["AppImage"] },
+	linux: { target: ["AppImage"], icon: icons.other },
 	/**
 	 * A publish config is what makes electron-builder write `app-update.yml` into the app and
 	 * `latest.yml` beside the installer. It never uploads: `publish: "never"` below, because a tag

@@ -1488,6 +1488,12 @@ The rationale is in `apps/api/src/services/mail/templates.tsx`, `lib/mail-config
   **esbuild, socket.io and tailwind come along into the deploy image** (tens of MB). If the image has to shrink,
   there is one place to fix it: demote it to a devDependency and switch the runtime imports to
   `@react-email/components` and `@react-email/render` (the copy code does not change by a character).
+  ⚠️ **The image's largest weight was never this — it was `next`** (~290 MB with `@next/*`). `better-auth`
+  names it as an optional peer, and pnpm resolved that peer because `@react-email/ui` (the preview server, a
+  devDependency) brings `next` into the workspace — so `pnpm deploy --prod` shipped a framework nothing
+  imports. The root `pnpm.overrides` cuts that one edge (`"better-auth>next": "-"`); the API's deployed
+  `node_modules` went from about 590 MB to 275 MB. Remove the override only in the commit that imports
+  `better-auth/next-js`, which nothing here does.
 - **The two passkey notices contain no links.** Putting an action link in a security alert makes that mail a
   template for phishing — what the user should do is reach the account screen through the path they always use.
 - **Code does not choose the vendor.** Transport is SMTP (`services/mail/smtp.ts` is the only file where a

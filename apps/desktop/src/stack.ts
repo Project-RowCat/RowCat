@@ -6,11 +6,13 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import EmbeddedPostgres from "embedded-postgres";
 import { startConsoleServer } from "./console-server.ts";
+import { nextRestartDelay } from "./restart-policy.ts";
 import {
 	busyPorts,
 	type DesktopSettings,
 	loadOrCreateSettings,
 } from "./settings.ts";
+import type { LaunchStage } from "./status-page.ts";
 
 /**
  * Runs the whole deployment on this computer: one Postgres and the three servers the container
@@ -30,6 +32,12 @@ import {
  * It runs as a production deployment (`NODE_ENV=production`): the dev identity verifier, the dev
  * mail transport and the development secrets are all refused there, and a computer someone actually
  * uses is a deployment, not a development checkout.
+ *
+ * **A server that stops on its own is started again** — what `restart: unless-stopped` does for the
+ * container images. Only after the launch succeeded: a server that cannot start the first time is a
+ * launch failure with its own screen, and restarting it would hide that. The supervisor gives up after
+ * a few tries (`restart-policy.ts`) and says so through `onServerEvent`. Postgres is not supervised —
+ * `embedded-postgres` owns that process, and the API failing its readiness check is how it shows.
  *
  * What this does not hold: Redis (the API falls back to an in-process limiter — one process, so it
  * is exact), mail, push, AI keys and background jobs. Each stays off and the console's readiness
@@ -56,6 +64,14 @@ export interface RunningStack {
 
 export type StackLog = (source: string, line: string) => void;
 
+export type SupervisedServer = "api" | "web";
+
+/** A server that exited after launch: being started again, back, or given up on. */
+export type ServerEvent = {
+	server: SupervisedServer;
+	kind: "restarting" | "running" | "failed";
+};
+
 export class PortsBusyError extends Error {
 	constructor(readonly ports: number[]) {
 		super(`ports in use: ${ports.join(", ")}`);
@@ -72,8 +88,12 @@ export async function startStack(options: {
 	dataDir: string;
 	artifacts: StackArtifacts;
 	log: StackLog;
+	onStage?: (stage: LaunchStage) => void;
+	onServerEvent?: (event: ServerEvent) => void;
 }): Promise<RunningStack> {
 	const { dataDir, artifacts, log } = options;
+	const onStage = options.onStage ?? (() => {});
+	const onServerEvent = options.onServerEvent ?? (() => {});
 	const settings = await loadOrCreateSettings(dataDir);
 	await stopLeftoverDatabase(join(dataDir, "postgres"), log);
 	const busy = await busyPorts(settings);
@@ -92,56 +112,51 @@ export async function startStack(options: {
 	};
 
 	try {
+		onStage("database");
 		const database = await startDatabase(dataDir, settings, log);
 		stoppers.push(() => database.stop());
 
+		onStage("api");
 		let setupCode: string | null = null;
-		const api = spawnNode(
-			"api",
-			artifacts,
-			join(artifacts.apiDir, "dist", "index.mjs"),
-			artifacts.apiDir,
-			{
-				NODE_ENV: "production",
-				HOST: "127.0.0.1",
-				PORT: String(settings.ports.api),
-				DATABASE_URL: `postgres://${DATABASE_USER}:${settings.databasePassword}@127.0.0.1:${settings.ports.database}/${DATABASE_NAME}`,
-				BETTER_AUTH_SECRET: settings.authSecret,
-				API_ORIGIN: origins.api,
-				WEB_ORIGIN: `${origins.web},${origins.console}`,
-				/**
-				 * This installation is one person's computer, so first setup may skip accounts (the
-				 * local owner). A server deployment leaves it off: its doors would otherwise trust any
-				 * same-host relay as "this computer" (`apps/api/src/lib/local-request.ts`).
-				 */
-				LOCAL_OWNER_ENABLED: "on",
-			},
-			(line) => {
-				log("api", line);
-				const match =
-					/\[setup\].*enter: ([0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4})/.exec(line);
-				if (match) setupCode = match[1] ?? null;
-			},
-		);
-		stoppers.push(() => stopChild(api));
-		await waitForHttp(`${origins.api}/v2/health/ready`, api);
+		const api = await startSupervised({
+			name: "api",
+			spawn: () =>
+				spawnNode(
+					"api",
+					artifacts,
+					join(artifacts.apiDir, "dist", "index.mjs"),
+					artifacts.apiDir,
+					{
+						NODE_ENV: "production",
+						HOST: "127.0.0.1",
+						PORT: String(settings.ports.api),
+						DATABASE_URL: `postgres://${DATABASE_USER}:${settings.databasePassword}@127.0.0.1:${settings.ports.database}/${DATABASE_NAME}`,
+						BETTER_AUTH_SECRET: settings.authSecret,
+						API_ORIGIN: origins.api,
+						WEB_ORIGIN: `${origins.web},${origins.console}`,
+						/**
+						 * This installation is one person's computer, so first setup may skip accounts (the
+						 * local owner). A server deployment leaves it off: its doors would otherwise trust any
+						 * same-host relay as "this computer" (`apps/api/src/lib/local-request.ts`).
+						 */
+						LOCAL_OWNER_ENABLED: "on",
+					},
+					(line) => {
+						log("api", line);
+						const match =
+							/\[setup\].*enter: ([0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4})/.exec(
+								line,
+							);
+						if (match) setupCode = match[1] ?? null;
+					},
+				),
+			readyUrl: `${origins.api}/v2/health/ready`,
+			log,
+			onEvent: onServerEvent,
+		});
+		stoppers.push(() => api.stop());
 
-		const web = spawnNode(
-			"web",
-			artifacts,
-			artifacts.webServerEntry,
-			dataDir,
-			{
-				NODE_ENV: "production",
-				HOST: "127.0.0.1",
-				PORT: String(settings.ports.web),
-				VITE_API_ORIGIN: origins.api,
-				VITE_ADMIN_ORIGIN: origins.console,
-			},
-			(line) => log("web", line),
-		);
-		stoppers.push(() => stopChild(web));
-
+		onStage("web");
 		const consoleServer = await startConsoleServer({
 			distDir: artifacts.consoleDistDir,
 			apiOrigin: origins.api,
@@ -149,7 +164,28 @@ export async function startStack(options: {
 		});
 		stoppers.push(() => closeServer(consoleServer));
 
-		await waitForHttp(origins.web, web);
+		const web = await startSupervised({
+			name: "web",
+			spawn: () =>
+				spawnNode(
+					"web",
+					artifacts,
+					artifacts.webServerEntry,
+					dataDir,
+					{
+						NODE_ENV: "production",
+						HOST: "127.0.0.1",
+						PORT: String(settings.ports.web),
+						VITE_API_ORIGIN: origins.api,
+						VITE_ADMIN_ORIGIN: origins.console,
+					},
+					(line) => log("web", line),
+				),
+			readyUrl: origins.web,
+			log,
+			onEvent: onServerEvent,
+		});
+		stoppers.push(() => web.stop());
 
 		return {
 			settings,
@@ -311,6 +347,79 @@ function pick(
 		if (value) out[key] = value;
 	}
 	return out;
+}
+
+interface Supervised {
+	stop(): Promise<void>;
+}
+
+/**
+ * Starts a server, waits for it to answer, then watches it. An exit nobody asked for starts it again
+ * after a delay; one too many gives up and reports `failed`. A restarted server that never answers is
+ * ended so its exit takes the same path. `stop()` ends supervision first, so the exit it causes is not
+ * read as a crash.
+ */
+async function startSupervised(spec: {
+	name: SupervisedServer;
+	spawn: () => ChildProcess;
+	readyUrl: string;
+	log: StackLog;
+	onEvent: (event: ServerEvent) => void;
+}): Promise<Supervised> {
+	const { name, readyUrl, log, onEvent } = spec;
+	let child = spec.spawn();
+	try {
+		await waitForHttp(readyUrl, child);
+	} catch (error) {
+		await stopChild(child);
+		throw error;
+	}
+
+	let stopping = false;
+	let pending: NodeJS.Timeout | null = null;
+	const restarts: number[] = [];
+
+	const watch = (watched: ChildProcess) => {
+		watched.once("exit", () => {
+			if (stopping || watched !== child) return;
+			const delay = nextRestartDelay(restarts, Date.now());
+			if (delay === null) {
+				log("desktop", `${name} keeps stopping; giving up`);
+				onEvent({ server: name, kind: "failed" });
+				return;
+			}
+			restarts.push(Date.now());
+			log("desktop", `${name} stopped; starting it again in ${delay} ms`);
+			onEvent({ server: name, kind: "restarting" });
+			pending = setTimeout(() => {
+				pending = null;
+				if (stopping) return;
+				child = spec.spawn();
+				watch(child);
+				const started = child;
+				waitForHttp(readyUrl, started).then(
+					() => {
+						if (!stopping && started === child)
+							onEvent({ server: name, kind: "running" });
+					},
+					() => {
+						// Exited: its exit handler decides. Still running but silent: end it so it does.
+						if (started.exitCode === null && started.signalCode === null)
+							started.kill("SIGKILL");
+					},
+				);
+			}, delay);
+		});
+	};
+	watch(child);
+
+	return {
+		stop: async () => {
+			stopping = true;
+			if (pending) clearTimeout(pending);
+			await stopChild(child);
+		},
+	};
 }
 
 /** Polls until the URL answers 2xx. A child that exits first ends the wait with its failure. */
