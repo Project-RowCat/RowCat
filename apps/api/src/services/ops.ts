@@ -8,6 +8,7 @@ import {
 	type FeatureFlagKey,
 	type FeatureFlagSetRequest,
 	type FeatureFlagState,
+	INSTANCE_PROTOCOL_VERSION,
 	isFeatureEnabled,
 	OPS_ERROR_CODE,
 	type RuntimeConfigDto,
@@ -428,6 +429,7 @@ export async function readRuntimeConfig(): Promise<RuntimeConfigDto> {
 		localSignIn:
 			localOwnerEnabled && (await hasLocalOwner().catch(() => false)),
 		membershipAges,
+		instanceProtocol: INSTANCE_PROTOCOL_VERSION,
 	};
 }
 

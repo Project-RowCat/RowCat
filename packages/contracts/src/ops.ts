@@ -304,8 +304,30 @@ export const RuntimeConfigDto = z.object({
 			adult: z.number().int().positive(),
 		})
 		.default({ guardianConsent: 14, adult: 19 }),
+	/**
+	 * Which version of this API's client contract the server speaks (`INSTANCE_PROTOCOL_VERSION`). A
+	 * native app that can connect to more than one server checks it **before sign-in** and refuses a
+	 * server outside the range it knows (`docs/mobile/INSTANCES.md` §인스턴스의 신원).
+	 *
+	 * **Optional, with no default, on purpose.** Every other field here defaults so an older server reads
+	 * as it behaved; this one must not, because a default would let anything that answers this path with
+	 * the right shape pass as a RowCat server of the current protocol. Absent means "does not say", and the
+	 * instance check refuses it. The single-server app and the web do not read it.
+	 */
+	instanceProtocol: z.number().int().positive().optional(),
 });
 export type RuntimeConfigDto = z.infer<typeof RuntimeConfigDto>;
+
+/**
+ * The client-contract version this code speaks. It rises only when a change would make an app built for
+ * the previous value misbehave against this server (a removed route, a changed meaning) — adding a field
+ * or a route does not raise it, the same rule as the `/v2` prefix (AGENTS.md §Versioning). An integer,
+ * because the question it answers is compared by code.
+ */
+export const INSTANCE_PROTOCOL_VERSION = 1;
+
+/** The oldest server protocol this code can still use. Raised together with a breaking change. */
+export const INSTANCE_PROTOCOL_MIN_SUPPORTED = 1;
 
 export const OPS_ERROR_CODE = {
 	/**

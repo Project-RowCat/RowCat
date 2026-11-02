@@ -1,4 +1,4 @@
-import { OPS_ERROR_CODE } from "@rowcat/contracts";
+import { INSTANCE_PROTOCOL_VERSION, OPS_ERROR_CODE } from "@rowcat/contracts";
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, test } from "vitest";
 import { app } from "../../app.ts";
@@ -470,6 +470,17 @@ describe.skipIf(!databaseReady)("server enforcement", () => {
 			{ key: "chat", message: "Conversations under maintenance" },
 		]);
 		expect(body.minAppVersion).toEqual({ ios: null, android: null });
+	});
+
+	/**
+	 * A native app that connects to several servers checks this before sign-in, and the contract gives it
+	 * no default — so a server that stopped sending it would be refused by every such app, silently.
+	 */
+	test("the public runtime config states the instance protocol", async () => {
+		const body = (await (await get("/v2/runtime-config", GUEST)).json()) as {
+			instanceProtocol?: number;
+		};
+		expect(body.instanceProtocol).toBe(INSTANCE_PROTOCOL_VERSION);
 	});
 });
 

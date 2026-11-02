@@ -75,3 +75,13 @@ export const WEB_ORIGIN: string | null = webOrigin || null;
  * the web would be fixed.
  */
 export const API_BASE_URL = apiBaseUrl(API_ORIGIN);
+
+/**
+ * Whether this build lets a member add servers other than its own (`docs/mobile/INSTANCES.md` §결정 1).
+ * **Off unless the build says `on`** — the repository's default build is single-instance and identical to
+ * before, and a fork that publishes its own app turns this on. Public like every `EXPO_PUBLIC_` value, and
+ * harmless as such: it is a build fact, not a secret. The update authority does not move with it
+ * (`docs/ota/ARCHITECTURE.md` §업데이트 권한과 인스턴스, pinned in `ota-config.test.ts`).
+ */
+export const INSTANCE_SELECTION_ENABLED =
+	process.env.EXPO_PUBLIC_INSTANCE_SELECTION?.trim() === "on";

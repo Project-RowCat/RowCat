@@ -55,8 +55,8 @@ OTA updates.url            빌드 때 같은 오리진에서 만들어 네이티
   악의적인 서버는 남의 id를 주장할 수 있지만, TLS가 증명하는 오리진은 흉내 내지 못한다.
 - **개발 빌드만 http와 사설 주소를 받는다**(같은 Wi-Fi의 개발 서버). 그 판단은 빌드 프로필이 한다
   (`lib/build-profile.ts`), 화면이 하지 않는다.
-- **로그인 전에 검증한다**: `GET /v2/runtime-config`가 이 계약의 모양으로 답해야 한다. 지금 그 응답에는 판 번호가
-  없으므로 정수 하나(`instanceProtocol`)를 더한다 — 앱이 아는 범위 밖이면 「이 앱으로는 붙을 수 없습니다」로
+- **로그인 전에 검증한다**: `GET /v2/runtime-config`가 이 계약의 모양으로 답해야 한다. 그 응답이 정수 하나
+  (`instanceProtocol`, `INSTANCE_PROTOCOL_VERSION`)를 싣는다 — 계약에 기본값이 없어 말하지 않는 서버는 거절된다 — 앱이 아는 범위 밖이면 「이 앱으로는 붙을 수 없습니다」로
   멈춘다. 기능 목록이 아니다(그것은 지금처럼 `disabledFeatures` · `passwordReset` 등이 답한다).
 - **본 인스턴스**: 빌드의 `EXPO_PUBLIC_API_ORIGIN`. 목록에서 지울 수 없고, 단일 인스턴스 빌드에서는 유일하다.
 
@@ -158,7 +158,8 @@ Apple(네이티브 시트)    본 인스턴스만 — 토큰의 aud가 이 앱�
 0  세션 전달 일회용 코드 + 앱만 아는 검증자(DEV-61) — 끝났다
 1  DEV-17   업데이트 권한의 정적 시험 · ROWCAT_OTA=off의 값 시험 · docs/ota에 옮김 — 끝났다
 2  범위 키   localScopeKey(apps/mobile/src/lib/local-scope.ts) — 본 인스턴스는 지금 이름 그대로(시험이 바이트로 고정) — 끝났다
-3  레지스트리 기기 저장소의 목록 · 활성 인스턴스 · 런타임 설정 검증(서버에 instanceProtocol)
+3  레지스트리 기기 저장소의 목록 · 활성 인스턴스 · 런타임 설정 검증(서버에 instanceProtocol) — 끝났다
+           apps/mobile/src/lib/instances/ · 아직 어느 클라이언트도 화면도 읽지 않는다(4 · 5단계)
 4  클라이언트 인스턴스마다 SDK · 인증 클라이언트 · 쿼리 캐시 리셋 · 인증 이미지
 5  화면      인스턴스 추가(주소 · QR) · 전환 · 제거 — 플래그 뒤
 6  푸시(활성 인스턴스 하나) · 기기 시험
