@@ -215,7 +215,7 @@ describe("auth secrets don't leak", () => {
 	it("callback addresses go through validation", () => {
 		const identity = all.find((file) => file.path.endsWith("lib/identity.tsx"));
 		expect(identity?.text).toMatch(
-			/callbackURL: oauthCallbackPath\(returnPath\)/,
+			/callbackPath: oauthCallbackPath\(returnPath\)/,
 		);
 		expect(identity?.text).toMatch(
 			/const oauthCallbackPath[\s\S]{0,160}safeMobileReturnPath\(returnPath\)/,

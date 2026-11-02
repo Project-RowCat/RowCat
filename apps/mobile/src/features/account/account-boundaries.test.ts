@@ -863,6 +863,12 @@ describe("security — the operations arrived", () => {
 			"lib/account-security-auth.ts",
 			"lib/api.ts",
 			/**
+			 * The browser round trip of sign-in and linking (DEV-61): opens the auth session and redeems the
+			 * one-time code. It calls one auth operation of its own — the redeem — and receives the callback
+			 * path from `identity.tsx` and `account-security-auth.ts`, never from a screen.
+			 */
+			"lib/auth-browser.ts",
+			/**
 			 * A second transport. Like `lib/api.ts` adding cookies to the SDK's `fetch`, this file does so
 			 * for the native image loader, which bypasses our `fetch`, so covers visible only with a session
 			 * would 404 only in the app (the header of `lib/auth-image.ts` records that symptom).
@@ -918,7 +924,7 @@ describe("security — the operations arrived", () => {
 		const boundary = fileAt("lib/account-security-auth.ts");
 		expect(boundary).toMatch(/const ACCOUNT_PATH = "\/account"/);
 		expect(boundary).toMatch(/callbackURL: EMAIL_CHANGED_PATH/);
-		expect(boundary).toMatch(/callbackURL: CONNECT_RETURN_PATH/);
+		expect(boundary).toMatch(/callbackPath: CONNECT_RETURN_PATH/);
 		expect(boundary).toMatch(/errorCallbackURL: CONNECT_RETURN_PATH/);
 		/** No signature takes the destination as an argument. */
 		expect(boundary).not.toMatch(/callbackURL:\s*\w*[Rr]eturn\w*Path\b\s*[,)]/);

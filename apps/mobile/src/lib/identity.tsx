@@ -18,6 +18,7 @@ import {
 import { getRowCatClient } from "./api.ts";
 import { attemptAppleNativeSignIn } from "./apple-auth.ts";
 import { authClient, readAuthCookie } from "./auth.ts";
+import { openAuthRoundTrip } from "./auth-browser.ts";
 import {
 	checkSignIn,
 	checkSignUp,
@@ -143,8 +144,8 @@ const IdentityContext = createContext<MobileIdentityValue | null>(null);
  * is not enough: a person who tapped a heart on a story and was sent to log in would land on the
  * home screen and lose what they were doing.
  *
- * So the destination is accepted, but **not the raw value.** Better Auth's Expo client turns this
- * relative path into an app deep link (`Linking.createURL`) and passes it to the OAuth provider. If
+ * So the destination is accepted, but **not the raw value.** The browser round trip turns this
+ * relative path into an app deep link (`Linking.createURL`, `auth-browser.ts`) and passes it to the OAuth provider. If
  * the raw material arrived unvalidated from outside, that link would become a phishing path. The
  * screen validates it once, and it is validated **again** here. The function is idempotent. The
  * assumption "the boundary already filtered it, so the inside can trust it" breaks silently the day
@@ -166,7 +167,7 @@ const oauthCallbackPath = (returnPath: string | undefined): string =>
  * `apps/web/src/lib/auth.ts`). It also needs no validation, because it is a path we wrote, not a
  * value from outside.
  *
- * It starts with `/`, so `@better-auth/expo` turns it into an app deep link (`Linking.createURL`).
+ * It starts with `/`, so the Expo client's request hook turns it into an app deep link (`Linking.createURL`).
  * Failures therefore close the sheet **the same way** success does.
  */
 const OAUTH_ERROR_PATH = "/login";
@@ -450,13 +451,25 @@ export function MobileIdentityProvider({ children }: { children: ReactNode }) {
 					}
 				}
 
-				const { error } = await authClient.signIn.social({
-					provider,
-					callbackURL: oauthCallbackPath(returnPath),
-					errorCallbackURL: OAUTH_ERROR_PATH,
+				/**
+				 * The browser round trip ends in a one-time code, not a cookie in the redirect URL
+				 * (`auth-browser.ts`). A dismissed sheet and a return without a session both fall to
+				 * `finish`'s cookie check, as before.
+				 */
+				const trip = await openAuthRoundTrip({
+					callbackPath: oauthCallbackPath(returnPath),
+					start: (callbackURL) =>
+						authClient.signIn.social({
+							provider,
+							callbackURL,
+							errorCallbackURL: OAUTH_ERROR_PATH,
+							disableRedirect: true,
+						}),
 				});
-				if (error)
-					throw new AuthFlowError(authFailure(error), { cause: error });
+				if (trip.status === "error")
+					throw new AuthFlowError(authFailure(trip.error), {
+						cause: trip.error,
+					});
 
 				await finish();
 			}),

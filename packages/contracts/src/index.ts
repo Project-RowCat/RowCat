@@ -1,6 +1,7 @@
 export * from "./account-security.ts";
 export * from "./admin.ts";
 export * from "./adult-verification.ts";
+export * from "./app-session-handoff.ts";
 export * from "./chat.ts";
 export * from "./comments.ts";
 export * from "./creator-analytics.ts";

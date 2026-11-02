@@ -1,5 +1,6 @@
 import type { LoginMethodProvider } from "@rowcat/domain";
 import { authClient } from "./auth.ts";
+import { openAuthRoundTrip } from "./auth-browser.ts";
 import type { AuthErrorLike } from "./auth-error.ts";
 
 /**
@@ -63,9 +64,9 @@ const EMAIL_CHANGED_PATH = `${ACCOUNT_PATH}?email=changed`;
  * Destination of provider linking: **success and failure share one path.**
  *
  * The web sends `?connected=<provider>` and `?connect=error` on the return URL and reads them
- * there; this app does not need to. `@better-auth/expo` runs the round trip in a **browser
- * session** (`openAuthSessionAsync`), and when that session redirects to this path it closes the
- * sheet and hands control back here. The app does not leave the screen in between.
+ * there; this app does not need to. The round trip runs in a **browser session**
+ * (`auth-browser.ts`), and when that session redirects to this path it closes the sheet and hands
+ * control back here. The app does not leave the screen in between.
  *
  * So the outcome is judged by the **account information the server confirms**, not by the address.
  * Carrying no marker is the structural form of that rule: with nothing to read, no code can use a
@@ -156,10 +157,10 @@ export function resendAccountVerificationEmail(email: string): AuthOutcome {
 /**
  * Links a provider to the current account — a browser sheet opens and closes.
  *
- * `@better-auth/expo` reads the `redirect` in the `/link-social` response, opens an auth session
- * (`openAuthSessionAsync`), takes the cookie from the return address, stores it, and then completes
- * this promise. **It does not say whether the result was success or cancellation** — the plugin
- * ends quietly when `result.type !== "success"`.
+ * The round trip is `auth-browser.ts`'s: the library returns the provider URL (`disableRedirect`),
+ * that file opens the auth session and, if the server handed a session back, redeems its one-time
+ * code. **It does not say whether linking happened** — a closed sheet and a completed link both come
+ * back without an error.
  *
  * So this function answers only "was there an error", and **does not answer whether linking
  * happened.** That judgement is made by the account information re-fetched after the round trip (a
@@ -168,17 +169,23 @@ export function resendAccountVerificationEmail(email: string): AuthOutcome {
 export function linkAccountProvider(
 	provider: ConnectableProvider,
 ): AuthOutcome {
-	return authClient
-		.linkSocial({
-			provider,
-			callbackURL: CONNECT_RETURN_PATH,
-			/**
-			 * Failures return to the app too. Without this the library sends the user to its default error
-			 * page (`{API}/v2/auth/error`); that address is not an app scheme, so **the browser sheet does
-			 * not close by itself**. The sign-in side passes the same value for the same reason.
-			 */
-			errorCallbackURL: CONNECT_RETURN_PATH,
-		})
-		.then(settle)
+	return openAuthRoundTrip({
+		callbackPath: CONNECT_RETURN_PATH,
+		start: (callbackURL) =>
+			authClient.linkSocial({
+				provider,
+				callbackURL,
+				/**
+				 * Failures return to the app too. Without this the library sends the user to its default error
+				 * page (`{API}/v2/auth/error`); that address is not an app scheme, so **the browser sheet does
+				 * not close by itself**. The sign-in side passes the same value for the same reason.
+				 */
+				errorCallbackURL: CONNECT_RETURN_PATH,
+				disableRedirect: true,
+			}),
+	})
+		.then((trip) =>
+			trip.status === "error" ? settle({ error: trip.error }) : null,
+		)
 		.catch(transportFailure);
 }

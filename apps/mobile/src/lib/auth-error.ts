@@ -42,10 +42,10 @@ export type AuthFailure =
 	 * and they would press the same button and get the same result. So both the name and the copy say
 	 * only what we know (`session_without_viewer` is the same axis).
 	 *
-	 * This app cannot express splitting the cause by name. The failure returns through the deep link
-	 * `?error=`, but `@better-auth/expo` consumes that address itself and never passes it to us (after
-	 * `openAuthSessionAsync` in `client.js`, with no cookie it quietly ends). The web reads that value
-	 * directly in its route, so it has one sentence per cause.
+	 * This app does not yet split the cause by name. The failure returns through the deep link
+	 * `?error=`, and since the round trip became ours (`auth-browser.ts`) that address does reach this
+	 * code — it is read only for the one-time code today. The web reads `?error=` directly in its route,
+	 * so it has one sentence per cause; doing the same here is a separate change.
 	 */
 	| "social_without_session"
 	| "unreachable"

@@ -1,4 +1,3 @@
-import { expo } from "@better-auth/expo";
 import { passkey as passkeyPlugin } from "@better-auth/passkey";
 import { PASSWORD_LENGTH } from "@rowcat/contracts";
 import { APP_BUNDLE_ID, APP_NAME } from "@rowcat/domain";
@@ -39,6 +38,10 @@ import {
 	type TransactionalMail,
 } from "../services/mail/index.ts";
 import { enforceAccountDeletionPolicy } from "./account-deletion-policy.ts";
+import {
+	appSessionHandoffPlugin,
+	nativeExpoPlugin,
+} from "./app-session-handoff.ts";
 import { findAuthUser } from "./auth-user.ts";
 import { localSignInPlugin } from "./local-sign-in.ts";
 import { enforcePasswordResetTarget } from "./password-reset-policy.ts";
@@ -175,8 +178,9 @@ export const auth = betterAuth({
 	 *    bypass).
 	 * 2. Relay to the OAuth authorization URL (`/expo-authorization-proxy`), because native has no
 	 *    place to plant the `state` cookie.
-	 * 3. When the callback redirects to a custom scheme, `Set-Cookie` rides in that URL's query,
-	 *    the only way the app can move the cookie into SecureStore.
+	 * 3. ~~When the callback redirects to a custom scheme, `Set-Cookie` rides in that URL's query.~~
+	 *    Removed: a custom scheme does not prove which app receives the URL. The redirect now carries a
+	 *    one-time code the app redeems with a secret it kept (`app-session-handoff.ts`).
 	 *
 	 * No second auth backend on the Expo side: two Better Auth instances would mean two signing keys
 	 * and two trust lists, and the looser one becomes the real policy. The plugin adds `exp://` itself
@@ -184,7 +188,8 @@ export const auth = betterAuth({
 	 * `trusted-origins.ts` header.
 	 */
 	plugins: [
-		expo(),
+		nativeExpoPlugin(),
+		appSessionHandoffPlugin(),
 		/**
 		 * Passkeys. The WebAuthn protocol is the plugin's; we decide only which domain's ceremony to
 		 * trust (rpID and origin), validated at boot by `env.ts`.

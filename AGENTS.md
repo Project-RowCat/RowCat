@@ -1334,10 +1334,17 @@ ignores, so it was a password oracle at the default limit), `/update-session`, a
 challenge). Closed there and not in `hooks.before`, because our wrappers call the same operations server-side. The Expo
 plugin's `/expo-authorization-proxy` stays open — the app's browser sign-in needs it — but only toward the three
 providers' authorization endpoints: as shipped it redirected to any `https` address (an open redirect from the API's
-domain). ⚠️ **That allowlist does not decide who minted the state it relays**, and the session then reaches the app over
-the bare `rowcat://` scheme, which is not proof of which app receives it — making that hand-off verified is an open
-mobile decision (`docs/oss/SECURITY-REVIEW.md`). A new provider adds its endpoint to `EXPO_PROXY_TARGETS` or its app
-sign-in is refused.
+domain). A new provider adds its endpoint to `EXPO_PROXY_TARGETS` or its app sign-in is refused.
+
+**The session never rides a `rowcat://` URL** (`auth/app-session-handoff.ts`, `@rowcat/contracts`'
+`app-session-handoff.ts`). A custom scheme does not prove which app receives the link — on Android any installed app may
+claim it — and `@better-auth/expo`'s after-hook wrote the whole session cookie into that redirect. That hook is removed
+(`nativeExpoPlugin`); the redirect now carries a one-time code bound to a hash (the *binding*) whose verifier only the app
+that started the flow holds, redeemed at `POST /v2/auth/app-session/redeem` (single use, two minutes, the `verification`
+table). A callback without a binding hands over nothing — **there is no fallback**, because the fallback is the hole.
+The app's round trip has one door (`apps/mobile/src/lib/auth-browser.ts`), and every redirecting social call passes
+`disableRedirect: true` so the library never opens the sheet itself (`auth-browser-boundaries.test.ts`). A code from a
+flow someone else started cannot be redeemed by the victim's app either — it was bound to their binding, not the victim's verifier.
 
 - **`setPassword` is the only place a password crosses our contract, and that exception has a reason** —
   that endpoint is `createAuthEndpoint.serverOnly`, so it has no HTTP surface at all (passing the session
