@@ -41,12 +41,21 @@ export interface ChatUsageRow {
 	model?: string;
 	inputTokens?: number;
 	cachedInputTokens?: number;
+	cacheWriteInputTokens?: number;
 	outputTokens?: number;
 }
 
+/**
+ * Cache writes are a separate axis from cache reads, and they are the one that costs. A write is
+ * billed above the input price (2x for an hour-long entry) while a read is a small fraction of it,
+ * so a conversation that writes every turn and reads nothing pays more than one with no cache at
+ * all. With only reads on screen that state looked like "the cache did nothing"; with writes beside
+ * them it reads as what it is.
+ */
 export interface ChatUsageTotals {
 	inputTokens?: number;
 	cachedInputTokens?: number;
+	cacheWriteInputTokens?: number;
 	outputTokens?: number;
 }
 
@@ -63,7 +72,8 @@ export interface ChatUsageView {
 const reported = (message: ChatMessage): boolean =>
 	message.inputTokens !== undefined ||
 	message.outputTokens !== undefined ||
-	message.cachedInputTokens !== undefined;
+	message.cachedInputTokens !== undefined ||
+	message.cacheWriteInputTokens !== undefined;
 
 /**
  * Folds the two flags into one word. Truncation takes precedence: when both are true, more text
@@ -115,6 +125,9 @@ export function chatUsageView(
 			...(message.cachedInputTokens !== undefined
 				? { cachedInputTokens: message.cachedInputTokens }
 				: {}),
+			...(message.cacheWriteInputTokens !== undefined
+				? { cacheWriteInputTokens: message.cacheWriteInputTokens }
+				: {}),
 			...(message.outputTokens !== undefined
 				? { outputTokens: message.outputTokens }
 				: {}),
@@ -132,6 +145,15 @@ export function chatUsageView(
 						cachedInputTokens: add(
 							totals.cachedInputTokens,
 							message.cachedInputTokens,
+						),
+					}
+				: {}),
+			...(add(totals.cacheWriteInputTokens, message.cacheWriteInputTokens) !==
+			undefined
+				? {
+						cacheWriteInputTokens: add(
+							totals.cacheWriteInputTokens,
+							message.cacheWriteInputTokens,
 						),
 					}
 				: {}),

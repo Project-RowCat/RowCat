@@ -146,7 +146,8 @@ export const chat: Messages["chat"] = {
 		unreported:
 			" 그중 {{count}}개는 사용량을 알 수 없어 합계에 세지 않았습니다.",
 		input: "입력",
-		cachedInput: "캐시 입력",
+		cachedInput: "캐시 읽기",
+		cacheWrite: "캐시 쓰기",
 		output: "출력",
 		theCreatorProtectedThisStory:
 			"제작자가 보호한 작품이라 창작 프롬프트는 표시되지 않습니다.",

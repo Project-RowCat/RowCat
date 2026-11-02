@@ -149,7 +149,8 @@ export const chat = {
 		unreported:
 			" {{count}} of them didn't report usage, so they aren't counted in the totals.",
 		input: "Input",
-		cachedInput: "Cached input",
+		cachedInput: "Cache reads",
+		cacheWrite: "Cache writes",
 		output: "Output",
 		theCreatorProtectedThisStory:
 			"The creator protected this story, so its creative prompt isn't shown.",

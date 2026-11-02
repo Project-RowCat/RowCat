@@ -29,10 +29,15 @@ export const roomUsageScope = (counted: number, unreported: number): string =>
 		? `${counted} recent replies. ${unreported} of them reported no usage and weren't counted in the total.`
 		: `${counted} recent replies.`;
 
-/** Total lines; an axis that was not reported has no line at all. */
+/**
+ * Total lines; an axis that was not reported has no line at all. Cache writes stand beside reads
+ * (web's pane does the same): a write costs more than plain input, so writing every turn while
+ * reading nothing costs more than no cache, and with reads alone that looked like an idle cache.
+ */
 export function usageTotalLines(totals: {
 	inputTokens?: number;
 	cachedInputTokens?: number;
+	cacheWriteInputTokens?: number;
 	outputTokens?: number;
 }): string[] {
 	const lines: string[] = [];
@@ -40,7 +45,11 @@ export function usageTotalLines(totals: {
 		lines.push(`Input ${totals.inputTokens.toLocaleString("en-US")}`);
 	if (totals.cachedInputTokens !== undefined)
 		lines.push(
-			`Cached input ${totals.cachedInputTokens.toLocaleString("en-US")}`,
+			`Cache reads ${totals.cachedInputTokens.toLocaleString("en-US")}`,
+		);
+	if (totals.cacheWriteInputTokens !== undefined)
+		lines.push(
+			`Cache writes ${totals.cacheWriteInputTokens.toLocaleString("en-US")}`,
 		);
 	if (totals.outputTokens !== undefined)
 		lines.push(`Output ${totals.outputTokens.toLocaleString("en-US")}`);
@@ -55,12 +64,20 @@ export function usageTotalLines(totals: {
 export function roomUsageRowLine(row: {
 	inputTokens?: number;
 	outputTokens?: number;
+	cachedInputTokens?: number;
+	cacheWriteInputTokens?: number;
 }): string {
 	const parts: string[] = [];
 	if (row.inputTokens !== undefined)
 		parts.push(`Input ${row.inputTokens.toLocaleString("en-US")}`);
 	if (row.outputTokens !== undefined)
 		parts.push(`Output ${row.outputTokens.toLocaleString("en-US")}`);
+	if (row.cachedInputTokens !== undefined)
+		parts.push(`Cache reads ${row.cachedInputTokens.toLocaleString("en-US")}`);
+	if (row.cacheWriteInputTokens !== undefined)
+		parts.push(
+			`Cache writes ${row.cacheWriteInputTokens.toLocaleString("en-US")}`,
+		);
 	return parts.length > 0 ? parts.join(" · ") : ROOM_USAGE_UNREPORTED;
 }
 

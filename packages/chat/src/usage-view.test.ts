@@ -54,6 +54,45 @@ describe("chatUsageView", () => {
 		expect(view.totals).toEqual({ inputTokens: 30, cachedInputTokens: 4 });
 	});
 
+	/**
+	 * Cache writes are the costly axis (above the input price) and sit beside reads, never folded into
+	 * them. A turn that wrote and read nothing must say so instead of looking like an idle cache.
+	 */
+	it("carries cache writes per row and in the total, apart from reads", () => {
+		const view = chatUsageView([
+			message({
+				inputTokens: 100,
+				cachedInputTokens: 0,
+				cacheWriteInputTokens: 90,
+			}),
+			message({
+				inputTokens: 110,
+				cachedInputTokens: 90,
+				cacheWriteInputTokens: 15,
+			}),
+		]);
+		expect(view.totals).toEqual({
+			inputTokens: 210,
+			cachedInputTokens: 90,
+			cacheWriteInputTokens: 105,
+		});
+		expect(view.rows[0]).toMatchObject({
+			cachedInputTokens: 90,
+			cacheWriteInputTokens: 15,
+		});
+		expect(
+			"cacheWriteInputTokens" in
+				chatUsageView([message({ inputTokens: 1 })]).totals,
+		).toBe(false);
+	});
+
+	/** A response that reported only a cache write still reported usage. */
+	it("a response reporting only a cache write is counted, not unreported", () => {
+		const view = chatUsageView([message({ cacheWriteInputTokens: 7 })]);
+		expect(view.unreported).toBe(0);
+		expect(view.totals).toEqual({ cacheWriteInputTokens: 7 });
+	});
+
 	/** States what the total did not count, so the number can be read correctly. */
 	it("counts responses with unknown usage", () => {
 		const view = chatUsageView([

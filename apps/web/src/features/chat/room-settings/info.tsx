@@ -129,6 +129,15 @@ function RoomUsage({ roomId }: { roomId: string }) {
 					label={t("info.cachedInput")}
 					value={usage.totals.cachedInputTokens}
 				/>
+				{/*
+				 * Writes stand beside reads. A write costs more than plain input, so a conversation that
+				 * writes every turn and reads nothing pays more than one with no cache; with reads alone
+				 * that state looked like an idle cache.
+				 */}
+				<UsageTotal
+					label={t("info.cacheWrite")}
+					value={usage.totals.cacheWriteInputTokens}
+				/>
 				<UsageTotal
 					label={t("info.output")}
 					value={usage.totals.outputTokens}
@@ -162,12 +171,22 @@ function RoomUsage({ roomId }: { roomId: string }) {
 							 * cell cannot be told apart from zero.
 							 */}
 							{row.inputTokens === undefined &&
-							row.outputTokens === undefined ? (
+							row.outputTokens === undefined &&
+							row.cachedInputTokens === undefined &&
+							row.cacheWriteInputTokens === undefined ? (
 								t("info.usageNotReported")
 							) : (
 								<span className="text-foreground">
 									{formatUsageAxis(t("info.input"), row.inputTokens)}
 									{formatUsageAxis(` · ${t("info.output")}`, row.outputTokens)}
+									{formatUsageAxis(
+										` · ${t("info.cachedInput")}`,
+										row.cachedInputTokens,
+									)}
+									{formatUsageAxis(
+										` · ${t("info.cacheWrite")}`,
+										row.cacheWriteInputTokens,
+									)}
 								</span>
 							)}
 						</span>
