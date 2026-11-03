@@ -412,7 +412,9 @@ function GenerationFields({
 								label={entry.label}
 								selected={entry.provider === options.providerValue}
 								disabled={entry.disabled}
-								onSelect={() => changeTarget(entry.defaultTarget)}
+								onSelect={() => {
+									if (entry.defaultTarget) changeTarget(entry.defaultTarget);
+								}}
 							/>
 						))}
 					</Select>

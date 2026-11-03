@@ -173,7 +173,46 @@ describe("two columns — provider first, then model", () => {
 			"rowcat",
 			"anthropic-byo",
 			"gemini-byo",
+			"openai-compatible-byo",
 		]);
+	});
+
+	/**
+	 * The user-named server has no catalog row until its connection names models, so the list adds
+	 * it by name. Without that, Generation Defaults never mentions it and nobody learns it exists.
+	 */
+	it("names the user-named server before it is connected, and it cannot be picked", () => {
+		const server = providerEntry(build({}), "openai-compatible-byo");
+		expect(server?.disabled).toBe(true);
+		expect(server?.defaultTarget).toBeNull();
+		expect(server?.label).toContain("OpenAI-compatible");
+	});
+
+	it("once connected, the user-named server is listed once, from its own rows", () => {
+		const own = {
+			id: "openai-compatible-byo:llama3.1:8b",
+			provider: "openai-compatible-byo",
+			providerLabel: "OpenAI-compatible",
+			vendorLabel: "localhost:11434",
+			label: "llama3.1:8b",
+			model: "llama3.1:8b",
+			requiresConnection: true,
+			reasoning: null,
+			promptPack: null,
+		} satisfies GenerationModel;
+		const options = build({
+			models: [...CATALOG, own],
+			connected: ["openai-compatible-byo"],
+		});
+		const servers = options.providers.filter(
+			(it) => it.provider === "openai-compatible-byo",
+		);
+		expect(servers).toHaveLength(1);
+		expect(servers[0]?.disabled).toBe(false);
+		expect(servers[0]?.defaultTarget).toEqual({
+			provider: "openai-compatible-byo",
+			model: "llama3.1:8b",
+		});
 	});
 
 	it("the first item is always inheritance", () => {

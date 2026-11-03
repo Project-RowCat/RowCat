@@ -9,6 +9,7 @@ import {
 	generationTargetKey,
 	readGenerationTarget,
 } from "./generation-preference.ts";
+import { OPENAI_COMPATIBLE_PROVIDER } from "./openai-compatible.ts";
 
 /**
  * The model selector's list, with rules that can be checked without rendering.
@@ -70,8 +71,12 @@ export interface ProviderOptionEntry {
 	 * A provider alone cannot be stored, so choosing one also picks a model: the provider's first
 	 * usable model, or its first model if none is usable. Either way it stays inside the provider the
 	 * user chose, so there is no silent cross-provider fallback.
+	 *
+	 * `null` only for a provider listed with no model at all (`openai-compatible-byo` before it is
+	 * connected). That entry is always disabled; the null says there is nothing to choose, and a
+	 * screen must not read it as "inherit".
 	 */
-	defaultTarget: GenerationTarget;
+	defaultTarget: GenerationTarget | null;
 }
 
 /**
@@ -183,7 +188,9 @@ export interface ModelOptionLabels {
  *
  * Five rules are intertwined:
  * 1. The provider selector holds every provider with at least one catalog entry, in catalog
- *    order.
+ *    order — plus `openai-compatible-byo`, last, even with none. Its rows come from the
+ *    connection itself, so before it is connected it has no entry to list, and a provider the
+ *    selector never names is one nobody learns they can connect.
  * 2. A provider with no usable model is shown but cannot be picked. Without seeing what a
  *    connection would unlock, the user would have to dig through settings.
  * 3. A stored value's provider and model are always selectable. Otherwise `Select` finds no
@@ -323,6 +330,18 @@ export function buildModelOptions(input: ModelOptionsInput): ModelOptions {
 			},
 		];
 	});
+	/**
+	 * Listed like the other BYO providers but with nothing behind it until the connection names its
+	 * models. Disabled because there is no target to apply; the suffix says why (connect first, or
+	 * this account cannot use personal keys).
+	 */
+	if (!buckets.some((bucket) => bucket.provider === OPENAI_COMPATIBLE_PROVIDER))
+		providers.push({
+			provider: OPENAI_COMPATIBLE_PROVIDER,
+			label: `${input.providerLabel(OPENAI_COMPATIBLE_PROVIDER)}${providerSuffix(OPENAI_COMPATIBLE_PROVIDER)}`,
+			disabled: true,
+			defaultTarget: null,
+		});
 
 	const activeBucket = selected
 		? buckets.find((bucket) => bucket.provider === selected.provider)

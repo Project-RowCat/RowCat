@@ -250,7 +250,9 @@ function RuntimeGenerationSettings({ storyId }: { storyId: string }) {
 								 * Picking a provider also picks that provider's target. Which model that is comes from the
 								 * shared module (`defaultTarget`).
 								 */
-								onSelect={() => applyTarget(entry.defaultTarget)}
+								onSelect={() => {
+									if (entry.defaultTarget) applyTarget(entry.defaultTarget);
+								}}
 							/>
 						))}
 					</Select>

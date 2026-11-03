@@ -230,7 +230,9 @@ export function RoomSettingsGeneration({ roomId }: { roomId: string }) {
 								selected={entry.provider === options.providerValue}
 								disabled={entry.disabled}
 								/** Picking a provider also picks one of its targets; the shared module decides which (`defaultTarget`), so "usable first" is not buried where it cannot be checked without rendering. */
-								onSelect={() => applyTarget(entry.defaultTarget)}
+								onSelect={() => {
+									if (entry.defaultTarget) applyTarget(entry.defaultTarget);
+								}}
 							/>
 						))}
 					</Select>

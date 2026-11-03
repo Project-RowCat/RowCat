@@ -283,7 +283,9 @@ export function GenerationDefaultsSection() {
 								selected={entry.provider === options.providerValue}
 								disabled={entry.disabled}
 								/** The shared module decides which model it is (`defaultTarget`). */
-								onSelect={() => applyTarget(entry.defaultTarget)}
+								onSelect={() => {
+									if (entry.defaultTarget) applyTarget(entry.defaultTarget);
+								}}
 							/>
 						))}
 					</Select>
@@ -464,7 +466,9 @@ function UtilityModelField({
 							label={entry.label}
 							selected={entry.provider === options.providerValue}
 							disabled={entry.disabled}
-							onSelect={() => choose(entry.defaultTarget)}
+							onSelect={() => {
+								if (entry.defaultTarget) choose(entry.defaultTarget);
+							}}
 						/>
 					))}
 				</Select>

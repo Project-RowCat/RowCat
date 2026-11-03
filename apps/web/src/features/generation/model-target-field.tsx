@@ -196,7 +196,11 @@ export function ModelTargetField({
 			(candidate) => candidate.provider === provider,
 		);
 		/** For a provider not recognized, leave the value unchanged; do not clear the override. */
-		if (entry) onChange(entry.defaultTarget);
+		/**
+		 * A null target is a provider with nothing to choose yet (always disabled); it is never
+		 * "inherit", which is its own entry above.
+		 */
+		if (entry?.defaultTarget) onChange(entry.defaultTarget);
 	};
 
 	return (
