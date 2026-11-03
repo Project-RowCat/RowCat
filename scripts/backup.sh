@@ -3,6 +3,9 @@
 #
 #   scripts/backup.sh [directory]      writes <directory>/rowcat-<UTC timestamp>.dump (default: ./backups)
 #
+# A run that finds that name taken (two runs in the same second, a clock set back) takes
+# rowcat-<UTC timestamp>-2.dump, -3, … instead: a backup never replaces another one.
+#
 # The database is the whole deployment: accounts, sessions, stories, comments, the encrypted sync
 # records, first-run state, and the media bytes themselves (avatars, covers, scene images, runtime
 # assets and audio live in Postgres — the only storage adapter is lib/media/postgres-store.ts). Redis
@@ -28,8 +31,11 @@ dir="${1:-backups}"
 # A dump is the deployment's private data in one file: owner-only from its first byte.
 umask 077
 mkdir -p "$dir"
-file="$dir/rowcat-$(date -u +%Y%m%dT%H%M%SZ).dump"
-partial="$file.partial"
+stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+# The working file belongs to this run alone. Named from the timestamp, two runs in the same second
+# wrote into one file and each one's cleanup deleted the other's dump. mktemp creates it 0600 and
+# never reuses a name; the leading dot keeps it out of `rowcat-*.dump` (the cron cleanup's pattern).
+partial="$(mktemp "$dir/.rowcat-backup.XXXXXX")"
 trap 'rm -f "$partial"' EXIT
 
 # The role and database names come from the db container's own environment, so this needs no copy of
@@ -45,7 +51,29 @@ if [ "$entries" -eq 0 ]; then
 	echo "backup: the dump lists no table data — not keeping it" >&2
 	exit 1
 fi
-mv "$partial" "$file"
+
+# The final name is claimed with a hard link, which fails when the name exists: taking it and filling
+# it are one step, so no run replaces another's dump and no reader ever sees a half-written one under
+# a final name. (`mv` would overwrite, and `mv -n` checks then renames — two steps on most systems.)
+file=""
+for n in "" $(seq 2 99); do
+	candidate="$dir/rowcat-$stamp${n:+-$n}.dump"
+	if ln "$partial" "$candidate" 2>/dev/null; then
+		file="$candidate"
+		break
+	fi
+	if [ ! -e "$candidate" ] && [ ! -L "$candidate" ]; then
+		# Not taken, yet the link failed: a filesystem without hard links, or no permission. Guessing
+		# another way to finalize would bring back the overwrite this loop exists to prevent.
+		echo "backup: cannot create $candidate (does $dir support hard links?)" >&2
+		exit 1
+	fi
+done
+if [ -z "$file" ]; then
+	echo "backup: rowcat-$stamp.dump and its 98 alternatives are all taken — not overwriting any" >&2
+	exit 1
+fi
+rm -f "$partial"
 trap - EXIT
 
 echo "backup: $file ($(wc -c <"$file" | tr -d ' ') bytes, $entries tables)"

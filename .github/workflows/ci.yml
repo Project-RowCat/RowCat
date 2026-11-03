@@ -87,6 +87,9 @@ jobs:
       # · native fingerprint (mobile:runtime:check).
       - run: pnpm check
 
+      # The operator scripts' own logic, with a fake compose — no Docker (scripts/backup.test.sh).
+      - run: pnpm test:scripts
+
       - run: pnpm typecheck
 
       # ROWCAT_REQUIRE_TEST_SERVICES (below) would fail the suite on either miss too; asking first gives
