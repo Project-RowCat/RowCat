@@ -90,6 +90,7 @@ export function useUtilityGeneration(
 		});
 		const execution = resolveGenerationExecution({
 			target: resolveUtilityTarget(
+				deps.kind,
 				effective.target,
 				(await deps.preferences?.getUtility(deps.kind)) ?? null,
 			),

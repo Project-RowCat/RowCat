@@ -1,10 +1,16 @@
+import {
+	DEFAULT_MANAGED_MODEL,
+	isRowCatManagedModel,
+} from "@rowcat/contracts/chat";
 import { describe, expect, it } from "vitest";
 import {
+	MANAGED_UTILITY_MODELS,
 	type MaintenanceOutcome,
 	type MemoryMaintenancePort,
 	MemoryMaintenanceScheduler,
 	resolveUtilityTarget,
 	runMemoryMaintenance,
+	UTILITY_GENERATION_KINDS,
 } from "./maintenance-runner.ts";
 import type { ChatMemory } from "./memory.ts";
 import {
@@ -161,13 +167,26 @@ describe("utility target", () => {
 		model: "claude-haiku-4-5",
 	} as const;
 
-	it("managed goes to the product default model", () => {
-		expect(
-			resolveUtilityTarget(
-				{ provider: "rowcat", model: "claude-sonnet-5" },
-				null,
-			),
-		).toEqual({ provider: "rowcat", model: expect.any(String) });
+	/**
+	 * Pinned by value: a summary on the default model is what this table exists to stop, and a
+	 * suggestion on the flash tier would change the voice of a line the person sends as their own.
+	 */
+	it("managed goes to that kind's managed model, never the room's", () => {
+		const room = { provider: "rowcat", model: "claude-opus-5-5" } as const;
+		expect(resolveUtilityTarget("summary", room, null)).toEqual({
+			provider: "rowcat",
+			model: "deepseek-v4.1-flash",
+		});
+		expect(resolveUtilityTarget("suggestion", room, null)).toEqual({
+			provider: "rowcat",
+			model: DEFAULT_MANAGED_MODEL,
+		});
+	});
+
+	/** Every managed utility model is a model the server's allowlist accepts. */
+	it("each kind's managed model is in the managed vocabulary", () => {
+		for (const kind of UTILITY_GENERATION_KINDS)
+			expect(isRowCatManagedModel(MANAGED_UTILITY_MODELS[kind])).toBe(true);
 	});
 
 	/**
@@ -177,6 +196,7 @@ describe("utility target", () => {
 	it("a managed room ignores the device's choice", () => {
 		expect(
 			resolveUtilityTarget(
+				"summary",
 				{ provider: "rowcat", model: "claude-sonnet-5" },
 				haiku,
 			).provider,
@@ -192,9 +212,9 @@ describe("utility target", () => {
 			{ provider: "anthropic-byo", model: "claude-x" } as const,
 			{ provider: "gemini-byo", model: "gemini-x" } as const,
 		]) {
-			expect(resolveUtilityTarget(target, null)).toEqual(target);
+			expect(resolveUtilityTarget("summary", target, null)).toEqual(target);
 			expect(
-				resolveUtilityTarget(target, {
+				resolveUtilityTarget("suggestion", target, {
 					provider: "rowcat",
 					model: "claude-sonnet-5",
 				}),
@@ -206,12 +226,14 @@ describe("utility target", () => {
 	it("a BYO room uses the device's choice", () => {
 		expect(
 			resolveUtilityTarget(
+				"summary",
 				{ provider: "anthropic-byo", model: "claude-opus-5-5" },
 				haiku,
 			),
 		).toEqual(haiku);
 		expect(
 			resolveUtilityTarget(
+				"summary",
 				{ provider: "gemini-byo", model: "gemini-x" },
 				haiku,
 			),

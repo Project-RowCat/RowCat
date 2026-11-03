@@ -159,7 +159,7 @@
 ## 10. 모델과 비용
 
 ```text
-관리형   DEFAULT_MANAGED_MODEL   제품이 정한 기본 모델
+관리형   MANAGED_UTILITY_MODELS.suggestion   제품이 정한 기본 모델(DEFAULT_MANAGED_MODEL)
 BYO      이 기기가 고른 추천 모델, 없으면 그 방이 쓰던 모델
 ```
 

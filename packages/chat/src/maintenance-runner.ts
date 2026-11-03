@@ -1,4 +1,7 @@
-import type { ChatGenerationRequest } from "@rowcat/contracts/chat";
+import type {
+	ChatGenerationRequest,
+	RowCatManagedModel,
+} from "@rowcat/contracts/chat";
 import { DEFAULT_MANAGED_MODEL } from "@rowcat/contracts/chat";
 import type { GenerationTarget } from "./generation-preference.ts";
 import {
@@ -35,6 +38,27 @@ export const UTILITY_GENERATION_KINDS = ["summary", "suggestion"] as const;
 export type UtilityGenerationKind = (typeof UTILITY_GENERATION_KINDS)[number];
 
 /**
+ * The managed model each kind of auxiliary request runs on. A product decision, like
+ * `DEFAULT_MANAGED_MODEL`, and for the same reason not deployment configuration.
+ *
+ * A summary is the costliest auxiliary call: it carries up to a whole history window, runs every
+ * `CHAT_MAINTENANCE_TRIGGER` messages, and shares no prefix with the conversation, so it never reads
+ * the prompt cache. It needs extraction, not voice, so it runs on the flash tier of the default's
+ * own family (the closest JSON behaviour to the model the maintenance prompt was written against).
+ * A suggestion becomes the person's own line once picked, so it keeps the default's voice; its input
+ * is a short window and its output a few lines, so a cheaper model buys little there.
+ *
+ * A `Record`, so a third kind does not compile until it states its model.
+ */
+export const MANAGED_UTILITY_MODELS: Record<
+	UtilityGenerationKind,
+	RowCatManagedModel
+> = {
+	summary: "deepseek-v4.1-flash",
+	suggestion: DEFAULT_MANAGED_MODEL,
+};
+
+/**
  * Maps the turn's generation target, and the model this device chose for this kind of auxiliary
  * request, to the target the request uses.
  *
@@ -43,7 +67,8 @@ export type UtilityGenerationKind = (typeof UTILITY_GENERATION_KINDS)[number];
  *   billed party would change silently. So the choice applies only to rooms that already run on a
  *   personal key, and only a personal-key target is accepted as the choice: a managed room ignores
  *   it, and a managed choice is ignored.
- * - Managed always uses the product default, since a summary needs accuracy, not style.
+ * - Managed uses that kind's managed model (`MANAGED_UTILITY_MODELS`), never the room's: a member
+ *   having picked the most expensive model for roleplay does not mean "summarize with it too".
  * - BYO uses the chosen model when there is one, else the room's own model. Nothing is invented:
  *   which model is cheap on a provider is not a fact known here, and the choice comes from the
  *   catalogue the person picked from. It may sit at a different provider than the room (a Gemini
@@ -55,11 +80,12 @@ export type UtilityGenerationKind = (typeof UTILITY_GENERATION_KINDS)[number];
  *   chose to avoid.
  */
 export function resolveUtilityTarget(
+	kind: UtilityGenerationKind,
 	target: GenerationTarget,
 	chosen: GenerationTarget | null,
 ): GenerationTarget {
 	if (target.provider === "rowcat")
-		return { provider: "rowcat", model: DEFAULT_MANAGED_MODEL };
+		return { provider: "rowcat", model: MANAGED_UTILITY_MODELS[kind] };
 	if (chosen && chosen.provider !== "rowcat") return chosen;
 	return target;
 }

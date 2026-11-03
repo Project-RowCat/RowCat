@@ -1215,8 +1215,9 @@ screen     features/chat/suggestion/                  the panel above the compos
   both rate-limit windows — `### Managed generation access` under `## Settings and preferences`) and counts
   against them like one.
 - **The model is the utility target** (`resolveUtilityTarget`, the same function maintenance uses) —
-  managed is the product default model, BYO is **the model this device chose for suggestions, else the model
-  that room already uses**. The choice is a device setting per kind (`GenerationPreferenceStore.getUtility`,
+  managed is that kind's managed model (`MANAGED_UTILITY_MODELS` — a summary runs on the default's flash tier,
+  because it carries a whole history window and never reads the prompt cache; a suggestion keeps the default's
+  voice), BYO is **the model this device chose for suggestions, else the model that room already uses**. The choice is a device setting per kind (`GenerationPreferenceStore.getUtility`,
   `summary` and `suggestion` separately, `/settings/ai` in both apps), personal-key models only, and a managed
   room ignores it. **We still invent nothing** — which model is cheap at a provider is not a fact we know, so
   the person picks it from the catalogue. **A choice that cannot run is not substituted**: execution resolution
