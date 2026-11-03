@@ -1,4 +1,5 @@
 import { AUTH_FAILURE_MESSAGE, type AuthFailure } from "./auth-error.ts";
+import { translator } from "./i18n/instance.ts";
 
 /**
  * Social sign-in: which providers this app opens, and what their failure says.
@@ -69,15 +70,15 @@ export interface IdentityFailure {
  */
 const SOCIAL_MESSAGE: Partial<Record<AuthFailure, (label: string) => string>> =
 	{
-		provider_unavailable: (label) =>
-			`${label} sign-in isn't available right now.`,
+		provider_unavailable: (provider) =>
+			translator("signIn")("social.providerUnavailable", { provider }),
 		/**
 		 * Does not say only "try again". Two cases share this cell: ones a retry resolves (cancelled or
 		 * transient failures) and ones it never does (the identity is not linked to an existing account).
 		 * The sentence therefore also names the path that is always true in this app, email sign-in.
 		 */
-		social_without_session: (label) =>
-			`${label} sign-in didn't complete. Try again, or if you've signed up with this email before, sign in with your email.`,
+		social_without_session: (provider) =>
+			translator("signIn")("social.incomplete", { provider }),
 	};
 
 /**
@@ -108,6 +109,6 @@ export const socialSignInLabel = (
 	provider: SocialProvider,
 	pending: boolean,
 ): string =>
-	pending
-		? `Going to ${SOCIAL_PROVIDER_LABEL[provider]}…`
-		: `Continue with ${SOCIAL_PROVIDER_LABEL[provider]}`;
+	translator("signIn")(pending ? "social.redirecting" : "social.continue", {
+		provider: SOCIAL_PROVIDER_LABEL[provider],
+	});

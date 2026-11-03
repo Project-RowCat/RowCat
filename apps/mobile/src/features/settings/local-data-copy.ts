@@ -25,62 +25,11 @@
  * someone who did not know that reads the erase as having **failed**.
  */
 
-export const LOCAL_DATA_SECTION_TITLE = "This device's data";
-export const LOCAL_DATA_SECTION_DESCRIPTION =
-	"Conversations and drafts in progress are saved on this device.";
-
-export const LOCAL_DATA_ROW_LABEL = "Clear stored data";
-export const LOCAL_DATA_ROW_DESCRIPTION =
-	"Clears the conversations and drafts stored on this device. Your account and other devices' data stay as they are.";
-
-/** Irreversible, so the name says exactly what it does. */
-export const LOCAL_DATA_ACTION_LABEL = "Clear data";
-export const LOCAL_DATA_PENDING_LABEL = "Clearing…";
-export const LOCAL_DATA_CANCEL_LABEL = "Cancel";
-
-export const LOCAL_DATA_CONFIRM_TITLE = "Clear this device's data?";
-export const LOCAL_DATA_CONFIRM_DESCRIPTION =
-	"Only what's stored on this device is cleared, and it can't be undone.";
+import { deferredGroup } from "../../lib/i18n/instance.ts";
 
 /**
- * What is lost: **the things this app actually keeps on this device.**
- *
- * It is written as one list because the list is itself what gets verified
- * (`local-data-copy.test.ts`). The last two must not be dropped:
- *
- * ```text
- * sync key          if lost, sync locks on the next run; without saying so the app reads as broken
- * provider API key  if lost, every conversation on that provider stops, and we cannot give the key back
- * ```
+ * The sentences themselves live in the dictionaries (`settings.localData`, English and Korean); this
+ * table reads them in the current language. `local-data-copy.test.ts` locks the English claims by
+ * value, and a Korean translation must state the same three facts.
  */
-export const LOCAL_DATA_REMOVED =
-	"Conversations and messages, memories, personas, drafts in progress, this device's generation settings, the remembered sync key and the connected AI provider API keys are cleared together.";
-
-/**
- * What remains: **the difference from account deletion is stated first.**
- *
- * The two operations overlap in what they erase, so without this sentence the user would read that
- * they are deciding about their works and account.
- */
-export const LOCAL_DATA_KEPT =
-	"Your account stays. Published stories and comments and other devices' data don't disappear with this. The API keys on your AI provider accounts aren't revoked either.";
-
-/**
- * The way back: **the server's ciphertext is not something this operation knows about.**
- *
- * That is why it does not say "permanently deleted": we cannot keep that promise. In practice,
- * re-entering the key on this device brings the copy back down.
- */
-export const LOCAL_DATA_SYNC_NOTE =
-	"If you use sync across devices, the encrypted copy kept on the server remains. Enter the key on this device again and that copy comes back down.";
-
-/** What happens after erasing: neither logout nor restart. */
-export const LOCAL_DATA_AFTER_NOTE =
-	"After clearing you stay signed in, and this device's data starts over empty.";
-
-/**
- * Failure: **the raw error is not drawn.** The only thing the user can do is try again, and SQLite
- * or Keychain error names do not say that.
- */
-export const LOCAL_DATA_FAILURE_MESSAGE =
-	"Couldn't clear the data. Please try again in a moment.";
+export const LOCAL_DATA_COPY = deferredGroup("settings", "localData");

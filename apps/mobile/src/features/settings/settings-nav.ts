@@ -5,7 +5,7 @@
  * module is pure because this app's tests do not render screens, so a list inside a component could
  * only be checked by hand.
  *
- * Only screens that exist today are listed. Values such as notifications, language, text size,
+ * Only screens that exist today are listed. Values such as notifications, text size,
  * sound, start screen, data export or developer settings are not added in advance: a vocabulary
  * entry makes the screen draw it, even as a disabled row, and users read that as a coming feature.
  *
@@ -13,6 +13,8 @@
  * settings category; listing it here would imply that account settings live under `/settings`,
  * blurring the boundary between the two screens in the navigation row.
  */
+
+import { deferredGroup, translator } from "../../lib/i18n/instance.ts";
 
 /** Settings screens that exist. A category is added only together with its screen, in the same commit. */
 export type MobileSettingsCategory = "general" | "ai" | "persona";
@@ -31,15 +33,33 @@ export interface MobileSettingsNavItem {
 }
 
 export const MOBILE_SETTINGS_NAV: readonly MobileSettingsNavItem[] = [
-	{ category: "general", label: "General", route: "/settings" },
-	{ category: "ai", label: "AI", route: "/settings/ai" },
+	{
+		category: "general",
+		get label() {
+			return categoryLabel("general");
+		},
+		route: "/settings",
+	},
+	{
+		category: "ai",
+		get label() {
+			return categoryLabel("ai");
+		},
+		route: "/settings/ai",
+	},
 	/**
 	 * Personas are an account asset, not a child of any conversation (`persona.ts` in `@rowcat/chat`).
 	 * That is why the library lives here rather than inside conversation settings. The persona picker
 	 * in room settings stays; it decides which copy is pinned to this conversation, not the list
 	 * itself.
 	 */
-	{ category: "persona", label: "Persona", route: "/settings/personas" },
+	{
+		category: "persona",
+		get label() {
+			return categoryLabel("persona");
+		},
+		route: "/settings/personas",
+	},
 ] as const;
 
 /** Every address this navigation model knows. Also the set of values a post-login return can pick. */
@@ -81,33 +101,28 @@ export function settingsLoginRedirect(
  */
 export const MOBILE_SETTINGS_ACCOUNT_LINK = {
 	route: "/account",
-	label: "Manage account",
+	get label() {
+		return translator("settings")("account.label");
+	},
 } as const;
 
-/** Screen title. The header and the navigation row's accessible name use the same word. */
-export const SETTINGS_TITLE = "Settings";
-
-/** Accessible name of the category row, telling assistive technology what the row selects. */
-export const SETTINGS_NAV_LABEL = "Settings categories";
-
-/** One line drawn at the top of each category screen. States the same fact as the web's screen. */
+/**
+ * One line drawn at the top of each category screen. States the same fact as the web's screen.
+ *
+ * ⚠️ **`general` differs from the web's value, because of sections that exist only in this app.**
+ * `Push notifications` is this device's delivery setting, and the language is chosen there too (the
+ * web's picker is in its header). Keeping the sentence identical to the web would drop sections
+ * from the description.
+ */
 export const SETTINGS_CATEGORY_DESCRIPTION: Record<
 	MobileSettingsCategory,
 	string
-> = {
-	/**
-	 * ⚠️ **Differs from the web's value, because of a section that exists only in this app.**
-	 *
-	 * `Push notifications` is this device's delivery setting, so it is neither display nor stored data. The web has
-	 * no such section (we did not build web push). Keeping the sentence identical to the web would
-	 * drop one of this screen's three sections from the description.
-	 */
-	general:
-		"Manage how this app looks and this device's notifications and stored data.",
-	ai: "Generation settings applied to new conversations by default. Applies only to this device.",
-	persona:
-		"Save the roles you play in conversations and pick them again across conversations.",
-};
+> = deferredGroup("settings", "categoryDescription");
+
+/** Labels are read when drawn, so a language change reaches the list without rebuilding it. */
+function categoryLabel(category: MobileSettingsCategory): string {
+	return translator("settings")(`category.${category}`);
+}
 
 /**
  * Path → current category. **The only route by which the navigation row learns where it is.**

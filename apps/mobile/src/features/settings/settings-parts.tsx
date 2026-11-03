@@ -1,6 +1,7 @@
 import { space } from "@rowcat/design";
 import { Separator, Text } from "@rowcat/ui-native";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 import {
 	type MobileSettingsCategory,
@@ -131,6 +132,8 @@ export function SettingsCategoryBody({
 	category: MobileSettingsCategory;
 	children: ReactNode;
 }) {
+	/** Subscribes the line to the language; the description table is read as it draws. */
+	useTranslation("settings");
 	return (
 		<View style={parts.body}>
 			<View style={parts.head}>

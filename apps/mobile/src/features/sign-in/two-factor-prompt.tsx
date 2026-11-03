@@ -6,6 +6,7 @@ import {
 } from "@rowcat/domain";
 import { Button, Input, LinkButton, Notice, Text } from "@rowcat/ui-native";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 import { authFailureMessage } from "../../lib/auth-social.ts";
 import { useMobileIdentity } from "../../lib/identity.tsx";
@@ -30,6 +31,7 @@ import { useMobileIdentity } from "../../lib/identity.tsx";
  */
 export function TwoFactorPrompt() {
 	const identity = useMobileIdentity();
+	const { t } = useTranslation(["signIn", "common"]);
 	const [method, setMethod] = useState<TwoFactorCodeMethod>("authenticator");
 	const [code, setCode] = useState("");
 	const busy = identity.pending !== null;
@@ -47,12 +49,12 @@ export function TwoFactorPrompt() {
 		<View style={prompt.root}>
 			<View style={prompt.head}>
 				<Text accessibilityRole="header" variant="title">
-					Two-factor authentication
+					{t("twoFactor.title")}
 				</Text>
 				<Text variant="body" tone="muted-foreground">
 					{method === "authenticator"
-						? "Enter the six-digit code shown in your authenticator app."
-						: "Enter one of the backup codes you saved. A used code can't be used again."}
+						? t("twoFactor.authenticatorPrompt")
+						: t("twoFactor.backupPrompt")}
 				</Text>
 			</View>
 
@@ -60,7 +62,9 @@ export function TwoFactorPrompt() {
 				/** Switching methods remounts the field, so the keyboard type and autofill do not mix. */
 				key={method}
 				label={
-					method === "authenticator" ? "Authentication code" : "Backup code"
+					method === "authenticator"
+						? t("twoFactor.authenticatorLabel")
+						: t("twoFactor.backupLabel")
 				}
 				value={code}
 				onChangeText={setCode}
@@ -84,7 +88,7 @@ export function TwoFactorPrompt() {
 			) : null}
 
 			<Button
-				label="OK"
+				label={t("common:actions.ok")}
 				fullWidth
 				busy={identity.pending === "two-factor"}
 				disabled={busy || !ready}
@@ -95,25 +99,25 @@ export function TwoFactorPrompt() {
 				<LinkButton
 					label={
 						method === "authenticator"
-							? "Sign in with a backup code"
-							: "Sign in with an authenticator app code"
+							? t("twoFactor.useBackupLabel")
+							: t("twoFactor.useAuthenticator")
 					}
 					onPress={switchMethod}
 					disabled={busy}
 				>
 					<Text variant="label" tone="muted-foreground">
 						{method === "authenticator"
-							? "Can't use your authenticator app? Sign in with a backup code"
-							: "Sign in with an authenticator app code"}
+							? t("twoFactor.useBackup")
+							: t("twoFactor.useAuthenticator")}
 					</Text>
 				</LinkButton>
 				<LinkButton
-					label="Start sign-in over"
+					label={t("twoFactor.restart")}
 					onPress={identity.cancelTwoFactor}
 					disabled={busy}
 				>
 					<Text variant="label" tone="muted-foreground">
-						Start sign-in over
+						{t("twoFactor.restart")}
 					</Text>
 				</LinkButton>
 			</View>

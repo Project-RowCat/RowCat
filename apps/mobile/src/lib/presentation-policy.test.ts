@@ -689,24 +689,34 @@ describe("a generic sheet isn't expressible in feature code", () => {
 	 * The consumer count dropped to one. The discovery screen's filter choice used to use this
 	 * capability, but that toolbar moved to the web's IA (two menu triggers plus a token for the
 	 * active filter), where choosing an axis is an anchor menu, and the sheet did nothing there. The
-	 * remaining consumer is the header's brightness trigger, which fits the capability's definition
-	 * exactly (three values, closes on pick, no place to keep it open).
+	 * remaining consumers are the guest header's brightness and language triggers, which fit the
+	 * capability's definition exactly (three values, closes on pick, no place to keep it open).
 	 */
-	it("short single choices call ChoiceSheet", () => {
-		const shortcut = fileAt("features/settings/appearance-shortcut.tsx");
+	it.each([
+		"features/settings/appearance-shortcut.tsx",
+		"features/settings/language-shortcut.tsx",
+	])("short single choices call ChoiceSheet: %s", (path) => {
+		const shortcut = fileAt(path);
 		expect(shortcut).toContain("<ChoiceSheet");
 		expect(shortcut).toMatch(
 			/import\s*\{[^}]*\bChoiceSheet\b[^}]*\}\s*from\s*["']@rowcat\/ui-native["']/,
 		);
 	});
 
-	/** There is one consumer today; when that grows, re-read the containers table first. */
-	it("one place calls ChoiceSheet", () => {
+	/**
+	 * Two consumers today, the guest header's two device choices; when that grows, re-read the
+	 * containers table first. The language joined by that reading: three values, closes on pick, the
+	 * same cell as brightness.
+	 */
+	it("only the guest header's device choices call ChoiceSheet", () => {
 		/** The lab renders every container, so it is out of scope for this question (`productSurface`). */
 		const callers = productSurface
 			.filter((file) => file.text.includes("<ChoiceSheet"))
 			.map((file) => file.path);
-		expect(callers).toEqual(["features/settings/appearance-shortcut.tsx"]);
+		expect(callers).toEqual([
+			"features/settings/appearance-shortcut.tsx",
+			"features/settings/language-shortcut.tsx",
+		]);
 
 		/** The exempted files exist; without them the filter above does nothing. */
 		expect(product.some((file) => file.path.startsWith(VISUAL_LAB))).toBe(true);

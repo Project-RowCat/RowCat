@@ -5,13 +5,14 @@ import {
 	targetSlop,
 } from "@rowcat/ui-native";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Pressable, StyleSheet } from "react-native";
 import { useDeviceAppearance } from "../../lib/appearance/provider.tsx";
 import { useMobileIdentity } from "../../lib/identity.tsx";
 import {
+	APPEARANCE_COPY,
 	APPEARANCE_LABEL,
 	APPEARANCE_ORDER,
-	APPEARANCE_SHORTCUT_LABEL,
 } from "./appearance-copy.ts";
 
 /**
@@ -42,13 +43,14 @@ export function AppearanceShortcut() {
 function AppearancePicker() {
 	const { preference, setPreference } = useDeviceAppearance();
 	const [open, setOpen] = useState(false);
+	useTranslation("settings");
 
 	return (
 		<>
 			<Pressable
 				accessibilityRole="button"
 				/** The label includes the current value; the icon alone does not show what is selected. */
-				accessibilityLabel={`${APPEARANCE_SHORTCUT_LABEL}: ${APPEARANCE_LABEL[preference]}`}
+				accessibilityLabel={`${APPEARANCE_COPY.fieldLabel}: ${APPEARANCE_LABEL[preference]}`}
 				onPress={() => setOpen(true)}
 				hitSlop={targetSlop(controlHeight.lg)}
 				style={shortcut.root}
@@ -56,7 +58,7 @@ function AppearancePicker() {
 				<Icon name="settings" size="lg" tone="muted-foreground" />
 			</Pressable>
 			<ChoiceSheet
-				title={APPEARANCE_SHORTCUT_LABEL}
+				title={APPEARANCE_COPY.fieldLabel}
 				open={open}
 				value={preference}
 				options={APPEARANCE_ORDER.map((value) => ({

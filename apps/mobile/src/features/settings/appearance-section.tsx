@@ -1,16 +1,16 @@
 import { Select, SelectOption } from "@rowcat/ui-native";
+import { useTranslation } from "react-i18next";
 import { useDeviceAppearance } from "../../lib/appearance/provider.tsx";
 import {
-	APPEARANCE_FIELD_DESCRIPTION,
-	APPEARANCE_FIELD_LABEL,
+	APPEARANCE_COPY,
 	APPEARANCE_LABEL,
 	APPEARANCE_ORDER,
-	APPEARANCE_SECTION_TITLE,
 } from "./appearance-copy.ts";
+import { LanguageField } from "./language-field.tsx";
 import { SettingsField, SettingsSection } from "./settings-parts.tsx";
 
 /**
- * Display: brightness only.
+ * Display: brightness and language — the two ways this device draws the app.
  *
  * **This section does not own the value.** The source of truth is `lib/appearance/` (it writes to
  * device storage and hands the value to `ThemeProvider`). What this section does is call the same
@@ -46,15 +46,17 @@ import { SettingsField, SettingsSection } from "./settings-parts.tsx";
  */
 export function AppearanceSection() {
 	const { preference, setPreference } = useDeviceAppearance();
+	/** Subscribes the section to the language; the copy tables are read as it draws. */
+	useTranslation("settings");
 
 	return (
-		<SettingsSection title={APPEARANCE_SECTION_TITLE} first>
+		<SettingsSection title={APPEARANCE_COPY.sectionTitle} first>
 			<SettingsField
-				label={APPEARANCE_FIELD_LABEL}
-				description={APPEARANCE_FIELD_DESCRIPTION}
+				label={APPEARANCE_COPY.fieldLabel}
+				description={APPEARANCE_COPY.fieldDescription}
 			>
 				<Select
-					label={APPEARANCE_FIELD_LABEL}
+					label={APPEARANCE_COPY.fieldLabel}
 					value={APPEARANCE_LABEL[preference]}
 				>
 					{APPEARANCE_ORDER.map((value) => (
@@ -67,6 +69,12 @@ export function AppearanceSection() {
 					))}
 				</Select>
 			</SettingsField>
+			{/**
+			 * The language sits in this section because it is the same kind of value: this device's, not
+			 * the account's, so guests have it and sign-in does not change it. The web keeps the two side by
+			 * side in its settings for the same reason.
+			 */}
+			<LanguageField />
 		</SettingsSection>
 	);
 }

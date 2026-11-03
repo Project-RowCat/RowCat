@@ -1,6 +1,7 @@
 import { borderWidth, radiusScale, space } from "@rowcat/design";
 import { controlHeight, Icon, Text, useTheme } from "@rowcat/ui-native";
 import { useRouter } from "expo-router";
+import { useTranslation } from "react-i18next";
 import { Pressable, StyleSheet, View } from "react-native";
 import {
 	MotionIndicatorGroup,
@@ -10,7 +11,6 @@ import {
 	MOBILE_SETTINGS_ACCOUNT_LINK,
 	MOBILE_SETTINGS_NAV,
 	type MobileSettingsCategory,
-	SETTINGS_NAV_LABEL,
 } from "./settings-nav.ts";
 
 /**
@@ -74,6 +74,8 @@ export function SettingsNavigation({
 }) {
 	const router = useRouter();
 	const { colors } = useTheme();
+	/** Subscribes the row to the language: the labels are read from the list as it draws. */
+	const { t } = useTranslation("settings");
 
 	return (
 		/**
@@ -83,7 +85,7 @@ export function SettingsNavigation({
 		<View style={[nav.root, { borderBottomColor: colors.border }]}>
 			<View
 				accessibilityRole="tablist"
-				accessibilityLabel={SETTINGS_NAV_LABEL}
+				accessibilityLabel={t("navLabel")}
 				style={nav.list}
 			>
 				<MotionIndicatorGroup
@@ -161,7 +163,7 @@ export function SettingsNavigation({
 			<Pressable
 				accessibilityRole="link"
 				accessibilityLabel={MOBILE_SETTINGS_ACCOUNT_LINK.label}
-				accessibilityHint="Goes to the account screen"
+				accessibilityHint={t("account.hint")}
 				onPress={() => router.navigate(MOBILE_SETTINGS_ACCOUNT_LINK.route)}
 				style={({ pressed }) => [
 					nav.account,

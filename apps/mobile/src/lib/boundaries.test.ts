@@ -1240,10 +1240,10 @@ describe("the global navigation surface is the drawer alone", () => {
 	/**
 	 * The copy table is `Record<MobileAppSection, string>`, so a new vocabulary value breaks
 	 * compilation first. The value check is still worth it, because the type does not say that the
-	 * table holds the **same set** as the list.
+	 * table holds the **same set** as the list. The words live in the English source dictionary.
 	 */
 	it("the section copy is three words, the same as the web", () => {
-		const copy = fileAt("features/shell/sidebar-copy.ts")?.text ?? "";
+		const copy = fileAt("lib/i18n/messages/en/shell.ts")?.text ?? "";
 		expect(copy).toContain('discover: "Discover"');
 		expect(copy).toContain('chat: "Conversations"');
 		expect(copy).toContain('create: "Create"');

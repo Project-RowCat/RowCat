@@ -7,6 +7,7 @@ import {
 	useTheme,
 } from "@rowcat/ui-native";
 import { usePathname, useRouter } from "expo-router";
+import { useTranslation } from "react-i18next";
 import { Pressable, StyleSheet, View } from "react-native";
 import {
 	type MobileAppSection,
@@ -90,6 +91,7 @@ const DESTINATIONS: {
 ];
 
 export function PrimaryNav() {
+	useTranslation("shell");
 	const pathname = usePathname();
 	const router = useRouter();
 	const { colors } = useTheme();

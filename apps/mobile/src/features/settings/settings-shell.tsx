@@ -10,18 +10,13 @@ import {
 } from "@rowcat/ui-native";
 import { useRouter } from "expo-router";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { useMobileIdentity } from "../../lib/identity.tsx";
 import { AppSidebarTrigger } from "../shell/app-sidebar.tsx";
 import { ShellUtilities } from "../shell/shell-utilities.tsx";
 import {
-	SETTINGS_GUEST,
-	SETTINGS_RETRY_LABEL,
-	SETTINGS_UNAVAILABLE,
-} from "./settings-copy.ts";
-import {
 	type MobileSettingsCategory,
-	SETTINGS_TITLE,
 	settingsLoginRedirect,
 } from "./settings-nav.ts";
 import { SettingsNavigation } from "./settings-navigation.tsx";
@@ -79,6 +74,7 @@ export function SettingsShell({
 }) {
 	const router = useRouter();
 	const identity = useMobileIdentity();
+	const { t } = useTranslation(["settings", "common"]);
 	const state = resolveSettingsScreenState(identity.session.phase);
 
 	return (
@@ -97,7 +93,7 @@ export function SettingsShell({
 			 */}
 			<AppBar
 				navigation={<AppSidebarTrigger />}
-				title={SETTINGS_TITLE}
+				title={t("title")}
 				onBack={() => router.back()}
 				actions={<ShellUtilities />}
 			/>
@@ -118,9 +114,9 @@ export function SettingsShell({
 						<View style={screen.center}>
 							<EmptyState
 								icon="settings"
-								title={SETTINGS_GUEST.title}
-								description={SETTINGS_GUEST.description}
-								actionLabel={SETTINGS_GUEST.action}
+								title={t("guest.title")}
+								description={t("guest.description")}
+								actionLabel={t("common:actions.signIn")}
 								onAction={() => {
 									identity.clearFailure();
 									router.push({
@@ -142,8 +138,8 @@ export function SettingsShell({
 						/** **This is not a sign-out.** Asking again is all that can be done here. */
 						<View style={screen.center}>
 							<Notice
-								message={SETTINGS_UNAVAILABLE}
-								actionLabel={SETTINGS_RETRY_LABEL}
+								message={t("unavailable")}
+								actionLabel={t("common:actions.tryAgain")}
 								onAction={identity.retry}
 							/>
 						</View>

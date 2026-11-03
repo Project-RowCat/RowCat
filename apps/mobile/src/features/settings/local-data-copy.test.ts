@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
-import {
-	LOCAL_DATA_AFTER_NOTE,
-	LOCAL_DATA_CONFIRM_DESCRIPTION,
-	LOCAL_DATA_CONFIRM_TITLE,
-	LOCAL_DATA_FAILURE_MESSAGE,
-	LOCAL_DATA_KEPT,
-	LOCAL_DATA_REMOVED,
-	LOCAL_DATA_SYNC_NOTE,
-} from "./local-data-copy.ts";
+import { LOCAL_DATA_COPY } from "./local-data-copy.ts";
+
+const {
+	afterNote: LOCAL_DATA_AFTER_NOTE,
+	confirmDescription: LOCAL_DATA_CONFIRM_DESCRIPTION,
+	confirmTitle: LOCAL_DATA_CONFIRM_TITLE,
+	failure: LOCAL_DATA_FAILURE_MESSAGE,
+	kept: LOCAL_DATA_KEPT,
+	removed: LOCAL_DATA_REMOVED,
+	syncNote: LOCAL_DATA_SYNC_NOTE,
+} = LOCAL_DATA_COPY;
 
 /**
  * Locks the **facts** the reset confirmation states: the claims, not each sentence.

@@ -3,6 +3,7 @@ import { StyleSheet, View } from "react-native";
 import { AccountShortcut } from "../account/account-shortcut.tsx";
 import { NotificationShortcut } from "../notifications/notification-shortcut.tsx";
 import { AppearanceShortcut } from "../settings/appearance-shortcut.tsx";
+import { LanguageShortcut } from "../settings/language-shortcut.tsx";
 
 /**
  * The global utility group on the right of the header — **notification bell + account menu, in this
@@ -30,12 +31,13 @@ import { AppearanceShortcut } from "../settings/appearance-shortcut.tsx";
  * **Nothing is lost.** The path to settings is in the account menu. What grew is one tap; what
  * shrank is **the two targets that stood on every screen all the time.**
  *
- * ## A third appears for guests only
+ * ## Two more appear for guests only
  *
- * `AppearanceShortcut` has the **opposite** condition to the two above (only when not a member).
- * The settings screen is entered only by signed-in people, so without this trigger a guest could
- * not change the brightness inside the app at all. Web left a theme switch in the guest header for
- * the same reason. So this group draws at most **two icons** at once.
+ * `LanguageShortcut` and `AppearanceShortcut` have the **opposite** condition to the two above (only
+ * when not a member). The settings screen is entered only by signed-in people, so without these a
+ * guest could not change the language or the brightness inside the app at all. The web's guest
+ * header carries a language and a theme switch for the same reason. So this group draws at most
+ * **two icons** at once.
  *
  * ## Member checks belong to each shortcut
  *
@@ -64,6 +66,7 @@ export function ShellUtilities() {
 			 * Stands only while not a member — the exact opposite condition of the two above. So the number of
 			 * icons drawn on this row at once does not grow.
 			 */}
+			<LanguageShortcut />
 			<AppearanceShortcut />
 		</View>
 	);

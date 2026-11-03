@@ -25,6 +25,7 @@ import Gavel from "lucide-react-native/icons/gavel";
 import Heart from "lucide-react-native/icons/heart";
 import ImageOff from "lucide-react-native/icons/image-off";
 import Info from "lucide-react-native/icons/info";
+import Languages from "lucide-react-native/icons/languages";
 import LibraryBig from "lucide-react-native/icons/library-big";
 import LogIn from "lucide-react-native/icons/log-in";
 import LogOut from "lucide-react-native/icons/log-out";
@@ -124,6 +125,7 @@ export type IconName =
 	| "image"
 	| "info"
 	| "jump-latest"
+	| "language"
 	| "library"
 	| "memory"
 	| "missing"
@@ -304,6 +306,11 @@ const ICON = {
 	image: ImageOff,
 	/** Web: Info in playtest-page.tsx. */
 	info: Info,
+	/**
+	 * The guest header's language picker. Web: Languages in app-shell/language-toggle.tsx, the same
+	 * spot (a guest has no settings screen, so the language is reached from the header).
+	 */
+	language: Languages,
 	/**
 	 * Jump back to the latest message. Web: ArrowDown in message-list.tsx. This is the case where back
 	 * (ChevronLeft) differs. back is movement, so it is a chevron; this is a directional cue to the

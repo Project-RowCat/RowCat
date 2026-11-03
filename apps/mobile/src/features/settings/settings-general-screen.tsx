@@ -11,7 +11,7 @@ import { ThemeCustomizationSection } from "./theme-customization-section.tsx";
  * There are three sections, and their order carries meaning:
  *
  * ```text
- * Display             this device's brightness    device storage     independent of sign-in
+ * Display             brightness and language     device storage     independent of sign-in
  * Theme               the color the account chose  server             follows the account to other devices
  * This device's data  what this device holds       member SQLite      clearing it empties only this device
  * ```
@@ -39,7 +39,8 @@ import { ThemeCustomizationSection } from "./theme-customization-section.tsx";
  *
  * ## Settings are not invented to fill the screen
  *
- * Language, text size, sound, start screen and notification settings are not added as placeholders.
+ * Text size, sound and start screen settings are not added as placeholders. The language arrived
+ * with the screens that are drawn in it (`lib/i18n/`), which is the only way a setting enters here.
  * This screen being short is a state, not a defect. The case for the navigation list rests on
  * structure, not on placeholders.
  */

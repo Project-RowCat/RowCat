@@ -13,6 +13,7 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 import { Wordmark } from "../features/shell/wordmark.tsx";
 import { TwoFactorPrompt } from "../features/sign-in/two-factor-prompt.tsx";
@@ -74,6 +75,7 @@ export default function Login() {
 	);
 
 	const theme = useTheme();
+	const { t } = useTranslation("signIn");
 	/**
 	 * Path for someone who forgot their password: handed to the web (`passwordResetWebUrl` header).
 	 * `null` when reset is closed or the deployment has no web origin, and no link is drawn
@@ -157,14 +159,14 @@ export default function Login() {
 			<View style={login.brand}>
 				<Wordmark size="display" />
 				<Text accessibilityRole="header" variant="heading">
-					{isSignUp ? "sign-up" : "Sign in"}
+					{isSignUp ? t("login.signUpTitle") : t("login.signInTitle")}
 				</Text>
 			</View>
 
 			<View style={login.fields}>
 				{isSignUp ? (
 					<Input
-						label="Nickname"
+						label={t("login.nickname")}
 						value={name}
 						onChangeText={setName}
 						autoCapitalize="none"
@@ -174,7 +176,7 @@ export default function Login() {
 				) : null}
 
 				<Input
-					label="Email"
+					label={t("login.email")}
 					value={email}
 					onChangeText={setEmail}
 					autoCapitalize="none"
@@ -186,7 +188,7 @@ export default function Login() {
 				/>
 
 				<Input
-					label="Password"
+					label={t("login.password")}
 					value={password}
 					onChangeText={setPassword}
 					secureTextEntry
@@ -208,12 +210,12 @@ export default function Login() {
 				{!isSignUp && resetUrl ? (
 					<View style={login.forgot}>
 						<LinkButton
-							label="Forgot your password?"
+							label={t("login.forgot")}
 							onPress={() => void WebBrowser.openBrowserAsync(resetUrl)}
 							disabled={busy}
 						>
 							<Text variant="label" tone="muted-foreground">
-								Forgot your password?
+								{t("login.forgot")}
 							</Text>
 						</LinkButton>
 					</View>
@@ -221,7 +223,7 @@ export default function Login() {
 
 				{isSignUp ? (
 					<Input
-						label="Confirm password"
+						label={t("login.confirmPassword")}
 						value={confirmPassword}
 						onChangeText={setConfirmPassword}
 						secureTextEntry
@@ -246,7 +248,7 @@ export default function Login() {
 
 			<View style={login.actions}>
 				<Button
-					label={isSignUp ? "Sign up" : "Sign in"}
+					label={isSignUp ? t("login.signUp") : t("login.signIn")}
 					fullWidth
 					onPress={() => void submit()}
 					busy={
@@ -272,7 +274,7 @@ export default function Login() {
 						]}
 					/>
 					<Text variant="caption" tone="muted-foreground">
-						or
+						{t("login.or")}
 					</Text>
 					<View
 						style={[
@@ -324,17 +326,15 @@ export default function Login() {
 				 */}
 				<LinkButton
 					label={
-						isSignUp
-							? "Already have an account?"
-							: "Don't have an account? Sign up"
+						isSignUp ? t("login.haveAccountLabel") : t("login.noAccountLabel")
 					}
 					onPress={switchMode}
 					disabled={busy}
 				>
 					<Text variant="label" tone="muted-foreground">
-						{isSignUp ? "Already have an account? " : "Don't have an account? "}
+						{isSignUp ? t("login.haveAccount") : t("login.noAccount")}
 						<Text variant="label" weight="semibold" style={login.switchLink}>
-							{isSignUp ? "Sign in" : "Sign up"}
+							{isSignUp ? t("login.signIn") : t("login.signUp")}
 						</Text>
 					</Text>
 				</LinkButton>

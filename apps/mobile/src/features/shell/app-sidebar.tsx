@@ -11,6 +11,7 @@ import {
 } from "@rowcat/ui-native";
 import { usePathname, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Pressable, StyleSheet, View } from "react-native";
 import {
 	MotionIndicatorGroup,
@@ -18,15 +19,7 @@ import {
 } from "../../lib/motion/active-indicator.tsx";
 import { runtimeConversationTitle } from "../chat-library/runtime-conversation-copy.ts";
 import { type MobileAppSection, mobileShellRouteFor } from "./shell-route.ts";
-import {
-	SIDEBAR_ALL_CHATS,
-	SIDEBAR_RECENT_EMPTY,
-	SIDEBAR_RECENT_ERROR,
-	SIDEBAR_RECENT_HEADING,
-	SIDEBAR_SECTION_LABEL,
-	SIDEBAR_TITLE,
-	SIDEBAR_TRIGGER_LABEL,
-} from "./sidebar-copy.ts";
+import { SIDEBAR_COPY, SIDEBAR_SECTION_LABEL } from "./sidebar-copy.ts";
 import { useRecentRooms } from "./use-recent-rooms.ts";
 import { Wordmark } from "./wordmark.tsx";
 
@@ -93,6 +86,7 @@ import { Wordmark } from "./wordmark.tsx";
  * alone. The decision belongs to one pure function (`shell-route.ts`).
  */
 export function AppSidebarTrigger() {
+	useTranslation("shell");
 	const pathname = usePathname();
 	const [open, setOpen] = useState(false);
 	const route = useMemo(() => mobileShellRouteFor(pathname), [pathname]);
@@ -100,8 +94,8 @@ export function AppSidebarTrigger() {
 
 	return (
 		<NavigationDrawer
-			title={SIDEBAR_TITLE}
-			triggerLabel={SIDEBAR_TRIGGER_LABEL}
+			title={SIDEBAR_COPY.title}
+			triggerLabel={SIDEBAR_COPY.trigger}
 			open={open}
 			onOpenChange={setOpen}
 		>
@@ -153,12 +147,13 @@ function AppSidebarContent({
  * The target is 44pt: a line of text is shorter, and that shortfall is invisible.
  */
 function SidebarBrand({ onNavigate }: { onNavigate: () => void }) {
+	useTranslation("shell");
 	const router = useRouter();
 	return (
 		<Pressable
 			accessibilityRole="button"
 			accessibilityLabel={APP_NAME}
-			accessibilityHint="Goes to Discover"
+			accessibilityHint={SIDEBAR_COPY.brandHint}
 			onPress={() => {
 				onNavigate();
 				router.navigate("/");
@@ -191,6 +186,7 @@ function SidebarPrimaryNav({
 	section: MobileAppSection | null;
 	onNavigate: () => void;
 }) {
+	useTranslation("shell");
 	const router = useRouter();
 	const { colors } = useTheme();
 	return (
@@ -243,6 +239,7 @@ function RecentChatSection({
 	activeRuntimeStoryId: string | null;
 	onNavigate: () => void;
 }) {
+	useTranslation("shell");
 	const router = useRouter();
 	const { colors } = useTheme();
 	const { entries, activeEntryId, state } = useRecentRooms({
@@ -265,7 +262,7 @@ function RecentChatSection({
 				tone="muted-foreground"
 				style={sidebar.heading}
 			>
-				{SIDEBAR_RECENT_HEADING}
+				{SIDEBAR_COPY.recentHeading}
 			</Text>
 
 			{state.kind === "loading" ? (
@@ -281,7 +278,9 @@ function RecentChatSection({
 			 */}
 			{state.kind === "error" || state.kind === "empty" ? (
 				<Text variant="caption" tone="muted-foreground" style={sidebar.quiet}>
-					{state.kind === "error" ? SIDEBAR_RECENT_ERROR : SIDEBAR_RECENT_EMPTY}
+					{state.kind === "error"
+						? SIDEBAR_COPY.recentError
+						: SIDEBAR_COPY.recentEmpty}
 				</Text>
 			) : null}
 
@@ -331,7 +330,7 @@ function RecentChatSection({
 			 * not turn the highlight on (the section's active state is already stated by the row above).
 			 */}
 			<SidebarRow
-				label={SIDEBAR_ALL_CHATS}
+				label={SIDEBAR_COPY.allChats}
 				icon="library"
 				muted
 				active={false}

@@ -1,24 +1,10 @@
 import { AlertDialog, Button } from "@rowcat/ui-native";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useMobileLocalScope } from "../../lib/local-data/scope.tsx";
 import { resetViewerLocalData } from "../../lib/local-reset.ts";
 import { useLocalResetPorts } from "../../lib/local-reset-ports.ts";
-import {
-	LOCAL_DATA_ACTION_LABEL,
-	LOCAL_DATA_AFTER_NOTE,
-	LOCAL_DATA_CANCEL_LABEL,
-	LOCAL_DATA_CONFIRM_DESCRIPTION,
-	LOCAL_DATA_CONFIRM_TITLE,
-	LOCAL_DATA_FAILURE_MESSAGE,
-	LOCAL_DATA_KEPT,
-	LOCAL_DATA_PENDING_LABEL,
-	LOCAL_DATA_REMOVED,
-	LOCAL_DATA_ROW_DESCRIPTION,
-	LOCAL_DATA_ROW_LABEL,
-	LOCAL_DATA_SECTION_DESCRIPTION,
-	LOCAL_DATA_SECTION_TITLE,
-	LOCAL_DATA_SYNC_NOTE,
-} from "./local-data-copy.ts";
+import { LOCAL_DATA_COPY as copy } from "./local-data-copy.ts";
 import {
 	type LocalResetAwaiting,
 	localResetSettled,
@@ -66,7 +52,10 @@ export function LocalDataSection() {
 	const ports = useLocalResetPorts();
 	const [confirming, setConfirming] = useState(false);
 	const [pending, setPending] = useState(false);
-	const [error, setError] = useState<string | null>(null);
+	/** A flag, not the sentence: a sentence kept in state would stay in the language it was set in. */
+	const [failed, setFailed] = useState(false);
+	/** Subscribes the section to the language; the copy table is read as it draws. */
+	const { t } = useTranslation("common");
 	/**
 	 * Folds a second confirmation in the same tick. `pending` is true only **after** a render arrives,
 	 * so if two fingers land in the same frame both checks read false, and an irreversible operation
@@ -106,7 +95,7 @@ export function LocalDataSection() {
 	const close = () => {
 		if (runningRef.current) return;
 		setConfirming(false);
-		setError(null);
+		setFailed(false);
 	};
 
 	const reset = (): void => {
@@ -118,7 +107,7 @@ export function LocalDataSection() {
 		 */
 		awaitingRef.current = { viewerId, previousScope: scope };
 		setPending(true);
-		setError(null);
+		setFailed(false);
 		void resetViewerLocalData(viewerId, ports)
 			.then(() => {
 				/**
@@ -142,21 +131,18 @@ export function LocalDataSection() {
 				awaitingRef.current = null;
 				runningRef.current = false;
 				setPending(false);
-				setError(LOCAL_DATA_FAILURE_MESSAGE);
+				setFailed(true);
 			});
 	};
 
 	return (
 		<SettingsSection
-			title={LOCAL_DATA_SECTION_TITLE}
-			description={LOCAL_DATA_SECTION_DESCRIPTION}
+			title={copy.sectionTitle}
+			description={copy.sectionDescription}
 		>
-			<SettingsField
-				label={LOCAL_DATA_ROW_LABEL}
-				description={LOCAL_DATA_ROW_DESCRIPTION}
-			>
+			<SettingsField label={copy.rowLabel} description={copy.rowDescription}>
 				<Button
-					label={LOCAL_DATA_ACTION_LABEL}
+					label={copy.action}
 					variant="destructive"
 					fullWidth
 					onPress={() => setConfirming(true)}
@@ -170,21 +156,19 @@ export function LocalDataSection() {
 			 */}
 			<AlertDialog
 				open={confirming}
-				title={LOCAL_DATA_CONFIRM_TITLE}
+				title={copy.confirmTitle}
 				description={[
-					LOCAL_DATA_CONFIRM_DESCRIPTION,
-					LOCAL_DATA_REMOVED,
-					LOCAL_DATA_KEPT,
-					LOCAL_DATA_SYNC_NOTE,
-					LOCAL_DATA_AFTER_NOTE,
+					copy.confirmDescription,
+					copy.removed,
+					copy.kept,
+					copy.syncNote,
+					copy.afterNote,
 				].join("\n\n")}
-				confirmLabel={
-					pending ? LOCAL_DATA_PENDING_LABEL : LOCAL_DATA_ACTION_LABEL
-				}
-				cancelLabel={LOCAL_DATA_CANCEL_LABEL}
+				confirmLabel={pending ? copy.pending : copy.action}
+				cancelLabel={t("actions.cancel")}
 				destructive
 				busy={pending}
-				error={error}
+				error={failed ? copy.failure : null}
 				onConfirm={reset}
 				onCancel={close}
 			/>

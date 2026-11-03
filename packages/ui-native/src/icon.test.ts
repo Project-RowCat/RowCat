@@ -115,6 +115,8 @@ describe("chooses the same glyph as the web", () => {
 		 * chevron.
 		 */
 		"jump-latest": "ArrowDown",
+		/** The guest header's language picker; the web's language toggle uses the same glyph. */
+		language: "Languages",
 		/**
 		 * A row that leaves its enclosing section. Different from chevron-right, which goes into a child.
 		 */

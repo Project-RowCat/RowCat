@@ -7,7 +7,8 @@
  * the sorter and the tree-shaker from moving or dropping that import.
  *
  * ```text
- * DeviceAppearanceProvider     device-chosen brightness + ThemeProvider; identity-independent, outermost
+ * DeviceLocaleProvider         device-chosen language; identity-independent, outermost
+ * DeviceAppearanceProvider     device-chosen brightness + ThemeProvider; identity-independent
  *   SelectionFeedbackProvider  haptics on value selection; asks for neither identity nor storage
  *   UpdateNotesProvider        seen-state of release notes; a device value, so outside identity
  *     ActiveInstanceRoot       keyed by the active server: switching remounts all below
@@ -60,6 +61,7 @@ import { UpdateNotesProvider } from "../features/updates/update-notes-provider.t
 import { DeviceAppearanceProvider } from "../lib/appearance/provider.tsx";
 import { useProductFonts } from "../lib/fonts.ts";
 import { haptics } from "../lib/haptics/index.ts";
+import { DeviceLocaleProvider } from "../lib/i18n/provider.tsx";
 import {
 	MobileIdentityProvider,
 	ViewerScopedLocalData,
@@ -79,53 +81,58 @@ export default function RootLayout() {
 	useProductFonts();
 
 	return (
-		// Device-chosen brightness, outermost; `ThemeProvider` inside resolves the preference to the
-		// appearance to draw (`lib/appearance/provider.tsx` stands both). It sits outside identity so
-		// login, waiting and error screens (and guests) get dark mode, and its value lives in the device
-		// key-value store rather than per-member SQLite.
-		<DeviceAppearanceProvider>
-			{/* Selection haptics sit outside identity because select controls also appear on login,
+		// The language, outermost of all: every screen below draws text, the sign-in and error screens
+		// included, and the value belongs to the device (`lib/i18n/provider.tsx`). It is applied before
+		// the first frame, so nothing draws in English first.
+		<DeviceLocaleProvider>
+			{/* Device-chosen brightness; `ThemeProvider` inside resolves the preference to the appearance to
+			    draw (`lib/appearance/provider.tsx` stands both). It sits outside identity so login, waiting
+			    and error screens (and guests) get dark mode, and its value lives in the device key-value
+			    store rather than per-member SQLite. */}
+			<DeviceAppearanceProvider>
+				{/* Selection haptics sit outside identity because select controls also appear on login,
 			    waiting and error screens. `lib/haptics` decides what vibrates; `@rowcat/ui-native` only
 			    knows the moment. */}
-			<SelectionFeedbackProvider onSelectionChange={haptics.selection}>
-				{/* Seen-state of release notes, outside identity (see the tree above). Mounting opens
+				<SelectionFeedbackProvider onSelectionChange={haptics.selection}>
+					{/* Seen-state of release notes, outside identity (see the tree above). Mounting opens
 				    nothing: a window once opened on launch and was removed because a release note is
 				    neither consent nor confirmation, and making it a gate turns information into a block.
 				    The only way to open one is a row a person presses. */}
-				<UpdateNotesProvider>
-					<ActiveInstanceRoot>
-						{/* The deployment's guardian-consent and adult ages, for copy only (the API decides).
+					<UpdateNotesProvider>
+						<ActiveInstanceRoot>
+							{/* The deployment's guardian-consent and adult ages, for copy only (the API decides).
 						    First in the tree so the screens below read the numbers in the same render. */}
-						<MembershipAgesSync />
-						<MobileIdentityProvider>
-							{/* Second theme layer carrying the account's saved colors. The outer `ThemeProvider` is
+							<MembershipAgesSync />
+							<MobileIdentityProvider>
+								{/* Second theme layer carrying the account's saved colors. The outer `ThemeProvider` is
 							    not moved here because the default appearance must not depend on identity; with
 							    no override this layer passes the parent theme through (guest, no saved colors,
 							    failed lookup). `ThemedChrome` lives inside it, or a default background would
 							    flash for one frame on every transition. */}
-							{/* Push wiring stands at the root: a per-screen listener would miss banners pressed
+								{/* Push wiring stands at the root: a per-screen listener would miss banners pressed
 							    while that screen is unmounted or while the app was dead (same reasoning as
 							    the update-notes container). It raises no system prompt; permission is asked
 							    only when the user turns on `Push notifications` in settings, and this layer only
 							    refreshes the registration of an already-allowed device. It is inside identity
 							    because registration binds to the account and must be forgotten on switch. */}
-							<MobilePushProvider>
-								<ViewerThemeOverride>
-									<ViewerScopedLocalData>
-										{/* Sync runtime: below the per-member local scope, above screens. One runtime per
+								<MobilePushProvider>
+									<ViewerThemeOverride>
+										<ViewerScopedLocalData>
+											{/* Sync runtime: below the per-member local scope, above screens. One runtime per
 										    scope and screens only read, so sync runs on start, foreground and reconnect
 										    without opening the account screen. */}
-										<MobileSyncRuntimeProvider>
-											<ThemedChrome />
-										</MobileSyncRuntimeProvider>
-									</ViewerScopedLocalData>
-								</ViewerThemeOverride>
-							</MobilePushProvider>
-						</MobileIdentityProvider>
-					</ActiveInstanceRoot>
-				</UpdateNotesProvider>
-			</SelectionFeedbackProvider>
-		</DeviceAppearanceProvider>
+											<MobileSyncRuntimeProvider>
+												<ThemedChrome />
+											</MobileSyncRuntimeProvider>
+										</ViewerScopedLocalData>
+									</ViewerThemeOverride>
+								</MobilePushProvider>
+							</MobileIdentityProvider>
+						</ActiveInstanceRoot>
+					</UpdateNotesProvider>
+				</SelectionFeedbackProvider>
+			</DeviceAppearanceProvider>
+		</DeviceLocaleProvider>
 	);
 }
 

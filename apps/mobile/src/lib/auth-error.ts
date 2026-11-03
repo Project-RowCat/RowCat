@@ -1,3 +1,4 @@
+import { deferredGroup } from "./i18n/instance.ts";
 /**
  * Folds an auth failure into a **fact the user can read**.
  *
@@ -77,53 +78,26 @@ export type AuthFailure =
 	| "two_factor_locked"
 	| "unknown";
 
-export const AUTH_FAILURE_MESSAGE: Record<AuthFailure, string> = {
-	invalid_credentials: "Please check your email or password.",
-	email_taken: "This email is already in use.",
-	invalid_email: "Please check your email address.",
-	password_too_short: "Passwords must be at least 8 characters.",
-	password_too_long: "The password is too long.",
-	password_mismatch: "The passwords don't match.",
-	name_required: "Please enter a nickname.",
-	too_many_attempts: "Please try again in a moment.",
-	/**
-	 * **No provider name.** While there was only one method, `Google` was hard-coded here; once there
-	 * were two, the sentence would give wrong guidance to someone who failed with Apple. Naming the
-	 * provider is done by the layer that knows which provider it was (`authFailureMessage` in
-	 * `auth-social.ts`). The copy here is the default and must stay **true even when the source is
-	 * unknown**.
-	 */
-	provider_unavailable: "You can't sign in this way right now.",
-	/**
-	 * **Not just "try again".** Two branches share this one slot: those that resolve on retry (a
-	 * transient failure, or the person simply closing the sheet) and those that never resolve (the
-	 * account is not linked to an existing one). So the copy also points to a path that is true for
-	 * the second group too; in this app that path is email sign-in.
-	 *
-	 * The provider name is omitted here for the same reason as `provider_unavailable` above.
-	 */
-	social_without_session:
-		"Sign-in didn't complete. Try again, or if you've signed up with this email before, sign in with your email.",
-	unreachable: "Couldn't reach the server. Please try again in a moment.",
-	email_not_verified:
-		"Your email needs to be verified. Open the verification email in your inbox.",
-	/**
-	 * The cause cannot be explained to the user (authentication worked but there is no member). "Try
-	 * again" is still honest guidance: usually member row creation failed, and the next request is the
-	 * retry (`ensureMember` in `apps/api/src/auth/viewer.ts`).
-	 */
-	session_without_viewer: "Couldn't sign in. Please try again.",
-	sign_out_failed: "Couldn't sign out. Please try again.",
-	two_factor_invalid_code:
-		"The code is wrong. Enter the current code from your authenticator app.",
-	two_factor_invalid_backup_code:
-		"That backup code is wrong or was already used.",
-	two_factor_expired:
-		"The verification window has passed. Please start sign-in over.",
-	two_factor_locked:
-		"Too many wrong attempts; it's locked for a while. Please start sign-in over shortly.",
-	unknown: "Couldn't sign in. Please try again.",
-};
+/**
+ * One sentence per failure, read from the dictionaries (`signIn.failure`, English and Korean) in the
+ * current language. The table keeps its `Record<AuthFailure, string>` shape for its many callers,
+ * and that annotation is what makes a value added to `AuthFailure` without a sentence fail to compile.
+ *
+ * Three sentences carry decisions, and a translation must keep them:
+ *
+ * - `provider_unavailable` and `social_without_session` name **no provider**. Naming one is done by
+ *   the layer that knows which provider it was (`authFailureMessage` in `auth-social.ts`); this
+ *   default must stay true when the source is unknown.
+ * - `social_without_session` is **not just "try again"**. It covers failures that resolve on retry
+ *   and one that never does (the account is not linked), so it also points to email sign-in, the
+ *   path that is true for both.
+ * - `session_without_viewer` cannot explain its cause (authentication worked, no member). "Try
+ *   again" is still honest: the next request is the retry (`ensureMember` in the API).
+ */
+export const AUTH_FAILURE_MESSAGE: Record<AuthFailure, string> = deferredGroup(
+	"signIn",
+	"failure",
+);
 
 /**
  * The **axis we see** of an error returned by the Better Auth client.

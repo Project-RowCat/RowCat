@@ -238,9 +238,9 @@ describe("shell boundaries", () => {
 		expect(header).not.toContain('label="Sign out"');
 		expect(header).not.toMatch(/viewer\?\.nickname/);
 		/** The guest, unresolved and booting branches and the two shortcuts are unchanged. */
-		expect(header).toContain('label="Sign in"');
-		expect(header).toContain('label="Check session"');
-		expect(header).toContain('label="Checking"');
+		expect(header).toContain('label={t("common:actions.signIn")}');
+		expect(header).toContain('label={t("header.checkSession")}');
+		expect(header).toContain('label={t("header.checking")}');
 		expect(header).toContain("<NotificationShortcut />");
 		/** The balance cell left this row with billing (`docs/oss/PLAN.md` stage 3). */
 		expect(header).not.toContain("ChuruShortcut");

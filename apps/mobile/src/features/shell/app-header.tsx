@@ -1,12 +1,14 @@
 import { borderWidth, space } from "@rowcat/design";
 import { Badge, Button, Notice, Text, useTheme } from "@rowcat/ui-native";
 import { useRouter } from "expo-router";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 import { useMobileIdentity } from "../../lib/identity.tsx";
 import { useMobileLocalScope } from "../../lib/local-data/scope.tsx";
 import { AccountShortcut } from "../account/account-shortcut.tsx";
 import { NotificationShortcut } from "../notifications/notification-shortcut.tsx";
 import { AppearanceShortcut } from "../settings/appearance-shortcut.tsx";
+import { LanguageShortcut } from "../settings/language-shortcut.tsx";
 
 /**
  * Header of the discover screen. It is the identity slot: not a navigation slot, and not a balance
@@ -79,6 +81,7 @@ export function AppHeader({
 	returnPath: string;
 }) {
 	const identity = useMobileIdentity();
+	const { t } = useTranslation(["shell", "common"]);
 	const scope = useMobileLocalScope();
 	const router = useRouter();
 	const theme = useTheme();
@@ -107,11 +110,12 @@ export function AppHeader({
 					 * reachable only by signed-in people, so without this a guest could not change the appearance
 					 * inside the app at all. The value is one on-device store, so it persists across login.
 					 */}
+					<LanguageShortcut />
 					<AppearanceShortcut />
 
 					{phase === "guest" ? (
 						<Button
-							label="Sign in"
+							label={t("common:actions.signIn")}
 							size="sm"
 							icon="sign-in"
 							onPress={() => {
@@ -135,7 +139,7 @@ export function AppHeader({
 						 * send the user to login. Failing to reach the server does not mean the user signed out.
 						 */
 						<Button
-							label="Check session"
+							label={t("header.checkSession")}
 							variant="outline"
 							size="sm"
 							icon="retry"
@@ -146,7 +150,7 @@ export function AppHeader({
 						 * `booting`: reserve the slot only. If it were left empty, the header height would change
 						 * when identity resolves and the list would jump once.
 						 */
-						<Badge label="Checking" />
+						<Badge label={t("header.checking")} />
 					)}
 				</View>
 			</View>
@@ -164,7 +168,7 @@ export function AppHeader({
 			 * screen's title (`bold`), and the web keeps that difference in its classes.
 			 */}
 			<Text variant="display" weight="black" style={header.title}>
-				Discover
+				{t("section.discover")}
 			</Text>
 
 			{/**
@@ -176,8 +180,8 @@ export function AppHeader({
 			 */}
 			{phase === "authenticated" && scope.status === "error" ? (
 				<Notice
-					message="Couldn't open this device's data. Viewing stories isn't affected."
-					actionLabel="Try again"
+					message={t("header.localDataFailed")}
+					actionLabel={t("common:actions.tryAgain")}
 					onAction={scope.retry}
 					style={header.notice}
 				/>
