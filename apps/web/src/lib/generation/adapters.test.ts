@@ -8,6 +8,8 @@ import { describe, expect, it } from "vitest";
 import { anthropicAdapter } from "./anthropic.ts";
 import { ProviderError } from "./errors.ts";
 import { geminiAdapter } from "./gemini.ts";
+import { openAiCompatibleAdapter } from "./openai-compatible.ts";
+import { openRouterAdapter } from "./openrouter.ts";
 import { PROVIDER_CONNECT_ORIGINS } from "./router.ts";
 import type { ByoAdapter, ByoTransportInput } from "./transport.ts";
 
@@ -978,6 +980,429 @@ describe("Gemini adapter", () => {
 	});
 });
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * OpenRouter
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+const OPENROUTER_STREAM = [
+	": OPENROUTER PROCESSING\n\n",
+	'data: {"model":"anthropic/claude-sonnet-5","choices":[{"delta":{"role":"assistant","content":""}}]}\n\n',
+	'data: {"model":"anthropic/claude-sonnet-5","choices":[{"delta":{"content":"hello"}}]}\n\n',
+	'data: {"model":"anthropic/claude-sonnet-5","choices":[{"delta":{"content":" there","reasoning":"private thought"}}]}\n\n',
+	'data: {"model":"anthropic/claude-sonnet-5","choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+	'data: {"model":"anthropic/claude-sonnet-5","choices":[],"usage":{"prompt_tokens":120,"completion_tokens":7,"prompt_tokens_details":{"cached_tokens":100,"cache_write_tokens":15}}}\n\n',
+	"data: [DONE]\n\n",
+];
+
+describe("OpenRouter adapter", () => {
+	it("maps the request to the chat completions shape", async () => {
+		const { seen, fetchMock } = recorder(() => sseResponse(OPENROUTER_STREAM));
+		await collect(openRouterAdapter, {
+			model: "openai/gpt-6-sol",
+			secret: "sk-or",
+			fetch: fetchMock,
+		});
+
+		const call = seen[0];
+		if (!call) throw new Error("no request");
+		expect(call.url).toBe("https://openrouter.ai/api/v1/chat/completions");
+		const headers = call.init.headers as Record<string, string>;
+		expect(headers.authorization).toBe("Bearer sk-or");
+		expect(body(call)).toEqual({
+			model: "openai/gpt-6-sol",
+			messages: [
+				{ role: "system", content: "system prompt" },
+				{ role: "user", content: "first" },
+				{ role: "assistant", content: "answer" },
+				{ role: "user", content: "second" },
+			],
+			max_tokens: 1024,
+			stream: true,
+			stream_options: { include_usage: true },
+		});
+	});
+
+	/**
+	 * The user's account governs routing on this path. Managed pins the operator's sub-processors and
+	 * retention; carrying that here would make models the user can call fail for reasons they cannot
+	 * see.
+	 */
+	it("sends no routing constraint of the operator's", async () => {
+		const { seen, fetchMock } = recorder(() => sseResponse(OPENROUTER_STREAM));
+		await collect(openRouterAdapter, {
+			model: "anthropic/claude-sonnet-5",
+			secret: "k",
+			fetch: fetchMock,
+		});
+		const call = seen[0];
+		if (!call) throw new Error("no request");
+		expect(body(call)).not.toHaveProperty("provider");
+	});
+
+	/** Only the Anthropic namespace needs explicit breakpoints; the system block gets its own hour. */
+	it("marks cache breakpoints on Anthropic models only", async () => {
+		const { seen, fetchMock } = recorder(() => sseResponse(OPENROUTER_STREAM));
+		await collect(openRouterAdapter, {
+			model: "anthropic/claude-sonnet-5",
+			secret: "k",
+			fetch: fetchMock,
+		});
+		await collect(openRouterAdapter, {
+			model: "google/gemini-3.8-flash",
+			secret: "k",
+			fetch: fetchMock,
+		});
+		const [claude, gemini] = seen.map(body);
+		expect(claude?.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
+		expect((claude?.messages as unknown[])[0]).toEqual({
+			role: "system",
+			content: [
+				{
+					type: "text",
+					text: "system prompt",
+					cache_control: { type: "ephemeral", ttl: "1h" },
+				},
+			],
+		});
+		expect(gemini).not.toHaveProperty("cache_control");
+		expect((gemini?.messages as unknown[])[0]).toEqual({
+			role: "system",
+			content: "system prompt",
+		});
+	});
+
+	it("carries the routing key and reasoning effort when present", async () => {
+		const { seen, fetchMock } = recorder(() => sseResponse(OPENROUTER_STREAM));
+		await collect(openRouterAdapter, {
+			model: "openai/gpt-6-sol",
+			secret: "k",
+			fetch: fetchMock,
+			request: {
+				...request,
+				routingSessionId: "r9f2c1d0a7b84e6c",
+				reasoningEffort: "high",
+			},
+		});
+		const call = seen[0];
+		if (!call) throw new Error("no request");
+		const sent = body(call);
+		expect(sent.session_id).toBe("r9f2c1d0a7b84e6c");
+		expect(sent.reasoning).toEqual({ effort: "high" });
+	});
+
+	/** Continuation always appends the shared nudge after the stored reply, with the reply untouched. */
+	it("continues with the nudge shape", async () => {
+		const { seen, fetchMock } = recorder(() => sseResponse(OPENROUTER_STREAM));
+		await collect(openRouterAdapter, {
+			model: "anthropic/claude-sonnet-5",
+			secret: "k",
+			fetch: fetchMock,
+			request: {
+				...request,
+				continuation: true,
+				messages: [
+					{ role: "user", content: "first" },
+					{ role: "assistant", content: "cut off mid " },
+				],
+			},
+		});
+		const call = seen[0];
+		if (!call) throw new Error("no request");
+		expect((body(call).messages as unknown[]).slice(1)).toEqual([
+			{ role: "user", content: "first" },
+			{ role: "assistant", content: "cut off mid " },
+			{ role: "user", content: CONTINUATION_FALLBACK_NUDGE },
+		]);
+	});
+
+	it("normalizes text, usage and finish — reasoning text stays out", async () => {
+		const { fetchMock } = recorder(() => sseResponse(OPENROUTER_STREAM));
+		const events = await collect(openRouterAdapter, {
+			model: "anthropic/claude-sonnet-5",
+			secret: "k",
+			fetch: fetchMock,
+		});
+		expect(events).toEqual([
+			{ type: "delta", text: "hello" },
+			{ type: "delta", text: " there" },
+			{
+				type: "usage",
+				inputTokens: 120,
+				cachedInputTokens: 100,
+				cacheWriteInputTokens: 15,
+				outputTokens: 7,
+				model: "anthropic/claude-sonnet-5",
+			},
+			{ type: "done", finishReason: "stop" },
+		]);
+		expect(JSON.stringify(events)).not.toContain("private thought");
+	});
+
+	/** A byte stream that just stops is a cut response, not a finished one. */
+	it("reports a stream with no end as an error", async () => {
+		const { fetchMock } = recorder(() =>
+			sseResponse(OPENROUTER_STREAM.slice(0, 3)),
+		);
+		const events = await collect(openRouterAdapter, {
+			model: "anthropic/claude-sonnet-5",
+			secret: "k",
+			fetch: fetchMock,
+		});
+		expect(events.at(-1)).toMatchObject({
+			type: "error",
+			code: "provider_error",
+		});
+	});
+
+	it("emits a mid-stream gateway error after the text it already sent", async () => {
+		const { fetchMock } = recorder(() =>
+			sseResponse([
+				OPENROUTER_STREAM[2] as string,
+				'data: {"error":{"code":429,"message":"org_id=x"},"choices":[{"delta":{"content":""},"finish_reason":"error"}]}\n\n',
+			]),
+		);
+		const events = await collect(openRouterAdapter, {
+			model: "anthropic/claude-sonnet-5",
+			secret: "k",
+			fetch: fetchMock,
+		});
+		expect(events[0]).toEqual({ type: "delta", text: "hello" });
+		expect(events.at(-1)).toMatchObject({
+			type: "error",
+			code: "rate_limited",
+		});
+		expect(JSON.stringify(events)).not.toContain("org_id");
+	});
+
+	/** On this gateway 403 is a moderation flag, not a bad key (401). */
+	it.each([
+		[401, "invalid_credential"],
+		[402, "quota_exceeded"],
+		[403, "content_blocked"],
+		[404, "model_unavailable"],
+		[429, "rate_limited"],
+		[502, "provider_error"],
+	] as const)("maps status %i before the stream to %s", async (status, code) => {
+		const { fetchMock } = recorder(() => new Response("{}", { status }));
+		await expect(
+			collect(openRouterAdapter, {
+				model: "anthropic/claude-sonnet-5",
+				secret: "k",
+				fetch: fetchMock,
+			}),
+		).rejects.toMatchObject({ code });
+	});
+
+	it("emits one tool call with its encrypted reasoning state, before usage", async () => {
+		const { seen, fetchMock } = recorder(() =>
+			sseResponse([
+				'data: {"choices":[{"delta":{"reasoning_details":[{"type":"reasoning.text","text":"thinking"},{"type":"reasoning.encrypted","data":"sig"}]}}]}\n\n',
+				'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"search_lore","arguments":"{\\"query\\":"}}]}}]}\n\n',
+				'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"night\\"}"}}]}}]}\n\n',
+				'data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"call_2","function":{"name":"search_lore","arguments":"{}"}}]}}]}\n\n',
+				'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n',
+				'data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":3}}\n\n',
+				"data: [DONE]\n\n",
+			]),
+		);
+		const events = await collect(openRouterAdapter, {
+			model: "google/gemini-3.8-flash",
+			secret: "k",
+			fetch: fetchMock,
+			request: {
+				...request,
+				tools: [
+					{
+						name: "search_lore",
+						description: "Look up lore.",
+						parameters: [
+							{
+								name: "query",
+								type: "string",
+								description: "What to look up.",
+								required: true,
+								choices: [],
+							},
+						],
+					} as ChatToolDeclaration,
+				],
+			},
+		});
+		const call = seen[0];
+		if (!call) throw new Error("no request");
+		expect(body(call).parallel_tool_calls).toBe(false);
+		expect(events.map((event) => event.type)).toEqual([
+			"tool_call",
+			"usage",
+			"done",
+		]);
+		const toolCall = events[0];
+		if (toolCall?.type !== "tool_call") throw new Error("no call");
+		expect(toolCall.call).toMatchObject({
+			id: "call_1",
+			name: "search_lore",
+			arguments: { query: "night" },
+		});
+		/** Only the encrypted block rides back; readable reasoning stays out. */
+		expect(JSON.parse(toolCall.call.providerState ?? "[]")).toEqual([
+			{ type: "reasoning.encrypted", data: "sig" },
+		]);
+	});
+
+	/** The round trip returns the call's state where it came from, so the next request is valid. */
+	it("returns a call turn with tool_calls and its reasoning details", async () => {
+		const { seen, fetchMock } = recorder(() => sseResponse(OPENROUTER_STREAM));
+		await collect(openRouterAdapter, {
+			model: "google/gemini-3.8-flash",
+			secret: "k",
+			fetch: fetchMock,
+			request: {
+				...request,
+				messages: [
+					{ role: "user", content: "first" },
+					{
+						role: "assistant",
+						content: "",
+						toolCall: {
+							id: "call_1",
+							name: "search_lore",
+							arguments: { query: "night" },
+							providerState: JSON.stringify([
+								{ type: "reasoning.encrypted", data: "sig" },
+							]),
+						},
+					},
+					{ role: "tool", callId: "call_1", content: "The night market." },
+				],
+			},
+		});
+		const call = seen[0];
+		if (!call) throw new Error("no request");
+		expect((body(call).messages as unknown[]).slice(2)).toEqual([
+			{
+				role: "assistant",
+				content: "",
+				tool_calls: [
+					{
+						id: "call_1",
+						type: "function",
+						function: {
+							name: "search_lore",
+							arguments: '{"query":"night"}',
+						},
+					},
+				],
+				reasoning_details: [{ type: "reasoning.encrypted", data: "sig" }],
+			},
+			{ role: "tool", tool_call_id: "call_1", content: "The night market." },
+		]);
+	});
+
+	it("checks a key without generating", async () => {
+		const { seen, fetchMock } = recorder(
+			() => new Response("{}", { status: 200 }),
+		);
+		const check = await openRouterAdapter.probe({
+			secret: "sk-or",
+			signal: new AbortController().signal,
+			fetch: fetchMock,
+		});
+		expect(check).toEqual({ ok: true });
+		expect(seen[0]?.url).toBe("https://openrouter.ai/api/v1/key");
+		expect(seen[0]?.init.method).toBe("GET");
+	});
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * OpenAI-compatible (a server the user names)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+describe("OpenAI-compatible adapter", () => {
+	/**
+	 * Only the standard: no cache breakpoints, `session_id`, unified reasoning or extra headers, which a
+	 * strict server answers with a 400 (or a CORS preflight refuses).
+	 */
+	it("sends only standard chat-completions fields", async () => {
+		const { seen, fetchMock } = recorder(() => sseResponse(OPENROUTER_STREAM));
+		await collect(openAiCompatibleAdapter, {
+			model: "anthropic/claude-sonnet-5",
+			secret: "sk-local",
+			endpoint: "https://llm.example.com/v1",
+			fetch: fetchMock,
+			request: {
+				...request,
+				routingSessionId: "r9f2c1d0a7b84e6c",
+				reasoningEffort: "high",
+			},
+		});
+		const call = seen[0];
+		if (!call) throw new Error("no request");
+		expect(call.url).toBe("https://llm.example.com/v1/chat/completions");
+		expect(call.init.headers).toEqual({
+			"content-type": "application/json",
+			authorization: "Bearer sk-local",
+		});
+		expect(body(call)).toEqual({
+			model: "anthropic/claude-sonnet-5",
+			messages: [
+				{ role: "system", content: "system prompt" },
+				{ role: "user", content: "first" },
+				{ role: "assistant", content: "answer" },
+				{ role: "user", content: "second" },
+			],
+			max_tokens: 1024,
+			stream: true,
+			stream_options: { include_usage: true },
+		});
+	});
+
+	/** No address, or one the rule refuses: a connection to fix, and nothing is sent. */
+	it.each([
+		["no address", undefined],
+		["a remote plain-http address", "http://api.example.com/v1"],
+	])("%s sends nothing", async (_label, endpoint) => {
+		const { seen, fetchMock } = recorder(() => sseResponse(OPENROUTER_STREAM));
+		await expect(
+			collect(openAiCompatibleAdapter, {
+				model: "m",
+				secret: "k",
+				...(endpoint === undefined ? {} : { endpoint }),
+				fetch: fetchMock,
+			}),
+		).rejects.toMatchObject({ code: "invalid_credential" });
+		expect(seen).toHaveLength(0);
+	});
+
+	/** Status codes keep their HTTP meaning here; 403 is a refused key, as on OpenAI. */
+	it("403 is a refused key, not a content block", async () => {
+		const { fetchMock } = recorder(() => new Response("{}", { status: 403 }));
+		await expect(
+			collect(openAiCompatibleAdapter, {
+				model: "m",
+				secret: "k",
+				endpoint: "https://llm.example.com/v1",
+				fetch: fetchMock,
+			}),
+		).rejects.toMatchObject({ code: "invalid_credential" });
+	});
+
+	it("streams through the shared reader", async () => {
+		const { fetchMock } = recorder(() => sseResponse(OPENROUTER_STREAM));
+		const events = await collect(openAiCompatibleAdapter, {
+			model: "llama3.1:8b",
+			secret: "k",
+			endpoint: "http://localhost:11434/v1",
+			fetch: fetchMock,
+		});
+		expect(events.map((event) => event.type)).toEqual([
+			"delta",
+			"delta",
+			"usage",
+			"done",
+		]);
+	});
+});
+
 describe("leak boundary", () => {
 	/**
 	 * Upstream error bodies can contain account, organization, and request IDs. Sometimes they echo
@@ -987,6 +1412,7 @@ describe("leak boundary", () => {
 	it.each([
 		["Anthropic", anthropicAdapter, "claude-sonnet-5"],
 		["Gemini", geminiAdapter, "gemini-3.7-flash"],
+		["OpenRouter", openRouterAdapter, "anthropic/claude-sonnet-5"],
 	] as const)("%s does not throw the vendor error body", async (_label, adapter, model) => {
 		const leaked =
 			'{"error":{"message":"org_id=abc prompt=a private user story"}}';
@@ -1010,10 +1436,15 @@ describe("leak boundary", () => {
 	it.each([
 		["Anthropic", anthropicAdapter, "claude-sonnet-5"],
 		["Gemini", geminiAdapter, "gemini-3.7-flash"],
+		["OpenRouter", openRouterAdapter, "anthropic/claude-sonnet-5"],
 	] as const)("%s does not put the key in the URL", async (_label, adapter, model) => {
 		const { seen, fetchMock } = recorder(() =>
 			sseResponse(
-				model.startsWith("claude") ? ANTHROPIC_STREAM : GEMINI_STREAM,
+				model.startsWith("claude")
+					? ANTHROPIC_STREAM
+					: model.includes("/")
+						? OPENROUTER_STREAM
+						: GEMINI_STREAM,
 			),
 		);
 		await collect(adapter, {
@@ -1032,12 +1463,18 @@ describe("network surface", () => {
 	 * `connect-src` list must match `PROVIDER_CONNECT_ORIGINS`. If an adapter starts calling another
 	 * host, this test fails first, before a CSP is enabled and the problem shows up in production.
 	 *
-	 * The test also pins that users cannot set an endpoint. An arbitrary base URL would make the list
-	 * open-ended, and only `connect-src *` could express that.
+	 * The test also pins that users cannot set an endpoint for these providers. The one provider whose
+	 * address the user names (`openai-compatible-byo`) is checked below: it calls only that address.
 	 */
 	it.each([
 		["Anthropic", anthropicAdapter, "claude-sonnet-5", ANTHROPIC_STREAM],
 		["Gemini", geminiAdapter, "gemini-3.7-flash", GEMINI_STREAM],
+		[
+			"OpenRouter",
+			openRouterAdapter,
+			"anthropic/claude-sonnet-5",
+			OPENROUTER_STREAM,
+		],
 	] as const)("%s calls only allowed origins", async (_label, adapter, model, frames) => {
 		const { seen, fetchMock } = recorder(() => sseResponse([...frames]));
 		await collect(adapter, { model, secret: "k", fetch: fetchMock });
@@ -1056,10 +1493,33 @@ describe("network surface", () => {
 			).toBe(true);
 	});
 
-	it("the allowlist has as many entries as implemented providers", () => {
+	it("the user-named server is the only host the custom adapter calls", async () => {
+		const { seen, fetchMock } = recorder(() =>
+			sseResponse([...OPENROUTER_STREAM]),
+		);
+		await collect(openAiCompatibleAdapter, {
+			model: "llama3.1:8b",
+			secret: "k",
+			endpoint: "http://localhost:11434/v1",
+			fetch: fetchMock,
+		});
+		await openAiCompatibleAdapter.probe({
+			secret: "k",
+			endpoint: "http://localhost:11434/v1",
+			signal: new AbortController().signal,
+			fetch: fetchMock,
+		});
+		expect(seen.map((call) => call.url)).toEqual([
+			"http://localhost:11434/v1/chat/completions",
+			"http://localhost:11434/v1/models",
+		]);
+	});
+
+	it("the allowlist has as many entries as fixed providers", () => {
 		expect(PROVIDER_CONNECT_ORIGINS).toEqual([
 			"https://api.anthropic.com",
 			"https://generativelanguage.googleapis.com",
+			"https://openrouter.ai",
 		]);
 	});
 });

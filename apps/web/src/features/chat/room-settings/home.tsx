@@ -79,8 +79,11 @@ export function RoomSettingsHome({
 	 * while home is open.
 	 */
 	const catalog = useQuery(generationModelsQueryOptions(getRowCatClient()));
-	const { providers: connected, loading: connectionsLoading } =
-		useConnectedProviders();
+	const {
+		providers: connected,
+		models: connectionModels,
+		loading: connectionsLoading,
+	} = useConnectedProviders();
 	const capability = useViewerCapability();
 
 	const summary = roomGenerationSummary({
@@ -88,7 +91,8 @@ export function RoomSettingsHome({
 		loading:
 			loading || catalog.isPending || connectionsLoading || capability.loading,
 		effective,
-		models: catalog.data ?? [],
+		/** The same merge as the picker (`ModelTargetField`), so the summary names the same model. */
+		models: [...(catalog.data ?? []), ...connectionModels],
 		catalogLoaded: catalog.isSuccess,
 		connected,
 		byoAllowed: capability.byo,

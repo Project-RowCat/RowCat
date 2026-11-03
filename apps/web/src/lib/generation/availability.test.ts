@@ -136,9 +136,12 @@ describe("provider names", () => {
 		}
 	});
 
-	it("every BYO provider has a key issuance page", () => {
+	/** Every provider we know the address of; the server a user names has no page we could know. */
+	it("every fixed BYO provider has a key issuance page", () => {
 		for (const provider of BYO_PROVIDERS)
-			expect(PROVIDER_KEY_PAGE[provider]).toMatch(/^https:\/\//);
+			if (provider === "openai-compatible-byo")
+				expect(PROVIDER_KEY_PAGE[provider]).toBeNull();
+			else expect(PROVIDER_KEY_PAGE[provider]).toMatch(/^https:\/\//);
 	});
 
 	it("managed is not in the connection list", () => {

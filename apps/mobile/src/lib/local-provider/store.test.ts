@@ -356,3 +356,66 @@ describe("runtime accessor", () => {
 		).toBeNull();
 	});
 });
+
+/**
+ * The user-named server lives in the same entry as its key, so the address and the key it is sent to
+ * can never come from two writes. A row of that provider without a server, or with an address the
+ * rule refuses, is no connection.
+ */
+describe("a user-named OpenAI-compatible server", () => {
+	const SERVER = {
+		endpoint: "https://llm.example.com/v1",
+		models: ["llama3.1:8b"],
+	};
+
+	it("the summary carries the server and the runtime receives its address", async () => {
+		await aliceStore().connect("openai-compatible-byo", SECRET_A, SERVER);
+		expect(await aliceStore().get("openai-compatible-byo")).toMatchObject({
+			provider: "openai-compatible-byo",
+			server: SERVER,
+		});
+		const seen = await aliceAccess().withCredential(
+			"openai-compatible-byo",
+			async (secret, endpoint) => ({ secret, endpoint }),
+		);
+		expect(seen).toEqual({ secret: SECRET_A, endpoint: SERVER.endpoint });
+	});
+
+	it.each([
+		["the server is missing", "openai-compatible-byo", undefined],
+		["a fixed provider is given one", "anthropic-byo", SERVER],
+		[
+			"the address is refused",
+			"openai-compatible-byo",
+			{ endpoint: "http://192.168.0.10:11434/v1", models: ["m"] },
+		],
+	] as const)("refuses to save when %s", async (_label, provider, server) => {
+		await expect(
+			aliceStore().connect(provider, SECRET_A, server),
+		).rejects.toThrow();
+		expect(await aliceStore().list()).toEqual([]);
+	});
+
+	it("a stored entry whose address the rule refuses is no connection", async () => {
+		await aliceStore().connect("openai-compatible-byo", SECRET_A, SERVER);
+		const entry = providerCredentialEntry(
+			homeScope(ALICE),
+			"openai-compatible-byo",
+		);
+		const stored = JSON.parse((await secure.get(entry)) ?? "{}");
+		await secure.set(
+			entry,
+			JSON.stringify({
+				...stored,
+				server: { endpoint: "http://evil.example/v1", models: ["m"] },
+			}),
+		);
+		expect(await aliceStore().get("openai-compatible-byo")).toBeNull();
+		expect(
+			await aliceAccess().withCredential(
+				"openai-compatible-byo",
+				async () => "used",
+			),
+		).toBeNull();
+	});
+});

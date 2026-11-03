@@ -26,8 +26,8 @@ import { SettingsCategoryBody } from "./settings-parts.tsx";
  *
  * ## What is not on this screen
  *
- * Arbitrary endpoints, custom headers, proxy modes, OpenAI and OpenRouter are not part of this
- * slice, and no placeholders for them exist. There is also no action that **shows** a stored key:
+ * Custom headers and proxy modes are not part of this slice, and no placeholders for them exist. A
+ * user-named server is (`openai-compatible-byo`), with its address held to the shared rule. There is also no action that **shows** a stored key:
  * the screen has no port that could read it (`lib/local-provider/store.ts`).
  */
 export function SettingsAiScreen() {

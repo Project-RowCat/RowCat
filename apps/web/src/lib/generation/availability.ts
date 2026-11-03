@@ -1,7 +1,8 @@
-import type {
-	ByoProvider,
-	GenerationExecution,
-	GenerationProvider,
+import {
+	type ByoProvider,
+	type GenerationExecution,
+	type GenerationProvider,
+	OPENAI_COMPATIBLE_LABEL,
 } from "@rowcat/chat";
 import { APP_NAME } from "@rowcat/domain";
 import { translator } from "#/lib/i18n/current.ts";
@@ -29,6 +30,8 @@ const PROVIDER_LABEL: Record<GenerationProvider, string> = {
 	rowcat: APP_NAME,
 	"anthropic-byo": "Anthropic",
 	"gemini-byo": "Google Gemini",
+	"openrouter-byo": "OpenRouter",
+	"openai-compatible-byo": OPENAI_COMPATIBLE_LABEL,
 };
 
 export const providerLabel = (provider: GenerationProvider): string =>
@@ -103,6 +106,8 @@ function blockedMessage(
 export const BYO_PROVIDERS: readonly ByoProvider[] = [
 	"anthropic-byo",
 	"gemini-byo",
+	"openrouter-byo",
+	"openai-compatible-byo",
 ];
 
 /**
@@ -110,8 +115,12 @@ export const BYO_PROVIDERS: readonly ByoProvider[] = [
  *
  * Console steps are not copied into this app. They become wrong when the provider changes its UI,
  * and a wrong explanation is worse than none. A link is enough.
+ *
+ * `null` for the server the user names: we do not know it, and a guessed page is a wrong one.
  */
-export const PROVIDER_KEY_PAGE: Record<ByoProvider, string> = {
+export const PROVIDER_KEY_PAGE: Record<ByoProvider, string | null> = {
 	"anthropic-byo": "https://platform.claude.com/settings/keys",
 	"gemini-byo": "https://aistudio.google.com/apikey",
+	"openrouter-byo": "https://openrouter.ai/settings/keys",
+	"openai-compatible-byo": null,
 };

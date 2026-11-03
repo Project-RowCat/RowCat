@@ -1896,6 +1896,17 @@ The only irreversible operation, so the boundaries are tighter than elsewhere. R
   same-tick duplicate submission live in a pure function because inside the dialog you cannot verify them without
   rendering. Do not clear the input on failure, do not fold every failure into "the key is wrong", and do not let
   a 401 at execution time delete a stored connection.
+- **One BYO provider has a user-named address: `openai-compatible-byo`.** The rule is one pure function
+  (`checkOpenAiCompatibleEndpoint` in `@rowcat/chat` — any `https` host, plain `http` only on this device's
+  loopback; it protects the **key**, not the conversation's destination, which the user chose). The address and
+  model names live **with the connection** on the device and reach the adapter through the credential callback
+  beside the key (`withCredential(provider, (secret, endpoint) => …)`), never through the request, the contract
+  or the server. Every read re-checks them; a stored value the rule refuses is no connection. The catalogue has
+  no rows for it — the connection's model names become catalogue-shaped rows on the device
+  (`openAiCompatibleModelRows`) with **no capabilities**, merged after the server's catalogue in both apps'
+  pickers. It and `openrouter-byo` are two profiles on one chat-completions core per app
+  (`lib/generation/chat-completions.ts`); a profile states only where the server is and which non-standard
+  parameters it understands.
 - **BYO credentials are member+device local and are never synced.** The seal is a non-extractable AES-GCM
   wrapping key with domain-separated AAD, and it **only prevents plaintext at rest** — a script on the same
   origin can still call decrypt (we state that honestly).
@@ -2139,8 +2150,9 @@ adult      OFF               our guards are the ceiling; the filter does not sec
   `chatToolJsonSchema` follows (the spec-shaped part is shared; Gemini's upper-case types stay
   put). **The two apps' copies are a pair**: fix one and only that app's intensity stays blocked,
   so each app's `adapters.test.ts` pins the emitted array by value.
-- **Anthropic BYO and the managed path have no equivalent axis.** Do not invent one — Anthropic
-  exposes no such parameter, and the managed path's policy is the server's.
+- **Anthropic BYO, OpenRouter BYO and the managed path have no equivalent axis.** Do not invent one —
+  Anthropic and the gateway expose no such parameter, and the managed path's policy is the server's. OpenRouter's
+  own moderation answers 403 before the stream, which its adapters name `content_blocked`, not a bad key.
 
 ### Prompt caching
 
@@ -2195,8 +2207,8 @@ routing elsewhere every turn makes hits accidental).
 
 ```text
 room record     routingSessionId   a random value the device issued. once set, it does not change
-generation req  routingSessionId   product vocabulary. BYO adapters do not read it
-upstream body   session_id         **this name appears only here**
+generation req  routingSessionId   product vocabulary. Anthropic and Gemini BYO adapters do not read it
+upstream body   session_id         **this name appears only here** (and in the OpenRouter BYO adapters)
 ```
 
 - **The value is not the room id, nor derived from it** — derived, this value becomes another representation of
@@ -2204,7 +2216,9 @@ upstream body   session_id         **this name appears only here**
   contract narrowing the shape is that fact's last line of defence (`RoutingSessionId` — a value like `room:<id>`
   is a 400).
 - **Product vocabulary and provider vocabulary are separated** (`session_id` ends at `services/generation/chat.ts` — one
-  name would make changing providers a client deployment). **It rides only on managed.**
+  name would make changing providers a client deployment). **It rides on managed and on OpenRouter BYO only** —
+  the latter talks to the same gateway with the user's key, so the same opaque value earns the same cache affinity
+  there; the direct Anthropic and Gemini APIs have no such parameter.
 - **One key per room, and the value is persisted.** Rooms created under older versions are issued one right
   before the next generation and it is **stored** (`ensureRoomRoutingSession`) — creating one per request makes
   every turn a new conversation, which is worse than not having this axis. Issuance does not bump `updatedAt`.

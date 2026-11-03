@@ -70,6 +70,13 @@ export interface ByoTransportInput {
 	/** The provider model name for this request only (the catalogue's `model`). */
 	model: string;
 	secret: string;
+	/**
+	 * The connection's own server address, for the one provider whose address the user enters
+	 * (`openai-compatible-byo`, checked by `checkOpenAiCompatibleEndpoint`). Every other adapter has its
+	 * address as a constant and ignores this. It comes from the stored connection beside the key, never
+	 * from the request.
+	 */
+	endpoint?: string;
 	signal: AbortSignal;
 	fetch: ByoFetch;
 }
@@ -85,6 +92,8 @@ export type CredentialCheck =
 /** Cheaply checks whether one credential works with this provider. Does not start generation. */
 export type ByoCredentialProbe = (input: {
 	secret: string;
+	/** The address being connected, for the provider that has no constant one. */
+	endpoint?: string;
 	signal: AbortSignal;
 	fetch: ByoFetch;
 }) => Promise<CredentialCheck>;

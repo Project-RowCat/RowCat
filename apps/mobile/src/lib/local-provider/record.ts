@@ -1,4 +1,10 @@
-import { type ByoProvider, isByoProviderName } from "@rowcat/chat";
+import {
+	type ByoProvider,
+	isByoProviderName,
+	OPENAI_COMPATIBLE_PROVIDER,
+	type OpenAiCompatibleConnection,
+	readOpenAiCompatibleConnection,
+} from "@rowcat/chat";
 import { type LocalScope, localScopeKey } from "../local-scope.ts";
 
 /**
@@ -18,9 +24,9 @@ import { type LocalScope, localScopeKey } from "../local-scope.ts";
  * - **Sync axes** (`dirty`, `rev`, `serverVersion`, tombstones). Their absence shows directly in
  *   the shape. If they existed, someone would fill them eventually, and at that moment the user's
  *   key would travel to the server.
- * - **Endpoint URLs.** The Anthropic and Gemini addresses are constants in the adapters.
- *   Accepting an arbitrary endpoint would make this app a tool that sends conversations to any
- *   host.
+ * - **Endpoint URLs for the fixed providers.** The Anthropic, Gemini and OpenRouter addresses are
+ *   constants in the adapters. Only `openai-compatible-byo` carries one (`server` below), because the
+ *   user names that server; every read re-checks it with the shared rule.
  * - **Key fingerprints, last four characters, hashes.** There is no place to show them
  *   ("connected / not connected" is enough). A fingerprint is by itself information usable for
  *   offline matching.
@@ -37,6 +43,8 @@ import { type LocalScope, localScopeKey } from "../local-scope.ts";
 export const MOBILE_BYO_PROVIDERS: readonly ByoProvider[] = [
 	"anthropic-byo",
 	"gemini-byo",
+	"openrouter-byo",
+	"openai-compatible-byo",
 ];
 
 /**
@@ -71,6 +79,11 @@ export interface StoredProviderCredential {
 	updatedAt: string;
 	/** The user's API key. **This field is the reason this file exists.** */
 	secret: string;
+	/**
+	 * The server and model names, for `openai-compatible-byo` only. Not secret, but stored in the same
+	 * entry so the address and the key it is sent to can never come from two different writes.
+	 */
+	server?: OpenAiCompatibleConnection;
 }
 
 /**
@@ -84,6 +97,8 @@ export interface ProviderConnectionSummary {
 	provider: ByoProvider;
 	connected: true;
 	updatedAt: string;
+	/** The server and model names, present only for `openai-compatible-byo`. */
+	server?: OpenAiCompatibleConnection;
 }
 
 /**
@@ -121,12 +136,22 @@ export function readStoredProviderCredential(
 	if (typeof row.secret !== "string" || row.secret.length === 0) return null;
 	if (typeof row.connectionId !== "string" || row.connectionId.length === 0)
 		return null;
+	/**
+	 * The user-named server is re-checked on every read; a row of that provider without one, or with
+	 * an address the rule refuses, has nowhere to send the key and is no connection.
+	 */
+	const server =
+		provider === OPENAI_COMPATIBLE_PROVIDER
+			? readOpenAiCompatibleConnection(row.server)
+			: null;
+	if (provider === OPENAI_COMPATIBLE_PROVIDER && !server) return null;
 	return {
 		version: PROVIDER_CREDENTIAL_VERSION,
 		provider,
 		connectionId: row.connectionId,
 		updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : "",
 		secret: row.secret,
+		...(server ? { server } : {}),
 	};
 }
 
@@ -137,6 +162,7 @@ export const summaryOf = (
 	provider: row.provider,
 	connected: true,
 	updatedAt: row.updatedAt,
+	...(row.server ? { server: row.server } : {}),
 });
 
 const ENTRY_PREFIX = "rowcat.provider.";

@@ -884,8 +884,9 @@ export const ChatGenerationRequest = z.object({
 	 *
 	 * It matters only for managed generation, but it lives here for the same reason as maxOutputTokens
 	 * and reasoningEffort: it is a portable product term. If it lived only in the managed type, a BYO
-	 * adapter that later needs it would have no way to receive it. BYO adapters do not read it yet,
-	 * and no matching behavior is invented for that path.
+	 * adapter that later needs it would have no way to receive it. One BYO adapter reads it: the
+	 * OpenRouter one, which talks to the same gateway with the user's key and maps it to the same
+	 * parameter. The direct Anthropic and Gemini adapters have no such parameter and ignore it.
 	 */
 	routingSessionId: RoutingSessionId.optional(),
 	/**
@@ -1238,13 +1239,22 @@ export type ChatErrorCode =
  * different request paths and send bills to different places.
  *
  * Unused names are not listed in advance. A provider with no adapter placed here would appear as a
- * selectable catalog entry, and a user who chose it would have a setting that leads nowhere. That
- * is why OpenAI direct keys, OpenRouter BYO, and arbitrary OpenAI-compatible endpoints are absent.
+ * selectable catalog entry, and a user who chose it would have a setting that leads nowhere.
+ *
+ * `openrouter-byo` is the gateway the managed path already speaks to, reached with the user's own
+ * key; its address is a constant in its adapters.
+ *
+ * `openai-compatible-byo` is the one provider whose address the user enters (any `https` server, or
+ * plain `http` on this device's loopback — `checkOpenAiCompatibleEndpoint` in `@rowcat/chat`). The
+ * address and model names live with the connection on the device and never reach this contract or
+ * the server: the catalogue has no rows for it, and requests carry no address field.
  */
 export const GENERATION_PROVIDERS = [
 	"rowcat",
 	"anthropic-byo",
 	"gemini-byo",
+	"openrouter-byo",
+	"openai-compatible-byo",
 ] as const;
 export const GenerationProviderDto = z.enum(GENERATION_PROVIDERS);
 export type GenerationProviderDto = z.infer<typeof GenerationProviderDto>;

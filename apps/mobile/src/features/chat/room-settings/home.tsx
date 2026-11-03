@@ -71,7 +71,7 @@ export function RoomSettingsHome({
 		loading:
 			loading || catalog.isPending || capability.loading || connections.loading,
 		effective,
-		models: catalog.data ?? [],
+		models: [...(catalog.data ?? []), ...connections.models],
 		catalogLoaded: catalog.isSuccess,
 		connected: connections.providers,
 		byoAllowed: capability.byo,
@@ -95,7 +95,7 @@ export function RoomSettingsHome({
 				narrationBlockedReason({
 					settings: room.narration ?? null,
 					capability: promptPackCapabilityFor({
-						models: catalog.data ?? [],
+						models: [...(catalog.data ?? []), ...connections.models],
 						catalogLoaded: catalog.isSuccess,
 						target: effective.target,
 					}),

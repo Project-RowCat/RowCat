@@ -17,6 +17,8 @@ import { anthropicAdapter } from "./anthropic.ts";
 import type { ByoAdapter, ByoTransportInput } from "./byo.ts";
 import { ProviderError } from "./errors.ts";
 import { geminiAdapter } from "./gemini.ts";
+import { openAiCompatibleAdapter } from "./openai-compatible.ts";
+import { openRouterAdapter } from "./openrouter.ts";
 
 /**
  * Protocol of the two BYO adapters: the mapping and its boundary.
@@ -1185,6 +1187,313 @@ describe("Gemini adapter", () => {
 	});
 });
 
+/** Minimal normal OpenRouter response flow: text, a finish reason, usage and the end marker. */
+const openRouterStream = (frames: readonly string[] = []) =>
+	streamOf([
+		": OPENROUTER PROCESSING\n\n",
+		sseFrame(
+			JSON.stringify({
+				model: "anthropic/claude-sonnet-5",
+				choices: [{ delta: { content: "H", reasoning: "private thought" } }],
+			}),
+		),
+		...frames,
+		sseFrame(
+			JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }] }),
+		),
+		sseFrame(
+			JSON.stringify({
+				choices: [],
+				usage: {
+					prompt_tokens: 20,
+					completion_tokens: 5,
+					prompt_tokens_details: { cached_tokens: 12, cache_write_tokens: 3 },
+				},
+			}),
+		),
+		"data: [DONE]\n\n",
+	]);
+
+describe("OpenRouter adapter", () => {
+	it("maps the request to the chat completions shape", async () => {
+		const transport = respondWith(fakeResponse({ body: openRouterStream() }));
+		await run(openRouterAdapter, {
+			request: request(),
+			model: "openai/gpt-6-sol",
+			secret: "sk-or",
+			signal: signal(),
+			fetch: transport.fetch,
+		});
+		const sent = transport.calls[0];
+		expect(sent?.url).toBe("https://openrouter.ai/api/v1/chat/completions");
+		expect(sent?.headers.authorization).toBe("Bearer sk-or");
+		expect(bodyOf(sent?.body)).toEqual({
+			model: "openai/gpt-6-sol",
+			messages: [
+				{ role: "system", content: "System prompt" },
+				{ role: "user", content: "Hi" },
+			],
+			max_tokens: 768,
+			stream: true,
+			stream_options: { include_usage: true },
+		});
+	});
+
+	it("caches Anthropic models and carries routing and reasoning", async () => {
+		const transport = respondWith(fakeResponse({ body: openRouterStream() }));
+		await run(openRouterAdapter, {
+			request: request({
+				routingSessionId: "r9f2c1d0a7b84e6c",
+				reasoningEffort: "low",
+			}),
+			model: "anthropic/claude-sonnet-5",
+			secret: "k",
+			signal: signal(),
+			fetch: transport.fetch,
+		});
+		const sent = bodyOf(transport.calls[0]?.body);
+		expect(sent.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
+		expect(sent.session_id).toBe("r9f2c1d0a7b84e6c");
+		expect(sent.reasoning).toEqual({ effort: "low" });
+		expect(sent).not.toHaveProperty("provider");
+	});
+
+	it("continues with the shared nudge", async () => {
+		const transport = respondWith(fakeResponse({ body: openRouterStream() }));
+		await run(openRouterAdapter, {
+			request: request({
+				continuation: true,
+				messages: [message("user", "Hi"), message("assistant", "cut off ")],
+			}),
+			model: "google/gemini-3.8-flash",
+			secret: "k",
+			signal: signal(),
+			fetch: transport.fetch,
+		});
+		expect(
+			(bodyOf(transport.calls[0]?.body).messages as unknown[]).slice(1),
+		).toEqual([
+			{ role: "user", content: "Hi" },
+			{ role: "assistant", content: "cut off " },
+			{ role: "user", content: CONTINUATION_FALLBACK_NUDGE },
+		]);
+	});
+
+	it("normalizes text, usage and finish — reasoning text stays out", async () => {
+		const transport = respondWith(fakeResponse({ body: openRouterStream() }));
+		const events = await run(openRouterAdapter, {
+			request: request(),
+			model: "anthropic/claude-sonnet-5",
+			secret: "k",
+			signal: signal(),
+			fetch: transport.fetch,
+		});
+		expect(events).toEqual([
+			{ type: "delta", text: "H" },
+			{
+				type: "usage",
+				inputTokens: 20,
+				cachedInputTokens: 12,
+				cacheWriteInputTokens: 3,
+				outputTokens: 5,
+				model: "anthropic/claude-sonnet-5",
+			},
+			{ type: "done", finishReason: "stop" },
+		]);
+		expect(JSON.stringify(events)).not.toContain("private thought");
+	});
+
+	it("a body that just stops is a cut response", async () => {
+		const transport = respondWith(
+			fakeResponse({
+				body: streamOf([
+					sseFrame(JSON.stringify({ choices: [{ delta: { content: "H" } }] })),
+				]),
+			}),
+		);
+		const events = await run(openRouterAdapter, {
+			request: request(),
+			model: "m/x",
+			secret: "k",
+			signal: signal(),
+			fetch: transport.fetch,
+		});
+		expect(events.at(-1)).toMatchObject({
+			type: "error",
+			code: "provider_error",
+		});
+	});
+
+	/** On this gateway 403 is a moderation flag, not a bad key. */
+	it.each([
+		[401, "invalid_credential"],
+		[402, "quota_exceeded"],
+		[403, "content_blocked"],
+		[429, "rate_limited"],
+	] as const)("status %i before the stream is %s", async (status, code) => {
+		const transport = respondWith(fakeResponse({ ok: false, status }));
+		const thrown = await run(openRouterAdapter, {
+			request: request(),
+			model: "m/x",
+			secret: "k",
+			signal: signal(),
+			fetch: transport.fetch,
+		}).catch((error: unknown) => error);
+		expect((thrown as ProviderError).code).toBe(code);
+	});
+
+	it("keeps one tool call with only its encrypted reasoning", async () => {
+		const tool = {
+			name: "search_lore",
+			description: "Look up lore.",
+			parameters: [
+				{
+					name: "query",
+					type: "string",
+					description: "What to look up.",
+					required: true,
+					choices: [],
+				},
+			],
+		} as ChatToolDeclaration;
+		const transport = respondWith(
+			fakeResponse({
+				body: streamOf([
+					sseFrame(
+						JSON.stringify({
+							choices: [
+								{
+									delta: {
+										reasoning_details: [
+											{ type: "reasoning.text", text: "thinking" },
+											{ type: "reasoning.encrypted", data: "sig" },
+										],
+										tool_calls: [
+											{
+												index: 0,
+												id: "call_1",
+												function: {
+													name: "search_lore",
+													arguments: '{"query":"night"}',
+												},
+											},
+											{
+												index: 1,
+												id: "call_2",
+												function: { name: "search_lore", arguments: "{}" },
+											},
+										],
+									},
+								},
+							],
+						}),
+					),
+					sseFrame(
+						JSON.stringify({
+							choices: [{ delta: {}, finish_reason: "tool_calls" }],
+						}),
+					),
+					"data: [DONE]\n\n",
+				]),
+			}),
+		);
+		const events = await run(openRouterAdapter, {
+			request: request({ tools: [tool] }),
+			model: "google/gemini-3.8-flash",
+			secret: "k",
+			signal: signal(),
+			fetch: transport.fetch,
+		});
+		expect(bodyOf(transport.calls[0]?.body).parallel_tool_calls).toBe(false);
+		expect(events.map((event) => event.type)).toEqual(["tool_call", "done"]);
+		const first = events[0];
+		if (first?.type !== "tool_call") throw new Error("no call");
+		expect(first.call).toMatchObject({
+			id: "call_1",
+			arguments: { query: "night" },
+		});
+		expect(JSON.parse(first.call.providerState ?? "[]")).toEqual([
+			{ type: "reasoning.encrypted", data: "sig" },
+		]);
+	});
+
+	it("checks a key without generating", async () => {
+		const transport = respondWith(fakeResponse({ ok: true }));
+		const check = await openRouterAdapter.probe({
+			secret: "sk-or",
+			signal: signal(),
+			fetch: transport.fetch,
+		});
+		expect(check).toEqual({ ok: true });
+		expect(transport.calls[0]?.url).toBe("https://openrouter.ai/api/v1/key");
+		expect(transport.calls[0]?.method).toBe("GET");
+	});
+});
+
+describe("OpenAI-compatible adapter", () => {
+	/** Only the standard: no cache breakpoints, `session_id`, unified reasoning or extra headers. */
+	it("sends only standard fields to the connection's own address", async () => {
+		const transport = respondWith(fakeResponse({ body: openRouterStream() }));
+		await run(openAiCompatibleAdapter, {
+			request: request({
+				routingSessionId: "r9f2c1d0a7b84e6c",
+				reasoningEffort: "high",
+			}),
+			model: "anthropic/claude-sonnet-5",
+			secret: "sk-local",
+			endpoint: "http://localhost:11434/v1",
+			signal: signal(),
+			fetch: transport.fetch,
+		});
+		const sent = transport.calls[0];
+		expect(sent?.url).toBe("http://localhost:11434/v1/chat/completions");
+		expect(sent?.headers).toEqual({
+			"content-type": "application/json",
+			authorization: "Bearer sk-local",
+		});
+		expect(bodyOf(sent?.body)).toEqual({
+			model: "anthropic/claude-sonnet-5",
+			messages: [
+				{ role: "system", content: "System prompt" },
+				{ role: "user", content: "Hi" },
+			],
+			max_tokens: 768,
+			stream: true,
+			stream_options: { include_usage: true },
+		});
+	});
+
+	/** No address, or one the rule refuses: a connection to fix, and nothing is sent. */
+	it.each([
+		["no address", undefined],
+		["a remote plain-http address", "http://192.168.0.10:11434/v1"],
+	])("%s sends nothing", async (_label, endpoint) => {
+		const transport = respondWith(fakeResponse({ body: openRouterStream() }));
+		const thrown = await run(openAiCompatibleAdapter, {
+			request: request(),
+			model: "m",
+			secret: "k",
+			...(endpoint === undefined ? {} : { endpoint }),
+			signal: signal(),
+			fetch: transport.fetch,
+		}).catch((error: unknown) => error);
+		expect((thrown as ProviderError).code).toBe("invalid_credential");
+		expect(transport.calls).toHaveLength(0);
+	});
+
+	it("checks a key at the connection's own /models", async () => {
+		const transport = respondWith(fakeResponse({ ok: true }));
+		const check = await openAiCompatibleAdapter.probe({
+			secret: "k",
+			endpoint: "https://llm.example.com/v1",
+			signal: signal(),
+			fetch: transport.fetch,
+		});
+		expect(check).toEqual({ ok: true });
+		expect(transport.calls[0]?.url).toBe("https://llm.example.com/v1/models");
+	});
+});
+
 describe("vendor response bodies don't leak", () => {
 	/**
 	 * **P0.** Upstream error bodies mix in account ids and org ids, and sometimes echo back the prompt
@@ -1208,6 +1517,7 @@ describe("vendor response bodies don't leak", () => {
 	const adapters: [string, ByoAdapter][] = [
 		["anthropic", anthropicAdapter],
 		["gemini", geminiAdapter],
+		["openrouter", openRouterAdapter],
 	];
 
 	it.each(
@@ -1272,7 +1582,11 @@ describe("send failures", () => {
 		const transport = fakeFetch(() => {
 			throw new TypeError("Network request failed");
 		});
-		for (const adapter of [anthropicAdapter, geminiAdapter]) {
+		for (const adapter of [
+			anthropicAdapter,
+			geminiAdapter,
+			openRouterAdapter,
+		]) {
 			const thrown = await run(adapter, {
 				request: request(),
 				model: "m",

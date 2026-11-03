@@ -54,6 +54,9 @@ describe("the files to check actually exist", () => {
 			"lib/local-data/use-provider-connections.ts",
 			"lib/generation/anthropic.ts",
 			"lib/generation/gemini.ts",
+			"lib/generation/openrouter.ts",
+			"lib/generation/openai-compatible.ts",
+			"lib/generation/chat-completions.ts",
 			"lib/generation/byo.ts",
 			"lib/generation/errors.ts",
 			"lib/generation/sse.ts",
@@ -342,6 +345,9 @@ describe("the server and protocol stay as they are", () => {
 		for (const path of [
 			"lib/generation/anthropic.ts",
 			"lib/generation/gemini.ts",
+			"lib/generation/openrouter.ts",
+			"lib/generation/openai-compatible.ts",
+			"lib/generation/chat-completions.ts",
 			"lib/generation/sse.ts",
 			"lib/generation/errors.ts",
 			"lib/generation/byo.ts",
@@ -374,8 +380,13 @@ describe("no out-of-scope vocabulary", () => {
 	/**
 	 * Things this slice does not open. Drawing them as placeholders makes users read them as features
 	 * about to launch, and a vocabulary value makes the screen draw them even as disabled items.
+	 *
+	 * `openrouter` left this list in the commit that added its adapter on both apps — opening a
+	 * provider removes its name here, and nothing else does. `openai`, `customEndpoint` and `baseUrl`
+	 * left with `openai-compatible-byo`, the one provider whose address the user names; that address
+	 * is held to `checkOpenAiCompatibleEndpoint` in `@rowcat/chat`, not kept out by a word list.
 	 */
-	it("no other providers, proxies or arbitrary endpoints", () => {
+	it("no other providers or proxies", () => {
 		const slice = product.filter(
 			(file) =>
 				file.path.startsWith("lib/local-provider/") ||
@@ -383,15 +394,7 @@ describe("no out-of-scope vocabulary", () => {
 				file.path.startsWith("features/settings/"),
 		);
 		for (const file of slice)
-			for (const absent of [
-				"openai",
-				"openrouter",
-				"azure",
-				"customEndpoint",
-				"baseUrl",
-				"proxyMode",
-				"revokeApiKey",
-			])
+			for (const absent of ["azure", "proxyMode", "revokeApiKey"])
 				expect(
 					file.text.toLowerCase(),
 					`${file.path} — ${absent}`,
@@ -424,6 +427,8 @@ describe("the credential's lifetime doesn't outlast the callback", () => {
 		for (const path of [
 			"lib/generation/anthropic.ts",
 			"lib/generation/gemini.ts",
+			"lib/generation/openrouter.ts",
+			"lib/generation/openai-compatible.ts",
 		]) {
 			const text = fileAt(path);
 			/** Start is a **plain async function**; as a generator, the body would be deferred. */
@@ -453,6 +458,11 @@ describe("the credential's lifetime doesn't outlast the callback", () => {
 				"readAnthropicStream",
 			],
 			["lib/generation/gemini.ts", "GeminiResponseStream", "readGeminiStream"],
+			[
+				"lib/generation/chat-completions.ts",
+				"ChatCompletionsResponseStream",
+				"readChatCompletionsStream",
+			],
 		];
 
 		for (const [path, type, reader] of parsers) {
@@ -482,15 +492,24 @@ describe("the credential's lifetime doesn't outlast the callback", () => {
 	 * type boundary above would lose its meaning.
 	 */
 	it("there's no auth header on the parser side", () => {
-		for (const [path, reader] of [
-			["lib/generation/anthropic.ts", "readAnthropicStream"],
-			["lib/generation/gemini.ts", "readGeminiStream"],
+		/** Each file's parser ends where its request assembly begins. */
+		for (const [path, reader, start] of [
+			[
+				"lib/generation/anthropic.ts",
+				"readAnthropicStream",
+				"async function start(",
+			],
+			["lib/generation/gemini.ts", "readGeminiStream", "async function start("],
+			[
+				"lib/generation/chat-completions.ts",
+				"readChatCompletionsStream",
+				"export async function startChatCompletions(",
+			],
 		] as const) {
 			const text = fileAt(path);
-			const body = text.slice(
-				text.indexOf(`async function* ${reader}(`),
-				text.indexOf("async function start("),
-			);
+			const end = text.indexOf(start);
+			expect(end, `${path} — ${start}`).toBeGreaterThan(0);
+			const body = text.slice(text.indexOf(`async function* ${reader}(`), end);
 			expect(body, `${path} — ${reader}`).toBeTruthy();
 			for (const forbidden of ["headersFor", "secret", "input."])
 				expect(body, `${reader} — ${forbidden}`).not.toContain(forbidden);
@@ -504,7 +523,7 @@ describe("the credential's lifetime doesn't outlast the callback", () => {
 	it("the router calls start inside the credential callback", () => {
 		const text = fileAt("lib/generation/transport.ts");
 		expect(text).toMatch(
-			/withCredential\(\s*input\.provider,\s*async \(secret\) =>\s*adapter\.start\(/,
+			/withCredential\(\s*input\.provider,\s*async \(secret(, endpoint)?\) =>\s*adapter\.start\(/,
 		);
 		/** Do not create a second place that starts an adapter outside the callback. */
 		expect(text.match(/adapter\.start\(/g) ?? []).toHaveLength(1);

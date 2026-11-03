@@ -642,22 +642,25 @@ describe("doesn't draw what doesn't exist yet", () => {
 
 describe("the places that know BYO providers are narrow", () => {
 	/**
-	 * **Only the two adapters may know the provider endpoints.**
+	 * **Only the adapters may know the provider endpoints.**
 	 *
 	 * If that address appears anywhere else, this app gets a second path to that host, and the path
 	 * carries none of what the adapters enforce (error vocabulary, no body reads, no retries, abort
 	 * signal).
 	 */
-	it("two adapters know the provider addresses", () => {
+	it("only the adapters know the provider addresses", () => {
 		const knowers = product
 			.filter((file) =>
-				/api\.anthropic\.com|generativelanguage\.googleapis/.test(file.text),
+				/api\.anthropic\.com|generativelanguage\.googleapis|openrouter\.ai\/api/.test(
+					file.text,
+				),
 			)
 			.map((file) => file.path)
 			.sort();
 		expect(knowers).toEqual([
 			"lib/generation/anthropic.ts",
 			"lib/generation/gemini.ts",
+			"lib/generation/openrouter.ts",
 		]);
 	});
 

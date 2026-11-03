@@ -83,11 +83,18 @@ describe("managed entries", () => {
 	 * response: it is our gateway contract and routing data, and a browser that knew it would turn the
 	 * managed path into an arbitrary-model proxy.
 	 */
+	/**
+	 * Scoped to the managed entries, and that scope is the narrowing OpenRouter BYO brought: a BYO
+	 * OpenRouter entry must carry its slug (the device sends it to the gateway with the user's key),
+	 * and those slugs are public on the gateway's own catalogue. What stays closed is the managed
+	 * mapping — no managed entry names its upstream or the gateway — and the managed request contract
+	 * still cannot express a slug (`RowCatManagedModel` is an enum).
+	 */
 	it("doesn't expose upstream slugs", () => {
-		const serialized = JSON.stringify(listGenerationModels());
+		const serialized = JSON.stringify(managed());
 		for (const route of listManagedModels())
 			expect(serialized).not.toContain(route.upstream);
-		expect(serialized).not.toContain("openrouter");
+		expect(serialized.toLowerCase()).not.toContain("openrouter");
 	});
 
 	/**
@@ -162,12 +169,27 @@ describe("managed entries", () => {
 		expect(runs.length).toBe(new Set(vendors).size);
 	});
 
-	/** For BYO the provider is the company. */
-	it("BYO uses the provider name as the company", () => {
+	/** For a direct BYO provider the provider is the company. */
+	it("direct BYO uses the provider name as the company", () => {
 		for (const model of listGenerationModels().filter(
-			(entry) => entry.provider !== "rowcat",
+			(entry) =>
+				entry.provider !== "rowcat" && entry.provider !== "openrouter-byo",
 		))
 			expect(model.vendorLabel).toBe(model.providerLabel);
+	});
+
+	/** A gateway holds several companies, so it names each and keeps them adjacent, like managed. */
+	it("OpenRouter BYO names each model's maker, adjacent", () => {
+		const entries = listGenerationModels().filter(
+			(entry) => entry.provider === "openrouter-byo",
+		);
+		for (const model of entries) {
+			expect(model.vendorLabel.length).toBeGreaterThan(0);
+			expect(model.vendorLabel).not.toBe(model.providerLabel);
+		}
+		const vendors = entries.map((model) => model.vendorLabel);
+		const runs = vendors.filter((vendor, i) => vendor !== vendors[i - 1]);
+		expect(runs.length).toBe(new Set(vendors).size);
 	});
 
 	/**
@@ -197,7 +219,18 @@ describe("absence of the pricing axis", () => {
 	 * suggesting it tracks upstream cost goes out.
 	 */
 	it("no cost or currency vocabulary in the response", () => {
-		const serialized = JSON.stringify(listGenerationModels()).toLowerCase();
+		/**
+		 * Provider, label and the id built from the provider are dropped before scanning:
+		 * `openrouter-byo` and `OpenRouter` are a provider the user connects, not a gateway cost axis.
+		 * Everything else is still scanned, and the managed entries are checked for the gateway name in
+		 * "doesn't expose upstream slugs".
+		 */
+		const serialized = JSON.stringify(
+			listGenerationModels().map(
+				({ id: _id, provider: _provider, providerLabel: _label, ...rest }) =>
+					rest,
+			),
+		).toLowerCase();
 		for (const forbidden of [
 			"upstream",
 			"openrouter",
@@ -234,7 +267,10 @@ describe("BYO entries", () => {
 	it("the provider's canonical model id form", () => {
 		for (const model of byo()) {
 			expect(model.model).not.toContain(" ");
-			expect(model.model).not.toContain("/");
+			/** On the gateway the canonical id is `vendor/model`; a variant suffix (`:free`) is a different route. */
+			if (model.provider === "openrouter-byo")
+				expect(model.model).toMatch(/^[a-z0-9-]+\/[a-z0-9.-]+$/);
+			else expect(model.model).not.toContain("/");
 		}
 	});
 
@@ -249,7 +285,35 @@ describe("BYO entries", () => {
 
 	it("only providers with adapters appear", () => {
 		const providers = new Set(byo().map((model) => model.provider));
-		expect([...providers].sort()).toEqual(["anthropic-byo", "gemini-byo"]);
+		expect([...providers].sort()).toEqual([
+			"anthropic-byo",
+			"gemini-byo",
+			"openrouter-byo",
+		]);
+	});
+
+	/**
+	 * The gateway fact has one answer. Where a slug is both a managed upstream and an OpenRouter BYO
+	 * entry, both go through the same `reasoning.effort` translation, so the levels and the narration
+	 * pack value must agree; two answers would list a level on one path that the other path knows the
+	 * model does not distinguish.
+	 */
+	it("OpenRouter BYO capability matches the managed route for the same slug", () => {
+		const routes = new Map(
+			listManagedModels().map((route) => [route.upstream, route]),
+		);
+		let compared = 0;
+		for (const model of byo().filter(
+			(entry) => entry.provider === "openrouter-byo",
+		)) {
+			const route = routes.get(model.model);
+			if (!route) continue;
+			compared += 1;
+			expect(model.reasoning).toEqual(route.reasoning);
+			expect(model.promptPack).toEqual(route.promptPack);
+			expect(model.label).toBe(route.label);
+		}
+		expect(compared).toBeGreaterThan(0);
 	});
 });
 

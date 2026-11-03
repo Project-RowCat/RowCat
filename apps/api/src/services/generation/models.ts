@@ -41,6 +41,10 @@ import { listManagedModels } from "./managed-models.ts";
  * only, a model their account can use. Only invite-only/private models (Claude Mythos) and
  * non-text-generation models are left out.
  *
+ * OpenRouter is the exception: it routes hundreds of models from dozens of upstreams that differ in
+ * what they accept (tools, reasoning shapes, prefill), so "every model" there is not one adapter's
+ * worth of facts. Its list is the set this repository has verified (`OPENROUTER_MODELS`).
+ *
  * Values were verified on 2026-08-19 from each provider's official docs
  * (platform.claude.com/docs/en/about-claude/models/overview, ai.google.dev/gemini-api/docs/models).
  * Re-check the then-current official list when adding or swapping a model; do not write from
@@ -326,27 +330,179 @@ const GEMINI_MODELS: readonly {
 	},
 ];
 
+/**
+ * OpenRouter with the user's own key: the gateway the managed path already speaks to, reached from
+ * the device.
+ *
+ * The list is written out, not derived from the managed registry (`managed-models.ts`). The two
+ * answer different questions: the registry is the operator's choice of what their key serves, and
+ * it changes for business reasons; this list is what this repository has verified the gateway
+ * accepts with the request shape the BYO adapters send. Deriving would make an operator removing a
+ * managed model silently turn every BYO preference for it into "missing", and would publish the
+ * registry's routing as a side effect. Today the two hold the same models because the registry's
+ * entries are the verified set; `models.test.ts` pins that, where a slug appears in both, the
+ * reasoning capability and narration-pack value are the same, so the gateway fact has one answer.
+ *
+ * `model` is the gateway's slug (`vendor/model`), the string the adapter puts verbatim into the
+ * request. On this provider that is the canonical id; it is public on the gateway's own catalogue
+ * and reveals nothing about the managed path, whose contract cannot express a slug at all.
+ *
+ * Reasoning goes through the gateway's unified `reasoning.effort`, the same translation the managed
+ * path uses, so the per-model capability is the managed registry's (same reasons, written there).
+ *
+ * Every slug verified against OpenRouter `/api/v1/models` on 2026-11-03 (present, `tools` and
+ * `reasoning` in `supported_parameters` where a capability is listed). Re-check before adding one.
+ */
+const OPENROUTER_LABEL = "OpenRouter";
+
+const STANDARD_PACK: ModelPromptPackDto = {
+	lineage: "standard",
+	densities: ["light", "rich"],
+};
+const REDUCED_PACK: ModelPromptPackDto = {
+	lineage: "reduced",
+	densities: ["light"],
+};
+
+const OPENROUTER_MODELS: readonly {
+	model: string;
+	label: string;
+	/** The company that made the model. One gateway holds several, as on managed. */
+	vendor: string;
+	reasoning: ModelReasoningDto | null;
+	promptPack: ModelPromptPackDto | null;
+}[] = [
+	...(
+		[
+			["openai/gpt-6-astra", "GPT-6 Astra"],
+			["openai/gpt-6.1-sol", "GPT-6.1 Sol"],
+			["openai/gpt-6-sol", "GPT-6 Sol"],
+			["openai/gpt-6-luna", "GPT-6 Luna"],
+			["openai/gpt-5.6-luna", "GPT-5.6 Luna"],
+			["openai/gpt-5.6-terra", "GPT-5.6 Terra"],
+			["openai/gpt-5.6-sol", "GPT-5.6 Sol"],
+		] as const
+	).map(([model, label]) => ({
+		model,
+		label,
+		vendor: "OpenAI",
+		reasoning: BYO_EFFORT_THREE,
+		promptPack: STANDARD_PACK,
+	})),
+	...(
+		[
+			["anthropic/claude-fable-5.1", "Claude Fable 5.1", BYO_EFFORT_THREE],
+			["anthropic/claude-fable-5", "Claude Fable 5", BYO_EFFORT_THREE],
+			["anthropic/claude-opus-5.5", "Claude Opus 5.5", BYO_EFFORT_THREE],
+			["anthropic/claude-opus-5", "Claude Opus 5", BYO_EFFORT_THREE],
+			["anthropic/claude-sonnet-5.5", "Claude Sonnet 5.5", BYO_EFFORT_THREE],
+			["anthropic/claude-sonnet-5", "Claude Sonnet 5", BYO_EFFORT_THREE],
+		] as const
+	).map(([model, label, reasoning]) => ({
+		model,
+		label,
+		vendor: "Anthropic",
+		reasoning,
+		promptPack: null,
+	})),
+	/**
+	 * No adjustable reasoning through the gateway: its only extended-thinking shape is a token budget,
+	 * and `reasoning.effort` is not honoured for this generation (same as the managed registry).
+	 */
+	{
+		model: "anthropic/claude-haiku-4.5",
+		label: "Claude Haiku 4.5",
+		vendor: "Anthropic",
+		reasoning: null,
+		promptPack: { lineage: "standard", densities: ["light"] },
+	},
+	...(
+		[
+			["anthropic/claude-opus-4.8", "Claude Opus 4.8"],
+			["anthropic/claude-opus-4.7", "Claude Opus 4.7"],
+			["anthropic/claude-opus-4.6", "Claude Opus 4.6"],
+			["anthropic/claude-sonnet-4.6", "Claude Sonnet 4.6"],
+		] as const
+	).map(([model, label]) => ({
+		model,
+		label,
+		vendor: "Anthropic",
+		reasoning: BYO_EFFORT_THREE,
+		promptPack: null,
+	})),
+	{
+		model: "anthropic/claude-sonnet-4.5",
+		label: "Claude Sonnet 4.5",
+		vendor: "Anthropic",
+		reasoning: null,
+		promptPack: null,
+	},
+	...(
+		[
+			["google/gemini-3.8-flash", "Gemini 3.8 Flash", BYO_EFFORT_THREE],
+			["google/gemini-3.7-flash", "Gemini 3.7 Flash", BYO_EFFORT_THREE],
+			["google/gemini-3.6-flash", "Gemini 3.6 Flash", BYO_EFFORT_WITH_MINIMAL],
+			["google/gemini-3.5-flash", "Gemini 3.5 Flash", BYO_EFFORT_WITH_MINIMAL],
+			[
+				"google/gemini-3.5-flash-lite",
+				"Gemini 3.5 Flash-Lite",
+				BYO_EFFORT_WITH_MINIMAL,
+			],
+		] as const
+	).map(([model, label, reasoning]) => ({
+		model,
+		label,
+		vendor: "Google",
+		reasoning,
+		promptPack: STANDARD_PACK,
+	})),
+	/**
+	 * No reasoning: each exposes at most one effort overlapping our vocabulary, so a list of levels
+	 * would name runs that do not differ (the managed registry's note on DeepSeek V4).
+	 */
+	...(
+		[
+			["deepseek/deepseek-v4-pro", "DeepSeek V4 Pro", "DeepSeek"],
+			["deepseek/deepseek-v4.1-flash", "DeepSeek V4.1 Flash", "DeepSeek"],
+			["deepseek/deepseek-v4-flash", "DeepSeek V4 Flash", "DeepSeek"],
+			["xiaomi/mimo-v2.6-flash", "MiMo v2.6 Flash", "Xiaomi"],
+			["z-ai/glm-5.3", "GLM 5.3", "Z.ai"],
+			["z-ai/glm-5.3-flash", "GLM 5.3 Flash", "Z.ai"],
+			["z-ai/glm-5.2", "GLM 5.2", "Z.ai"],
+		] as const
+	).map(([model, label, vendor]) => ({
+		model,
+		label,
+		vendor,
+		reasoning: null,
+		promptPack: REDUCED_PACK,
+	})),
+];
+
 const byo = (
-	provider: "anthropic-byo" | "gemini-byo",
+	provider: "anthropic-byo" | "gemini-byo" | "openrouter-byo",
 	providerLabel: string,
 	entries: readonly {
 		model: string;
 		label: string;
+		/** The maker, when the provider is a gateway holding several; absent means the provider is the maker. */
+		vendor?: string;
 		reasoning: ModelReasoningDto | null;
 		promptPack: ModelPromptPackDto | null;
 	}[],
 ): GenerationModelDto[] =>
-	entries.map(({ model, label, reasoning, promptPack }) => ({
+	entries.map(({ model, label, vendor, reasoning, promptPack }) => ({
 		id: modelId(provider, model),
 		provider,
 		providerLabel,
 		/**
-		 * For BYO the provider is the company. Carrying the same value looks redundant, but leaving it
-		 * empty makes the field optional and the screen would have to decide how to draw a missing one;
-		 * whether to title a sub-group in a one-company list should depend on how many companies there
-		 * are, not on whether a value exists.
+		 * For a direct BYO provider the provider is the company. Carrying the same value looks
+		 * redundant, but leaving it empty makes the field optional and the screen would have to decide
+		 * how to draw a missing one; whether to title a sub-group in a one-company list should depend
+		 * on how many companies there are, not on whether a value exists. A gateway (OpenRouter) holds
+		 * several companies and names each, like managed.
 		 */
-		vendorLabel: providerLabel,
+		vendorLabel: vendor ?? providerLabel,
 		label,
 		model,
 		requiresConnection: true,
@@ -402,6 +558,7 @@ const CATALOG: readonly GenerationModelDto[] = [
 	...managed(),
 	...byo("anthropic-byo", ANTHROPIC_LABEL, ANTHROPIC_MODELS),
 	...byo("gemini-byo", GEMINI_LABEL, GEMINI_MODELS),
+	...byo("openrouter-byo", OPENROUTER_LABEL, OPENROUTER_MODELS),
 ];
 
 /**

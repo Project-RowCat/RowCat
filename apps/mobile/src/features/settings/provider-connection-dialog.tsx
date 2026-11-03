@@ -1,4 +1,4 @@
-import type { ByoProvider } from "@rowcat/chat";
+import { type ByoProvider, OPENAI_COMPATIBLE_PROVIDER } from "@rowcat/chat";
 import { space } from "@rowcat/design";
 import { Button, Dialog, DialogActions, Input, Text } from "@rowcat/ui-native";
 import * as WebBrowser from "expo-web-browser";
@@ -8,12 +8,20 @@ import {
 	PROVIDER_CANCEL_LABEL,
 	PROVIDER_CONNECT_LABEL,
 	PROVIDER_DISCLOSURE,
+	PROVIDER_KEY_ANY_VALUE,
 	PROVIDER_KEY_FIELD_LABEL,
 	PROVIDER_KEY_PAGE,
 	PROVIDER_KEY_PAGE_LABEL,
 	PROVIDER_KEY_PLACEHOLDER,
+	PROVIDER_MODELS_FIELD_LABEL,
+	PROVIDER_MODELS_HINT,
+	PROVIDER_MODELS_PLACEHOLDER,
 	PROVIDER_REPLACE_LABEL,
 	PROVIDER_REPLACE_NOTICE,
+	PROVIDER_SERVER_FIELD_LABEL,
+	PROVIDER_SERVER_HINT,
+	PROVIDER_SERVER_NOTICE,
+	PROVIDER_SERVER_PLACEHOLDER,
 	providerDialogTitle,
 } from "./provider-copy.ts";
 
@@ -46,6 +54,13 @@ import {
  * An API key is not a value typed by hand. A form that blocks paste adds no security and only makes
  * the user keep the key on screen and copy it character by character.
  *
+ * ## The user-named server has two more fields
+ *
+ * Only `openai-compatible-byo`: the server address and its model names. They start empty on a
+ * replacement too (the same "nothing is read back into this form" rule as the key), and they leave
+ * this component the same way the key does, as submit arguments. The rules are the shared ones,
+ * applied by the coordinator (`connect-provider.ts`), not here.
+ *
  * Auto-capitalization and auto-correction are **off**. If left on, the platform changes the first
  * letter or corrects words, so a different value than the one pasted gets stored, and since the
  * field is masked **the change is not even visible.**
@@ -66,9 +81,16 @@ export function ProviderConnectionDialog({
 	pending: boolean;
 	error: string | null;
 	onClose: () => void;
-	onSubmit: (secret: string) => void;
+	onSubmit: (
+		secret: string,
+		server?: { endpoint: string; models: string },
+	) => void;
 }) {
 	const [secret, setSecret] = useState("");
+	const [endpoint, setEndpoint] = useState("");
+	const [models, setModels] = useState("");
+	const userServer = provider === OPENAI_COMPATIBLE_PROVIDER;
+	const keyPage = PROVIDER_KEY_PAGE[provider];
 
 	return (
 		<Dialog
@@ -98,21 +120,63 @@ export function ProviderConnectionDialog({
 							{line}
 						</Text>
 					))}
+					{userServer ? (
+						<Text variant="label" tone="muted-foreground">
+							{PROVIDER_SERVER_NOTICE}
+						</Text>
+					) : null}
 				</View>
+
+				{userServer ? (
+					<>
+						<Input
+							label={PROVIDER_SERVER_FIELD_LABEL}
+							placeholder={PROVIDER_SERVER_PLACEHOLDER}
+							value={endpoint}
+							onChangeText={setEndpoint}
+							keyboardType="url"
+							autoCapitalize="none"
+							autoCorrect={false}
+							autoComplete="off"
+							editable={!pending}
+						/>
+						<Text variant="label" tone="muted-foreground">
+							{PROVIDER_SERVER_HINT}
+						</Text>
+						<Input
+							label={PROVIDER_MODELS_FIELD_LABEL}
+							placeholder={PROVIDER_MODELS_PLACEHOLDER}
+							value={models}
+							onChangeText={setModels}
+							multiline
+							autoCapitalize="none"
+							autoCorrect={false}
+							autoComplete="off"
+							editable={!pending}
+						/>
+						<Text variant="label" tone="muted-foreground">
+							{PROVIDER_MODELS_HINT}
+						</Text>
+					</>
+				) : null}
 
 				{/**
 				 * One way to the provider's key page. We do not copy the console's instructions into our
 				 * screen, because they would become wrong the moment the provider changes its UI.
 				 */}
-				<Button
-					label={PROVIDER_KEY_PAGE_LABEL}
-					variant="outline"
-					size="sm"
-					fullWidth
-					onPress={() =>
-						void WebBrowser.openBrowserAsync(PROVIDER_KEY_PAGE[provider])
-					}
-				/>
+				{keyPage === null ? (
+					<Text variant="label" tone="muted-foreground">
+						{PROVIDER_KEY_ANY_VALUE}
+					</Text>
+				) : (
+					<Button
+						label={PROVIDER_KEY_PAGE_LABEL}
+						variant="outline"
+						size="sm"
+						fullWidth
+						onPress={() => void WebBrowser.openBrowserAsync(keyPage)}
+					/>
+				)}
 
 				<Input
 					label={PROVIDER_KEY_FIELD_LABEL}
@@ -155,7 +219,11 @@ export function ProviderConnectionDialog({
 						 * in. Disabling the button is enough for that state.
 						 */
 						disabled={secret.trim() === ""}
-						onPress={() => onSubmit(secret)}
+						onPress={() =>
+							userServer
+								? onSubmit(secret, { endpoint, models })
+								: onSubmit(secret)
+						}
 					/>
 				</DialogActions>
 			</View>

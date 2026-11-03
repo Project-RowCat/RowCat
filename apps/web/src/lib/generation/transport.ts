@@ -57,6 +57,14 @@ export interface ByoTransportInput {
 	/** Provider model name (the catalog's `model`), used only for this request. */
 	model: string;
 	secret: string;
+	/**
+	 * The connection's own server address, for the one provider whose address the user enters
+	 * (`openai-compatible-byo`; already checked by `checkOpenAiCompatibleEndpoint`). Every other adapter
+	 * has its address as a constant and ignores this. It comes from the stored connection beside the
+	 * key, never from the request: a request carrying an address would let any code that builds one
+	 * choose where the conversation goes.
+	 */
+	endpoint?: string;
 	signal: AbortSignal;
 	/** Test seam. When unset, the runtime's fetch is used. */
 	fetch?: typeof globalThis.fetch;
@@ -79,6 +87,8 @@ export type CredentialCheck =
  */
 export type ByoCredentialProbe = (input: {
 	secret: string;
+	/** The address being connected, for the provider that has no constant one (see `ByoTransportInput`). */
+	endpoint?: string;
 	signal: AbortSignal;
 	fetch?: typeof globalThis.fetch;
 }) => Promise<CredentialCheck>;

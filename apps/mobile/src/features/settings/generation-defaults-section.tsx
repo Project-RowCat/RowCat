@@ -166,7 +166,8 @@ export function GenerationDefaultsSection() {
 			</SettingsSection>
 		);
 
-	const models = catalog.data ?? [];
+	/** The server's catalogue plus the models a connection names itself (a user's own server). */
+	const models = [...(catalog.data ?? []), ...connections.models];
 	const options = buildModelOptions({
 		models,
 		value: global.target,

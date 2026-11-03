@@ -94,6 +94,17 @@ export const settings = {
 			"The provider account's usage limit was exceeded. Please check your provider account.",
 		unavailable:
 			"The key can't be checked right now. Please try again in a moment.",
+		serverUnreachable:
+			"Couldn't reach a server at this address. Check the address, and that the server accepts requests from this site.",
+		endpointEmpty: "Enter the server address.",
+		endpointInsecure:
+			"Plain http is accepted only for a server on this device (localhost). Use an https address.",
+		endpointInvalid:
+			"This isn't an address that can be used. Enter something like https://example.com/v1.",
+		modelsEmpty: "Enter at least one model name.",
+		modelsInvalid:
+			"A model name can't contain spaces or be longer than 200 characters.",
+		modelsTooMany: "Enter up to 20 model names.",
 	},
 	providerDialog: {
 		replaceTitle: "Replace {{label}} key",
@@ -171,6 +182,15 @@ export const settings = {
 		show: "Show",
 		replace: "Replace",
 		connect: "Connect",
+		serverAddress: "Server address",
+		serverAddressHint:
+			"The address before /chat/completions, e.g. https://api.example.com/v1 or http://localhost:11434/v1.",
+		models: "Models",
+		modelsHint:
+			"The model names this server accepts, one per line. They appear in the model picker.",
+		apiKeyAnyValue: "If the server doesn't use a key, enter any value.",
+		serverNotice:
+			"Conversations and this key go only to the server you enter here. Check that it's one you trust.",
 	},
 	localDataResetDialog: {
 		ifYouUseSyncAcross:

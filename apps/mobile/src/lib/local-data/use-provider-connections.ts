@@ -1,4 +1,8 @@
-import type { GenerationProvider } from "@rowcat/chat";
+import {
+	type GenerationProvider,
+	openAiCompatibleModelRows,
+} from "@rowcat/chat";
+import type { GenerationModelDto } from "@rowcat/contracts";
 import { useMemo } from "react";
 import type { ProviderConnectionSummary } from "../local-provider/record.ts";
 import type { ProviderConnectionStore } from "../local-provider/store.ts";
@@ -49,6 +53,13 @@ export interface LocalProviderConnections {
 	 */
 	providers: GenerationProvider[];
 	/**
+	 * Catalogue-shaped rows for the models a connection itself names (`openai-compatible-byo`; the
+	 * server catalogue cannot list a server only this device knows). Screens merge them into the
+	 * catalogue they hand the picker, so those models are listed, chosen and judged like any other BYO
+	 * entry. Built by the shared rule (`openAiCompatibleModelRows`), the same as the web's.
+	 */
+	models: GenerationModelDto[];
+	/**
 	 * The first result has not arrived yet. **This is different from "no connection".**
 	 *
 	 * Without this distinction a screen would draw `Not connected` before the Keychain is read, then switch
@@ -83,6 +94,9 @@ export function useProviderConnections(): LocalProviderConnections {
 		() => ({
 			connections: live.value,
 			providers: live.value.map((connection) => connection.provider),
+			models: live.value.flatMap((connection) =>
+				openAiCompatibleModelRows(connection.server),
+			),
 			loading: opening || live.status === "loading",
 			store,
 			ownsStore,

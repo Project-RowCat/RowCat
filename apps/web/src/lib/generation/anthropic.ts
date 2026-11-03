@@ -47,7 +47,7 @@ import type {
  * different styles. Failures are surfaced, and the user decides whether to retry.
  */
 
-/** Provider endpoint. Users cannot set it; arbitrary endpoints are deferred. */
+/** Provider endpoint. Users cannot set it; a user-named server is `openai-compatible-byo`'s job. */
 const API_ORIGIN = "https://api.anthropic.com";
 
 /** The version header defined by the docs. It pins the response format, so it stays a literal. */

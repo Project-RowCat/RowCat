@@ -1,4 +1,10 @@
-import type { ByoProvider } from "@rowcat/chat";
+import {
+	type ByoProvider,
+	checkOpenAiCompatibleEndpoint,
+	OPENAI_COMPATIBLE_PROVIDER,
+	type OpenAiCompatibleConnection,
+	parseOpenAiCompatibleModels,
+} from "@rowcat/chat";
 import type { CredentialCheck } from "../../lib/generation/byo.ts";
 import type { ProviderError } from "../../lib/generation/errors.ts";
 import type { ProviderConnectionStore } from "../../lib/local-provider/store.ts";
@@ -6,6 +12,7 @@ import {
 	PROVIDER_EMPTY_KEY,
 	PROVIDER_FOREIGN_SESSION,
 	PROVIDER_SAVE_FAILURE,
+	PROVIDER_SERVER_FAILURE,
 	providerByoLocked,
 } from "./provider-copy.ts";
 
@@ -74,6 +81,11 @@ export type ConnectProviderOutcome =
 	 * session back, and a connection made in a new session is a **different operation**.
 	 */
 	| { status: "foreign"; message: string }
+	/**
+	 * The server address or model names entered for `openai-compatible-byo` are not ones the shared
+	 * rule accepts. **Nothing was sent**: a key never goes to an address the rule refuses.
+	 */
+	| { status: "invalid_server"; field: "endpoint" | "models"; message: string }
 	/** The same operation is already running; nothing was done. */
 	| { status: "busy" };
 
@@ -97,6 +109,11 @@ export interface ConnectProviderInput {
 	/** The key the user typed. The store trims it once more. */
 	secret: string;
 	/**
+	 * What the user typed for the server, for `openai-compatible-byo` only (raw text; checked here by
+	 * the shared rules). Ignored for every other provider.
+	 */
+	server?: { endpoint: string; models: string };
+	/**
 	 * The store at the moment the operation started. **Saves only to this instance.**
 	 *
 	 * Why the currently open store is not read inside is step 5 in the header.
@@ -105,7 +122,12 @@ export interface ConnectProviderInput {
 	/** Whether the store **still** belongs to this session. Judges the instance, not the member id. */
 	ownsStore: (store: ProviderConnectionStore) => boolean;
 	/** Verification: asks the provider **cheaply** (this is not a generation request). */
-	probe: (provider: ByoProvider, secret: string) => Promise<CredentialCheck>;
+	probe: (
+		provider: ByoProvider,
+		secret: string,
+		/** The checked address, present only for the provider that has no fixed one. */
+		endpoint?: string,
+	) => Promise<CredentialCheck>;
 	/**
 	 * Synchronous copy of the in-progress flag.
 	 *
@@ -136,6 +158,13 @@ export async function connectProvider(
 	if (!input.secret.trim())
 		return { status: "empty", message: PROVIDER_EMPTY_KEY };
 
+	/** The server too: an address the rule refuses must never receive the probe. */
+	const server =
+		input.provider === OPENAI_COMPATIBLE_PROVIDER
+			? checkServer(input.server)
+			: null;
+	if (server && !server.ok) return server.outcome;
+
 	input.guard.current = true;
 	try {
 		/**
@@ -145,9 +174,11 @@ export async function connectProvider(
 		if (!input.ownsStore(input.store))
 			return { status: "foreign", message: PROVIDER_FOREIGN_SESSION };
 
-		const check = await input.probe(input.provider, input.secret);
+		const check = server
+			? await input.probe(input.provider, input.secret, server.value.endpoint)
+			: await input.probe(input.provider, input.secret);
 		if (!check.ok) {
-			const message = credentialFailureMessage(check.error);
+			const message = credentialFailureMessage(check.error, server !== null);
 			return check.error.code === "invalid_credential"
 				? { status: "rejected", message }
 				: { status: "failed", message };
@@ -164,7 +195,9 @@ export async function connectProvider(
 		 * Only keys that passed are saved. Replacement is the same call: because it overwrites, there is
 		 * no window in which the old connection disappears if the save fails (`local-provider/store.ts`).
 		 */
-		await input.store.connect(input.provider, input.secret);
+		if (server)
+			await input.store.connect(input.provider, input.secret, server.value);
+		else await input.store.connect(input.provider, input.secret);
 		return { status: "connected" };
 	} catch {
 		/**
@@ -189,7 +222,11 @@ export async function connectProvider(
  * Two things must **not** be folded. A rejected key (must be edited) and a limit or credit problem
  * (must wait, or check the provider account) need different next actions.
  */
-export function credentialFailureMessage(error: ProviderError): string {
+export function credentialFailureMessage(
+	error: ProviderError,
+	/** Whether the address was the user's; unreachable there most often means the address. */
+	userServer = false,
+): string {
 	switch (error.code) {
 		case "invalid_credential":
 			return "The provider rejected this API key. Please check the key.";
@@ -198,6 +235,53 @@ export function credentialFailureMessage(error: ProviderError): string {
 		case "quota_exceeded":
 			return "You've exceeded your provider account's usage limit. Please check your provider account.";
 		default:
-			return "The key can't be checked right now. Please try again in a moment.";
+			return userServer
+				? PROVIDER_SERVER_FAILURE.unreachable
+				: "The key can't be checked right now. Please try again in a moment.";
 	}
+}
+
+type ServerCheck =
+	| { ok: true; value: OpenAiCompatibleConnection }
+	| {
+			ok: false;
+			outcome: Extract<ConnectProviderOutcome, { status: "invalid_server" }>;
+	  };
+
+/** Raw server inputs → the checked connection, or the sentence for the input that is wrong. */
+function checkServer(raw: ConnectProviderInput["server"]): ServerCheck {
+	const endpoint = checkOpenAiCompatibleEndpoint(raw?.endpoint ?? "");
+	if (!endpoint.ok)
+		return {
+			ok: false,
+			outcome: {
+				status: "invalid_server",
+				field: "endpoint",
+				message:
+					endpoint.reason === "empty"
+						? PROVIDER_SERVER_FAILURE.endpointEmpty
+						: endpoint.reason === "insecure"
+							? PROVIDER_SERVER_FAILURE.endpointInsecure
+							: PROVIDER_SERVER_FAILURE.endpointInvalid,
+			},
+		};
+	const models = parseOpenAiCompatibleModels(raw?.models ?? "");
+	if (!models.ok)
+		return {
+			ok: false,
+			outcome: {
+				status: "invalid_server",
+				field: "models",
+				message:
+					models.reason === "empty"
+						? PROVIDER_SERVER_FAILURE.modelsEmpty
+						: models.reason === "too_many"
+							? PROVIDER_SERVER_FAILURE.modelsTooMany
+							: PROVIDER_SERVER_FAILURE.modelsInvalid,
+			},
+		};
+	return {
+		ok: true,
+		value: { endpoint: endpoint.endpoint, models: models.models },
+	};
 }

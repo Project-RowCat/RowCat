@@ -1,7 +1,8 @@
-import type {
-	GenerationProvider,
-	ReasoningEffort,
-	ResponseLength,
+import {
+	type GenerationProvider,
+	OPENAI_COMPATIBLE_LABEL,
+	type ReasoningEffort,
+	type ResponseLength,
 } from "@rowcat/chat";
 import { APP_NAME } from "@rowcat/domain";
 
@@ -55,6 +56,8 @@ const PROVIDER_LABEL: Record<GenerationProvider, string> = {
 	rowcat: APP_NAME,
 	"anthropic-byo": "Anthropic",
 	"gemini-byo": "Google Gemini",
+	"openrouter-byo": "OpenRouter",
+	"openai-compatible-byo": OPENAI_COMPATIBLE_LABEL,
 };
 
 export const providerLabel = (provider: GenerationProvider): string =>

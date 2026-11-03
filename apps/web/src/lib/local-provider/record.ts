@@ -1,4 +1,10 @@
-import { type ByoProvider, isByoProviderName } from "@rowcat/chat";
+import {
+	type ByoProvider,
+	isByoProviderName,
+	OPENAI_COMPATIBLE_PROVIDER,
+	type OpenAiCompatibleConnection,
+	readOpenAiCompatibleConnection,
+} from "@rowcat/chat";
 
 /**
  * Physical shape of a stored provider connection, and the read boundary for it. Kept apart from
@@ -11,9 +17,9 @@ import { type ByoProvider, isByoProviderName } from "@rowcat/chat";
  *   exported as bytes (see crypto.ts).
  * - Sync fields (dirty, rev, serverVersion, deletedAt). Their absence is the point: if they
  *   existed, someone would fill them and the user's key would be uploaded to the server.
- * - Endpoint URL. The Anthropic and Gemini addresses are fixed. Accepting arbitrary endpoints
- *   would widen the CSP, mixed-content, and network trust boundaries (OpenAI-compatible support is
- *   deferred).
+ * - An endpoint for the fixed providers. Anthropic, Gemini and OpenRouter addresses are constants in
+ *   their adapters; only `openai-compatible-byo` carries one (`server` below), because the user names
+ *   that server.
  * - Key fingerprint, last four characters, or hash. Nothing displays them. `Linked` / `Not connected`
  *   (connected / not connected) is enough, and a fingerprint could be used for offline matching.
  * - Organization or project id. No screen uses them, and storing them would bind the credential's
@@ -59,6 +65,16 @@ export interface StoredProviderConnection {
 	 * ISO timestamp of the last connect or key replacement. The screen shows it as `Connected since`.
 	 */
 	updatedAt: string;
+	/**
+	 * The server and model names, for `openai-compatible-byo` only; absent on every other provider.
+	 *
+	 * Plaintext on purpose: neither is a secret, and the picker needs the model names without opening
+	 * the key. It is not bound into the AAD: a script that can rewrite this row runs on our origin and
+	 * can already call decrypt, so binding would add a format change and no protection. What does
+	 * protect the key is that every reader checks the address again (`readProviderConnection` here, the
+	 * adapter before sending), so a row carrying an address the rule refuses is no connection at all.
+	 */
+	server?: OpenAiCompatibleConnection;
 }
 
 /**
@@ -70,7 +86,12 @@ export interface ProviderConnectionSummary {
 	provider: ByoProvider;
 	connected: true;
 	updatedAt: string;
+	/** The server and model names, present only for `openai-compatible-byo`. */
+	server?: OpenAiCompatibleConnection;
 }
+
+/** Stored server → re-checked, or `null` (the shared rule both apps' stores read with). */
+export const readOpenAiCompatibleServer = readOpenAiCompatibleConnection;
 
 /**
  * Converts a row to a summary. Never throws, for any input. A corrupt row becomes null (no
@@ -85,9 +106,11 @@ export function readProviderConnection(
 	if (!row || row.version !== PROVIDER_CONNECTION_VERSION) return null;
 	if (!isByoProviderName(row.provider)) return null;
 	if (!row.wrapKey || !row.iv?.length || !row.ct?.length) return null;
-	return {
-		provider: row.provider,
-		connected: true,
-		updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : "",
-	};
+	const updatedAt = typeof row.updatedAt === "string" ? row.updatedAt : "";
+	if (row.provider !== OPENAI_COMPATIBLE_PROVIDER)
+		return { provider: row.provider, connected: true, updatedAt };
+	/** A server-less row of this provider has nowhere to send the key, so it is no connection. */
+	const server = readOpenAiCompatibleServer(row.server);
+	if (!server) return null;
+	return { provider: row.provider, connected: true, updatedAt, server };
 }

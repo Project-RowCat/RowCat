@@ -90,6 +90,16 @@ export const settings: Messages["settings"] = {
 		quotaExceeded:
 			"제공자 계정의 사용 한도를 초과했습니다. 제공자 계정을 확인해 주세요.",
 		unavailable: "지금은 키를 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+		serverUnreachable:
+			"이 주소의 서버에 연결하지 못했습니다. 주소와, 서버가 이 사이트의 요청을 허용하는지 확인해 주세요.",
+		endpointEmpty: "서버 주소를 입력해 주세요.",
+		endpointInsecure:
+			"http 주소는 이 기기의 서버(localhost)에만 쓸 수 있습니다. https 주소를 입력해 주세요.",
+		endpointInvalid:
+			"쓸 수 없는 주소입니다. https://example.com/v1 같은 형식으로 입력해 주세요.",
+		modelsEmpty: "모델 이름을 하나 이상 입력해 주세요.",
+		modelsInvalid: "모델 이름에는 공백이 없어야 하고 200자를 넘을 수 없습니다.",
+		modelsTooMany: "모델 이름은 20개까지 입력할 수 있습니다.",
 	},
 	providerDialog: {
 		replaceTitle: "{{label}} 키 교체",
@@ -164,6 +174,15 @@ export const settings: Messages["settings"] = {
 		show: "보기",
 		replace: "교체",
 		connect: "연결",
+		serverAddress: "서버 주소",
+		serverAddressHint:
+			"/chat/completions 앞까지의 주소입니다. 예: https://api.example.com/v1, http://localhost:11434/v1",
+		models: "모델",
+		modelsHint:
+			"이 서버가 받는 모델 이름을 한 줄에 하나씩 입력합니다. 모델 선택 목록에 나타납니다.",
+		apiKeyAnyValue: "키를 쓰지 않는 서버라면 아무 값이나 입력해 주세요.",
+		serverNotice:
+			"대화와 이 키는 여기 입력한 서버로만 전송됩니다. 믿을 수 있는 서버인지 확인해 주세요.",
 	},
 	localDataResetDialog: {
 		ifYouUseSyncAcross:

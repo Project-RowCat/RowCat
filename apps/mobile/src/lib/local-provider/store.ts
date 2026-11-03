@@ -1,4 +1,9 @@
-import type { ByoProvider } from "@rowcat/chat";
+import {
+	type ByoProvider,
+	OPENAI_COMPATIBLE_PROVIDER,
+	type OpenAiCompatibleConnection,
+	readOpenAiCompatibleConnection,
+} from "@rowcat/chat";
 import { newLocalId, nowIso } from "../local-data/clock.ts";
 import type { LocalScope } from "../local-scope.ts";
 import type { SecureKeyStorage } from "../local-sync/device-key.ts";
@@ -58,7 +63,15 @@ export interface ProviderConnectionStore {
 	 * Replacement must overwrite. Removing the old entry first and then writing the new one would
 	 * leave the connection gone if the write fails in between.
 	 */
-	connect(provider: ByoProvider, secret: string): Promise<void>;
+	connect(
+		provider: ByoProvider,
+		secret: string,
+		/**
+		 * The server and model names, required for `openai-compatible-byo` and refused for every other
+		 * provider. Already checked by the dialog; checked again here.
+		 */
+		server?: OpenAiCompatibleConnection,
+	): Promise<void>;
 	/** Deletes the credential. Preferences are left alone. */
 	disconnect(provider: ByoProvider): Promise<void>;
 }
@@ -83,7 +96,11 @@ export interface ProviderCredentialAccess {
 	 */
 	withCredential<T>(
 		provider: ByoProvider,
-		use: (secret: string) => Promise<T>,
+		/**
+		 * `endpoint` is the connection's own server address, present only for `openai-compatible-byo`. It
+		 * travels with the key because it is where the key goes.
+		 */
+		use: (secret: string, endpoint?: string) => Promise<T>,
 	): Promise<T | null>;
 }
 
@@ -126,7 +143,7 @@ export function createProviderConnectionStore(
 
 		has: async (provider) => (await read(provider)) !== null,
 
-		connect: async (provider, secret) => {
+		connect: async (provider, secret, server) => {
 			/**
 			 * Trims surrounding whitespace. Keys copied from a console often arrive with a trailing newline,
 			 * and that one character shows up as a 401 from the provider, so the user thinks the key is
@@ -134,6 +151,13 @@ export function createProviderConnectionStore(
 			 */
 			const trimmed = secret.trim();
 			if (!trimmed) throw new Error("Empty credentials aren't saved");
+			const checkedServer =
+				server === undefined ? null : readOpenAiCompatibleConnection(server);
+			if (
+				(provider === OPENAI_COMPATIBLE_PROVIDER) !==
+				(checkedServer !== null)
+			)
+				throw new Error("A server belongs to openai-compatible-byo only");
 
 			await storage.set(
 				providerCredentialEntry(scope, provider),
@@ -143,6 +167,7 @@ export function createProviderConnectionStore(
 					connectionId: newLocalId(),
 					updatedAt: nowIso(),
 					secret: trimmed,
+					...(checkedServer ? { server: checkedServer } : {}),
 				}),
 			);
 		},
@@ -184,7 +209,7 @@ export function createProviderCredentialAccess(
 			 * narrows is the reference's lifetime, and this function already narrows it by not returning the
 			 * value.
 			 */
-			return await use(row.secret);
+			return await use(row.secret, row.server?.endpoint);
 		},
 	};
 }

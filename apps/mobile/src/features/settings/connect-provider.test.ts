@@ -331,3 +331,51 @@ describe("replacement doesn't delete a working connection", () => {
 		).toContain("sk-new");
 	});
 });
+
+/**
+ * The server a user names. Its address and model names are checked before anything is sent, so the
+ * key never reaches an address the shared rule refuses, and the checked values are what the probe
+ * and the store receive.
+ */
+describe("a user-named OpenAI-compatible server", () => {
+	const connect = (server: { endpoint: string; models: string }) => {
+		const probes: (string | undefined)[] = [];
+		return connectProvider({
+			provider: "openai-compatible-byo",
+			byoAllowed: true,
+			secret: "sk-local",
+			server,
+			store,
+			ownsStore: () => true,
+			probe: async (_provider, _secret, endpoint) => {
+				probes.push(endpoint);
+				return ok();
+			},
+			guard: { current: false },
+		}).then((outcome) => ({ outcome, probes }));
+	};
+
+	it("verifies at the checked address and saves the checked server", async () => {
+		const { outcome, probes } = await connect({
+			endpoint: " HTTPS://LLM.Example.com/v1/ ",
+			models: "llama3.1:8b\nqwen3:14b",
+		});
+		expect(outcome).toEqual({ status: "connected" });
+		expect(probes).toEqual(["https://llm.example.com/v1"]);
+		expect((await store.get("openai-compatible-byo"))?.server).toEqual({
+			endpoint: "https://llm.example.com/v1",
+			models: ["llama3.1:8b", "qwen3:14b"],
+		});
+	});
+
+	it.each([
+		[{ endpoint: "http://192.168.0.10:11434/v1", models: "m" }, "endpoint"],
+		[{ endpoint: "", models: "m" }, "endpoint"],
+		[{ endpoint: "https://llm.example.com/v1", models: "" }, "models"],
+	] as const)("refuses %j before verifying", async (server, field) => {
+		const { outcome, probes } = await connect(server);
+		expect(outcome).toMatchObject({ status: "invalid_server", field });
+		expect(probes).toEqual([]);
+		expect(await store.has("openai-compatible-byo")).toBe(false);
+	});
+});

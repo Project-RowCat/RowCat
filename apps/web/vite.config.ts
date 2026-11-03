@@ -57,6 +57,13 @@ const useSyncExternalStoreAliases = [
  * this from the runtime value before switching to enforcement. The values match
  * PROVIDER_CONNECT_ORIGINS in lib/generation/router.ts. This config file cannot import app source,
  * so they are repeated here.
+ *
+ * `https:` and the loopback sources are the OpenAI-compatible provider, whose server the user names
+ * (`checkOpenAiCompatibleEndpoint` in `@rowcat/chat`: any `https` host, or plain `http` on this
+ * device's loopback). An origin list cannot name a server we have never heard of, so this directive is
+ * as wide as that rule and no wider; enforcing it later keeps the same shape. That `https:` also
+ * covers the fixed origins listed beside it is accepted — they stay written out so the list still
+ * says what the product itself calls.
  */
 function securityHeaders(): Record<string, string> {
 	const production = process.env.NODE_ENV === "production";
@@ -68,7 +75,7 @@ function securityHeaders(): Record<string, string> {
 		"style-src 'self' 'unsafe-inline'",
 		"img-src 'self' data: blob: http: https:",
 		"font-src 'self' data:",
-		`connect-src 'self' ${apiOrigin} https://api.anthropic.com https://generativelanguage.googleapis.com https://cdn.portone.io https://*.portone.io`,
+		`connect-src 'self' ${apiOrigin} https://api.anthropic.com https://generativelanguage.googleapis.com https://openrouter.ai https://cdn.portone.io https://*.portone.io https: http://localhost:* http://127.0.0.1:* http://[::1]:*`,
 		"frame-src https://*.portone.io",
 		"worker-src 'self' blob:",
 		"object-src 'none'",

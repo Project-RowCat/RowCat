@@ -1,4 +1,4 @@
-import type { ByoProvider } from "@rowcat/chat";
+import { type ByoProvider, OPENAI_COMPATIBLE_PROVIDER } from "@rowcat/chat";
 import { Button } from "@rowcat/ui-web/components/button";
 import {
 	Dialog,
@@ -9,6 +9,7 @@ import {
 } from "@rowcat/ui-web/components/dialog";
 import { Input } from "@rowcat/ui-web/components/input";
 import { Label } from "@rowcat/ui-web/components/label";
+import { Textarea } from "@rowcat/ui-web/components/textarea";
 import { useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { shouldCloseDialog } from "#/lib/dialog/dismiss.ts";
@@ -37,9 +38,12 @@ import {
  *   drop does not force the user to paste the key again.
  * - The decryption function is not imported. This file sees only the store port, which provides
  *   summary, connect and disconnect (useProviderScope).
- * - No advanced options (endpoint, org id, project id, model parameters). Both provider addresses
- *   are fixed. Accepting arbitrary endpoints would widen the CSP, mixed-content and network trust
- *   boundaries at once.
+ * - No advanced options (org id, project id, model parameters). The fixed providers' addresses are
+ *   constants. Only `openai-compatible-byo` shows two more fields, the server address and its model
+ *   names, because that server is the user's to name; both are checked by the shared rules
+ *   (`@rowcat/chat`'s `openai-compatible.ts`) before anything is sent. They start empty on a
+ *   replacement too — the same "nothing is read back into this form" rule as the key, so the dialog
+ *   never mixes a stored address with a new key.
  * - The verify-then-save order and single execution are not here (connect-provider.ts). They are
  *   pure functions so they can be checked without rendering. This file handles only input lifetime
  *   and copy.
@@ -74,7 +78,17 @@ export function ProviderConnectionDialog({
 	const inputId = useId();
 	const errorId = `${inputId}-error`;
 	const [secret, setSecret] = useState("");
+	const [endpoint, setEndpoint] = useState("");
+	const [models, setModels] = useState("");
 	const [reveal, setReveal] = useState(false);
+	/** A server input the shared rule refused, next to the input it belongs to. */
+	const [serverFailure, setServerFailure] = useState<{
+		field: "endpoint" | "models";
+		message: string;
+	} | null>(null);
+	const userServer = provider === OPENAI_COMPATIBLE_PROVIDER;
+	const endpointId = `${inputId}-endpoint`;
+	const modelsId = `${inputId}-models`;
 	const [pending, setPending] = useState(false);
 	/**
 	 * A failure, together with what it is a failure of. Keeping only the message would place every
@@ -112,6 +126,7 @@ export function ProviderConnectionDialog({
 
 		setPending(true);
 		setFailure(null);
+		setServerFailure(null);
 
 		const controller = new AbortController();
 		try {
@@ -123,6 +138,7 @@ export function ProviderConnectionDialog({
 			const outcome = await connectProvider({
 				provider,
 				secret: trimmed,
+				...(userServer ? { server: { endpoint, models } } : {}),
 				guard: pendingRef,
 				/**
 				 * Account eligibility is decided before verification, inside connectProvider. The button that
@@ -135,14 +151,19 @@ export function ProviderConnectionDialog({
 				 * money (lib/generation/anthropic.ts). Nothing aborts this signal (see the file header). While
 				 * pending the dialog cannot close, so there is no user action that would request an abort.
 				 */
-				probe: (target, value) =>
+				probe: (target, value, address) =>
 					probeProviderCredential(target, value, {
 						signal: controller.signal,
+						...(address === undefined ? {} : { endpoint: address }),
 					}),
-				save: (target, value) => store.connect(target, value),
+				save: (target, value, server) => store.connect(target, value, server),
 			});
 
 			if (outcome.status === "busy") return;
+			if (outcome.status === "invalid_server") {
+				setServerFailure({ field: outcome.field, message: outcome.message });
+				return;
+			}
 			if (outcome.status !== "connected") {
 				/**
 				 * Do not clear the input on failure. A rejected key must be corrected. After a transient
@@ -159,6 +180,8 @@ export function ProviderConnectionDialog({
 			 * Clear the input on success, before calling onClose. The dialog unmounts on close anyway, but
 			 * clearing first shortens the time this component holds the plaintext key.
 			 */
+			setEndpoint("");
+			setModels("");
 			setSecret("");
 			onClose();
 		} finally {
@@ -207,6 +230,81 @@ export function ProviderConnectionDialog({
 					}}
 				>
 					<div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-5 py-4">
+						{userServer && (
+							<>
+								<div className="flex flex-col gap-1.5">
+									<Label htmlFor={endpointId} className="text-sm font-medium">
+										{t("providerConnectionDialog.serverAddress")}
+									</Label>
+									<Input
+										id={endpointId}
+										type="url"
+										inputMode="url"
+										autoComplete="off"
+										spellCheck={false}
+										autoCapitalize="none"
+										autoCorrect="off"
+										placeholder="https://api.example.com/v1"
+										value={endpoint}
+										disabled={pending || !store}
+										aria-invalid={serverFailure?.field === "endpoint"}
+										aria-describedby={`${endpointId}-hint`}
+										onChange={(event) => {
+											setEndpoint(event.target.value);
+											setServerFailure((current) =>
+												current?.field === "endpoint" ? null : current,
+											);
+										}}
+									/>
+									<p
+										id={`${endpointId}-hint`}
+										className="text-sm text-muted-foreground"
+									>
+										{t("providerConnectionDialog.serverAddressHint")}
+									</p>
+									{serverFailure?.field === "endpoint" && (
+										<p role="alert" className="text-sm text-destructive">
+											{serverFailure.message}
+										</p>
+									)}
+								</div>
+								<div className="flex flex-col gap-1.5">
+									<Label htmlFor={modelsId} className="text-sm font-medium">
+										{t("providerConnectionDialog.models")}
+									</Label>
+									<Textarea
+										id={modelsId}
+										rows={3}
+										autoComplete="off"
+										spellCheck={false}
+										autoCapitalize="none"
+										autoCorrect="off"
+										placeholder="llama3.1:8b"
+										value={models}
+										disabled={pending || !store}
+										aria-invalid={serverFailure?.field === "models"}
+										aria-describedby={`${modelsId}-hint`}
+										onChange={(event) => {
+											setModels(event.target.value);
+											setServerFailure((current) =>
+												current?.field === "models" ? null : current,
+											);
+										}}
+									/>
+									<p
+										id={`${modelsId}-hint`}
+										className="text-sm text-muted-foreground"
+									>
+										{t("providerConnectionDialog.modelsHint")}
+									</p>
+									{serverFailure?.field === "models" && (
+										<p role="alert" className="text-sm text-destructive">
+											{serverFailure.message}
+										</p>
+									)}
+								</div>
+							</>
+						)}
 						<div className="flex flex-col gap-1.5">
 							<div className="flex items-center justify-between gap-2">
 								<Label htmlFor={inputId} className="text-sm font-medium">
@@ -289,14 +387,24 @@ export function ProviderConnectionDialog({
 									{failure.message}
 								</p>
 							)}
-							<a
-								href={PROVIDER_KEY_PAGE[provider]}
-								target="_blank"
-								rel="noreferrer noopener"
-								className="text-sm text-muted-foreground underline underline-offset-2"
-							>
-								{t("providerConnectionDialog.createAnApiKey")}
-							</a>
+							{/*
+							 * A server the user names has no key page we could know; what helps there is that a keyless
+							 * local server still needs some value in this field.
+							 */}
+							{PROVIDER_KEY_PAGE[provider] === null ? (
+								<p className="text-sm text-muted-foreground">
+									{t("providerConnectionDialog.apiKeyAnyValue")}
+								</p>
+							) : (
+								<a
+									href={PROVIDER_KEY_PAGE[provider]}
+									target="_blank"
+									rel="noreferrer noopener"
+									className="text-sm text-muted-foreground underline underline-offset-2"
+								>
+									{t("providerConnectionDialog.createAnApiKey")}
+								</a>
+							)}
 						</div>
 
 						{/*
@@ -305,6 +413,9 @@ export function ProviderConnectionDialog({
 						 */}
 						<div className="flex flex-col gap-1 rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
 							<p>{t("providerConnectionDialog.theApiKeyIsStored")}</p>
+							{userServer && (
+								<p>{t("providerConnectionDialog.serverNotice")}</p>
+							)}
 							<p>{t("providerConnectionDialog.whenYouUseThisProvider")}</p>
 							<p>{t("providerConnectionDialog.apiUsageFeesForThat")}</p>
 							<p>{t("providerConnectionDialog.usingAPersonalApiKey")}</p>

@@ -51,7 +51,7 @@ describe("waits for both", () => {
 		expect(state.kind).toBe("ready");
 		expect(
 			state.kind === "ready" && state.rows.map((row) => row.connected),
-		).toEqual([false, false]);
+		).toEqual([false, false, false, false]);
 	});
 });
 
@@ -60,21 +60,31 @@ describe("the row list is fixed", () => {
 	 * Rows do not disappear with the connection state. People come here mostly because a connection is
 	 * wrong, and without the rows there is nothing to fix.
 	 */
-	it("two even with no connections", () => {
+	it("all four even with no connections", () => {
 		const state = resolve();
 		expect(
 			state.kind === "ready" && state.rows.map((row) => row.provider),
-		).toEqual(["anthropic-byo", "gemini-byo"]);
+		).toEqual([
+			"anthropic-byo",
+			"gemini-byo",
+			"openrouter-byo",
+			"openai-compatible-byo",
+		]);
 	});
 
-	it("two even with only one connected", () => {
+	it("all four even with only one connected", () => {
 		const state = resolve({ connections: [connection("gemini-byo")] });
 		expect(
 			state.kind === "ready" && state.rows.map((row) => row.provider),
-		).toEqual(["anthropic-byo", "gemini-byo"]);
+		).toEqual([
+			"anthropic-byo",
+			"gemini-byo",
+			"openrouter-byo",
+			"openai-compatible-byo",
+		]);
 		expect(
 			state.kind === "ready" && state.rows.map((row) => row.connected),
-		).toEqual([false, true]);
+		).toEqual([false, true, false, false]);
 	});
 
 	/** The order is fixed too: sorting by connection order would put the same row in a different place on each screen. */
@@ -84,7 +94,12 @@ describe("the row list is fixed", () => {
 		});
 		expect(
 			state.kind === "ready" && state.rows.map((row) => row.provider),
-		).toEqual(["anthropic-byo", "gemini-byo"]);
+		).toEqual([
+			"anthropic-byo",
+			"gemini-byo",
+			"openrouter-byo",
+			"openai-compatible-byo",
+		]);
 	});
 
 	it("carries the connection time as is", () => {
@@ -105,7 +120,7 @@ describe("without eligibility", () => {
 	/** The rows stay and the reason is attached **once.** */
 	it("rows don't disappear and one reason is attached", () => {
 		const state = locked();
-		expect(state.kind === "ready" && state.rows).toHaveLength(2);
+		expect(state.kind === "ready" && state.rows).toHaveLength(4);
 		expect(state.kind === "ready" && state.lockedReason).toBe(
 			providerByoLocked(),
 		);

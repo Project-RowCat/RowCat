@@ -3,7 +3,8 @@
  * memory-maintenance (+ prompt, runner), reply-suggestion (+ prompt, runner), store (port only:
  * Dexie on web, SQLite on mobile), conversation, guards, context, lore, prompt-trace,
  * protected-seed, protected-generation, debug-trace, debug-view, placeholder, ai-evidence,
- * generation (+ preference, availability, summary, options, reasoning), narration-output,
+ * generation (+ preference, availability, summary, options, reasoning, openai-compatible),
+ * narration-output,
  * intensity, search, tail-rewrite, message-actions, room-settings-ia, room-actions, room-library,
  * sidebar-rooms.
  *
@@ -39,6 +40,7 @@ export * from "./message-actions.ts";
 export * from "./model.ts";
 export * from "./narration.ts";
 export * from "./narration-output.ts";
+export * from "./openai-compatible.ts";
 export * from "./opening.ts";
 export * from "./persona.ts";
 export * from "./placeholder.ts";

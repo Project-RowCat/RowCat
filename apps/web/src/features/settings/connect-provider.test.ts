@@ -293,3 +293,83 @@ describe("failures mean different things", () => {
 			);
 	});
 });
+
+/**
+ * The server a user names. Its address and model names are checked before anything is sent, so the
+ * key never reaches an address the shared rule refuses, and the checked values — not the raw text —
+ * are what the probe and the store receive.
+ */
+describe("a user-named OpenAI-compatible server", () => {
+	const connect = (
+		server: { endpoint: string; models: string },
+		probe = vi.fn(async () => ok()),
+		save = vi.fn(async () => {}),
+	) =>
+		connectProvider({
+			provider: "openai-compatible-byo",
+			secret: KEY,
+			server,
+			byoAllowed: true,
+			probe,
+			save,
+			guard: guard(),
+		}).then((outcome) => ({ outcome, probe, save }));
+
+	it("verifies at the checked address and saves the checked server", async () => {
+		const { outcome, probe, save } = await connect({
+			endpoint: " HTTP://LOCALHOST:11434/v1/ ",
+			models: "llama3.1:8b\nqwen3:14b",
+		});
+		expect(outcome.status).toBe("connected");
+		expect(probe).toHaveBeenCalledWith(
+			"openai-compatible-byo",
+			KEY,
+			"http://localhost:11434/v1",
+		);
+		expect(save).toHaveBeenCalledWith("openai-compatible-byo", KEY, {
+			endpoint: "http://localhost:11434/v1",
+			models: ["llama3.1:8b", "qwen3:14b"],
+		});
+	});
+
+	/** A remote plain-http address would carry the key readable; nothing goes out. */
+	it.each([
+		[{ endpoint: "http://api.example.com/v1", models: "m" }, "endpoint"],
+		[{ endpoint: "", models: "m" }, "endpoint"],
+		[{ endpoint: "https://api.example.com/v1", models: "" }, "models"],
+		[{ endpoint: "https://api.example.com/v1", models: "two words" }, "models"],
+	] as const)("refuses %j before verifying", async (server, field) => {
+		const { outcome, probe, save } = await connect(server);
+		expect(outcome).toMatchObject({ status: "invalid_server", field });
+		expect(probe).not.toHaveBeenCalled();
+		expect(save).not.toHaveBeenCalled();
+	});
+
+	/** At an address the user typed, unreachable most often means the address or the server's CORS. */
+	it("an unreachable server says to check the address", async () => {
+		const { outcome } = await connect(
+			{ endpoint: "https://api.example.com/v1", models: "m" },
+			vi.fn(async () => temporary()),
+		);
+		expect(outcome.status).toBe("failed");
+		if (outcome.status === "failed")
+			expect(outcome.message).toContain("Check the address");
+	});
+
+	/** A fixed provider has nowhere to put an address; it never reaches the probe or the store. */
+	it("a fixed provider ignores server input", async () => {
+		const probe = vi.fn(async () => ok());
+		const save = vi.fn(async () => {});
+		await connectProvider({
+			provider: "openrouter-byo",
+			secret: KEY,
+			server: { endpoint: "https://evil.example/v1", models: "m" },
+			byoAllowed: true,
+			probe,
+			save,
+			guard: guard(),
+		});
+		expect(probe).toHaveBeenCalledWith("openrouter-byo", KEY);
+		expect(save).toHaveBeenCalledWith("openrouter-byo", KEY);
+	});
+});

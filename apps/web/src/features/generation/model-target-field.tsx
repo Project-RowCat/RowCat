@@ -124,8 +124,11 @@ export function ModelTargetField({
 	 * `lib/query/panel-retry.ts`.
 	 */
 	const retryCatalog = usePanelRetry(GENERATION_MODELS_QUERY_KEY, catalog);
-	const { providers: connected, loading: connectionsLoading } =
-		useConnectedProviders();
+	const {
+		providers: connected,
+		models: connectionModels,
+		loading: connectionsLoading,
+	} = useConnectedProviders();
 	/**
 	 * Account eligibility is a separate axis from connection. For a child account, BYO entries stay
 	 * closed even when connected, and the list must say so. The verdict comes from a pure function;
@@ -133,7 +136,11 @@ export function ModelTargetField({
 	 */
 	const capability = useViewerCapability();
 
-	const models = (catalog.data ?? []).filter(
+	/**
+	 * The server's catalogue plus the models a connection names itself (a user's own server). After
+	 * the catalogue, so the server's order stays first.
+	 */
+	const models = [...(catalog.data ?? []), ...connectionModels].filter(
 		(model) => !byoOnly || model.requiresConnection,
 	);
 	/**

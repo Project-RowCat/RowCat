@@ -122,7 +122,9 @@ export const isByoProviderName = (value: unknown): value is ByoProvider =>
 export type GenerationTarget =
 	| { provider: "rowcat"; model: RowCatManagedModel }
 	| { provider: "anthropic-byo"; model: string }
-	| { provider: "gemini-byo"; model: string };
+	| { provider: "gemini-byo"; model: string }
+	| { provider: "openrouter-byo"; model: string }
+	| { provider: "openai-compatible-byo"; model: string };
 
 /**
  * Whether this target goes to the RowCat server, i.e. a managed generation run with the operator's

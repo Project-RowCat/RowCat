@@ -1,4 +1,10 @@
-import type { ByoProvider } from "@rowcat/chat";
+import {
+	type ByoProvider,
+	checkOpenAiCompatibleEndpoint,
+	OPENAI_COMPATIBLE_PROVIDER,
+	type OpenAiCompatibleConnection,
+	parseOpenAiCompatibleModels,
+} from "@rowcat/chat";
 import type { ProviderError } from "#/lib/generation/errors.ts";
 import type { CredentialCheck } from "#/lib/generation/transport.ts";
 import { translator } from "#/lib/i18n/current.ts";
@@ -46,6 +52,12 @@ export type ConnectProviderOutcome =
 	 * Nothing was saved.
 	 */
 	| { status: "failed"; message: string }
+	/**
+	 * The server address or model names entered for `openai-compatible-byo` are not ones the shared
+	 * rule accepts. Checked before anything is sent, so a key never goes to an address the rule
+	 * refuses. `field` says which input the sentence belongs next to.
+	 */
+	| { status: "invalid_server"; field: "endpoint" | "models"; message: string }
 	/** Another operation is already running. Nothing was done. */
 	| { status: "busy" };
 
@@ -69,10 +81,26 @@ export interface ConnectProviderInput {
 	byoAllowed: boolean;
 	/** The key the user typed. Trimming is already done by the caller. */
 	secret: string;
-	/** Verification. Asks the provider cheaply; this is not a generation request. */
-	probe: (provider: ByoProvider, secret: string) => Promise<CredentialCheck>;
+	/**
+	 * What the user typed for the server, for `openai-compatible-byo` only (raw text; checked here by
+	 * the shared rules). Ignored for every other provider — a fixed provider has nowhere to put it.
+	 */
+	server?: { endpoint: string; models: string };
+	/**
+	 * Verification. Asks the provider cheaply; this is not a generation request. `endpoint` is the
+	 * checked address, present only for the provider that has no fixed one.
+	 */
+	probe: (
+		provider: ByoProvider,
+		secret: string,
+		endpoint?: string,
+	) => Promise<CredentialCheck>;
 	/** Save. Only keys that passed verification reach this. Replacing a key uses the same call. */
-	save: (provider: ByoProvider, secret: string) => Promise<void>;
+	save: (
+		provider: ByoProvider,
+		secret: string,
+		server?: OpenAiCompatibleConnection,
+	) => Promise<void>;
 	/**
 	 * A synchronous copy of whether progress is running. React state is not enough: `setState` only
 	 * takes effect on the next render, so two submits in the same tick (rapid clicks, or Enter and
@@ -96,11 +124,25 @@ export async function connectProvider(
 			status: "not_permitted",
 			message: translator("settings")("connect.notPermitted"),
 		};
+	/**
+	 * The server is checked before the guard is set, like eligibility: nothing has started yet. The
+	 * order matters for the key — an address the rule refuses must never receive the probe.
+	 */
+	const server =
+		input.provider === OPENAI_COMPATIBLE_PROVIDER
+			? checkServer(input.server)
+			: null;
+	if (server && !server.ok) return server.outcome;
 	input.guard.current = true;
 	try {
-		const check = await input.probe(input.provider, input.secret);
+		const check = server
+			? await input.probe(input.provider, input.secret, server.value.endpoint)
+			: await input.probe(input.provider, input.secret);
 		if (!check.ok) {
-			const message = credentialFailureMessage(check.error);
+			const message = credentialFailureMessage(
+				check.error,
+				input.provider === OPENAI_COMPATIBLE_PROVIDER,
+			);
 			return check.error.code === "invalid_credential"
 				? { status: "rejected", message }
 				: { status: "failed", message };
@@ -108,7 +150,8 @@ export async function connectProvider(
 
 		// Only keys that passed are saved. Replacing a key uses the same call, which issues a new
 		// wrapping key.
-		await input.save(input.provider, input.secret);
+		if (server) await input.save(input.provider, input.secret, server.value);
+		else await input.save(input.provider, input.secret);
 		return { status: "connected" };
 	} catch {
 		/**
@@ -135,7 +178,14 @@ export async function connectProvider(
  * Two things must not collapse. A rejected key needs fixing, and a quota or credit limit needs
  * waiting or checking the provider account. Their next actions differ.
  */
-export function credentialFailureMessage(error: ProviderError): string {
+export function credentialFailureMessage(
+	error: ProviderError,
+	/**
+	 * Whether the address was the user's. A server we cannot reach at an address they typed is most
+	 * often the address, or a server that does not allow this site's requests — not "try again later".
+	 */
+	userServer = false,
+): string {
 	const t = translator("settings");
 	switch (error.code) {
 		case "invalid_credential":
@@ -145,6 +195,58 @@ export function credentialFailureMessage(error: ProviderError): string {
 		case "quota_exceeded":
 			return t("connect.quotaExceeded");
 		default:
-			return t("connect.unavailable");
+			return userServer
+				? t("connect.serverUnreachable")
+				: t("connect.unavailable");
 	}
+}
+
+type ServerCheck =
+	| { ok: true; value: OpenAiCompatibleConnection }
+	| {
+			ok: false;
+			outcome: Extract<ConnectProviderOutcome, { status: "invalid_server" }>;
+	  };
+
+/** Raw server inputs → the checked connection, or the sentence for the input that is wrong. */
+function checkServer(
+	raw: ConnectProviderInput["server"] | undefined,
+): ServerCheck {
+	const t = translator("settings");
+	const endpoint = checkOpenAiCompatibleEndpoint(raw?.endpoint ?? "");
+	if (!endpoint.ok)
+		return {
+			ok: false,
+			outcome: {
+				status: "invalid_server",
+				field: "endpoint",
+				message: t(
+					endpoint.reason === "empty"
+						? "connect.endpointEmpty"
+						: endpoint.reason === "insecure"
+							? "connect.endpointInsecure"
+							: "connect.endpointInvalid",
+				),
+			},
+		};
+	const models = parseOpenAiCompatibleModels(raw?.models ?? "");
+	if (!models.ok)
+		return {
+			ok: false,
+			outcome: {
+				status: "invalid_server",
+				field: "models",
+				message: t(
+					models.reason === "empty"
+						? "connect.modelsEmpty"
+						: models.reason === "too_many"
+							? "connect.modelsTooMany"
+							: "connect.modelsInvalid",
+				),
+			},
+		};
+	return {
+		ok: true,
+		value: { endpoint: endpoint.endpoint, models: models.models },
+	};
 }

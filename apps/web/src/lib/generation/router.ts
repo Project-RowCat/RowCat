@@ -27,6 +27,9 @@ import type { ByoAdapter, GenerationTransport } from "./transport.ts";
  * - rowcat: SDK -> /v2/chat/generate -> RowCat server -> upstream provider
  * - anthropic-byo: browser -> api.anthropic.com
  * - gemini-byo: browser -> generativelanguage.googleapis.com
+ * - openrouter-byo: browser -> openrouter.ai (the gateway the managed path uses, with the user's key)
+ * - openai-compatible-byo: browser -> the server the user named (its address lives with the
+ *   connection and reaches the adapter through the credential callback, never through the request)
  *
  * The managed model is attached here, and only for the rowcat target. The assembler's request is
  * provider-neutral and does not know the model, and BYO adapters would ignore a managed-model
@@ -49,9 +52,15 @@ import type { ByoAdapter, GenerationTransport } from "./transport.ts";
  * prompt to our server, which breaks the definition of this feature.
  */
 
+/**
+ * The fixed origins the browser calls. `openai-compatible-byo` is not here and cannot be: its origin
+ * is whatever the user entered (`https:` or this device's loopback), so the CSP's `connect-src`
+ * carries those two source shapes instead (`vite.config.ts`).
+ */
 export const PROVIDER_CONNECT_ORIGINS: readonly string[] = [
 	"https://api.anthropic.com",
 	"https://generativelanguage.googleapis.com",
+	"https://openrouter.ai",
 ];
 
 /**
@@ -67,6 +76,10 @@ const ADAPTERS: Record<ByoProvider, () => Promise<ByoAdapter>> = {
 	"anthropic-byo": async () =>
 		(await import("./anthropic.ts")).anthropicAdapter,
 	"gemini-byo": async () => (await import("./gemini.ts")).geminiAdapter,
+	"openrouter-byo": async () =>
+		(await import("./openrouter.ts")).openRouterAdapter,
+	"openai-compatible-byo": async () =>
+		(await import("./openai-compatible.ts")).openAiCompatibleAdapter,
 };
 
 export interface GenerationRouterDeps {
@@ -263,11 +276,12 @@ async function* streamByo(input: {
 	 */
 	const events = await credentials.withCredential(
 		input.provider,
-		async (secret) =>
+		async (secret, endpoint) =>
 			adapter.stream({
 				request: withPlatformPolicy(input.request),
 				model: input.model,
 				secret,
+				...(endpoint === undefined ? {} : { endpoint }),
 				signal: input.options.signal,
 			}),
 	);
@@ -310,11 +324,17 @@ export async function probeProviderCredential(
 	secret: string,
 	options: {
 		signal: AbortSignal;
+		/** The address being connected; only `openai-compatible-byo` has one. */
+		endpoint?: string;
 		loadAdapter?: (provider: ByoProvider) => Promise<ByoAdapter>;
 	},
 ) {
 	const adapter = await (options.loadAdapter
 		? options.loadAdapter(provider)
 		: ADAPTERS[provider]());
-	return adapter.probe({ secret, signal: options.signal });
+	return adapter.probe({
+		secret,
+		...(options.endpoint === undefined ? {} : { endpoint: options.endpoint }),
+		signal: options.signal,
+	});
 }

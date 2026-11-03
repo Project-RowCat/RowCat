@@ -343,8 +343,9 @@ describe("settings knows only the connection summary", () => {
 	});
 
 	/**
-	 * **No dead placeholders.** Things this slice does not open (OpenAI, OpenRouter, arbitrary
-	 * endpoints, proxies) are not drawn as `Coming soon`.
+	 * **No dead placeholders.** Things this slice does not open (proxies) are not drawn as `Coming
+	 * soon`. OpenRouter left the list when its adapter landed in both apps, and `OpenAI`, `baseUrl` and
+	 * `customEndpoint` left with the user-named OpenAI-compatible server.
 	 */
 	it("no `Coming soon` placeholders or next-slice vocabulary", () => {
 		for (const file of settings)
@@ -352,10 +353,6 @@ describe("settings knows only the connection summary", () => {
 				"Coming soon",
 				"Available soon",
 				"coming soon",
-				"OpenAI",
-				"OpenRouter",
-				"baseUrl",
-				"customEndpoint",
 			])
 				expect(file.text, `${file.path} — ${placeholder}`).not.toContain(
 					placeholder,

@@ -43,7 +43,7 @@ import { parseSseData, readSse } from "./sse.ts";
  * user decides whether to retry.
  */
 
-/** Provider endpoint. Not user-configurable; arbitrary endpoints are deferred. */
+/** Provider endpoint. Not user-configurable; a user-named server is `openai-compatible-byo`'s job. */
 const API_ORIGIN = "https://api.anthropic.com";
 
 /** Version header the docs specify. A literal because it pins the response format. */

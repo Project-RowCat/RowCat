@@ -30,7 +30,10 @@ export type ConnectFailureScope = "field" | "form";
  * unanswerable question to the type: where does success land?
  */
 export function connectFailureScope(
-	status: Exclude<ConnectProviderOutcome["status"], "connected" | "busy">,
+	status: Exclude<
+		ConnectProviderOutcome["status"],
+		"connected" | "busy" | "invalid_server"
+	>,
 ): ConnectFailureScope {
 	/**
 	 * An allow-list, not an exclusion list. If a new failure kind silently fell into the field scope,

@@ -1,4 +1,8 @@
-import type { GenerationProvider } from "@rowcat/chat";
+import {
+	type GenerationProvider,
+	openAiCompatibleModelRows,
+} from "@rowcat/chat";
+import type { GenerationModelDto } from "@rowcat/contracts";
 import { useLiveQuery } from "dexie-react-hooks";
 import type { ProviderConnectionSummary } from "./record.ts";
 import { useProviderScope } from "./scope.ts";
@@ -51,11 +55,21 @@ export function useProviderConnections(): ProviderConnectionState {
  */
 export function useConnectedProviders(): {
 	providers: GenerationProvider[];
+	/**
+	 * Catalogue-shaped rows for the models a connection itself names (`openai-compatible-byo`; the
+	 * server catalogue cannot list a server only this device knows). Callers merge them into the
+	 * catalogue they hand the picker, so those models are listed, chosen and judged like any other
+	 * BYO entry. Built by the shared rule (`openAiCompatibleModelRows`), never by the screen.
+	 */
+	models: GenerationModelDto[];
 	loading: boolean;
 } {
 	const { connections, loading } = useProviderConnections();
 	return {
 		providers: connections.map((connection) => connection.provider),
+		models: connections.flatMap((connection) =>
+			openAiCompatibleModelRows(connection.server),
+		),
 		loading,
 	};
 }

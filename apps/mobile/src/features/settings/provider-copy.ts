@@ -1,4 +1,4 @@
-import type { ByoProvider } from "@rowcat/chat";
+import { type ByoProvider, OPENAI_COMPATIBLE_LABEL } from "@rowcat/chat";
 import { membershipAges } from "../../lib/membership-ages.ts";
 
 /**
@@ -32,6 +32,8 @@ export const PROVIDER_SECTION_DESCRIPTION =
 export const PROVIDER_TITLE: Record<ByoProvider, string> = {
 	"anthropic-byo": "Anthropic",
 	"gemini-byo": "Google Gemini",
+	"openrouter-byo": "OpenRouter",
+	"openai-compatible-byo": OPENAI_COMPATIBLE_LABEL,
 };
 
 /**
@@ -40,10 +42,14 @@ export const PROVIDER_TITLE: Record<ByoProvider, string> = {
  * We do not copy the console instructions into our screen. They would become a wrong explanation
  * the moment the provider changes its UI, and **a wrong explanation is worse than none.** One link
  * is enough.
+ *
+ * `null` for the server the user names: we do not know it, and a guessed page is a wrong one.
  */
-export const PROVIDER_KEY_PAGE: Record<ByoProvider, string> = {
+export const PROVIDER_KEY_PAGE: Record<ByoProvider, string | null> = {
 	"anthropic-byo": "https://platform.claude.com/settings/keys",
 	"gemini-byo": "https://aistudio.google.com/apikey",
+	"openrouter-byo": "https://openrouter.ai/settings/keys",
+	"openai-compatible-byo": null,
 };
 
 export const PROVIDER_KEY_PAGE_LABEL = "Open the API key page";
@@ -81,6 +87,37 @@ export const providerDialogTitle = (
 		: `Replace ${PROVIDER_TITLE[provider]} key`;
 
 export const PROVIDER_KEY_FIELD_LABEL = "API key";
+
+/**
+ * The two fields only the user-named server has (`openai-compatible-byo`). The address rule and its
+ * reasons are the shared one (`checkOpenAiCompatibleEndpoint`); these are only its words, the same as
+ * the web's.
+ */
+export const PROVIDER_SERVER_FIELD_LABEL = "Server address";
+export const PROVIDER_SERVER_PLACEHOLDER = "https://api.example.com/v1";
+export const PROVIDER_SERVER_HINT =
+	"The address before /chat/completions. Plain http works only for a server on this device; on a phone, localhost is the phone itself.";
+export const PROVIDER_MODELS_FIELD_LABEL = "Models";
+export const PROVIDER_MODELS_PLACEHOLDER = "llama3.1:8b";
+export const PROVIDER_MODELS_HINT =
+	"The model names this server accepts, one per line. They appear in the model picker.";
+export const PROVIDER_KEY_ANY_VALUE =
+	"If the server doesn't use a key, enter any value.";
+export const PROVIDER_SERVER_NOTICE =
+	"Conversations and this key go only to the server you enter here. Check that it's one you trust.";
+export const PROVIDER_SERVER_FAILURE = {
+	endpointEmpty: "Enter the server address.",
+	endpointInsecure:
+		"Plain http is accepted only for a server on this device (localhost). Use an https address.",
+	endpointInvalid:
+		"This isn't an address that can be used. Enter something like https://example.com/v1.",
+	modelsEmpty: "Enter at least one model name.",
+	modelsInvalid:
+		"A model name can't contain spaces or be longer than 200 characters.",
+	modelsTooMany: "Enter up to 20 model names.",
+	unreachable:
+		"Couldn't reach a server at this address. Check the address and that the server is running.",
+} as const;
 export const PROVIDER_KEY_PLACEHOLDER = "Paste your API key";
 
 /**

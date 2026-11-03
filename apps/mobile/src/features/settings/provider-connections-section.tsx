@@ -100,7 +100,10 @@ export function ProviderConnectionsSection() {
 	 */
 	const guard = useRef(false);
 
-	const submit = (secret: string): void => {
+	const submit = (
+		secret: string,
+		server?: { endpoint: string; models: string },
+	): void => {
 		const target = form;
 		const store = connections.store;
 		if (!target || !store) return;
@@ -110,6 +113,7 @@ export function ProviderConnectionsSection() {
 			provider: target.provider,
 			byoAllowed: capability.byo,
 			secret,
+			...(server ? { server } : {}),
 			/**
 			 * Passes **the store as it was when the operation started.** The coordinator does not read "the
 			 * store open right now" inside, because of account switching: otherwise a save started on
@@ -117,8 +121,9 @@ export function ProviderConnectionsSection() {
 			 */
 			store,
 			ownsStore: connections.ownsStore,
-			probe: (provider, value) =>
+			probe: (provider, value, endpoint) =>
 				probeProviderCredential(provider, value, {
+					endpoint,
 					/**
 					 * Verification gets its own signal. Sharing a lifetime with the other operations on the screen
 					 * would leave a request already sent half-finished when the dialog closes.

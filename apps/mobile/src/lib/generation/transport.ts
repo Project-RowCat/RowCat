@@ -13,6 +13,8 @@ import { anthropicAdapter } from "./anthropic.ts";
 import type { ByoAdapter, ByoFetch } from "./byo.ts";
 import { ProviderError } from "./errors.ts";
 import { geminiAdapter } from "./gemini.ts";
+import { openAiCompatibleAdapter } from "./openai-compatible.ts";
+import { openRouterAdapter } from "./openrouter.ts";
 
 /**
  * Generation transport: the one place where providers diverge (mobile).
@@ -26,6 +28,8 @@ import { geminiAdapter } from "./gemini.ts";
  * rowcat        → SDK → /v2/chat/generate → RowCat server → upstream → **billed by RowCat**
  * anthropic-byo → device → api.anthropic.com                          → not billed by RowCat
  * gemini-byo    → device → generativelanguage.googleapis.com          → not billed by RowCat
+ * openrouter-byo → device → openrouter.ai                             → not billed by RowCat
+ * openai-compatible-byo → device → the server the user named           → not billed by RowCat
  * ```
  *
  * - Managed model identity is attached here, not in the request. The assembler is
@@ -67,6 +71,8 @@ export interface GenerationTransport {
 const ADAPTERS: Record<ByoProvider, ByoAdapter> = {
 	"anthropic-byo": anthropicAdapter,
 	"gemini-byo": geminiAdapter,
+	"openrouter-byo": openRouterAdapter,
+	"openai-compatible-byo": openAiCompatibleAdapter,
 };
 
 export interface GenerationTransportDeps {
@@ -308,11 +314,12 @@ async function* streamByo(input: {
 	 */
 	const events = await credentials.withCredential(
 		input.provider,
-		async (secret) =>
+		async (secret, endpoint) =>
 			adapter.start({
 				request: withPlatformPolicy(input.request),
 				model: input.model,
 				secret,
+				...(endpoint === undefined ? {} : { endpoint }),
 				signal: input.options.signal,
 				fetch,
 			}),
@@ -360,12 +367,15 @@ export function probeProviderCredential(
 	options: {
 		signal: AbortSignal;
 		fetch: ByoFetch;
+		/** The address being connected; only `openai-compatible-byo` has one. */
+		endpoint?: string | undefined;
 		loadAdapter?: ((provider: ByoProvider) => ByoAdapter) | undefined;
 	},
 ) {
 	const adapter = options.loadAdapter?.(provider) ?? ADAPTERS[provider];
 	return adapter.probe({
 		secret,
+		...(options.endpoint === undefined ? {} : { endpoint: options.endpoint }),
 		signal: options.signal,
 		fetch: options.fetch,
 	});

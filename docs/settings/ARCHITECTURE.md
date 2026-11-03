@@ -890,11 +890,41 @@ useChatGeneration
    ↓ 실행 가능한 대상
 lib/generation/router.ts
    ├ rowcat        → @rowcat/sdk → POST /v2/chat/generate → RowCat 서버 → OpenRouter
-   ├ anthropic-byo → 브라우저 → https://api.anthropic.com/v1/messages
-   └ gemini-byo    → 브라우저 → https://generativelanguage.googleapis.com/.../streamGenerateContent
+   ├ anthropic-byo  → 브라우저 → https://api.anthropic.com/v1/messages
+   ├ gemini-byo     → 브라우저 → https://generativelanguage.googleapis.com/.../streamGenerateContent
+   ├ openrouter-byo        → 브라우저 → https://openrouter.ai/api/v1/chat/completions
+   └ openai-compatible-byo → 브라우저 → <사용자가 적은 서버>/chat/completions
 ```
 
-세 경로 모두 **같은 입력**(`ChatGenerationRequest`, 우리 컨텍스트 조립기가 만든 값)을 받고
+`openrouter-byo`는 관리형이 서버에서 부르는 바로 그 게이트웨이를 **사용자의 키로** 기기에서 부른다.
+요청 모양은 관리형과 같고(캐시 중단점·`reasoning.effort`·`session_id`·도구 호출) 갈리는 것은 둘이다 —
+운영자의 라우팅 제약(`provider.only`·`data_collection`)을 싣지 않는다(그 관계는 사용자와 게이트웨이의
+것이고, 사용자 계정의 개인정보 설정이 이미 선다). 이어서 생성은 언제나 넛지 모양이다(기기에는 상류별
+레지스트리가 없고, 넛지는 모든 상류가 받는 모양이다). 카탈로그는 이 저장소가 검증한 모델 목록이다
+(`OPENROUTER_MODELS`, `services/generation/models.ts`).
+
+두 제공자는 **한 프로토콜 구현**(`lib/generation/chat-completions.ts`, 웹·모바일 한 쌍) 위의 프로필 둘이다.
+`openai-compatible-byo`는 **사용자가 주소를 적는 유일한 제공자**다.
+
+- **주소 규칙은 하나다**(`checkOpenAiCompatibleEndpoint`, `@rowcat/chat`). `https`는 어느 호스트든, 평문 `http`는
+  이 기기의 루프백(`localhost`·`127.0.0.1`·`[::1]`)만 — 지키는 것은 대화가 아니라 **키**다(대화를 어디로 보낼지는
+  사용자가 골랐다. 우리가 거절하는 것은 그 키가 길에서 읽히는 주소다). 자격 증명·쿼리·프래그먼트는 거절한다.
+  모바일에서 `localhost`는 **휴대폰 자신**이다.
+- **주소와 모델 이름은 연결과 함께 기기에만 산다**(웹: 연결 행의 `server`, 모바일: 같은 SecureStore 항목).
+  계약에도 서버에도 요청에도 주소 칸이 없다 — 주소는 자격 증명 콜백이 키와 **함께** 어댑터에 건넨다
+  (`withCredential(provider, (secret, endpoint) => …)`). 읽을 때마다 같은 규칙으로 다시 검사하고, 규칙이
+  거절하는 저장값은 **연결 없음**이다.
+- **카탈로그에 행이 없다.** 서버가 모르는 서버이므로, 연결이 적은 모델 이름이 기기에서 카탈로그 모양의 행이
+  된다(`openAiCompatibleModelRows`) — 두 앱의 선택기와 방 요약이 그것을 서버 카탈로그 뒤에 붙인다. 행에는 능력이
+  없다(`reasoning: null`·`promptPack: null`): 아무것도 모르는 서버에 추론 단계를 약속하지 않는다.
+- **표준만 보낸다.** 캐시 중단점·`session_id`·통합 `reasoning`·추가 헤더가 없다(엄격한 서버는 모르는 키에 400을
+  준다). 자격 확인은 `GET /models`다. 도구는 다른 제공자처럼 로어가 있는 방에서 실리고, 도구를 모르는 서버·모델은
+  그것을 제공자 실패로 돌려준다 — 먼저 물어볼 능력표가 없다.
+- **웹 CSP의 `connect-src`가 그 규칙만큼 넓다**(`https:` + 루프백, `vite.config.ts`). 출처 목록은 들어 본 적 없는
+  서버를 이름 부를 수 없다. 서버가 브라우저 요청(CORS)을 허용하지 않으면 웹에서는 연결 확인이 실패하고, 그
+  문장은 주소와 CORS를 확인하라고 말한다.
+
+다섯 경로 모두 **같은 입력**(`ChatGenerationRequest`, 우리 컨텍스트 조립기가 만든 값)을 받고
 **같은 출력**(`ChatStreamEvent`)을 낸다. 그래서 대화 훅에는 제공자를 가르는 코드가 없고,
 대화 수명주기(유저 메시지 먼저 저장 → 컨텍스트 조립 → 스트림 → 확정 저장 한 번)는 한 줄도
 바뀌지 않았다.
