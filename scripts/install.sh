@@ -21,13 +21,15 @@
 # - Put a public server on plain HTTP. --domain puts Caddy and certificates in front
 #   (deploy/caddy/); --local is for trying RowCat on the machine you are sitting at.
 #
-# A fork passes --repo (and its images follow: ghcr.io/<owner>/rowcat). --source <checkout> takes the
+# A fork passes --repo (and its images follow: ghcr.io/<owner>/rowcat) on the first install; .env
+# records it (ROWCAT_INSTALL_REPO) and an upgrade reuses it. --source <checkout> takes the
 # files from a local checkout instead of downloading them, with --tag naming images already in
 # --registry; scripts/install-smoke.sh tests the script that way.
 
 set -euo pipefail
 
-repo="Project-RowCat/RowCat"
+default_repo="Project-RowCat/RowCat"
+repo=""
 ref=""
 domain=""
 email=""
@@ -48,8 +50,9 @@ Options:
   --email ADDRESS   the ACME account address for certificates (optional, with --domain)
   --local           serve http://localhost:3000-3002 instead (this machine only)
   --dir PATH        the deployment directory (default: the current one)
-  --repo OWNER/NAME where the files and images come from (default: Project-RowCat/RowCat)
-  --registry REF    image registry (default: ghcr.io/<lowercased owner>/rowcat)
+  --repo OWNER/NAME where the files and images come from (default: Project-RowCat/RowCat;
+                    an upgrade reuses the one recorded in .env)
+  --registry REF    image registry (default: ghcr.io/<lowercased owner>/rowcat; an upgrade reuses .env's)
   --tag TAG         image tag (default: sha-<first 12 characters of the commit>)
   --source PATH     copy the files from a local checkout instead of downloading them (needs --tag)
   --skip-backup     upgrade without the database backup that normally comes first
@@ -104,10 +107,6 @@ if [ "$major" -lt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -lt 24 ]; }; then
 fi
 [ -n "$source_dir" ] || command -v curl >/dev/null || die "curl is needed to download the deployment files"
 
-case "$repo" in */*) ;; *) die "--repo is OWNER/NAME, e.g. Project-RowCat/RowCat" ;; esac
-owner="$(printf '%s' "${repo%%/*}" | tr '[:upper:]' '[:lower:]')"
-registry="${registry:-ghcr.io/$owner/rowcat}"
-
 if [ -n "$source_dir" ]; then
 	# Made absolute before the cd below, which would otherwise move a relative path with it.
 	source_dir="$(cd "$source_dir" 2>/dev/null && pwd)" || die "--source is not a directory"
@@ -142,7 +141,31 @@ else
 	[ -z "$domain$local_only$email" ] || die "this directory already has a deployment; --domain, --local and --email apply to a first install only"
 	grep -q '^COMPOSE_FILE=.*compose\.images\.yml' .env ||
 		die "this .env was not written by install.sh (no compose.images.yml in COMPOSE_FILE) — upgrade it as docs/ops/BACKUP.md describes"
+	# Where the deployment comes from is part of its shape as well. Recomputed from the defaults, a
+	# fork's deployment upgraded with a bare --ref moved onto this repository's commit of that name
+	# (release tags are dates, so both usually have one) and onto its images, which need not know the
+	# fork's migrations — and nothing failed.
+	env_get() { sed -n "s/^$1=//p" .env | tail -1; }
+	recorded_repo="$(env_get ROWCAT_INSTALL_REPO)"
+	recorded_registry="$(env_get ROWCAT_IMAGE_REGISTRY)"
+	if [ -n "$recorded_repo" ]; then
+		[ -z "$repo" ] || [ "$repo" = "$recorded_repo" ] ||
+			die "this deployment comes from $recorded_repo, not $repo — moving it to another repository is not an upgrade (edit ROWCAT_INSTALL_REPO in .env if that is what you mean)"
+		repo="$recorded_repo"
+	elif [ -z "$repo" ] && [ -n "$recorded_registry" ] && [ "$recorded_registry" != "ghcr.io/project-rowcat/rowcat" ]; then
+		# An .env from before the repository was recorded: its images say it is not the default one.
+		die "this .env does not record its repository and its images come from $recorded_registry — name it once with --repo OWNER/NAME"
+	fi
+	if [ -n "$registry" ] && [ -n "$recorded_registry" ] && [ "$registry" != "$recorded_registry" ]; then
+		say "moving the images from $recorded_registry to $registry, as --registry says"
+	fi
+	registry="${registry:-$recorded_registry}"
 fi
+
+repo="${repo:-$default_repo}"
+case "$repo" in */*) ;; *) die "--repo is OWNER/NAME, e.g. $default_repo" ;; esac
+owner="$(printf '%s' "${repo%%/*}" | tr '[:upper:]' '[:lower:]')"
+registry="${registry:-ghcr.io/$owner/rowcat}"
 
 # --- Which commit ---------------------------------------------------------------------------------
 
@@ -237,12 +260,14 @@ if [ "$mode" = install ]; then
 			echo "POSTGRES_PASSWORD=$(random_hex 24)"
 			[ -z "$domain" ] || echo "ROWCAT_DOMAIN=$domain"
 			[ -z "$email" ] || echo "ROWCAT_CADDY_OPTIONS=\"email $email\""
+			echo "ROWCAT_INSTALL_REPO=$repo"
 			echo "ROWCAT_IMAGE_REGISTRY=$registry"
 			echo "ROWCAT_IMAGE_TAG=$tag"
 		} >.env
 	) || die ".env appeared while installing — not overwriting it"
 	say "wrote .env with generated secrets (owner-only)"
 else
+	set_env ROWCAT_INSTALL_REPO "$repo"
 	set_env ROWCAT_IMAGE_REGISTRY "$registry"
 	set_env ROWCAT_IMAGE_TAG "$tag"
 fi

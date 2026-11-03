@@ -32,7 +32,9 @@ bash install.sh --ref <릴리스> --domain rowcat.example.com --email ops@exampl
   허락하는 어디에서든 TLS 없이 닿는다.
 - **둘 중 하나를 반드시 고른다.** 기본값을 두면 서버 운영자가 모르는 사이 평문 배포를 세운다.
 - **포크는 `--repo 소유자/이름`.** 파일과 이미지가 함께 따라간다(`ghcr.io/<소유자 소문자>/rowcat`). 다른 곳에
-  게시했으면 `--registry`.
+  게시했으면 `--registry`. 둘 다 처음 설치할 때 한 번만 준다 — `.env`에 적히고(`ROWCAT_INSTALL_REPO`,
+  `ROWCAT_IMAGE_REGISTRY`) 업그레이드는 그 값을 쓴다. 기본값으로 다시 계산하면 포크 배포가 같은 날짜 태그를 가진
+  이 저장소의 코드와 이미지로 아무 오류 없이 옮겨 간다. 다른 `--repo`를 주면 업그레이드가 거절한다.
 
 ## 하지 않는 일과 그 이유
 

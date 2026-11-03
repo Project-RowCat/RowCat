@@ -70,6 +70,9 @@ done
 ok "v1 and v2 pushed"
 
 install() { bash "$root/scripts/install.sh" --source "$root" --registry "$registry" --dir "$deploy" "$@"; }
+# What the guide tells an operator to run: no --repo or --registry. Both must come from .env — while
+# they came from the defaults, every upgrade of a fork's deployment moved it onto this repository.
+upgrade() { bash "$root/scripts/install.sh" --source "$root" --dir "$deploy" "$@"; }
 
 echo "--- refusals before anything is written"
 if install --local --tag missing >"$work/missing.log" 2>&1; then
@@ -138,9 +141,16 @@ expect "it still answers" 200 "$(curl -s -o /dev/null -w '%{http_code}' http://l
 echo "--- install again in the same directory"
 if install --local --tag v2 >"$work/again.log" 2>&1; then fail "--local was accepted on an existing deployment"; else ok "a second install is refused"; fi
 expect "the refusal changed nothing" "$v1_api" "$(pinned api)"
+expect ".env records where the deployment comes from" Project-RowCat/RowCat "$(env_value ROWCAT_INSTALL_REPO)"
+if upgrade --tag v2 --repo someone-else/RowCat >"$work/otherrepo.log" 2>&1; then
+	fail "an upgrade moved the deployment to another repository"
+else
+	ok "an upgrade from another repository is refused"
+fi
+expect "that refusal changed nothing" "$v1_api" "$(pinned api)"
 
 echo "--- upgrade"
-if install --tag v2 >"$work/upgrade.log" 2>&1; then
+if upgrade --tag v2 >"$work/upgrade.log" 2>&1; then
 	ok "it upgrades and comes up healthy"
 else
 	fail "the upgrade failed: $(tail -3 "$work/upgrade.log")"
@@ -148,6 +158,7 @@ fi
 expect "a backup came first" 1 "$(find "$deploy/backups" -name 'rowcat-*.dump' | wc -l | tr -d ' ')"
 expect "the secrets are kept" "$secret_before" "$(env_value BETTER_AUTH_SECRET)"
 expect "the tag moved" v2 "$(env_value ROWCAT_IMAGE_TAG)"
+expect "the registry is kept" "$registry" "$(env_value ROWCAT_IMAGE_REGISTRY)"
 if [ "$(pinned api)" != "$v1_api" ] && pinned api | grep -q "@sha256:"; then ok "the pin moved to v2's digest"; else fail "the pin did not move ($(pinned api))"; fi
 expect "the running API is the pinned image" "$(pinned api)" \
 	"$(docker inspect --format '{{.Config.Image}}' "$(dc ps -q api)")"

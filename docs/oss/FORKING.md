@@ -143,6 +143,10 @@ manifest(`apps/mcp/package.json`의 `repository`·`bugs`·`homepage`)가 그 저
 쓰인다. 처음 올린 뒤 GitHub의 패키지 설정에서 공개 여부를 확인한다. 배포는 `ROWCAT_IMAGE_TAG`를 `sha-<커밋>`으로
 고정해 `latest`가 발밑에서 바뀌지 않게 한다.
 
+체크아웃 없이 설치하는 `scripts/install.sh`의 기본 저장소는 `Project-RowCat/RowCat`이다. 포크의 운영자는 첫
+설치에 `--repo <소유자>/<이름>`을 준다. 그 값은 `.env`의 `ROWCAT_INSTALL_REPO`에 적히고 업그레이드는 그 값을 다시
+쓴다(`docs/ops/INSTALL.md`). 스크립트의 `default_repo`를 포크 이름으로 바꾸면 플래그가 없어도 된다.
+
 ## 16. 데스크톱 설치 파일
 
 `apps/desktop`은 앱 id(`APP_BUNDLE_ID` + `.desktop`)와 이름(`APP_NAME`)을 §1에서 가져오므로 바꿀 자리가 따로 없다.
