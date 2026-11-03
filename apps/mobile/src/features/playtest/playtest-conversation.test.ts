@@ -2,7 +2,7 @@ import {
 	createStoryDraftRecord,
 	type StoryPublicationSource,
 } from "@rowcat/authoring";
-import { CHAT_HISTORY_WINDOW_MAX } from "@rowcat/chat";
+import { CHAT_HISTORY_LIMIT, CHAT_HISTORY_WINDOW_MAX } from "@rowcat/chat";
 import { describe, expect, it } from "vitest";
 import { createPlaytestConversation } from "./playtest-conversation.ts";
 import {
@@ -128,17 +128,19 @@ describe("history right after appending the user line", () => {
 
 describe("history window", () => {
 	/**
-	 * The same window as a real conversation before its first summary (a test has none). A different
-	 * value here would give long tests and long conversations different context, and this screen
-	 * could then not reproduce playback after publishing.
+	 * The same window as a real conversation that never summarizes (a test has no summary). A
+	 * different value here would give long tests and long conversations different context, and this
+	 * screen could then not reproduce playback after publishing. Past the cap the window steps rather
+	 * than slides (`chatHistoryWindow`): five over the cap moves the start by one whole step, so what
+	 * remains is the floor plus those five.
 	 */
-	it("carries only up to the shared cap and keeps the recent ones", async () => {
+	it("steps past the shared cap and keeps the recent ones", async () => {
 		const test = open();
 		for (let index = 0; index < CHAT_HISTORY_WINDOW_MAX + 5; index += 1)
 			await test.session.appendUserMessage(`Line ${index}`);
 
 		const history = await test.session.loadHistory();
-		expect(history).toHaveLength(CHAT_HISTORY_WINDOW_MAX);
+		expect(history).toHaveLength(CHAT_HISTORY_LIMIT + 5);
 		expect(history.at(-1)?.content).toBe(`Line ${CHAT_HISTORY_WINDOW_MAX + 4}`);
 	});
 });
