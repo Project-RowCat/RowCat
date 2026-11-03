@@ -162,6 +162,8 @@ gh api "repos/<owner>/<repo>/releases/latest" --jq .tag_name   # desktop-* 여�
 Source release of commit <sha>. Images: `sha-<first 12 of sha>` (linux/amd64, linux/arm64).
 There is no hosted RowCat service; this is code you run under your own name.
 
+## Installing       — `bash install.sh --ref YYYY-MM-DD --domain …` (docs/ops/INSTALL.md); an existing
+                     install.sh deployment upgrades by running its scripts/install.sh with this --ref
 ## What's in it
 ## Off by default
 ## Upgrading        — new migrations since the last tag, and whether a backup-only rollback applies

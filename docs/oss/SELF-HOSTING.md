@@ -68,6 +68,21 @@ deployment also sets `WEB_ORIGIN` and `API_ORIGIN` (and `AUTH_COOKIE_DOMAIN` whe
 different hosts). With those four, `pnpm env:doctor --mode production --file <env file>` reports no release
 blockers and names every feature that stays off — see `docs/ops/CONFIGURATION.md` (최소 구성).
 
+### Without a checkout: `scripts/install.sh`
+
+On a server that has Docker and nothing else, download the installer of a release and read it before
+running it:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/Project-RowCat/RowCat/<release>/scripts/install.sh
+bash install.sh --ref <release> --domain rowcat.example.com   # or --local on the machine you sit at
+```
+
+It downloads that commit's compose files and backup scripts, generates the two secrets into an owner-only
+`.env`, pins the three images by digest (no build, no `latest`), starts the stack behind Caddy's HTTPS and
+prints the first-run setup code. Run it again with a newer `--ref` in the same directory to upgrade: it backs
+up the database first and keeps `.env`. `docs/ops/INSTALL.md` is the guide, and `pnpm test:install` tests it.
+
 ### The published images
 
 Every push to `main` publishes the three app images to GHCR (`.github/workflows/images.yml`), and they

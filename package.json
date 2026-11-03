@@ -32,6 +32,7 @@
     "test:e2e:ui": "playwright test --ui",
     "test:compose": "bash scripts/compose-smoke.sh",
     "test:scripts": "bash scripts/backup.test.sh",
+    "test:install": "bash scripts/install-smoke.sh",
     "runtime-vm:harness": "pnpm --filter @rowcat/mobile runtime-vm:harness",
     "runtime-vm:harness:check": "pnpm --filter @rowcat/mobile runtime-vm:harness:check",
     "runtime-docs": "pnpm --filter web gen:runtime-docs",

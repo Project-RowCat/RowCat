@@ -186,6 +186,12 @@ jobs:
       # with generated secrets, claims first-run setup, and tears everything down.
       - run: bash scripts/compose-smoke.sh --build
 
+      # The operator's path (docs/ops/INSTALL.md): scripts/install.sh in a directory with no source
+      # tree, pulling from a throwaway local registry, then restarted and upgraded. The smoke above
+      # removed the images it built; this rebuild comes from the same builder's layer cache.
+      - run: docker buildx bake -f docker-bake.hcl
+      - run: bash scripts/install-smoke.sh
+
   # Every commit's added lines, across the whole history this checkout has, through gitleaks. The
   # allowlist is .gitleaksignore: one line per value a person checked, pinned to its line number, so a
   # line that moves or a new value is reported again. For a while the scan was a command in that file's

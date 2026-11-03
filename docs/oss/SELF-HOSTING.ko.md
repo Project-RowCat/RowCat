@@ -74,6 +74,20 @@ Anthropic이나 Gemini 키를 연결할 수 있고, 그 경로는 이 서버를 
 알려 주고, 꺼진 채 남는 기능도 하나씩 짚어 줘요. 자세한 건 `docs/ops/CONFIGURATION.md`(최소 구성)를 봐
 주세요.
 
+### 체크아웃 없이: `scripts/install.sh`
+
+Docker만 있는 서버라면 릴리스의 설치 스크립트를 내려받아, 실행하기 전에 한 번 읽어 보세요.
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/Project-RowCat/RowCat/<릴리스>/scripts/install.sh
+bash install.sh --ref <릴리스> --domain rowcat.example.com   # 지금 앞에 있는 컴퓨터라면 --local
+```
+
+그 커밋의 컴포즈 파일과 백업 스크립트를 받고, 두 시크릿을 생성해 소유자만 읽는 `.env`에 쓰고, 세 이미지를
+다이제스트로 고정해요(빌드도 `latest`도 없어요). 그다음 Caddy의 HTTPS 뒤에 스택을 띄우고 첫 실행 설정 코드를
+보여 줘요. 같은 디렉터리에서 더 새 `--ref`로 다시 실행하면 업그레이드예요. 먼저 데이터베이스를 백업하고
+`.env`는 그대로 둬요. 안내는 `docs/ops/INSTALL.md`, 검증은 `pnpm test:install`이에요.
+
 ### 공개된 이미지
 
 `main`에 푸시할 때마다 세 앱 이미지가 GHCR에 올라가요(`.github/workflows/images.yml`). 이미지에는 배포별
