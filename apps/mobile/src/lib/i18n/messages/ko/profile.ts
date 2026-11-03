@@ -1,0 +1,46 @@
+import type { Messages } from "../../types.ts";
+
+export const profile: Messages["profile"] = {
+	pinned: "대표작",
+	publicWorks: "공개 작품",
+	end: "마지막 작품입니다",
+	followers: "팔로워",
+	mine: "내 프로필",
+	follow: "팔로우",
+	following: "팔로잉",
+	followName: "{{name}} 팔로우",
+	unfollowName: "{{name}} 팔로우 해제",
+	restricted: "이용이 제한된 계정입니다.",
+	checking: "세션을 확인하는 중입니다.",
+	manage: "{{name}} 제작자 관리",
+	reportTarget: "프로필",
+	block: "차단",
+	unblock: "차단 해제",
+	blockTitle: "이 제작자를 차단할까요?",
+	blockDescription:
+		"{{name}}님의 작품과 댓글이 회원님 화면에 표시되지 않고, 팔로우 중이라면 해제됩니다. 차단을 해제해도 팔로우는 복구되지 않습니다.",
+	offline: "네트워크에 연결되어 있지 않습니다. 연결되면 자동으로 이어집니다.",
+	notFound: "프로필을 찾을 수 없습니다.",
+	goDiscover: "발견으로 가기",
+	emptyWorks: "아직 공개한 작품이 없습니다",
+	notFoundBody: "존재하지 않거나 현재 볼 수 없는 프로필입니다.",
+	loadFailed: "프로필을 불러오지 못했습니다.",
+	requestId: "요청 ID: {{id}}",
+	storiesOffline: "네트워크에 연결되어 있지 않아 작품을 불러오지 못했습니다.",
+	storiesFailed: "작품을 불러오지 못했습니다.",
+	blockedTitle: "차단한 제작자입니다",
+	blockedBody:
+		"이 제작자의 작품과 댓글은 회원님 화면에 표시되지 않습니다. 위 메뉴에서 차단을 해제할 수 있습니다.",
+	error: {
+		followFailed: "팔로우하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+		blockFailed: "차단하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+		blockedTarget:
+			"차단한 제작자입니다. 차단을 해제한 뒤 팔로우할 수 있습니다.",
+		selfFollow: "자기 자신은 팔로우할 수 없습니다.",
+		selfBlock: "자기 자신은 차단할 수 없습니다.",
+		followRestricted: "이용이 제한된 계정은 팔로우할 수 없습니다.",
+		blockRestricted: "이용이 제한된 계정은 차단할 수 없습니다.",
+		loginRequired: "로그인이 필요합니다.",
+		notFound: "제작자를 찾을 수 없습니다.",
+	},
+};

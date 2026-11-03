@@ -13,25 +13,15 @@ import {
 } from "@rowcat/ui-native";
 import { useRouter } from "expo-router";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useMobileIdentity } from "../../lib/identity.tsx";
 import { useMobileLocalScope } from "../../lib/local-data/scope.tsx";
 import { MotionRow } from "../../lib/motion/list-motion.tsx";
 import { resolveAppPhase } from "../../lib/session-state.ts";
-import {
-	PERSONA_DELETE_FAILURE_MESSAGE,
-	PERSONA_EMPTY_BODY,
-	PERSONA_EMPTY_TITLE,
-} from "./persona-form.ts";
+import { PERSONA_COPY } from "./persona-form.ts";
 import { PersonaFormDialog } from "./persona-form-dialog.tsx";
 import {
-	PERSONA_ADD_LABEL,
-	PERSONA_DELETE_CONFIRM_LABEL,
-	PERSONA_DELETE_TITLE,
-	PERSONA_GUEST_NOTE,
-	PERSONA_LIBRARY_READ_ERROR,
-	PERSONA_LIBRARY_STORAGE_ERROR,
-	PERSONA_UNAVAILABLE_NOTE,
 	personaDeleteDescription,
 	personaRowActionsLabel,
 } from "./persona-library-copy.ts";
@@ -57,6 +47,7 @@ import { usePersonaLibrary } from "./use-persona-library.ts";
  * woken by the write signal on its own, so this screen has no `syncNow()`-style call.
  */
 export function PersonaLibrarySection() {
+	const { t: tCommon } = useTranslation("common");
 	const router = useRouter();
 	const identity = useMobileIdentity();
 	const scope = useMobileLocalScope();
@@ -83,7 +74,7 @@ export function PersonaLibrarySection() {
 				if (outcome === "done" || outcome === "foreign") return;
 			},
 			() => {
-				setDeleteError(PERSONA_DELETE_FAILURE_MESSAGE);
+				setDeleteError(PERSONA_COPY.deleteFailed);
 			},
 		);
 	};
@@ -99,9 +90,9 @@ export function PersonaLibrarySection() {
 		return (
 			<EmptyState
 				icon="account"
-				title={PERSONA_EMPTY_TITLE}
-				description={PERSONA_GUEST_NOTE}
-				actionLabel="Sign in"
+				title={PERSONA_COPY.emptyTitle}
+				description={PERSONA_COPY.guest}
+				actionLabel={tCommon("actions.signIn")}
 				onAction={() => {
 					identity.clearFailure();
 					router.push({
@@ -116,8 +107,8 @@ export function PersonaLibrarySection() {
 	if (state.kind === "unavailable")
 		return (
 			<Notice
-				message={PERSONA_UNAVAILABLE_NOTE}
-				actionLabel="Try again"
+				message={PERSONA_COPY.unavailable}
+				actionLabel={tCommon("actions.tryAgain")}
 				onAction={identity.retry}
 			/>
 		);
@@ -126,14 +117,14 @@ export function PersonaLibrarySection() {
 		return (
 			<Notice
 				tone="destructive"
-				message={PERSONA_LIBRARY_STORAGE_ERROR}
-				actionLabel="Try again"
+				message={PERSONA_COPY.storageError}
+				actionLabel={tCommon("actions.tryAgain")}
 				onAction={scope.retry}
 			/>
 		);
 
 	if (state.kind === "read-error")
-		return <Notice tone="destructive" message={PERSONA_LIBRARY_READ_ERROR} />;
+		return <Notice tone="destructive" message={PERSONA_COPY.readError} />;
 
 	if (state.kind === "loading")
 		return (
@@ -151,10 +142,10 @@ export function PersonaLibrarySection() {
 				 */
 				<View style={library_.empty}>
 					<Text variant="body" weight="medium">
-						{PERSONA_EMPTY_TITLE}
+						{PERSONA_COPY.emptyTitle}
 					</Text>
 					<Text variant="label" tone="muted-foreground">
-						{PERSONA_EMPTY_BODY}
+						{PERSONA_COPY.emptyBody}
 					</Text>
 				</View>
 			) : (
@@ -191,7 +182,7 @@ export function PersonaLibrarySection() {
 			)}
 
 			<Button
-				label={PERSONA_ADD_LABEL}
+				label={PERSONA_COPY.add}
 				variant="outline"
 				icon="add"
 				fullWidth
@@ -230,9 +221,9 @@ export function PersonaLibrarySection() {
 			 */}
 			<AlertDialog
 				open={deleting !== null}
-				title={PERSONA_DELETE_TITLE}
+				title={PERSONA_COPY.deleteTitle}
 				description={personaDeleteDescription(deleting?.name ?? "")}
-				confirmLabel={PERSONA_DELETE_CONFIRM_LABEL}
+				confirmLabel={PERSONA_COPY.deleteConfirm}
 				destructive
 				busy={library.pending}
 				error={deleteError}
@@ -267,6 +258,7 @@ function PersonaRow({
 	onEdit: () => void;
 	onDelete: () => void;
 }) {
+	useTranslation("persona");
 	const { colors } = useTheme();
 	return (
 		<View style={library_.row}>

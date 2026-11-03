@@ -1,5 +1,6 @@
 import { APPEAL_ERROR_CODE, REPORT_ERROR_CODE } from "@rowcat/contracts";
 import { isRowCatApiError } from "@rowcat/sdk";
+import { translator } from "../../lib/i18n/instance.ts";
 
 /**
  * Report failure → one human-readable line.
@@ -26,27 +27,27 @@ import { isRowCatApiError } from "@rowcat/sdk";
  * that splits the reasons would tell someone "that work is still there".
  */
 export function reportErrorMessage(error: unknown): string {
+	const t = translator("moderation");
 	const apiError = isRowCatApiError(error) ? error : null;
-	if (!apiError)
-		return "Couldn't file the report. Please try again in a moment.";
+	if (!apiError) return t("reportError.failed");
 
 	switch (apiError.code) {
 		case REPORT_ERROR_CODE.duplicate:
-			return "You already reported this, and it's still under review.";
+			return t("reportError.duplicate");
 		case REPORT_ERROR_CODE.rateLimited:
-			return "You've filed too many reports. Please try again in a moment.";
+			return t("reportError.rateLimited");
 		case REPORT_ERROR_CODE.selfTarget:
-			return "You can't report yourself.";
+			return t("reportError.self");
 		case "account_restricted":
-			return "A restricted account can't file reports.";
+			return t("reportError.restricted");
 		case "login_required":
-			return "You need to sign in.";
+			return t("reportError.loginRequired");
 		case "invalid_input":
-			return "Please check the report details.";
+			return t("reportError.invalid");
 		default:
 			return apiError.status === 404
-				? "This can't be reported."
-				: "Couldn't file the report. Please try again in a moment.";
+				? t("reportError.notReportable")
+				: t("reportError.failed");
 	}
 }
 
@@ -64,26 +65,25 @@ export function reportErrorMessage(error: unknown): string {
  * action give the same response, and the screen does not split them either.
  */
 export function appealErrorMessage(error: unknown): string {
+	const t = translator("moderation");
 	const apiError = isRowCatApiError(error) ? error : null;
-	if (!apiError)
-		return "Couldn't file the appeal. Check your connection and try again.";
+	if (!apiError) return t("appealError.offline");
 
 	switch (apiError.code) {
 		case APPEAL_ERROR_CODE.duplicate:
-			return "An appeal for this action is already under review.";
+			return t("appealError.duplicate");
 		case APPEAL_ERROR_CODE.notAppealable:
-			return "This action can't be appealed.";
+			return t("appealError.notAppealable");
 		case APPEAL_ERROR_CODE.alreadyReversed:
-			return "This action was already lifted.";
+			return t("appealError.alreadyLifted");
 		case "login_required":
-			return "You need to sign in.";
+			return t("appealError.loginRequired");
 		case "invalid_input":
-			return "Please check your appeal.";
+			return t("appealError.invalid");
 		default:
-			if (apiError.status === 429)
-				return "Too many requests. Please try again in a moment.";
+			if (apiError.status === 429) return t("appealError.rateLimited");
 			return apiError.status === 404
-				? "Couldn't find the action to appeal."
-				: "Couldn't file the appeal. Please try again in a moment.";
+				? t("appealError.notFound")
+				: t("appealError.failed");
 	}
 }

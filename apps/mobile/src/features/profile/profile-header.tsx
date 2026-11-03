@@ -5,6 +5,7 @@ import {
 	profileDisplayName,
 } from "@rowcat/domain";
 import { Avatar, Badge, Text } from "@rowcat/ui-native";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 import { formatCount } from "../../lib/format.ts";
 import { AnimatedCount } from "../../lib/motion/animated-count.tsx";
@@ -73,6 +74,7 @@ export function ProfileHeader({
 	/** Where login returns: this profile, as it is now. */
 	returnPath: string;
 }) {
+	const { t } = useTranslation("profile");
 	const name = profileDisplayName(profile);
 	const bio = profile.bio?.trim();
 
@@ -130,7 +132,7 @@ export function ProfileHeader({
 					 */}
 					<View style={head.followers}>
 						<Text variant="label" tone="muted-foreground">
-							Followers{" "}
+							{t("followers")}{" "}
 						</Text>
 						<AnimatedCount
 							value={formatCount(profile.followers)}
@@ -152,7 +154,7 @@ export function ProfileHeader({
 					 * A fact is shown instead. If nothing sat here, the empty slot would read as loading. This is
 					 * the same axis as the `My story` badge on the work detail.
 					 */
-					<Badge label="My profile" />
+					<Badge label={t("mine")} />
 				) : (
 					<View style={head.relations}>
 						{/**

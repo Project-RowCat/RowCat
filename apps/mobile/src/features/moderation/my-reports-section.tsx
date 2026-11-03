@@ -1,9 +1,4 @@
-import {
-	MY_REPORT_STATE_LABEL,
-	type MyReportDto,
-	REPORT_REASON_LABEL,
-	REPORT_TARGET_LABEL,
-} from "@rowcat/contracts";
+import type { MyReportDto } from "@rowcat/contracts";
 import { space } from "@rowcat/design";
 import {
 	MY_REPORTS_QUERY_KEY,
@@ -12,22 +7,18 @@ import {
 import { Badge, Button, Notice, Separator, Text } from "@rowcat/ui-native";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 import { getRowCatClient } from "../../lib/api.ts";
 import { formatDate } from "../../lib/format.ts";
 import { AnimatedLabel } from "../../lib/motion/animated-label.tsx";
 import { AccountSection } from "../account/account-section.tsx";
 import {
-	MY_REPORTS_DESCRIPTION,
-	MY_REPORTS_EMPTY,
-	MY_REPORTS_FAILED,
-	MY_REPORTS_LOADING_LABEL,
-	MY_REPORTS_MORE_LABEL,
-	MY_REPORTS_OFFLINE,
-	MY_REPORTS_RETRY_LABEL,
-	MY_REPORTS_STALE,
-	MY_REPORTS_TITLE,
+	MY_REPORTS_COPY,
+	REPORT_REASON_NAME,
+	REPORT_TARGET_NAME,
 	reportReviewedNote,
+	reportStateLabel,
 	reportSubmittedNote,
 } from "./moderation-copy.ts";
 import { myReportsPanelView, myReportTitle } from "./my-reports-state.ts";
@@ -69,6 +60,7 @@ import { myReportsPanelView, myReportTitle } from "./my-reports-state.ts";
  * value would go with it. With a held value, leave it and refetch normally.
  */
 export function MyReportsSection() {
+	const { t: tCommon } = useTranslation("common");
 	const queryClient = useQueryClient();
 	const query = useInfiniteQuery(
 		myReportsInfiniteQueryOptions(getRowCatClient()),
@@ -99,14 +91,14 @@ export function MyReportsSection() {
 
 	return (
 		<AccountSection
-			title={MY_REPORTS_TITLE}
-			description={MY_REPORTS_DESCRIPTION}
+			title={MY_REPORTS_COPY.title}
+			description={MY_REPORTS_COPY.description}
 		>
 			{view.state === "offline" ? (
 				/** Stall and failure are said differently: the first needs waiting, the second needs pressing again. */
 				<Notice
-					message={MY_REPORTS_OFFLINE}
-					actionLabel={MY_REPORTS_RETRY_LABEL}
+					message={MY_REPORTS_COPY.offline}
+					actionLabel={tCommon("actions.tryAgain")}
 					onAction={retry}
 					busy={query.isFetching}
 				/>
@@ -117,14 +109,14 @@ export function MyReportsSection() {
 				 */
 				<Notice
 					tone="destructive"
-					message={MY_REPORTS_FAILED}
-					actionLabel={MY_REPORTS_RETRY_LABEL}
+					message={MY_REPORTS_COPY.failed}
+					actionLabel={tCommon("actions.tryAgain")}
 					onAction={retry}
 					busy={query.isFetching}
 				/>
 			) : view.state === "empty" ? (
 				<Text variant="label" tone="muted-foreground">
-					{MY_REPORTS_EMPTY}
+					{MY_REPORTS_COPY.empty}
 				</Text>
 			) : (
 				<View>
@@ -146,13 +138,13 @@ export function MyReportsSection() {
 			{(view.state === "ready" || view.state === "empty") && view.retryable ? (
 				<View style={panel.stale}>
 					<Text variant="caption" tone="muted-foreground">
-						{MY_REPORTS_STALE}
+						{MY_REPORTS_COPY.stale}
 					</Text>
 					<Button
 						label={
 							query.isFetching
-								? MY_REPORTS_LOADING_LABEL
-								: MY_REPORTS_RETRY_LABEL
+								? MY_REPORTS_COPY.loading
+								: tCommon("actions.tryAgain")
 						}
 						variant="outline"
 						size="sm"
@@ -171,8 +163,8 @@ export function MyReportsSection() {
 					<Button
 						label={
 							query.isFetchingNextPage
-								? MY_REPORTS_LOADING_LABEL
-								: MY_REPORTS_MORE_LABEL
+								? MY_REPORTS_COPY.loading
+								: MY_REPORTS_COPY.more
 						}
 						variant="outline"
 						size="sm"
@@ -197,6 +189,7 @@ export function MyReportsSection() {
  * (`MY_REPORT_STATE_LABEL`). `variant` is only emphasis, and the two never differ in value.
  */
 function MyReportRow({ report }: { report: MyReportDto }) {
+	useTranslation("moderation");
 	const submitted = formatDate(report.createdAt);
 	const reviewed = report.reviewedAt ? formatDate(report.reviewedAt) : null;
 
@@ -205,8 +198,8 @@ function MyReportRow({ report }: { report: MyReportDto }) {
 			<View style={line.body}>
 				<Text variant="body">
 					{myReportTitle(report, {
-						target: REPORT_TARGET_LABEL,
-						reason: REPORT_REASON_LABEL,
+						target: REPORT_TARGET_NAME,
+						reason: REPORT_REASON_NAME,
 					})}
 				</Text>
 				{/**
@@ -232,7 +225,7 @@ function MyReportRow({ report }: { report: MyReportDto }) {
 			 */}
 			<AnimatedLabel value={report.state}>
 				<Badge
-					label={MY_REPORT_STATE_LABEL[report.state]}
+					label={reportStateLabel(report.state)}
 					variant={report.state === "reviewed" ? "secondary" : "outline"}
 				/>
 			</AnimatedLabel>

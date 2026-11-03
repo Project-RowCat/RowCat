@@ -14,11 +14,12 @@ import {
 	Textarea,
 } from "@rowcat/ui-native";
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 import {
+	PERSONA_COPY,
 	PERSONA_DESCRIPTION_COUNTER_THRESHOLD,
 	PERSONA_NAME_COUNTER_THRESHOLD,
-	PERSONA_SAVE_FAILURE_MESSAGE,
 	personaTextLength,
 	planPersonaSave,
 } from "./persona-form.ts";
@@ -70,6 +71,7 @@ export function PersonaFormDialog({
 	}) => Promise<PersonaWriteOutcome>;
 	onCancel: () => void;
 }) {
+	const { t: tCommon } = useTranslation("common");
 	const [name, setName] = useState(persona?.name ?? "");
 	const [description, setDescription] = useState(persona?.description ?? "");
 	const [error, setError] = useState<string | null>(null);
@@ -107,21 +109,21 @@ export function PersonaFormDialog({
 			})
 			.catch(() => {
 				submittingRef.current = false;
-				setError(PERSONA_SAVE_FAILURE_MESSAGE);
+				setError(PERSONA_COPY.saveFailed);
 			});
 	};
 
 	return (
 		<Dialog
 			open
-			title={persona ? "Edit persona" : "New persona"}
+			title={persona ? PERSONA_COPY.editTitle : PERSONA_COPY.newTitle}
 			onOpenChange={(next) => {
 				if (!next && !pending) onCancel();
 			}}
 		>
 			<View style={form.root}>
 				<Input
-					label="Name"
+					label={PERSONA_COPY.name}
 					value={name}
 					onChangeText={(next) => {
 						setName(next);
@@ -138,7 +140,7 @@ export function PersonaFormDialog({
 				) : null}
 
 				<Textarea
-					label="Description"
+					label={PERSONA_COPY.description}
 					value={description}
 					onChangeText={(next) => {
 						setDescription(next);
@@ -159,14 +161,14 @@ export function PersonaFormDialog({
 
 				<DialogActions>
 					<Button
-						label="Cancel"
+						label={tCommon("actions.cancel")}
 						variant="outline"
 						fullWidth
 						onPress={onCancel}
 						style={form.action}
 					/>
 					<Button
-						label="Save"
+						label={PERSONA_COPY.save}
 						fullWidth
 						busy={pending}
 						onPress={submit}

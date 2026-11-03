@@ -1,4 +1,5 @@
 import { EmptyState, ErrorState, Notice, Spinner } from "@rowcat/ui-native";
+import { useTranslation } from "react-i18next";
 import type { ProfileStoriesState } from "./profile-stories-state.ts";
 
 /**
@@ -24,19 +25,17 @@ export function ProfileStoriesNotice({
 	state: ProfileStoriesState;
 	onRetry: () => void;
 }) {
+	const { t } = useTranslation(["profile", "common"]);
 	if (state === "loading") return <Spinner />;
 
-	if (state === "offline")
-		return (
-			<Notice message="You're not connected to a network, so stories couldn't be loaded." />
-		);
+	if (state === "offline") return <Notice message={t("storiesOffline")} />;
 
 	/** A works failure ends inside this section. The name and face remain. */
 	if (state === "failed")
 		return (
 			<ErrorState
-				message="Couldn't load stories."
-				actionLabel="Try again"
+				message={t("storiesFailed")}
+				actionLabel={t("common:actions.tryAgain")}
 				onAction={onRetry}
 			/>
 		);
@@ -45,18 +44,18 @@ export function ProfileStoriesNotice({
 		return (
 			<EmptyState
 				icon="block"
-				title="You've blocked this creator"
+				title={t("blockedTitle")}
 				/**
 				 * Only what actually happens is stated. A sentence such as "they cannot see you" is a promise
 				 * the server does not make, and promising more privacy than exists puts people who act on it at
 				 * risk.
 				 */
-				description="This creator's works and comments won't appear on your screen. You can unblock them from the menu above."
+				description={t("blockedBody")}
 			/>
 		);
 
 	if (state === "empty")
-		return <EmptyState icon="library" title="No public works yet" />;
+		return <EmptyState icon="library" title={t("emptyWorks")} />;
 
 	/** The list speaks for itself. */
 	return null;

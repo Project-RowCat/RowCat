@@ -4,6 +4,7 @@ import { moderationStatusQueryOptions } from "@rowcat/query";
 import { Button, Text, useTheme } from "@rowcat/ui-native";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 import { getRowCatClient } from "../../lib/api.ts";
 import { formatDate } from "../../lib/format.ts";
@@ -16,15 +17,8 @@ import {
 	type RestrictionItem,
 } from "./moderation-account-state.ts";
 import {
-	APPEAL_ACTION_LABEL,
-	APPEAL_OPEN_NOTE,
+	ACCOUNT_MODERATION_COPY,
 	APPEAL_RESULT_LABEL,
-	APPEAL_UNAVAILABLE_NOTE,
-	MODERATION_SECTION_DESCRIPTION_ACTIVE,
-	MODERATION_SECTION_DESCRIPTION_HISTORY,
-	MODERATION_SECTION_TITLE,
-	RESOLVED_APPEALS_TITLE,
-	RESTRICTION_UNTIL_REVOKED,
 	restrictionAppliedNote,
 	restrictionExpiryNote,
 } from "./moderation-copy.ts";
@@ -63,6 +57,7 @@ import {
  * the device for the same reason.
  */
 export function AccountModerationSection() {
+	useTranslation("moderation");
 	const status = useQuery(moderationStatusQueryOptions(getRowCatClient())).data;
 	const [appeal, setAppeal] = useState<{
 		actionId: string;
@@ -75,11 +70,11 @@ export function AccountModerationSection() {
 
 	return (
 		<AccountSection
-			title={MODERATION_SECTION_TITLE}
+			title={ACCOUNT_MODERATION_COPY.title}
 			description={
 				view.items.length
-					? MODERATION_SECTION_DESCRIPTION_ACTIVE
-					: MODERATION_SECTION_DESCRIPTION_HISTORY
+					? ACCOUNT_MODERATION_COPY.active
+					: ACCOUNT_MODERATION_COPY.none
 			}
 		>
 			<View style={section.items}>
@@ -124,6 +119,7 @@ function RestrictionRow({
 	view: AccountModerationView;
 	onAppeal: () => void;
 }) {
+	useTranslation("moderation");
 	const { alpha } = useTheme();
 	const slot = appealSlotFor(item.actionId, view);
 	const expiry = item.expiresAt ? formatDate(item.expiresAt) : null;
@@ -157,7 +153,9 @@ function RestrictionRow({
 			 */}
 			<Text variant="caption" tone="muted-foreground">
 				{[
-					expiry ? restrictionExpiryNote(expiry) : RESTRICTION_UNTIL_REVOKED,
+					expiry
+						? restrictionExpiryNote(expiry)
+						: ACCOUNT_MODERATION_COPY.untilLifted,
 					applied ? restrictionAppliedNote(applied) : null,
 				]
 					.filter(Boolean)
@@ -167,12 +165,12 @@ function RestrictionRow({
 			{slot === "open" ? (
 				/** One appeal per action; once filed, only its status is shown. */
 				<Text variant="caption" tone="muted-foreground">
-					{APPEAL_OPEN_NOTE}
+					{ACCOUNT_MODERATION_COPY.appealPending}
 				</Text>
 			) : slot === "appealable" ? (
 				<View style={row.action}>
 					<Button
-						label={APPEAL_ACTION_LABEL}
+						label={ACCOUNT_MODERATION_COPY.appeal}
 						variant="outline"
 						size="sm"
 						onPress={onAppeal}
@@ -185,7 +183,7 @@ function RestrictionRow({
 				 * returns 400 when pressed.
 				 */
 				<Text variant="caption" tone="muted-foreground">
-					{APPEAL_UNAVAILABLE_NOTE}
+					{ACCOUNT_MODERATION_COPY.notAppealable}
 				</Text>
 			)}
 		</View>
@@ -198,11 +196,12 @@ function RestrictionRow({
  * condition).
  */
 function ResolvedAppeals({ appeals }: { appeals: MyAppealDto[] }) {
+	useTranslation("moderation");
 	if (!appeals.length) return null;
 	return (
 		<View style={section.history}>
 			<Text accessibilityRole="header" variant="body">
-				{RESOLVED_APPEALS_TITLE}
+				{ACCOUNT_MODERATION_COPY.pastAppeals}
 			</Text>
 			{appeals.map((row) => {
 				const resolved = formatDate(row.resolvedAt ?? row.createdAt);

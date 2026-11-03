@@ -7,16 +7,11 @@ import {
 import { space } from "@rowcat/design";
 import { Button, Notice, Spinner, Text } from "@rowcat/ui-native";
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 import { useLocalPersonas } from "../../../lib/local-data/use-personas.ts";
 import { PersonaChoiceRow } from "../../persona/persona-choice-row.tsx";
-import {
-	PERSONA_APPLY_FAILURE_MESSAGE,
-	PERSONA_EMPTY_BODY,
-	PERSONA_EMPTY_TITLE,
-	PERSONA_NONE_LABEL,
-	PERSONA_STORY_DEFAULT_LABEL,
-} from "../../persona/persona-form.ts";
+import { PERSONA_COPY } from "../../persona/persona-form.ts";
 
 /** The form this pane used to export moved to `features/persona/persona-editor.tsx` (it has two consumers). */
 export { PersonaEditor } from "../../persona/persona-editor.tsx";
@@ -52,6 +47,8 @@ export function RoomSettingsPersona({
 	/** `null` clears the override. */
 	onApply: (persona: ChatPersonaSnapshot | null) => Promise<unknown>;
 }) {
+	/** Subscribes the pane to the language; the persona copy table is read as it draws. */
+	useTranslation("persona");
 	const { value: personas, status } = useLocalPersonas();
 	const [error, setError] = useState<string | null>(null);
 	/** Blocks a second press in the same tick; `setState` only shows on the next render. */
@@ -66,7 +63,7 @@ export function RoomSettingsPersona({
 		applyingRef.current = true;
 		setError(null);
 		void onApply(persona)
-			.catch(() => setError(PERSONA_APPLY_FAILURE_MESSAGE))
+			.catch(() => setError(PERSONA_COPY.applyFailed))
 			.finally(() => {
 				applyingRef.current = false;
 			});
@@ -76,7 +73,7 @@ export function RoomSettingsPersona({
 		<View style={styles.root}>
 			{/* First row clears the override; it heads the list because it is the room's starting state, and the subtitle shows its name differs per work. */}
 			<PersonaChoiceRow
-				title={suggested ? PERSONA_STORY_DEFAULT_LABEL : PERSONA_NONE_LABEL}
+				title={suggested ? PERSONA_COPY.storyDefault : PERSONA_COPY.none}
 				subtitle={suggested ? suggested.name : null}
 				selected={origin !== "room"}
 				onPress={() => apply(null)}
@@ -92,10 +89,10 @@ export function RoomSettingsPersona({
 				/* The empty state says what the feature does first; a bare "none" line leaves users closing the pane without knowing what they can create. */
 				<View style={styles.empty}>
 					<Text variant="body" weight="medium">
-						{PERSONA_EMPTY_TITLE}
+						{PERSONA_COPY.emptyTitle}
 					</Text>
 					<Text variant="label" tone="muted-foreground">
-						{PERSONA_EMPTY_BODY}
+						{PERSONA_COPY.emptyBody}
 					</Text>
 				</View>
 			) : (
@@ -118,7 +115,7 @@ export function RoomSettingsPersona({
 			{error ? <Notice tone="destructive" message={error} /> : null}
 
 			<Button
-				label="New persona"
+				label={PERSONA_COPY.add}
 				variant="outline"
 				fullWidth
 				onPress={onCreate}

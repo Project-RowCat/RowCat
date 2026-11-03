@@ -7,6 +7,7 @@ import {
 	Spinner,
 	Text,
 } from "@rowcat/ui-native";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 import type { ProfileState } from "./profile-state.ts";
 
@@ -36,12 +37,10 @@ export function ProfileUnavailable({
 	onRetry: () => void;
 	onLeave: () => void;
 }) {
+	const { t } = useTranslation(["profile", "common"]);
 	if (state.kind === "loading") return <Spinner />;
 
-	if (state.kind === "offline")
-		return (
-			<Notice message="You're not connected to a network. It continues automatically once connected." />
-		);
+	if (state.kind === "offline") return <Notice message={t("offline")} />;
 
 	if (state.kind === "missing")
 		return (
@@ -53,25 +52,25 @@ export function ProfileUnavailable({
 			<View style={unavailable.missing}>
 				<Icon name="profile-missing" size="2xl" tone="muted-foreground" />
 				<Text accessibilityRole="alert" variant="title">
-					Profile not found.
+					{t("notFound")}
 				</Text>
 				<Text variant="label" tone="muted-foreground">
-					This profile doesn't exist or can't be viewed right now.
+					{t("notFoundBody")}
 				</Text>
-				<Button label="Go to Discover" variant="outline" onPress={onLeave} />
+				<Button label={t("goDiscover")} variant="outline" onPress={onLeave} />
 			</View>
 		);
 
 	return (
 		<ErrorState
-			message="Couldn't load the profile."
-			actionLabel="Try again"
+			message={t("loadFailed")}
+			actionLabel={t("common:actions.tryAgain")}
 			onAction={onRetry}
 			/** Neither the stack nor the response body is attached. The request id is the only clue a user can carry. */
 			detail={
 				state.requestId ? (
 					<Text variant="caption" tone="muted-foreground">
-						Request ID: {state.requestId}
+						{t("requestId", { id: state.requestId })}
 					</Text>
 				) : null
 			}

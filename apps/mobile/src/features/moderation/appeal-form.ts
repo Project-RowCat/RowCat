@@ -1,5 +1,5 @@
 import { REPORT_LIMITS } from "@rowcat/contracts";
-import { APPEAL_MESSAGE_TOO_LONG } from "./moderation-copy.ts";
+import { APPEAL_DIALOG_COPY } from "./moderation-copy.ts";
 
 /**
  * Screen-level check of the appeal body. It is pure, so it can be verified without rendering.
@@ -48,6 +48,6 @@ export function checkAppealMessage(message: string): AppealMessageCheck {
 		tooLong,
 		empty,
 		submittable: !tooLong && !empty,
-		error: tooLong ? APPEAL_MESSAGE_TOO_LONG : null,
+		error: tooLong ? APPEAL_DIALOG_COPY.tooLong : null,
 	};
 }

@@ -18,9 +18,11 @@ import {
 } from "@rowcat/ui-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 import { getRowCatClient } from "../../lib/api.ts";
 import { AnimatedCount } from "../../lib/motion/animated-count.tsx";
+import { reportReasonLabel } from "./moderation-copy.ts";
 import { createReportTurn } from "./report-turn.ts";
 
 /**
@@ -90,8 +92,6 @@ export type ReportDialogProps = {
 	  }
 );
 
-const REPORT_REASON_PLACEHOLDER = "Choose a reason";
-
 const REASONS = Object.keys(REPORT_REASON_LABEL) as ReportReason[];
 
 export function ReportDialog({
@@ -100,6 +100,7 @@ export function ReportDialog({
 	evidence,
 	onClose,
 }: ReportDialogProps) {
+	const { t } = useTranslation(["moderation", "common"]);
 	const [reason, setReason] = useState<ReportReason | null>(null);
 	const [details, setDetails] = useState("");
 	const [error, setError] = useState<string | null>(null);
@@ -157,7 +158,7 @@ export function ReportDialog({
 
 	return (
 		<Dialog
-			title={`Report ${targetLabel}`}
+			title={t("dialog.title", { target: targetLabel })}
 			open
 			size="full"
 			onOpenChange={(next) => {
@@ -171,18 +172,17 @@ export function ReportDialog({
 					 * product (there is no voluntary SLA), and inventing it on screen would make a promise we
 					 * cannot keep. Nor do we say what action will be taken: that is decided after review.
 					 */}
-					<Notice message="Your report was received. We'll take any needed action after review." />
-					<Button label="Close" fullWidth onPress={onClose} />
+					<Notice message={t("dialog.received")} />
+					<Button label={t("dialog.close")} fullWidth onPress={onClose} />
 				</View>
 			) : (
 				<View style={form.root}>
 					<Text variant="body" tone="muted-foreground">
-						Tell us what the problem is. What action to take is decided after
-						review.
+						{t("dialog.description")}
 					</Text>
 
 					<Text variant="label" tone="muted-foreground">
-						Report reason
+						{t("dialog.reason")}
 					</Text>
 					{/**
 					 * **Choosing a value tied to a trigger**, so this is a `Select`. The web's same form uses the same
@@ -197,17 +197,17 @@ export function ReportDialog({
 					 * and eleven rows are not short.
 					 */}
 					<Select
-						label="Report reason"
+						label={t("dialog.reason")}
 						value={
 							reason === null
-								? REPORT_REASON_PLACEHOLDER
-								: REPORT_REASON_LABEL[reason]
+								? t("dialog.reasonPlaceholder")
+								: reportReasonLabel(reason)
 						}
 					>
 						{REASONS.map((value) => (
 							<SelectOption
 								key={value}
-								label={REPORT_REASON_LABEL[value]}
+								label={reportReasonLabel(value)}
 								selected={reason === value}
 								onSelect={() => {
 									setReason(value);
@@ -219,7 +219,7 @@ export function ReportDialog({
 
 					<View style={form.details}>
 						<Textarea
-							label="Additional details (optional)"
+							label={t("dialog.details")}
 							value={details}
 							onChangeText={setDetails}
 							maxLength={REPORT_LIMITS.details}
@@ -256,7 +256,7 @@ export function ReportDialog({
 
 					<DialogActions>
 						<Button
-							label="Cancel"
+							label={t("common:actions.cancel")}
 							variant="outline"
 							fullWidth
 							disabled={pending}
@@ -264,7 +264,7 @@ export function ReportDialog({
 							style={form.action}
 						/>
 						<Button
-							label="Submit report"
+							label={t("dialog.submit")}
 							fullWidth
 							onPress={submit}
 							busy={pending}

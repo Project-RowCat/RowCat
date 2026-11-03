@@ -1,5 +1,6 @@
 import { SOCIAL_ERROR_CODE } from "@rowcat/contracts";
 import { isRowCatApiError } from "@rowcat/sdk";
+import { translator } from "../../lib/i18n/instance.ts";
 
 /**
  * Follow or block failure → one human-readable line.
@@ -20,36 +21,39 @@ import { isRowCatApiError } from "@rowcat/sdk";
  */
 function socialErrorMessage(
 	error: unknown,
-	action: "Follow" | "Block",
+	action: "follow" | "block",
 ): string {
+	const t = translator("profile");
+	const failed = () =>
+		action === "follow" ? t("error.followFailed") : t("error.blockFailed");
 	const apiError = isRowCatApiError(error) ? error : null;
-	if (!apiError) return `Couldn't ${action}. Please try again in a moment.`;
+	if (!apiError) return failed();
 
 	switch (apiError.code) {
 		case SOCIAL_ERROR_CODE.blockedTarget:
-			return "You've blocked this creator. Unblock them to follow.";
+			return t("error.blockedTarget");
 		case SOCIAL_ERROR_CODE.selfFollow:
-			return "You can't follow yourself.";
+			return t("error.selfFollow");
 		case SOCIAL_ERROR_CODE.selfBlock:
-			return "You can't block yourself.";
+			return t("error.selfBlock");
 		case "account_restricted":
-			return `A restricted account can't ${action}.`;
+			return action === "follow"
+				? t("error.followRestricted")
+				: t("error.blockRestricted");
 		case "login_required":
-			return "You need to sign in.";
+			return t("error.loginRequired");
 		default:
 			/**
 			 * A 404 does not guess the reason. The server deliberately answers a missing member and a
 			 * deleted member identically (existence hiding); the screen re-deriving the reason would break
 			 * that boundary.
 			 */
-			return apiError.status === 404
-				? "Creator not found."
-				: `Couldn't ${action}. Please try again in a moment.`;
+			return apiError.status === 404 ? t("error.notFound") : failed();
 	}
 }
 
 export const followErrorMessage = (error: unknown): string =>
-	socialErrorMessage(error, "Follow");
+	socialErrorMessage(error, "follow");
 
 export const blockErrorMessage = (error: unknown): string =>
-	socialErrorMessage(error, "Block");
+	socialErrorMessage(error, "block");

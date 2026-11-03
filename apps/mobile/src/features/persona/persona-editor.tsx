@@ -10,12 +10,11 @@ import {
 	Textarea,
 } from "@rowcat/ui-native";
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 import {
-	PERSONA_DELETE_FAILURE_MESSAGE,
-	PERSONA_DELETE_NOTICE,
+	PERSONA_COPY,
 	PERSONA_NAME_COUNTER_THRESHOLD,
-	PERSONA_SAVE_FAILURE_MESSAGE,
 	personaTextLength,
 	planPersonaSave,
 } from "./persona-form.ts";
@@ -63,6 +62,7 @@ export function PersonaEditor({
 	onDelete?: (() => Promise<unknown>) | undefined;
 	onCancel: () => void;
 }) {
+	const { t: tCommon } = useTranslation("common");
 	const [name, setName] = useState(persona?.name ?? "");
 	const [description, setDescription] = useState(persona?.description ?? "");
 	const [error, setError] = useState<string | null>(null);
@@ -96,7 +96,7 @@ export function PersonaEditor({
 			() => {
 				pendingRef.current = false;
 				setPending(false);
-				setError(PERSONA_SAVE_FAILURE_MESSAGE);
+				setError(PERSONA_COPY.saveFailed);
 			},
 		);
 	};
@@ -104,7 +104,7 @@ export function PersonaEditor({
 	return (
 		<View style={styles.root}>
 			<Input
-				label="Name"
+				label={PERSONA_COPY.name}
 				value={name}
 				onChangeText={(next) => {
 					setName(next);
@@ -125,7 +125,7 @@ export function PersonaEditor({
 			) : null}
 
 			<Textarea
-				label="Description"
+				label={PERSONA_COPY.description}
 				value={description}
 				onChangeText={(next) => {
 					setDescription(next);
@@ -140,14 +140,14 @@ export function PersonaEditor({
 
 			<DialogActions>
 				<Button
-					label="Cancel"
+					label={tCommon("actions.cancel")}
 					variant="outline"
 					fullWidth
 					onPress={onCancel}
 					style={styles.action}
 				/>
 				<Button
-					label="Save"
+					label={PERSONA_COPY.save}
 					fullWidth
 					onPress={submit}
 					busy={pending}
@@ -164,29 +164,29 @@ export function PersonaEditor({
 							tone="muted-foreground"
 							style={styles.confirmText}
 						>
-							{PERSONA_DELETE_NOTICE}
+							{PERSONA_COPY.deleteNotice}
 						</Text>
 						<Button
-							label="Cancel"
+							label={tCommon("actions.cancel")}
 							variant="outline"
 							size="sm"
 							onPress={() => setConfirming(false)}
 						/>
 						<Button
-							label="Delete"
+							label={PERSONA_COPY.deleteConfirm}
 							variant="destructive"
 							size="sm"
 							onPress={() => {
 								setConfirming(false);
 								void onDelete().catch(() =>
-									setError(PERSONA_DELETE_FAILURE_MESSAGE),
+									setError(PERSONA_COPY.deleteFailed),
 								);
 							}}
 						/>
 					</View>
 				) : (
 					<Button
-						label="Delete this persona"
+						label={PERSONA_COPY.deleteThis}
 						variant="ghost"
 						fullWidth
 						onPress={() => setConfirming(true)}

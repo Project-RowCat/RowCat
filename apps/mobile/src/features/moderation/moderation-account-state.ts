@@ -1,8 +1,6 @@
-import {
-	CAPABILITY_LABEL,
-	type MyAppealDto,
-	type MyModerationStatusDto,
-} from "@rowcat/contracts";
+import type { MyAppealDto, MyModerationStatusDto } from "@rowcat/contracts";
+import { translator } from "../../lib/i18n/instance.ts";
+import { ACCOUNT_MODERATION_COPY, capabilityLabel } from "./moderation-copy.ts";
 
 /**
  * The rule that decides **what the `Restrictions` (usage restrictions) section draws**, separated into a
@@ -55,21 +53,25 @@ export function collectRestrictionItems(
 		...status.accountActions.map((row) => ({
 			actionId: row.actionId,
 			subject:
-				row.kind === "ban_member" ? "Account banned" : "Account suspended",
+				row.kind === "ban_member"
+					? ACCOUNT_MODERATION_COPY.ban
+					: ACCOUNT_MODERATION_COPY.suspend,
 			publicReason: row.publicReason,
 			createdAt: row.createdAt,
 			expiresAt: null,
 		})),
 		...status.restrictions.map((row) => ({
 			actionId: row.actionId,
-			subject: `${CAPABILITY_LABEL[row.capability]} restricted`,
+			subject: translator("moderation")("account.capability", {
+				capability: capabilityLabel(row.capability),
+			}),
 			publicReason: row.publicReason,
 			createdAt: row.createdAt,
 			expiresAt: row.expiresAt,
 		})),
 		...status.hiddenStories.map((row) => ({
 			actionId: row.actionId,
-			subject: "Story hidden",
+			subject: ACCOUNT_MODERATION_COPY.hiddenStory,
 			publicReason: row.publicReason,
 			createdAt: row.createdAt,
 			expiresAt: null,

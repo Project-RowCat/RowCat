@@ -3,6 +3,7 @@ import { AlertDialog, MenuItem, Notice } from "@rowcat/ui-native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { getRowCatClient } from "../../lib/api.ts";
 import type { ViewerAction } from "../../lib/viewer-action.ts";
 import { blockErrorMessage } from "./social-error.ts";
@@ -69,6 +70,7 @@ export function useBlockCreator({
 	blocked: boolean;
 	action: ViewerAction;
 }): BlockCreatorControls {
+	const { t } = useTranslation("profile");
 	const queryClient = useQueryClient();
 	const [confirming, setConfirming] = useState(false);
 	/**
@@ -104,7 +106,7 @@ export function useBlockCreator({
 			 */
 			<MenuItem
 				icon="unblock"
-				label="Unblock"
+				label={t("unblock")}
 				disabled={disabled}
 				onSelect={() => {
 					if (disabled) return;
@@ -117,7 +119,7 @@ export function useBlockCreator({
 		) : (
 			<MenuItem
 				icon="block"
-				label="Block"
+				label={t("block")}
 				destructive
 				disabled={disabled}
 				onSelect={() => {
@@ -150,7 +152,7 @@ export function useBlockCreator({
 		dialog: (
 			<AlertDialog
 				open={confirming}
-				title="Block this creator?"
+				title={t("blockTitle")}
 				/**
 				 * State only what actually happens: the works disappear, their comments disappear, and the
 				 * follow is cut. The last sentence matters most. It must say, before the press, that unblocking
@@ -161,8 +163,8 @@ export function useBlockCreator({
 				 * stops the other person from viewing nor notifies them. Promising more privacy than exists
 				 * puts people who act on that promise at risk.
 				 */
-				description={`${creatorName}'s stories and comments won't show on your screen, and if you follow them, you'll unfollow. Unblocking doesn't restore the follow.`}
-				confirmLabel="Block"
+				description={t("blockDescription", { name: creatorName })}
+				confirmLabel={t("block")}
 				destructive
 				busy={mutation.isPending}
 				/** Failure is reported **inside the dialog**. Reporting after it closes would leave the user leaving without knowing the outcome. */

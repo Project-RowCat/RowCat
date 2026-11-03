@@ -23,6 +23,7 @@ import {
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useCallback, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { FlatList, StyleSheet, View } from "react-native";
 import { getRowCatClient } from "../../lib/api.ts";
 import { useMobileIdentity } from "../../lib/identity.tsx";
@@ -99,6 +100,7 @@ import { ProfileUnavailable } from "./profile-unavailable.tsx";
  * (`discover/grid.ts`).
  */
 export function CreatorProfileScreen({ creatorId }: { creatorId: string }) {
+	const { t } = useTranslation(["profile", "common"]);
 	const client = getRowCatClient();
 	const router = useRouter();
 	const identity = useMobileIdentity();
@@ -281,7 +283,7 @@ export function CreatorProfileScreen({ creatorId }: { creatorId: string }) {
 											weight="semibold"
 											tone="muted-foreground"
 										>
-											Pinned works
+											{t("pinned")}
 										</Text>
 										<Separator />
 										<View style={grid.pinnedRow}>
@@ -313,7 +315,7 @@ export function CreatorProfileScreen({ creatorId }: { creatorId: string }) {
 									weight="semibold"
 									tone="muted-foreground"
 								>
-									Public stories
+									{t("publicWorks")}
 								</Text>
 								<Separator />
 							</View>
@@ -398,6 +400,7 @@ function ProfileBar({ onBack }: { onBack: () => void }) {
 
 /** End of the list. Either the next page is loading, or one fact: there is no more. */
 function ListEnd({ pending, hasNext }: { pending: boolean; hasNext: boolean }) {
+	const { t } = useTranslation("profile");
 	if (pending)
 		return (
 			<View style={grid.footer}>
@@ -408,7 +411,7 @@ function ListEnd({ pending, hasNext }: { pending: boolean; hasNext: boolean }) {
 	return (
 		<View style={grid.footer}>
 			<Text variant="caption" tone="muted-foreground">
-				You've reached the end
+				{t("end")}
 			</Text>
 		</View>
 	);

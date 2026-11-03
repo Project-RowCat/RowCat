@@ -347,7 +347,10 @@ describe("the public profile's container", () => {
 		expect(menu).toContain("<DropdownMenu");
 		expect(menu).not.toMatch(/\bSheet\b/);
 		/** The trigger label names whom the menu is about. */
-		expect(menu).toMatch(/label=\{`Manage creator \$\{creatorName\}`\}/);
+		expect(menu).toContain('label={t("manage", { name: creatorName })}');
+		expect(fileAt("lib/i18n/messages/en/profile.ts")).toContain(
+			'manage: "Manage creator {{name}}"',
+		);
 	});
 
 	/**
@@ -365,7 +368,9 @@ describe("the public profile's container", () => {
 		);
 
 		const item = fileAt("features/moderation/report-menu.tsx");
-		expect(item).toMatch(/<MenuItem\s+icon="report"\s+label="Report"/);
+		expect(item).toMatch(
+			/<MenuItem\s+icon="report"\s+label=\{t\("menu\.report"\)\}/,
+		);
 		expect(item).not.toContain("destructive");
 	});
 
@@ -380,10 +385,13 @@ describe("the public profile's container", () => {
 		expect(block).toContain("<AlertDialog");
 		expect(block.match(/<AlertDialog/g)).toHaveLength(1);
 		/** The copy states before pressing that the follow is not restored. */
-		expect(block).toContain("Unblocking doesn't restore the follow");
+		expect(block).toContain('t("blockDescription", { name: creatorName })');
+		expect(fileAt("lib/i18n/messages/en/profile.ts")).toContain(
+			"Unblocking doesn't restore the follow",
+		);
 		/** Unblock sends immediately without opening a dialog. */
 		expect(block).toMatch(
-			/label="Unblock"[\s\S]{0,400}mutation\.mutate\(false/,
+			/label=\{t\("unblock"\)\}[\s\S]{0,400}mutation\.mutate\(false/,
 		);
 	});
 

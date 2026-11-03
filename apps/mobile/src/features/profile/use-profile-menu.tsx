@@ -1,5 +1,6 @@
 import { DropdownMenu } from "@rowcat/ui-native";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import type { ViewerAction } from "../../lib/viewer-action.ts";
 import { useReportAction } from "../moderation/report-menu.tsx";
 import { useBlockCreator } from "./use-block-creator.tsx";
@@ -63,6 +64,7 @@ export function useProfileMenu({
 	blocked: boolean;
 	action: ViewerAction;
 }): ProfileMenuControls {
+	const { t } = useTranslation("profile");
 	const report = useReportAction({
 		/**
 		 * **A single member id.** The contract has no slot for a nickname, bio, avatar or follower count
@@ -70,7 +72,7 @@ export function useProfileMenu({
 		 * reporter could invent evidence, that evidence would not be evidence.
 		 */
 		target: { type: "member", memberId: creatorId },
-		targetLabel: "Profile",
+		targetLabel: t("reportTarget"),
 	});
 	const block = useBlockCreator({ creatorId, creatorName, blocked, action });
 
@@ -78,7 +80,7 @@ export function useProfileMenu({
 		trigger: (
 			<DropdownMenu
 				/** The label says whose menu this is. Leaving it as "menu" would erase what the trigger acts on. */
-				label={`Manage creator ${creatorName}`}
+				label={t("manage", { name: creatorName })}
 				icon="more"
 				align="end"
 			>

@@ -1,5 +1,6 @@
 import { DropdownMenu, MenuItem } from "@rowcat/ui-native";
 import { type ReactNode, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { PublicReportTarget } from "./report-dialog.tsx";
 import { ReportDialog } from "./report-dialog.tsx";
 import { canReportTarget } from "./report-visibility.ts";
@@ -53,6 +54,7 @@ export function useReportAction({
 	targetLabel: string;
 }): ReportAction {
 	const [open, setOpen] = useState(false);
+	const { t } = useTranslation("moderation");
 
 	return {
 		item: (
@@ -61,7 +63,11 @@ export function useReportAction({
 			 * person. Red would read it as a punishment, and if that colour lost its meaning, the red of
 			 * truly destructive rows (delete, block) would stop reading as such too.
 			 */
-			<MenuItem icon="report" label="Report" onSelect={() => setOpen(true)} />
+			<MenuItem
+				icon="report"
+				label={t("menu.report")}
+				onSelect={() => setOpen(true)}
+			/>
 		),
 		dialog: open ? (
 			<ReportDialog

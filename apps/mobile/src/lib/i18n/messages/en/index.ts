@@ -1,5 +1,8 @@
 import { common } from "./common.ts";
 import { discover } from "./discover.ts";
+import { moderation } from "./moderation.ts";
+import { persona } from "./persona.ts";
+import { profile } from "./profile.ts";
 import { settings } from "./settings.ts";
 import { shell } from "./shell.ts";
 import { signIn } from "./sign-in.ts";
@@ -21,4 +24,7 @@ export const en = {
 	vocab,
 	discover,
 	story,
+	moderation,
+	persona,
+	profile,
 };

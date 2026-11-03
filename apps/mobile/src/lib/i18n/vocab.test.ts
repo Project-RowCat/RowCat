@@ -1,4 +1,10 @@
 import {
+	CAPABILITY_LABEL,
+	MY_REPORT_STATE_LABEL,
+	REPORT_REASON_LABEL,
+	REPORT_TARGET_LABEL,
+} from "@rowcat/contracts";
+import {
 	appliedGalleryFilters,
 	commentRepliesLabel,
 	DEFAULT_GALLERY_FILTERS,
@@ -45,6 +51,26 @@ describe("English vocab is the domain's own words", () => {
 	it("the two state words", () => {
 		expect(en.vocab.deletedCreator).toBe(DELETED_CREATOR_LABEL);
 		expect(en.vocab.deletedComment).toBe(DELETED_COMMENT_PLACEHOLDER);
+	});
+});
+
+/** The same rule for the moderation contract's codes: the English names are the contract's own. */
+describe("English moderation names are the contract's own words", () => {
+	it("reasons, targets and report states", () => {
+		expect(en.moderation.reason).toEqual({ ...REPORT_REASON_LABEL });
+		expect(en.moderation.target).toEqual({ ...REPORT_TARGET_LABEL });
+		expect(en.moderation.reportState).toEqual({ ...MY_REPORT_STATE_LABEL });
+	});
+
+	it("capabilities, whose dotted codes are nested keys", () => {
+		for (const [code, label] of Object.entries(CAPABILITY_LABEL)) {
+			const [group, name] = code.split(".") as [string, string];
+			const nested = en.moderation.capability as Record<
+				string,
+				Record<string, string>
+			>;
+			expect(nested[group]?.[name], code).toBe(label);
+		}
 	});
 });
 

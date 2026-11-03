@@ -8,11 +8,7 @@ import { StyleSheet, View } from "react-native";
 import { useLocalPersonas } from "../../lib/local-data/use-personas.ts";
 import { PersonaChoiceRow } from "../persona/persona-choice-row.tsx";
 import { PersonaEditor } from "../persona/persona-editor.tsx";
-import {
-	PERSONA_SAVE_FAILURE_MESSAGE,
-	PERSONA_STORY_DEFAULT_HINT,
-	PERSONA_STORY_DEFAULT_LABEL,
-} from "../persona/persona-form.ts";
+import { PERSONA_COPY } from "../persona/persona-form.ts";
 import { usePersonaLibrary } from "../persona/use-persona-library.ts";
 
 /**
@@ -109,8 +105,7 @@ export function StoryPersonaDialog({
 						 */
 						setSelected(value);
 						setCreating(false);
-						if (outcome === "foreign")
-							setSaveFailure(PERSONA_SAVE_FAILURE_MESSAGE);
+						if (outcome === "foreign") setSaveFailure(PERSONA_COPY.saveFailed);
 					}}
 				/>
 			) : (
@@ -124,8 +119,8 @@ export function StoryPersonaDialog({
 					 * request would go out even for someone who cancels.
 					 */}
 					<PersonaChoiceRow
-						title={PERSONA_STORY_DEFAULT_LABEL}
-						subtitle={PERSONA_STORY_DEFAULT_HINT}
+						title={PERSONA_COPY.storyDefault}
+						subtitle={PERSONA_COPY.storyDefaultHint}
 						selected={selected === null}
 						onPress={() => setSelected(null)}
 					/>

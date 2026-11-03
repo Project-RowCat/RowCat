@@ -3,6 +3,7 @@ import { followMutationOptions } from "@rowcat/query";
 import { Button, Text } from "@rowcat/ui-native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 import { getRowCatClient } from "../../lib/api.ts";
 import { FeedbackLine } from "../../lib/motion/feedback.tsx";
@@ -54,6 +55,7 @@ export function FollowControl({
 	/** The in-app path a guest returns to after login — this profile itself. */
 	returnPath: string;
 }) {
+	const { t } = useTranslation("profile");
 	const queryClient = useQueryClient();
 	const router = useRouter();
 	const mutation = useMutation(
@@ -71,7 +73,7 @@ export function FollowControl({
 	return (
 		<View style={follow.box}>
 			<Button
-				label={following ? "Following" : "Follow"}
+				label={following ? t("following") : t("follow")}
 				/**
 				 * The two pictures the web's same button uses (`UserPlus` ↔ `UserMinus`). The on/off state is
 				 * not said by color alone — the label and the picture both change.
@@ -83,7 +85,9 @@ export function FollowControl({
 				 * for, for someone who cannot see the screen.
 				 */
 				accessibilityLabel={
-					following ? `Unfollow ${creatorName}` : `Follow ${creatorName}`
+					following
+						? t("unfollowName", { name: creatorName })
+						: t("followName", { name: creatorName })
 				}
 				busy={mutation.isPending}
 				disabled={blocked}
@@ -112,12 +116,12 @@ export function FollowControl({
 
 			{action === "restricted" ? (
 				<Text variant="caption" tone="muted-foreground">
-					This account is restricted.
+					{t("restricted")}
 				</Text>
 			) : null}
 			{action === "unverified" ? (
 				<Text variant="caption" tone="muted-foreground">
-					Checking your session.
+					{t("checking")}
 				</Text>
 			) : null}
 

@@ -11,19 +11,13 @@ import {
 } from "@rowcat/ui-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 import { getRowCatClient } from "../../lib/api.ts";
 import { AnimatedCount } from "../../lib/motion/animated-count.tsx";
 import { checkAppealMessage } from "./appeal-form.ts";
 import { createAppealTurn } from "./appeal-turn.ts";
-import {
-	APPEAL_CANCEL_LABEL,
-	APPEAL_DIALOG_DESCRIPTION,
-	APPEAL_MESSAGE_LABEL,
-	APPEAL_SUBMIT_LABEL,
-	APPEAL_SUBMITTING_LABEL,
-	appealDialogTitle,
-} from "./moderation-copy.ts";
+import { APPEAL_DIALOG_COPY, appealDialogTitle } from "./moderation-copy.ts";
 
 /**
  * The appeal dialog. Native counterpart of the web's `appeal-dialog.tsx`.
@@ -70,6 +64,7 @@ export function AppealDialog({
 	subject: string;
 	onClose: () => void;
 }) {
+	const { t: tCommon } = useTranslation("common");
 	const queryClient = useQueryClient();
 	const [message, setMessage] = useState("");
 	const [error, setError] = useState<string | null>(null);
@@ -114,7 +109,7 @@ export function AppealDialog({
 	return (
 		<Dialog
 			title={appealDialogTitle(subject)}
-			description={APPEAL_DIALOG_DESCRIPTION}
+			description={APPEAL_DIALOG_COPY.description}
 			open
 			onOpenChange={(next) => {
 				/** Does not close while a submission is running; the same rule as the form dialogs in the security section. */
@@ -124,7 +119,7 @@ export function AppealDialog({
 			<View style={form.root}>
 				<View style={form.field}>
 					<Textarea
-						label={APPEAL_MESSAGE_LABEL}
+						label={APPEAL_DIALOG_COPY.label}
 						value={message}
 						onChangeText={setMessage}
 						/**
@@ -165,7 +160,7 @@ export function AppealDialog({
 
 				<DialogActions>
 					<Button
-						label={APPEAL_CANCEL_LABEL}
+						label={tCommon("actions.cancel")}
 						variant="outline"
 						fullWidth
 						disabled={pending}
@@ -173,7 +168,11 @@ export function AppealDialog({
 						style={form.action}
 					/>
 					<Button
-						label={pending ? APPEAL_SUBMITTING_LABEL : APPEAL_SUBMIT_LABEL}
+						label={
+							pending
+								? APPEAL_DIALOG_COPY.submitting
+								: APPEAL_DIALOG_COPY.submit
+						}
 						fullWidth
 						busy={pending}
 						/**

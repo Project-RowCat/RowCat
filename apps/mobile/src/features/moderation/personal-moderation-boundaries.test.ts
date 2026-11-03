@@ -274,7 +274,8 @@ describe("reporter privacy — dispositions don't reach the screen", () => {
 	/** The source of the labels is the contract. Mobile does not create a second Korean table. */
 	it("status labels come from the contract", () => {
 		const section = fileAt("features/moderation/my-reports-section.tsx");
-		expect(section).toContain("MY_REPORT_STATE_LABEL[report.state]");
+		/** Keyed by the contract's state codes; `vocab.test.ts` holds the English to the contract's labels. */
+		expect(section).toContain("reportStateLabel(report.state)");
 		for (const path of reportsSurface)
 			expect(fileAt(path), path).not.toMatch(/Record<MyReportState/);
 	});

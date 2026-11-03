@@ -13,6 +13,7 @@ import {
 	effectiveChatPersona,
 	planPersonaSave as planPersonaSaveRule,
 } from "@rowcat/chat";
+import { deferredGroup, translator } from "../../lib/i18n/instance.ts";
 
 /**
  * The **copy** of the persona form. The rules live in `@rowcat/chat`.
@@ -50,14 +51,17 @@ export type PersonaPlan =
 	| { kind: "unchanged" }
 	| { kind: "save"; name: string; description: string };
 
-const NAME_COPY: Record<ChatPersonaNameRejection, string> = {
-	empty: "Please enter a name.",
-	too_long: `Names can be up to ${CHAT_PERSONA_NAME_MAX_LENGTH} characters.`,
-};
+const nameCopy = (reason: ChatPersonaNameRejection): string =>
+	reason === "empty"
+		? translator("persona")("nameEmpty")
+		: translator("persona")("nameTooLong", {
+				max: CHAT_PERSONA_NAME_MAX_LENGTH,
+			});
 
-const DESCRIPTION_COPY: Record<ChatPersonaDescriptionRejection, string> = {
-	too_long: `Descriptions can be up to ${CHAT_PERSONA_DESCRIPTION_MAX_LENGTH} characters.`,
-};
+const descriptionCopy = (_reason: ChatPersonaDescriptionRejection): string =>
+	translator("persona")("descriptionTooLong", {
+		max: CHAT_PERSONA_DESCRIPTION_MAX_LENGTH,
+	});
 
 /** With no `current`, this is **a create**, so `unchanged` is never returned. */
 export function planPersonaSave(
@@ -67,41 +71,31 @@ export function planPersonaSave(
 	const plan: ChatPersonaSavePlan = planPersonaSaveRule(input, current);
 	if (plan.kind !== "invalid") return plan;
 	return plan.field === "name"
-		? { kind: "invalid", field: "name", message: NAME_COPY[plan.reason] }
+		? { kind: "invalid", field: "name", message: nameCopy(plan.reason) }
 		: {
 				kind: "invalid",
 				field: "description",
-				message: DESCRIPTION_COPY[plan.reason],
+				message: descriptionCopy(plan.reason),
 			};
 }
 
 /**
- * A failure as one sentence a person can read.
+ * The persona sentences, read in the drawn language (`persona.copy`). One table, because the room
+ * settings and the story start dialog draw the same words the library does. What they decide, and a
+ * translation keeps:
  *
- * The raw Dexie message is not shown: it does not say what the user can do, and it carries internal
- * structure. Not splitting the cases is intentional too: quota exceeded and a connection closed
- * during an account switch both leave the user with the same next step.
+ * - Failures are one sentence a person can read (`saveFailed`, `deleteFailed`, `applyFailed`), never
+ *   the raw storage message, and the cases are not split — each leaves the same next step. Deleting
+ *   also counts as applying on the room side, so `applyFailed` is one sentence.
+ * - `deleteNotice` states what deleting does **not** do: conversations already started keep their own
+ *   copy of the role. Unsaid, people would not delete for fear of losing the speaker, or would read an
+ *   intact conversation as a failed delete.
+ * - `storyDefault` says **the story's** default, not a bare "default" (which reads as RowCat's);
+ *   `none` is a state, not a choice; `storyDefaultHint` describes what will happen, because before
+ *   start the proposed role's name is not known yet — writing `Not set` there would be a wrong value.
+ * - `emptyTitle`/`emptyBody`: an empty library says first what the feature is for.
  */
-export const PERSONA_SAVE_FAILURE_MESSAGE =
-	"Couldn't save the persona. Please try again.";
-
-export const PERSONA_DELETE_FAILURE_MESSAGE =
-	"Couldn't delete the persona. Please try again.";
-
-/** Failure on the side that applies to the room; deleting also counts as applying, so there is one sentence. */
-export const PERSONA_APPLY_FAILURE_MESSAGE =
-	"Couldn't change this conversation's persona. Please try again.";
-
-/**
- * States what the delete confirmation does **not** do.
- *
- * Deleting from the library does nothing to conversations already started (a room carries its own
- * copy of the value). If that is not written, the user will not delete for fear that the speaker of
- * their conversation disappears, and a user who deletes and sees the conversation intact will read
- * the deletion as having failed.
- */
-export const PERSONA_DELETE_NOTICE =
-	"Conversations already started with this persona stay as they are.";
+export const PERSONA_COPY = deferredGroup("persona", "copy");
 
 /**
  * Whether to **show** the character count: only when the limit is near.
@@ -116,30 +110,6 @@ export const PERSONA_DESCRIPTION_COUNTER_THRESHOLD =
 /** Length the screen counts; must use the same unit as the store (code points). */
 export const personaTextLength = chatTextLength;
 
-/* Copy for the three states: the name alone does not tell them apart. */
-
-/**
- * The name of the row that points at the counterpart the work proposed.
- *
- * The point is that it says **work default**, not a plain "default". A bare "default" would be read
- * as RowCat's default setting, while the role is actually set by this work's creator; another work
- * shows a different name in that place.
- */
-export const PERSONA_STORY_DEFAULT_LABEL = "Story's default persona";
-
-/** The work did not propose a role either: this is a state, not something to pick. */
-export const PERSONA_NONE_LABEL = "Not set";
-
-/**
- * One line for when the name is not yet known.
- *
- * Used by the dialog that is picked **before** starting a conversation. The name of the role the
- * work proposed lives in the playback snapshot, which is only received after start is pressed, so
- * the name cannot be shown there. Writing `Not set` instead would say there is no role when the work
- * did propose one (**a wrong value is worse than no value**). So this describes what will happen.
- */
-export const PERSONA_STORY_DEFAULT_HINT = "Uses the role the story suggests";
-
 /**
  * **One line** drawn by the persona row on the settings home.
  *
@@ -150,12 +120,12 @@ export const PERSONA_STORY_DEFAULT_HINT = "Uses the role the story suggests";
  */
 export function personaRowSummary(source: ChatPersonaSource): string {
 	const origin = chatPersonaOrigin(source);
-	if (origin === "default") return PERSONA_NONE_LABEL;
+	if (origin === "default") return PERSONA_COPY.none;
 	const name = effectiveChatPersona(source)?.name ?? "";
-	return origin === "story" ? `${name} · ${PERSONA_STORY_DEFAULT_LABEL}` : name;
+	return origin === "story"
+		? translator("persona")("storySummary", {
+				name,
+				label: PERSONA_COPY.storyDefault,
+			})
+		: name;
 }
-
-/** Empty library, nothing saved yet: say first what this feature is for. */
-export const PERSONA_EMPTY_TITLE = "No saved personas";
-export const PERSONA_EMPTY_BODY =
-	"A persona is the role you play in a conversation. Save the names and settings you use often to pick them again in any conversation.";
