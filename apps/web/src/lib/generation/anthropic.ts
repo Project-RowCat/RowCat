@@ -209,6 +209,9 @@ type AnthropicContinuationMode = "prefill" | "nudge";
  * arrive. The shape sent then is the one every model accepts, since every new model from this
  * provider since 4.6 has rejected prefill. This matches the choice for unknown models' reasoning
  * parameters: do not guess a shape that returns a 400 when wrong.
+ *
+ * Haiku 5.5 arrived after that check. Its migration guide documents prefill as a 400 with thinking
+ * off too, so it takes the nudge like every other model since 4.6.
  */
 const ANTHROPIC_CONTINUATION: Readonly<
 	Record<string, AnthropicContinuationMode>
@@ -219,6 +222,7 @@ const ANTHROPIC_CONTINUATION: Readonly<
 	"claude-opus-5": "nudge",
 	"claude-sonnet-5-5": "nudge",
 	"claude-sonnet-5": "nudge",
+	"claude-haiku-5-5": "nudge",
 	"claude-opus-4-8": "nudge",
 	"claude-opus-4-7": "nudge",
 	"claude-opus-4-6": "nudge",
@@ -423,6 +427,7 @@ const ANTHROPIC_REASONING: Readonly<Record<string, AnthropicReasoningMode>> = {
 	"claude-opus-5": ADAPTIVE,
 	"claude-sonnet-5-5": ADAPTIVE,
 	"claude-sonnet-5": ADAPTIVE,
+	"claude-haiku-5-5": ADAPTIVE,
 	"claude-opus-4-8": ADAPTIVE,
 	"claude-opus-4-7": ADAPTIVE,
 	"claude-opus-4-6": ADAPTIVE,
@@ -440,7 +445,8 @@ const ANTHROPIC_REASONING: Readonly<Record<string, AnthropicReasoningMode>> = {
  * Three shapes, per generation:
  * - Sonnet 5.5: `{ type: "disabled" }` is a 400 there; `between_tools` is that model's off switch,
  *   accepted at effort `high` or below (no effort is sent, and its default is `high`).
- * - Sonnet 5: `{ type: "disabled" }`.
+ * - Sonnet 5 and Haiku 5.5: `{ type: "disabled" }` (Haiku 5.5 accepts it at effort `high` or below;
+ *   no effort is sent, and its default is `medium`).
  * - Opus 4.7, Opus 4.6, Sonnet 4.6 and the 4.5 generation: thinking is off unless asked for, so off is
  *   sending no thinking parameter at all.
  *
@@ -452,12 +458,15 @@ const ANTHROPIC_REASONING: Readonly<Record<string, AnthropicReasoningMode>> = {
  * Checked against the Anthropic docs (thinking and effort pages) on 2026-11-02, and against the live
  * API the same day: Sonnet 5.5 `between_tools`, Sonnet 5 `disabled` and Opus 4.7 with no parameter all
  * answered with zero thinking tokens; Sonnet 5.5 `disabled` and Opus 5.5 `disabled` were 400s.
+ * Haiku 5.5 was added on 2026-11-03 from the docs alone (its migration guide: adaptive only, `budget_tokens`
+ * and prefill are 400s, `disabled` accepted at `high` or below); no live key was at hand that day.
  */
 const ANTHROPIC_THINKING_OFF: Readonly<
 	Record<string, Record<string, unknown>>
 > = {
 	"claude-sonnet-5-5": { thinking: { type: "between_tools" } },
 	"claude-sonnet-5": { thinking: { type: "disabled" } },
+	"claude-haiku-5-5": { thinking: { type: "disabled" } },
 	"claude-opus-4-7": {},
 	"claude-opus-4-6": {},
 	"claude-sonnet-4-6": {},

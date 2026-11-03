@@ -118,11 +118,12 @@ const BYO_EFFORT_WITH_MINIMAL: ModelReasoningDto = Object.freeze({
  * pointing at the old string. The provider keeps an alias pointing at the next version, so no
  * migration is needed. A model with no alias uses the docs' API id.
  *
- * All twelve entries share the same three levels but send them in two ways, so the constant must
+ * Every entry shares the same three levels but they are sent in two ways, so the constant must
  * not be reused casually: the two generations reject each other's parameters with a 400.
  *
  * ```text
- * Fable 5.1 · 5 · Opus 5.5 · 5 · Sonnet 5 · Opus 4.8 · 4.7 · 4.6 · Sonnet 4.6   adaptive + output_config.effort
+ * Fable 5.1 · 5 · Opus 5.5 · 5 · Sonnet 5.5 · 5 · Haiku 5.5 · Opus 4.8 · 4.7 · 4.6 · Sonnet 4.6
+ *                                                                     adaptive + output_config.effort
  * Opus 4.5 · Sonnet 4.5 · Haiku 4.5                                              extended + thinking.budget_tokens
  * ```
  *
@@ -176,6 +177,12 @@ const ANTHROPIC_MODELS: readonly {
 	{
 		model: "claude-sonnet-5",
 		label: "Claude Sonnet 5",
+		reasoning: BYO_EFFORT_OFF_AND_THREE,
+		promptPack: null,
+	},
+	{
+		model: "claude-haiku-5-5",
+		label: "Claude Haiku 5.5",
 		reasoning: BYO_EFFORT_OFF_AND_THREE,
 		promptPack: null,
 	},

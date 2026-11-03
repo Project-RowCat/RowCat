@@ -311,6 +311,7 @@ describe("Anthropic adapter", () => {
 			"claude-opus-5",
 			"claude-sonnet-5-5",
 			"claude-sonnet-5",
+			"claude-haiku-5-5",
 			"claude-opus-4-8",
 			"claude-opus-4-7",
 			"claude-opus-4-6",
@@ -334,6 +335,7 @@ describe("Anthropic adapter", () => {
 		it.each([
 			["claude-sonnet-5-5", { type: "between_tools" }],
 			["claude-sonnet-5", { type: "disabled" }],
+			["claude-haiku-5-5", { type: "disabled" }],
 			["claude-opus-4-7", undefined],
 			["claude-opus-4-6", undefined],
 			["claude-sonnet-4-6", undefined],
@@ -1549,6 +1551,7 @@ const NUDGE_CONTINUATION_MODELS = [
 	"claude-opus-5",
 	"claude-sonnet-5-5",
 	"claude-sonnet-5",
+	"claude-haiku-5-5",
 	"claude-opus-4-8",
 	"claude-opus-4-7",
 	"claude-opus-4-6",
