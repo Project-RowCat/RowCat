@@ -1,13 +1,15 @@
 import { space } from "@rowcat/design";
-import {
-	ORIENTATION_LABEL,
-	type Story,
-	storyVisibilityBadgeLabel,
-} from "@rowcat/domain";
+import type { Story } from "@rowcat/domain";
 import { Badge, ListRow, Separator, Text, targetSlop } from "@rowcat/ui-native";
 import { useRouter } from "expo-router";
+import { useTranslation } from "react-i18next";
 import { Pressable, StyleSheet, View } from "react-native";
 import { formatDate, formatSize } from "../../lib/format.ts";
+import {
+	adultBadge,
+	orientationLabel,
+	visibilityBadgeLabel,
+} from "../../lib/i18n/vocab.ts";
 import { StoryByline } from "./story-byline.tsx";
 
 /**
@@ -44,8 +46,9 @@ export function StoryHeading({
 	 */
 	own: boolean;
 }) {
+	const { t } = useTranslation("story");
 	/** `null` for public works, so the pill itself is not drawn. */
-	const visibilityLabel = storyVisibilityBadgeLabel(story.visibility);
+	const visibilityLabel = visibilityBadgeLabel(story.visibility);
 	return (
 		<View style={meta.heading}>
 			{/**
@@ -56,7 +59,7 @@ export function StoryHeading({
 			 */}
 			{(story.adult || visibilityLabel) && (
 				<View style={meta.badges}>
-					{story.adult && <Badge label="Adult" variant="destructive" />}
+					{story.adult && <Badge label={adultBadge()} variant="destructive" />}
 					{/**
 					 * Visibility state — **public works show no pill** (`storyVisibilityBadgeLabel`; the web
 					 * detail calls the same function). The pill on a link-shared work is also for the person
@@ -82,7 +85,7 @@ export function StoryHeading({
 					<>
 						<Dot />
 						<Text variant="body" tone="muted-foreground">
-							{ORIENTATION_LABEL[story.orientation]}
+							{orientationLabel(story.orientation)}
 						</Text>
 					</>
 				)}
@@ -90,7 +93,7 @@ export function StoryHeading({
 					<>
 						<Dot />
 						<Text variant="body" tone="muted-foreground">
-							My story
+							{t("meta.mine")}
 						</Text>
 					</>
 				)}
@@ -121,6 +124,7 @@ function Dot() {
 
 /** Description — does not collapse line breaks the creator entered (collapsing them erases the whole paragraph structure). */
 export function StoryDescription({ description }: { description: string }) {
+	const { t } = useTranslation("story");
 	const text = description.trim();
 	return text ? (
 		<Text variant="body" leading="reading">
@@ -128,7 +132,7 @@ export function StoryDescription({ description }: { description: string }) {
 		</Text>
 	) : (
 		<Text variant="body" tone="muted-foreground">
-			No description.
+			{t("meta.noDescription")}
 		</Text>
 	);
 }
@@ -147,15 +151,16 @@ export function StoryDescription({ description }: { description: string }) {
  * not merge params). That is the same outcome as the web's `/?tag=…` link.
  */
 export function StoryTags({ tags }: { tags: string[] }) {
+	const { t } = useTranslation("story");
 	const router = useRouter();
 	if (tags.length === 0) return null;
 	return (
-		<View accessibilityLabel="Tags" style={meta.badges}>
+		<View accessibilityLabel={t("meta.tags")} style={meta.badges}>
 			{tags.map((tag) => (
 				<Pressable
 					key={tag}
 					accessibilityRole="button"
-					accessibilityLabel={`Find stories tagged ${tag}`}
+					accessibilityLabel={t("meta.findTag", { tag })}
 					/** The badge is about 20pt, so padding is added up to the finger target (44). */
 					hitSlop={targetSlop(20)}
 					onPress={() => router.navigate({ pathname: "/", params: { tag } })}
@@ -176,6 +181,7 @@ export function StoryTags({ tags }: { tags: string[] }) {
  * being wrong (`lib/format.ts`).
  */
 export function StoryMetadata({ story }: { story: Story }) {
+	const { t } = useTranslation("story");
 	const created = formatDate(story.createdAt);
 	const updated = formatDate(story.updatedAt);
 
@@ -191,21 +197,21 @@ export function StoryMetadata({ story }: { story: Story }) {
 			 */}
 			<Separator />
 			<Text variant="caption" tone="muted-foreground">
-				Story info
+				{t("meta.info")}
 			</Text>
 			<View style={meta.table}>
-				{created && <ListRow label="Posted" value={created} />}
+				{created && <ListRow label={t("meta.posted")} value={created} />}
 				{/** Does not print the same date on two lines for a work that was never edited. */}
 				{updated && updated !== created && (
-					<ListRow label="Edited" value={updated} />
+					<ListRow label={t("meta.edited")} value={updated} />
 				)}
 				{/** Disclosed only when a name different from the uploader's account is written — if it is the same, it just repeats the byline. */}
 				{story.author && story.author !== story.creator?.nickname && (
-					<ListRow label="Author credit" value={story.author} />
+					<ListRow label={t("meta.author")} value={story.author} />
 				)}
-				<ListRow label="Size" value={formatSize(story.sizeBytes)} />
+				<ListRow label={t("meta.size")} value={formatSize(story.sizeBytes)} />
 				{story.promptProtected && (
-					<ListRow label="Body" value="Protected prompt" />
+					<ListRow label={t("meta.body")} value={t("meta.protected")} />
 				)}
 			</View>
 		</View>

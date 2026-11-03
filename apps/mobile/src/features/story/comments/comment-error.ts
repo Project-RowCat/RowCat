@@ -1,5 +1,22 @@
 import { STORY_COMMENT_ERROR_CODE } from "@rowcat/contracts";
 import { isRowCatApiError } from "@rowcat/sdk";
+import { translator } from "../../../lib/i18n/instance.ts";
+
+/** The comment failure sentences, in the language being drawn (`story.comments.error`). */
+const t = (key: keyof typeof keys) => translator("story")(keys[key]);
+const keys = {
+	saveFailed: "comments.error.saveFailed",
+	tooFast: "comments.error.tooFast",
+	reactTooFast: "comments.error.reactTooFast",
+	replyDepth: "comments.error.replyDepth",
+	replyToDeleted: "comments.error.replyToDeleted",
+	restricted: "comments.error.restricted",
+	loginRequired: "comments.error.loginRequired",
+	invalid: "comments.error.invalid",
+	unavailable: "comments.error.unavailable",
+	loadFailed: "comments.error.loadFailed",
+	repliesLoadFailed: "comments.error.repliesLoadFailed",
+} as const;
 
 /**
  * Comment failure → one human-readable line.
@@ -14,15 +31,14 @@ import { isRowCatApiError } from "@rowcat/sdk";
  */
 export function commentErrorMessage(error: unknown): string {
 	const apiError = isRowCatApiError(error) ? error : null;
-	if (!apiError)
-		return "Couldn't save the comment. Please try again in a moment.";
+	if (!apiError) return t("saveFailed");
 
 	switch (apiError.code) {
 		case STORY_COMMENT_ERROR_CODE.rateLimited:
-			return "You're posting too fast. Please try again in a moment.";
+			return t("tooFast");
 		/** The heart (reaction) and writing have separate windows on the server, so their wording is separate too. */
 		case STORY_COMMENT_ERROR_CODE.reactionRateLimited:
-			return "You reacted too fast. Please try again in a moment.";
+			return t("reactTooFast");
 		/**
 		 * The two reply rejections. **The screen already blocks this state** (`canReplyToComment`), but
 		 * they still need copy because the state **changes behind the screen**: if another device deletes
@@ -31,29 +47,27 @@ export function commentErrorMessage(error: unknown): string {
 		 * always gets the same answer.
 		 */
 		case STORY_COMMENT_ERROR_CODE.replyDepth:
-			return "You can't reply to a reply. Reply to the original comment.";
+			return t("replyDepth");
 		case STORY_COMMENT_ERROR_CODE.replyToDeleted:
-			return "You can't reply to a deleted comment.";
+			return t("replyToDeleted");
 		case "account_restricted":
-			return "A restricted account can't write comments.";
+			return t("restricted");
 		case "login_required":
-			return "You need to sign in.";
+			return t("loginRequired");
 		case "invalid_input":
-			return "Please check the comment.";
+			return t("invalid");
 		default:
 			/**
 			 * A 404 does not guess the reason. The work may have gone private or been deleted, and the
 			 * server hides that distinction on purpose; if the screen tried to tell them apart, the boundary
 			 * would break.
 			 */
-			return apiError.status === 404
-				? "Comments can't be posted on this story right now."
-				: "Couldn't save the comment. Please try again in a moment.";
+			return apiError.status === 404 ? t("unavailable") : t("saveFailed");
 	}
 }
 
 /** Failure wording for loading the list. Kept apart from the write failure because what the user can do differs. */
-export const COMMENTS_LOAD_FAILURE = "Couldn't load comments.";
+export const commentsLoadFailure = (): string => t("loadFailed");
 
 /**
  * A single thread's replies failed to load — **the same sentence as web.**
@@ -61,4 +75,4 @@ export const COMMENTS_LOAD_FAILURE = "Couldn't load comments.";
  * Kept apart from the list failure because of **scope**: this failure means only that one thread
  * did not open, and the rest of the comments are still on screen.
  */
-export const REPLIES_LOAD_FAILURE = "Couldn't load replies.";
+export const repliesLoadFailure = (): string => t("repliesLoadFailed");

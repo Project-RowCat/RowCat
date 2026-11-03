@@ -1,7 +1,9 @@
 import { space } from "@rowcat/design";
 import { Badge, Card, Text } from "@rowcat/ui-native";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
+import { adultBadge } from "../../lib/i18n/vocab.ts";
 import { StoryCover } from "../story/story-cover.tsx";
 import type { StoryCardView } from "./story-card-view.ts";
 
@@ -43,6 +45,7 @@ export function StoryCardBody({
 	/** Right end of the bottom row. The grid passes the heart control; the preview passes its picture. */
 	action: ReactNode;
 }) {
+	useTranslation("vocab");
 	return (
 		<Card padded={false} style={storyCard.root}>
 			{wrapMedia(
@@ -56,7 +59,9 @@ export function StoryCardBody({
 						{/** Badges raise only the axes that tell "what this work is." If everything carried a badge, the emphasis would disappear. */}
 						{(view.adult || view.visibilityLabel) && (
 							<View style={storyCard.coverBadges}>
-								{view.adult && <Badge label="Adult" variant="destructive" />}
+								{view.adult && (
+									<Badge label={adultBadge()} variant="destructive" />
+								)}
 								{view.visibilityLabel ? (
 									<Badge label={view.visibilityLabel} />
 								) : null}

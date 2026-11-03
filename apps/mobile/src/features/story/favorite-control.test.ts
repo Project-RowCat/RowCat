@@ -51,7 +51,7 @@ describe("fill doesn't stand in for state", () => {
 	/** The name follows on/off too: a bare `Favorites` would leave the state unknown until pressed. */
 	it("the button's name states the current state", () => {
 		expect(code).toMatch(
-			/accessibilityLabel=\{\s*favorited \? "Remove from favorites" : "Add to favorites"\s*\}/,
+			/accessibilityLabel=\{\s*favorited \? t\("favorite\.remove"\) : t\("favorite\.add"\)\s*\}/,
 		);
 	});
 });

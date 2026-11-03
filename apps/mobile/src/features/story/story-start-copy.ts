@@ -1,5 +1,6 @@
 import type { StoryPlayMode } from "@rowcat/domain";
-import { STORY_START_LABEL } from "@rowcat/domain";
+import { translator } from "../../lib/i18n/instance.ts";
+import { startLabel } from "../../lib/i18n/vocab.ts";
 
 /**
  * The **copy** of the primary action — kept apart from the component that draws it.
@@ -18,7 +19,7 @@ export function storyStartLabel(
 	/**
 	 * Play mode — this value decides the words.
 	 *
-	 * It passes through **the domain table** (`STORY_START_LABEL`) rather than a ternary. That table
+	 * It passes through **the domain table** (`STORY_START_LABEL`) rather than a ternary (named in this language by `startLabel`). That table
 	 * is a `Record`, so adding a mode breaks compilation, and the web reads the same table, so there
 	 * is no place for the two apps' words to diverge.
 	 *
@@ -34,6 +35,8 @@ export function storyStartLabel(
 	 * waiting for a conversation screen.
 	 */
 	if (pending)
-		return playMode === "runtime" ? "Preparing" : "Starting the conversation";
-	return STORY_START_LABEL[playMode];
+		return translator("story")(
+			playMode === "runtime" ? "start.preparing" : "start.starting",
+		);
+	return startLabel(playMode);
 }

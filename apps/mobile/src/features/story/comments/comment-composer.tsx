@@ -12,6 +12,7 @@ import { Button, Notice, Text, Textarea } from "@rowcat/ui-native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 import { getRowCatClient } from "../../../lib/api.ts";
 import { AnimatedCount } from "../../../lib/motion/animated-count.tsx";
@@ -72,6 +73,7 @@ export function CommentComposer({
 	/** Only on the reply form — the top-level input cannot be closed. */
 	onCancel?: () => void;
 }) {
+	const { t } = useTranslation(["story", "common"]);
 	const router = useRouter();
 	const queryClient = useQueryClient();
 	const [text, setText] = useState("");
@@ -105,9 +107,9 @@ export function CommentComposer({
 		return (
 			<Notice
 				message={
-					parentId ? "Sign in to write a reply." : "Sign in to write a comment."
+					parentId ? t("comments.signInToReply") : t("comments.signInToComment")
 				}
-				actionLabel="Sign in"
+				actionLabel={t("common:actions.signIn")}
 				onAction={() =>
 					router.push({ pathname: "/login", params: { redirect: returnPath } })
 				}
@@ -115,10 +117,10 @@ export function CommentComposer({
 		);
 
 	if (action === "restricted")
-		return <Notice message="A restricted account can't write comments." />;
+		return <Notice message={t("comments.restricted")} />;
 
 	if (action === "unverified")
-		return <Notice message="Checking your session." />;
+		return <Notice message={t("comments.checking")} />;
 
 	const parsed = StoryCommentCreateRequest.safeParse({ body: text });
 	const overflow = text.trim().length - STORY_COMMENT_LIMITS.body;
@@ -149,12 +151,14 @@ export function CommentComposer({
 	return (
 		<View style={composer.root}>
 			<Textarea
-				label={parentId ? "Write a reply" : "Write a comment"}
+				label={parentId ? t("comments.replyInput") : t("comments.commentInput")}
 				labelHidden
 				value={text}
 				onChangeText={setText}
 				placeholder={
-					parentId ? "Leave a reply" : "Share what you thought of this story"
+					parentId
+						? t("comments.replyPlaceholder")
+						: t("comments.commentPlaceholder")
 				}
 				editable={!mutation.isPending}
 				/** An overflowing input is a **wrong** input — the box says so with its border too. */
@@ -178,7 +182,10 @@ export function CommentComposer({
 							tone="destructive"
 						>
 							{overflow > 0
-								? `${overflow} characters over ${STORY_COMMENT_LIMITS.body}`
+								? t("comments.overLimit", {
+										over: overflow,
+										limit: STORY_COMMENT_LIMITS.body,
+									})
 								: commentErrorMessage(mutation.error)}
 						</Text>
 					) : text.trim().length >= COUNTER_FROM ? (
@@ -202,7 +209,7 @@ export function CommentComposer({
 				</View>
 				{onCancel && (
 					<Button
-						label="Cancel"
+						label={t("common:actions.cancel")}
 						variant="ghost"
 						size="sm"
 						onPress={onCancel}
@@ -211,7 +218,11 @@ export function CommentComposer({
 				)}
 				<Button
 					label={
-						mutation.isPending ? "Posting" : parentId ? "Reply" : "Comment"
+						mutation.isPending
+							? t("comments.posting")
+							: parentId
+								? t("comments.postReply")
+								: t("comments.postComment")
 					}
 					size="sm"
 					onPress={submit}

@@ -1,6 +1,7 @@
 import type { Story } from "@rowcat/domain";
 import { useRouter } from "expo-router";
 import { memo } from "react";
+import { useTranslation } from "react-i18next";
 import { Pressable, StyleSheet, View } from "react-native";
 import { FavoriteControl } from "../story/favorite-control.tsx";
 import { StoryByline } from "../story/story-byline.tsx";
@@ -103,6 +104,8 @@ export const StoryCard = memo(function StoryCard({
 	favorited: boolean;
 	returnPath: string;
 }) {
+	/** Subscribes the card (it is memoized) to the language; the badge and hint are read as it draws. */
+	const { t } = useTranslation("discover");
 	const router = useRouter();
 
 	return (
@@ -127,7 +130,7 @@ export const StoryCard = memo(function StoryCard({
 						 * name twice, and one of the two would not lead to the profile.
 						 */
 						accessibilityLabel={story.title}
-						accessibilityHint="Opens the story details"
+						accessibilityHint={t("cardHint")}
 						onPress={() =>
 							/**
 							 * **Pass only the id.** Carrying the work object as a route parameter would make the detail

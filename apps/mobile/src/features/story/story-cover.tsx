@@ -1,5 +1,6 @@
 import { Icon, type IconSize, useTheme } from "@rowcat/ui-native";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Image, StyleSheet, View } from "react-native";
 import { isApiOrigin, useAuthImageHeaders } from "../../lib/auth-image.ts";
 
@@ -35,6 +36,7 @@ export function StoryCover({
 	 */
 	placeholderSize?: IconSize;
 }) {
+	const { t } = useTranslation("story");
 	const [failedUri, setFailedUri] = useState<string | null>(null);
 	const { colors } = useTheme();
 	/**
@@ -73,7 +75,7 @@ export function StoryCover({
 		<Image
 			accessibilityRole="image"
 			accessible={title !== null}
-			accessibilityLabel={title ? `Cover of ${title}` : undefined}
+			accessibilityLabel={title ? t("coverOf", { title }) : undefined}
 			source={
 				auth.headers && isApiOrigin(uri)
 					? { uri, headers: auth.headers }

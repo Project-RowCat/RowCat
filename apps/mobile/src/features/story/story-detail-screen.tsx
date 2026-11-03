@@ -30,6 +30,7 @@ import {
 } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { FlatList, StyleSheet, View } from "react-native";
 import { getRowCatClient } from "../../lib/api.ts";
 import { useMobileIdentity } from "../../lib/identity.tsx";
@@ -40,7 +41,6 @@ import { ReportMenu } from "../moderation/report-menu.tsx";
 import { AppSidebarTrigger } from "../shell/app-sidebar.tsx";
 import { ShellUtilities } from "../shell/shell-utilities.tsx";
 import { CommentComposer } from "./comments/comment-composer.tsx";
-import { COMMENTS_LOAD_FAILURE } from "./comments/comment-error.ts";
 import { CommentThread } from "./comments/comment-thread.tsx";
 import { resolveCommentsState } from "./comments/comments-state.ts";
 import { FavoriteControl } from "./favorite-control.tsx";
@@ -88,6 +88,7 @@ import { resolveStoryState, type StoryState } from "./story-state.ts";
  * combination.
  */
 export function StoryDetailScreen({ storyId }: { storyId: string }) {
+	const { t } = useTranslation(["story", "common"]);
 	const client = getRowCatClient();
 	const queryClient = useQueryClient();
 	const router = useRouter();
@@ -330,8 +331,8 @@ export function StoryDetailScreen({ storyId }: { storyId: string }) {
 										 */}
 										<ReportMenu
 											target={{ type: "story", storyId: value.id }}
-											targetLabel="Story"
-											triggerLabel="Story report menu"
+											targetLabel={t("reportTarget")}
+											triggerLabel={t("reportTrigger")}
 											viewerId={viewerId}
 											ownerId={value.creator?.id ?? null}
 										/>
@@ -352,7 +353,10 @@ export function StoryDetailScreen({ storyId }: { storyId: string }) {
 									returnPath={returnPath}
 								/>
 
-								<ListSection title="Comments" style={detail.commentsHead}>
+								<ListSection
+									title={t("comments.title")}
+									style={detail.commentsHead}
+								>
 									{/**
 									 * The composer sits **above** the list. The list grows downward in oldest-first
 									 * order, so with the input at the end, the more comments there are, the more
@@ -366,7 +370,7 @@ export function StoryDetailScreen({ storyId }: { storyId: string }) {
 									/>
 									{createdOutOfView && (
 										<Text variant="caption" tone="muted-foreground">
-											Comment posted. You can see it at the end of the list.
+											{t("comments.posted")}
 										</Text>
 									)}
 									{/**
@@ -389,7 +393,9 @@ export function StoryDetailScreen({ storyId }: { storyId: string }) {
 									 */}
 									<Button
 										label={
-											comments.isFetchingNextPage ? "Loading" : "More comments"
+											comments.isFetchingNextPage
+												? t("comments.loading")
+												: t("comments.more")
 										}
 										variant="outline"
 										fullWidth
@@ -420,6 +426,7 @@ const CommentSeparator = () => <Separator />;
  * button here is for people who do not know about it and for Android.
  */
 function DetailBar({ onBack }: { onBack: () => void }) {
+	const { t } = useTranslation(["story", "common"]);
 	/**
 	 * The title is not drawn. The work title is already the largest text on the canvas, and drawing
 	 * the same words twice makes screen readers read them twice. This is the same rule as the web
@@ -429,7 +436,7 @@ function DetailBar({ onBack }: { onBack: () => void }) {
 		<AppBar
 			navigation={<AppSidebarTrigger />}
 			onBack={onBack}
-			backLabel="Back to Discover"
+			backLabel={t("back")}
 			/**
 			 * Global utilities (notifications, account). The screen only composes this one row; counts,
 			 * badges and active state are handled by each component. They disappear on their own for
@@ -457,12 +464,10 @@ function StoryUnavailable({
 	state: Exclude<StoryState, { kind: "story" }>;
 	onRetry: () => void;
 }) {
+	const { t } = useTranslation(["story", "common"]);
 	if (state.kind === "loading") return <Spinner />;
 
-	if (state.kind === "offline")
-		return (
-			<Notice message="You're not connected to a network. It continues automatically once connected." />
-		);
+	if (state.kind === "offline") return <Notice message={t("offline")} />;
 
 	/**
 	 * A missing work is **not a failure** — retrying gets the same 404. So it is an empty-state
@@ -482,24 +487,24 @@ function StoryUnavailable({
 			<View style={detail.missing}>
 				<Icon name="missing" size="2xl" tone="muted-foreground" />
 				<Text accessibilityRole="alert" variant="title">
-					The story couldn't be found.
+					{t("missingTitle")}
 				</Text>
 				<Text variant="label" tone="muted-foreground">
-					This story doesn't exist or can't be viewed right now.
+					{t("missingDescription")}
 				</Text>
 			</View>
 		);
 
 	return (
 		<ErrorState
-			message="Couldn't load stories."
-			actionLabel="Try again"
+			message={t("loadFailed")}
+			actionLabel={t("common:actions.tryAgain")}
 			onAction={onRetry}
 			/** Carries neither the stack nor the response body. The request id is the only clue the user can bring along. */
 			detail={
 				state.requestId ? (
 					<Text variant="caption" tone="muted-foreground">
-						Request ID: {state.requestId}
+						{t("requestId", { id: state.requestId })}
 					</Text>
 				) : null
 			}
@@ -515,23 +520,21 @@ function CommentsNotice({
 	state: ReturnType<typeof resolveCommentsState>;
 	onRetry: () => void;
 }) {
+	const { t } = useTranslation(["story", "common"]);
 	if (state === "loading") return <Spinner />;
-	if (state === "offline")
-		return (
-			<Notice message="You're not connected to a network, so comments couldn't be loaded." />
-		);
+	if (state === "offline") return <Notice message={t("comments.offline")} />;
 	if (state === "failed")
 		return (
 			<ErrorState
-				message={COMMENTS_LOAD_FAILURE}
-				actionLabel="Try again"
+				message={t("comments.error.loadFailed")}
+				actionLabel={t("common:actions.tryAgain")}
 				onAction={onRetry}
 			/>
 		);
 	if (state === "empty")
 		return (
 			<Text variant="label" tone="muted-foreground">
-				No comments yet.
+				{t("comments.empty")}
 			</Text>
 		);
 	return null;

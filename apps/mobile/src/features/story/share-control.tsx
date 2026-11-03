@@ -2,11 +2,12 @@ import { space } from "@rowcat/design";
 import type { Story } from "@rowcat/domain";
 import { controlHeight, Icon, Text, targetSlop } from "@rowcat/ui-native";
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Pressable, Share, StyleSheet, View } from "react-native";
 import { activeWebOrigin } from "../../lib/instances/device-registry.ts";
 import {
-	STORY_SHARE_FAILURE,
-	STORY_SHARE_LABEL,
+	storyShareFailure,
+	storyShareLabel,
 	storySharePayload,
 } from "./share-story.ts";
 
@@ -47,6 +48,7 @@ import {
  * report. Another filled button would read as this screen suggesting two things.
  */
 export function StoryShareControl({ story }: { story: Story }) {
+	useTranslation("story");
 	const payload = storySharePayload(story, activeWebOrigin());
 	/**
 	 * The failure is this component's local state. It lives in neither the query cache nor a global:
@@ -80,12 +82,12 @@ export function StoryShareControl({ story }: { story: Story }) {
 					tone="destructive"
 					numberOfLines={1}
 				>
-					{STORY_SHARE_FAILURE}
+					{storyShareFailure()}
 				</Text>
 			) : null}
 			<Pressable
 				accessibilityRole="button"
-				accessibilityLabel={STORY_SHARE_LABEL}
+				accessibilityLabel={storyShareLabel()}
 				onPress={() => void share()}
 				/** The visible box is small and the target is 44; same rule as the heart and report beside it. */
 				hitSlop={targetSlop(controlHeight.md)}

@@ -1765,11 +1765,17 @@ describe("discover's lookup axes go through shared rules", () => {
 	it("a shared function builds the active-condition and sort copy", () => {
 		const text = bar()?.text;
 		expect(text, "couldn't find filter-bar.tsx").toBeDefined();
+		/** The domain's set, order and patches, named in the drawn language (`lib/i18n/vocab.ts`). */
 		expect(text).toContain(
-			"appliedGalleryFilters(filters, followingAvailable)",
+			"localizedAppliedFilters(filters, followingAvailable)",
 		);
 		expect(text).toContain("sortTriggerLabel(filters)");
 		expect(text).toContain("periodApplies(filters)");
+		const vocab = fileAt("lib/i18n/vocab.ts")?.text ?? "";
+		expect(vocab).toContain(
+			"appliedGalleryFilters(filters, followingAvailable)",
+		);
+		expect(vocab).toContain("effectiveGallerySort(filters)");
 	});
 
 	/** Token text, name and undo all come from the function's result. The screen does not assemble them. */
@@ -1787,7 +1793,7 @@ describe("discover's lookup axes go through shared rules", () => {
 	 */
 	it("doesn't write axis names by hand", () => {
 		const text = bar()?.text ?? "";
-		expect(text).toContain("GALLERY_FILTER_AXIS_LABEL");
+		expect(text).toContain("filterAxisLabel(");
 		expect(text).not.toMatch(/`\$\{[a-zA-Z]+\}: \$\{[a-zA-Z]+\}`/);
 	});
 
@@ -1798,7 +1804,7 @@ describe("discover's lookup axes go through shared rules", () => {
 	it("there are two triggers and both have text", () => {
 		const text = bar()?.text ?? "";
 		expect([...text.matchAll(/<DropdownMenu\b/g)]).toHaveLength(2);
-		expect(text).toContain('triggerLabel="Filter"');
+		expect(text).toContain('triggerLabel={t("filter")}');
 		expect(text).toContain("triggerLabel={sortTriggerLabel(filters)}");
 	});
 

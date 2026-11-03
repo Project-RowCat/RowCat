@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import type { ReactNode } from "react";
 import { useCallback, useRef, useState } from "react";
 import { getRowCatClient } from "../../lib/api.ts";
+import { deferredGroup, translator } from "../../lib/i18n/instance.ts";
 import { useChatScope } from "../../lib/local-data/scope.tsx";
 import { useLocalPersonas } from "../../lib/local-data/use-personas.ts";
 import type { ViewerAction } from "../../lib/viewer-action.ts";
@@ -49,15 +50,20 @@ import { StoryPersonaDialog } from "./story-persona-dialog.tsx";
  * nothing. The user already sees from this screen that the work exists and is viewable, so this
  * copy does not cross the existence hiding the server maintains.
  */
-export const START_FAILURE_MESSAGE: Record<StartFailureReason, string> = {
-	play_unavailable: "A conversation can't be started for this story yet.",
-	storage: "Couldn't start the conversation. Please try again in a moment.",
-	unknown: "Couldn't start the conversation. Please try again in a moment.",
-};
+export const START_FAILURE_MESSAGE: Record<StartFailureReason, string> =
+	deferredGroup("story", "start").failure;
 
-/** Shown to a member under restriction. Does not let them press a request the server would refuse. */
-export const START_RESTRICTED_MESSAGE =
-	"Your account status doesn't allow starting a conversation.";
+/**
+ * What the start failed on. A reason, not the sentence: a sentence held in state would stay in the
+ * language it was set in. `restricted` is shown to a member under restriction, so they are not
+ * offered a request the server would refuse.
+ */
+type StartFailure = StartFailureReason | "restricted";
+
+const startFailureMessage = (failure: StartFailure): string =>
+	failure === "restricted"
+		? translator("story")("start.restricted")
+		: START_FAILURE_MESSAGE[failure];
 
 export interface StoryStart {
 	/** Progress state for display. Duplicate runs are blocked by the synchronous lock itself. */
@@ -98,7 +104,7 @@ export function useStoryStart({
 	const { ensureStore, ownsStore } = useChatScope();
 
 	const [pending, setPending] = useState(false);
-	const [failure, setFailure] = useState<string | null>(null);
+	const [failure, setFailure] = useState<StartFailure | null>(null);
 	const startingRef = useRef(false);
 	/** Whether the picker dialog is open — **this hook's state** (the value before any room exists). */
 	const [picking, setPicking] = useState(false);
@@ -167,8 +173,7 @@ export function useStoryStart({
 				 * conversation" over that would just add an error that seems unrelated to what they just did.
 				 * Implementation terms (scope, ownership, store instance) never appear on screen in any case.
 				 */
-				if (outcome.status === "failed")
-					setFailure(START_FAILURE_MESSAGE[outcome.reason]);
+				if (outcome.status === "failed") setFailure(outcome.reason);
 			} finally {
 				setPending(false);
 				setPicking(false);
@@ -197,7 +202,7 @@ export function useStoryStart({
 			return;
 		}
 		if (action === "restricted") {
-			setFailure(START_RESTRICTED_MESSAGE);
+			setFailure("restricted");
 			return;
 		}
 		/**
@@ -245,7 +250,7 @@ export function useStoryStart({
 
 	return {
 		pending,
-		failure,
+		failure: failure === null ? null : startFailureMessage(failure),
 		start: useCallback(() => {
 			void begin();
 		}, [begin]),

@@ -1,5 +1,6 @@
 import { type GalleryFilters, hasActiveFilters } from "@rowcat/domain";
 import { formatCount } from "../../lib/format.ts";
+import { translator } from "../../lib/i18n/instance.ts";
 import type { MobileLocalScopeStatus } from "../../lib/local-data/activation.ts";
 import type { SessionPhase } from "../../lib/session-state.ts";
 
@@ -100,4 +101,6 @@ export function resolveDiscoverState(
 export const discoverTotalLabel = (total: number | null): string | null =>
 	total === null
 		? null
-		: `${formatCount(total)} ${total === 1 ? "story" : "stories"}`;
+		: total === 1
+			? translator("discover")("totalOne")
+			: translator("discover")("total", { total: formatCount(total) });

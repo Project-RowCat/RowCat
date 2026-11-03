@@ -1,12 +1,18 @@
 import type { Messages } from "../../types.ts";
 import { common } from "./common.ts";
+import { discover } from "./discover.ts";
 import { settings } from "./settings.ts";
 import { shell } from "./shell.ts";
 import { signIn } from "./sign-in.ts";
+import { story } from "./story.ts";
+import { vocab } from "./vocab.ts";
 
 export const ko: Messages = {
 	common,
 	shell,
 	signIn,
 	settings,
+	vocab,
+	discover,
+	story,
 };

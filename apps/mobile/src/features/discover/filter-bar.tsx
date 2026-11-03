@@ -1,21 +1,14 @@
 import { borderWidth, lineHeight, radiusScale, space } from "@rowcat/design";
 import {
-	appliedGalleryFilters,
-	GALLERY_FILTER_AXIS_LABEL,
 	type GalleryFilters,
 	hasActiveFilters,
-	ORIENTATION_LABEL,
 	ORIENTATIONS,
 	periodApplies,
 	relevanceApplies,
-	STORY_PERIOD_LABEL,
 	STORY_PERIODS,
-	STORY_RATING_LABEL,
 	STORY_RATINGS,
-	STORY_SORT_LABEL,
 	STORY_SORTS,
 	type StorySort,
-	sortTriggerLabel,
 } from "@rowcat/domain";
 import {
 	Button,
@@ -31,7 +24,17 @@ import {
 	targetSlop,
 	useTheme,
 } from "@rowcat/ui-native";
+import { useTranslation } from "react-i18next";
 import { Pressable, StyleSheet, View } from "react-native";
+import {
+	filterAxisLabel,
+	localizedAppliedFilters,
+	orientationLabel,
+	periodLabel,
+	ratingLabel,
+	sortLabel,
+	sortTriggerLabel,
+} from "../../lib/i18n/vocab.ts";
 import { discoverTotalLabel } from "./discover-state.ts";
 
 /**
@@ -101,7 +104,8 @@ export function FilterBar({
 	onReset: () => void;
 }) {
 	const { colors } = useTheme();
-	const applied = appliedGalleryFilters(filters, followingAvailable);
+	const { t } = useTranslation("discover");
+	const applied = localizedAppliedFilters(filters, followingAvailable);
 	const totalLabel = discoverTotalLabel(total);
 	const showPeriod = periodApplies(filters);
 	/**
@@ -121,8 +125,12 @@ export function FilterBar({
 				 * is no reason for submenus. Radio rows do not close the menu, so setting two conditions
 				 * in a row does not require reopening it.
 				 */}
-				<DropdownMenu icon="filter" label="Filter" triggerLabel="Filter">
-					<MenuLabel label={GALLERY_FILTER_AXIS_LABEL.orientation} />
+				<DropdownMenu
+					icon="filter"
+					label={t("filter")}
+					triggerLabel={t("filter")}
+				>
+					<MenuLabel label={filterAxisLabel("orientation")} />
 					<MenuRadioGroup
 						value={filters.orientation ?? ORIENTATION_ANY}
 						onValueChange={(value) =>
@@ -134,19 +142,19 @@ export function FilterBar({
 							})
 						}
 					>
-						<MenuRadioItem value={ORIENTATION_ANY} label="All" />
+						<MenuRadioItem value={ORIENTATION_ANY} label={t("all")} />
 						{ORIENTATIONS.map((orientation) => (
 							<MenuRadioItem
 								key={orientation}
 								value={orientation}
-								label={ORIENTATION_LABEL[orientation]}
+								label={orientationLabel(orientation)}
 							/>
 						))}
 					</MenuRadioGroup>
 
 					<MenuSeparator />
 
-					<MenuLabel label={GALLERY_FILTER_AXIS_LABEL.rating} />
+					<MenuLabel label={filterAxisLabel("rating")} />
 					<MenuRadioGroup
 						value={filters.rating}
 						onValueChange={(rating) =>
@@ -157,7 +165,7 @@ export function FilterBar({
 							<MenuRadioItem
 								key={rating}
 								value={rating}
-								label={STORY_RATING_LABEL[rating]}
+								label={ratingLabel(rating)}
 							/>
 						))}
 					</MenuRadioGroup>
@@ -166,7 +174,7 @@ export function FilterBar({
 						<>
 							<MenuSeparator />
 							<MenuCheckboxItem
-								label={GALLERY_FILTER_AXIS_LABEL.following}
+								label={filterAxisLabel("following")}
 								checked={filters.followingOnly}
 								onCheckedChange={(followingOnly) => onChange({ followingOnly })}
 							/>
@@ -181,27 +189,23 @@ export function FilterBar({
 				 */}
 				<DropdownMenu
 					icon="chevron-down"
-					label={`Sort: ${sortTriggerLabel(filters)}`}
+					label={t("sortTrigger", { label: sortTriggerLabel(filters) })}
 					triggerLabel={sortTriggerLabel(filters)}
 				>
-					<MenuLabel label="Sort" />
+					<MenuLabel label={t("sort")} />
 					<MenuRadioGroup
 						value={filters.sort}
 						onValueChange={(sort) => onChange({ sort: sort as StorySort })}
 					>
 						{sorts.map((sort) => (
-							<MenuRadioItem
-								key={sort}
-								value={sort}
-								label={STORY_SORT_LABEL[sort]}
-							/>
+							<MenuRadioItem key={sort} value={sort} label={sortLabel(sort)} />
 						))}
 					</MenuRadioGroup>
 
 					{showPeriod ? (
 						<>
 							<MenuSeparator />
-							<MenuLabel label="Period" />
+							<MenuLabel label={t("period")} />
 							<MenuRadioGroup
 								value={filters.period}
 								onValueChange={(period) =>
@@ -212,7 +216,7 @@ export function FilterBar({
 									<MenuRadioItem
 										key={period}
 										value={period}
-										label={STORY_PERIOD_LABEL[period]}
+										label={periodLabel(period)}
 									/>
 								))}
 							</MenuRadioGroup>
@@ -261,7 +265,7 @@ export function FilterBar({
 				{/** Drawn only when there is something to reset. If it were always present, the button would become background. */}
 				{hasActiveFilters(filters) && (
 					<Button
-						label="Reset filters"
+						label={t("resetFilters")}
 						variant="ghost"
 						size="sm"
 						icon="retry"

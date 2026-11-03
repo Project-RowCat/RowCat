@@ -2,6 +2,7 @@ import { space } from "@rowcat/design";
 import { relatedStoriesQueryOptions } from "@rowcat/query";
 import { ListSection } from "@rowcat/ui-native";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 import { getRowCatClient } from "../../lib/api.ts";
 import { DISCOVER_CELL_GUTTER } from "../discover/grid.ts";
@@ -38,6 +39,7 @@ export function RelatedStories({
 	/** Where a card's heart returns to after sign-in: this detail. */
 	returnPath: string;
 }) {
+	const { t } = useTranslation("story");
 	const query = useQuery(
 		relatedStoriesQueryOptions(getRowCatClient(), storyId),
 	);
@@ -45,7 +47,7 @@ export function RelatedStories({
 	if (stories.length === 0) return null;
 
 	return (
-		<ListSection title="Related stories" style={section.root}>
+		<ListSection title={t("related")} style={section.root}>
 			<View style={section.grid}>
 				{stories.map((story) => (
 					<StoryCard

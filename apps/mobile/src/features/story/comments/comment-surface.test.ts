@@ -75,7 +75,8 @@ describe("tombstones — doesn't draw what was deleted", () => {
 	/** The copy is the same value as on web; written separately, each app would describe the same row differently. */
 	it("the screen doesn't invent the tombstone sentence", () => {
 		const row = code("comment-row.tsx");
-		expect(row).toContain("DELETED_COMMENT_PLACEHOLDER");
+		/** The domain's tombstone, named in the drawn language; `vocab.test.ts` pins the English to the domain's. */
+		expect(row).toContain("deletedCommentLabel()");
 		expect(row).not.toContain('"This comment was deleted."');
 	});
 

@@ -1,7 +1,6 @@
 import { space } from "@rowcat/design";
 import {
 	commentLikeLabel,
-	DELETED_COMMENT_PLACEHOLDER,
 	type StoryComment,
 	type VisibleStoryComment,
 } from "@rowcat/domain";
@@ -19,9 +18,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import type { ReactNode } from "react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Pressable, StyleSheet, View } from "react-native";
 import { getRowCatClient } from "../../../lib/api.ts";
 import { formatDateTime } from "../../../lib/format.ts";
+import { deletedCommentLabel } from "../../../lib/i18n/vocab.ts";
 import { useReportAction } from "../../moderation/report-menu.tsx";
 import { commentRowAction } from "../../moderation/report-visibility.ts";
 import { CREATOR_ROUTE } from "../../profile/creator-route.ts";
@@ -119,13 +120,14 @@ export function CommentRow({
 	 */
 	footer?: ReactNode;
 }) {
+	const { t } = useTranslation("story");
 	const router = useRouter();
 	const at = formatDateTime(comment.createdAt);
 	const deleted = comment.state === "deleted";
 	const name =
 		comment.state === "visible"
-			? comment.author.nickname || "No name"
-			: DELETED_COMMENT_PLACEHOLDER;
+			? comment.author.nickname || t("comments.unnamed")
+			: deletedCommentLabel();
 	/**
 	 * The confirmation dialog. It was once the platform's `Alert`, and there was a reason: Android
 	 * back, screen readers and the system text size were already handled by the platform. That reason
@@ -150,7 +152,9 @@ export function CommentRow({
 			commentId: comment.id,
 		},
 		/** Replies are **the same target kind** — no new report vocabulary was added (the root AGENTS rule). */
-		targetLabel: comment.parentId ? "Reply" : "Comment",
+		targetLabel: comment.parentId
+			? t("comments.reportReply")
+			: t("comments.reportComment"),
 	});
 
 	/**
@@ -235,8 +239,10 @@ export function CommentRow({
 							<DropdownMenu
 								label={
 									action === "delete"
-										? `Manage my comment (${at ?? "this one"})`
-										: `Report menu for ${name}'s comment`
+										? at
+											? t("comments.manageOwn", { when: at })
+											: t("comments.manageOwnUndated")
+										: t("comments.reportMenu", { name })
 								}
 								align="end"
 								size="sm"
@@ -245,7 +251,7 @@ export function CommentRow({
 								{action === "delete" ? (
 									<MenuItem
 										icon="delete"
-										label="Delete"
+										label={t("comments.delete")}
 										destructive
 										/**
 										 * Do not press a deleting item twice. The primitive does the locking; an `if` inside the
@@ -274,7 +280,7 @@ export function CommentRow({
 					 * to draw, and the contract has no slot for it.
 					 */
 					<Text variant="body" leading="reading" tone="muted-foreground">
-						{DELETED_COMMENT_PLACEHOLDER}
+						{deletedCommentLabel()}
 					</Text>
 				)}
 
@@ -303,9 +309,9 @@ export function CommentRow({
 			 */}
 			<AlertDialog
 				open={confirming}
-				title="Delete this comment?"
-				description="A deleted comment can't be restored."
-				confirmLabel="Delete"
+				title={t("comments.deleteTitle")}
+				description={t("comments.deleteBody")}
+				confirmLabel={t("comments.delete")}
 				destructive
 				busy={deleting}
 				onConfirm={() => {
@@ -347,6 +353,7 @@ function CommentLike({
 	comment: VisibleStoryComment;
 	canReact: boolean;
 }) {
+	useTranslation("story");
 	const queryClient = useQueryClient();
 	const mutation = useMutation(
 		reactToCommentMutationOptions(getRowCatClient(), queryClient, storyId, {

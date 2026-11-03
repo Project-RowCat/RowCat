@@ -1,6 +1,7 @@
 import { space } from "@rowcat/design";
 import { type Story, storyStartGlyph } from "@rowcat/domain";
 import { Button, Text } from "@rowcat/ui-native";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 import type { ViewerAction } from "../../lib/viewer-action.ts";
 import { storyStartLabel } from "./story-start-copy.ts";
@@ -33,6 +34,7 @@ export function StoryStartControl({
 	action: ViewerAction;
 	returnPath: string;
 }) {
+	const { t } = useTranslation("story");
 	const start = useStoryStart({ story, action, returnPath });
 
 	return (
@@ -70,7 +72,7 @@ export function StoryStartControl({
 			/>
 			{action === "unverified" ? (
 				<Text variant="caption" tone="muted-foreground">
-					Checking your session.
+					{t("start.checking")}
 				</Text>
 			) : null}
 			{/**

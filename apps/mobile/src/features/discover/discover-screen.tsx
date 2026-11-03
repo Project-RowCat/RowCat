@@ -23,6 +23,7 @@ import {
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { FlatList, StyleSheet, View } from "react-native";
 import { getRowCatClient } from "../../lib/api.ts";
 import { useMobileIdentity } from "../../lib/identity.tsx";
@@ -249,6 +250,7 @@ function DiscoverEmpty({
 	onReset: () => void;
 	onRetry: () => void;
 }) {
+	const { t } = useTranslation(["discover", "common"]);
 	if (state.kind === "loading")
 		return (
 			<View style={grid.center}>
@@ -259,7 +261,7 @@ function DiscoverEmpty({
 	if (state.kind === "offline")
 		return (
 			<View style={grid.center}>
-				<Notice message="You're not connected to a network. It continues automatically once connected." />
+				<Notice message={t("offline")} />
 			</View>
 		);
 
@@ -272,8 +274,8 @@ function DiscoverEmpty({
 				 * undiscoverable, and there is nothing to pull when the list is empty.
 				 */}
 				<ErrorState
-					message="Couldn't load stories."
-					actionLabel="Try again"
+					message={t("loadFailed")}
+					actionLabel={t("common:actions.tryAgain")}
 					onAction={onRetry}
 				/>
 			</View>
@@ -290,9 +292,9 @@ function DiscoverEmpty({
 		return (
 			<EmptyState
 				icon="follow"
-				title="You don't follow any creators"
-				description="Follow the creators of stories you like, and their new stories gather here."
-				actionLabel="Browse stories"
+				title={t("followingEmptyTitle")}
+				description={t("followingEmptyDescription")}
+				actionLabel={t("browse")}
 				/** Matches the web's empty state, which uses `outline` (`gallery-empty.tsx`). */
 				actionVariant="outline"
 				onAction={onReset}
@@ -302,8 +304,8 @@ function DiscoverEmpty({
 	return state.filtered ? (
 		<EmptyState
 			icon="no-results"
-			title="No stories match these conditions"
-			actionLabel="Reset filters"
+			title={t("filteredEmptyTitle")}
+			actionLabel={t("resetFilters")}
 			/** Matches the web's empty state, which uses `outline` (`gallery-empty.tsx`). */
 			actionVariant="outline"
 			onAction={onReset}
@@ -311,14 +313,15 @@ function DiscoverEmpty({
 	) : (
 		<EmptyState
 			icon="library"
-			title="No stories yet"
-			description="The first story will appear here once it's posted."
+			title={t("emptyTitle")}
+			description={t("emptyDescription")}
 		/>
 	);
 }
 
 /** List end: either the next page is loading, or there is nothing more to load. */
 function ListEnd({ pending, hasNext }: { pending: boolean; hasNext: boolean }) {
+	const { t } = useTranslation("discover");
 	if (pending)
 		return (
 			<View style={grid.footer}>
@@ -329,7 +332,7 @@ function ListEnd({ pending, hasNext }: { pending: boolean; hasNext: boolean }) {
 	return (
 		<View style={grid.footer}>
 			<Text variant="caption" tone="muted-foreground">
-				You've reached the end
+				{t("end")}
 			</Text>
 		</View>
 	);

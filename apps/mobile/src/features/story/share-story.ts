@@ -1,4 +1,5 @@
 import { isStoryShareable, type Story } from "@rowcat/domain";
+import { translator } from "../../lib/i18n/instance.ts";
 import { storyWebUrl } from "../../lib/public-web.ts";
 
 /**
@@ -72,7 +73,7 @@ export function storySharePayload(
  * `Share story` rather than `Share` because this screen has more than one thing to share (the comment row
  * also has a report menu): the name says what is being shared.
  */
-export const STORY_SHARE_LABEL = "Share story";
+export const storyShareLabel = (): string => translator("story")("share");
 
 /**
  * The failure line. **Cancelling never arrives here.**
@@ -82,4 +83,5 @@ export const STORY_SHARE_LABEL = "Share story";
  * **could not be opened**, and even then the only thing the user can do is press again, so no
  * reason is written (drawing the platform error body would answer no question).
  */
-export const STORY_SHARE_FAILURE = "Couldn't share";
+export const storyShareFailure = (): string =>
+	translator("story")("shareFailed");

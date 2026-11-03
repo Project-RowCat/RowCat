@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Story } from "@rowcat/domain";
 import { describe, expect, it } from "vitest";
-import { STORY_SHARE_LABEL, storySharePayload } from "./share-story.ts";
+import { storyShareLabel, storySharePayload } from "./share-story.ts";
 
 /**
  * Sharing a work: **whether it can be handed over, and what gets included.**
@@ -241,6 +241,6 @@ describe("wiring", () => {
 /** A trigger with only a picture reads as just "button"; the name says what is being shared. */
 describe("copy", () => {
 	it("the name says what is being shared", () => {
-		expect(STORY_SHARE_LABEL).toBe("Share story");
+		expect(storyShareLabel()).toBe("Share story");
 	});
 });

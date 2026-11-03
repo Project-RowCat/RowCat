@@ -3,6 +3,7 @@ import { personaSnapshotOf, samePersonaSnapshot } from "@rowcat/chat";
 import { space } from "@rowcat/design";
 import { Button, Dialog, DialogActions, Notice, Text } from "@rowcat/ui-native";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 import { useLocalPersonas } from "../../lib/local-data/use-personas.ts";
 import { PersonaChoiceRow } from "../persona/persona-choice-row.tsx";
@@ -58,6 +59,7 @@ export function StoryPersonaDialog({
 	/** `null` starts without an override (the story's suggestion applies). */
 	onStart: (persona: ChatPersonaSnapshot | null) => void;
 }) {
+	const { t } = useTranslation(["story", "common"]);
 	const { value: personas } = useLocalPersonas();
 	const library = usePersonaLibrary();
 	/**
@@ -73,11 +75,9 @@ export function StoryPersonaDialog({
 
 	return (
 		<Dialog
-			title={creating ? "New persona" : "In this conversation, I am"}
+			title={creating ? t("persona.creatingTitle") : t("persona.title")}
 			description={
-				creating
-					? "Once created, it's applied to this conversation right away."
-					: "The chosen role's name becomes the speaker of your lines, and its description goes into the setting the model reads."
+				creating ? t("persona.creatingDescription") : t("persona.description")
 			}
 			open
 			/** Does not close while starting — the screen changes entirely once navigation finishes. */
@@ -85,7 +85,7 @@ export function StoryPersonaDialog({
 				if (!next && !pending) onCancel();
 			}}
 			onBack={creating ? () => setCreating(false) : undefined}
-			backLabel="Back to choosing"
+			backLabel={t("persona.backToChoosing")}
 			placement="adaptive"
 			scroll
 			bodyKey={creating ? "create" : "pick"}
@@ -145,7 +145,7 @@ export function StoryPersonaDialog({
 					) : null}
 
 					<Button
-						label="New persona"
+						label={t("persona.create")}
 						variant="ghost"
 						fullWidth
 						disabled={pending || library.store === null}
@@ -154,7 +154,7 @@ export function StoryPersonaDialog({
 
 					<DialogActions>
 						<Button
-							label="Cancel"
+							label={t("common:actions.cancel")}
 							variant="outline"
 							fullWidth
 							disabled={pending}
@@ -162,7 +162,7 @@ export function StoryPersonaDialog({
 							style={picker.action}
 						/>
 						<Button
-							label="Start conversation"
+							label={t("persona.start")}
 							fullWidth
 							busy={pending}
 							disabled={pending}
@@ -171,7 +171,7 @@ export function StoryPersonaDialog({
 						/>
 					</DialogActions>
 					<Text variant="caption" tone="muted-foreground">
-						You can change this later in conversation settings.
+						{t("persona.later")}
 					</Text>
 				</View>
 			)}

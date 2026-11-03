@@ -1,6 +1,7 @@
 import { space } from "@rowcat/design";
 import { BareInput, Icon } from "@rowcat/ui-native";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 
 /** How long key input must stay still before it counts as settled. Too short and the route changes on every letter; too long and search feels sluggish. */
@@ -38,6 +39,7 @@ export function SearchField({
 	/** Confirmation after the debounce settles. */
 	onSearch: (query: string) => void;
 }) {
+	const { t } = useTranslation("discover");
 	const [text, setText] = useState(value);
 	const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	/**
@@ -80,7 +82,7 @@ export function SearchField({
 				<Icon name="search" size="md" tone="muted-foreground" />
 			</View>
 			<BareInput
-				label="Search stories"
+				label={t("searchLabel")}
 				value={text}
 				onChangeText={change}
 				onSubmitEditing={submit}
@@ -90,7 +92,7 @@ export function SearchField({
 				 * drew different sentences in the same field. At 390 width it does not truncate (both fit on
 				 * one line).
 				 */
-				placeholder="Search titles, authors, descriptions and creators"
+				placeholder={t("searchPlaceholder")}
 				autoCapitalize="none"
 				autoCorrect={false}
 				returnKeyType="search"

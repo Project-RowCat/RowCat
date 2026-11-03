@@ -4,6 +4,7 @@ import { favoriteMutationOptions } from "@rowcat/query";
 import { controlHeight, Icon, Text } from "@rowcat/ui-native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
+import { useTranslation } from "react-i18next";
 import { Pressable, StyleSheet, View } from "react-native";
 import { getRowCatClient } from "../../lib/api.ts";
 import { formatCount } from "../../lib/format.ts";
@@ -63,6 +64,7 @@ export function FavoriteControl({
 	returnPath: string;
 	size?: "sm" | "md";
 }) {
+	const { t } = useTranslation("story");
 	const identity = useMobileIdentity();
 	const queryClient = useQueryClient();
 	const router = useRouter();
@@ -106,19 +108,19 @@ export function FavoriteControl({
 					tone="destructive"
 					numberOfLines={1}
 				>
-					Couldn't save
+					{t("favorite.failed")}
 				</Text>
 			) : null}
 			{action === "restricted" ? (
 				<Text variant="caption" tone="muted-foreground" numberOfLines={1}>
-					This account is restricted
+					{t("favorite.restricted")}
 				</Text>
 			) : null}
 
 			<Pressable
 				accessibilityRole="button"
 				accessibilityLabel={
-					favorited ? "Remove from favorites" : "Add to favorites"
+					favorited ? t("favorite.remove") : t("favorite.add")
 				}
 				accessibilityState={{
 					disabled,

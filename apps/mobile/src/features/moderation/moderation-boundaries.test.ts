@@ -503,7 +503,9 @@ describe("the visibility decision is actually wired on screen", () => {
 	it("a reply's report target is `comment` too", () => {
 		const row = fileAt("features/story/comments/comment-row.tsx");
 		expect(row).toMatch(/type: "comment"[\s\S]{0,200}commentId: comment\.id/);
-		expect(row).toContain('comment.parentId ? "Reply" : "Comment"');
+		expect(row).toMatch(
+			/comment\.parentId\s*\?\s*t\("comments\.reportReply"\)\s*:\s*t\("comments\.reportComment"\)/,
+		);
 		/** Do not create a target kind just for replies. */
 		expect(row).not.toContain('type: "reply"');
 		expect(row).not.toContain('type: "comment_reply"');
@@ -525,7 +527,9 @@ describe("the visibility decision is actually wired on screen", () => {
 	/** Deletion remains. Adding reporting did not remove the existing action. */
 	it("deleting your own comment stays as is", () => {
 		const row = fileAt("features/story/comments/comment-row.tsx");
-		expect(row).toMatch(/label="Delete"[\s\S]{0,200}setConfirming\(true\)/);
+		expect(row).toMatch(
+			/label=\{t\("comments\.delete"\)\}[\s\S]{0,200}setConfirming\(true\)/,
+		);
 		expect(row).toContain("onConfirm={() => {");
 		expect(row).toContain("onDelete();");
 		/** Do not delete without confirmation. */

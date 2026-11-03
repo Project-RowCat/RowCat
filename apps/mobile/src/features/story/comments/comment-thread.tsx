@@ -1,7 +1,6 @@
 import { borderWidth, space } from "@rowcat/design";
 import {
 	canReplyToComment,
-	commentRepliesLabel,
 	isOwnComment,
 	type StoryComment,
 } from "@rowcat/domain";
@@ -18,11 +17,13 @@ import {
 } from "@rowcat/ui-native";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 import { getRowCatClient } from "../../../lib/api.ts";
+import { repliesLabel as repliesCountLabel } from "../../../lib/i18n/vocab.ts";
 import type { ViewerAction } from "../../../lib/viewer-action.ts";
 import { CommentComposer } from "./comment-composer.tsx";
-import { REPLIES_LOAD_FAILURE } from "./comment-error.ts";
+import { repliesLoadFailure } from "./comment-error.ts";
 import { CommentRow } from "./comment-row.tsx";
 import { resolveCommentsState } from "./comments-state.ts";
 
@@ -67,6 +68,7 @@ export function CommentThread({
 	deleting: string | null;
 	onDelete: (target: StoryComment) => void;
 }) {
+	const { t } = useTranslation(["story", "common"]);
 	/**
 	 * Whether expanded. This is screen state, kept neither in route params nor in storage: which
 	 * thread is open is part of this visit's reading flow, not a place to return to.
@@ -76,7 +78,7 @@ export function CommentThread({
 	const [replying, setReplying] = useState(false);
 
 	const canReply = canReplyToComment(comment) && action === "allowed";
-	const repliesLabel = commentRepliesLabel(comment.replyCount);
+	const repliesLabel = repliesCountLabel(comment.replyCount);
 
 	const replies = useInfiniteQuery({
 		...storyCommentRepliesInfiniteQueryOptions(
@@ -107,7 +109,7 @@ export function CommentThread({
 				<>
 					{canReply && !replying && (
 						<Button
-							label="Reply"
+							label={t("comments.reply")}
 							variant="ghost"
 							size="sm"
 							onPress={() => setReplying(true)}
@@ -115,7 +117,7 @@ export function CommentThread({
 					)}
 					{repliesLabel && (
 						<Button
-							label={expanded ? "Hide replies" : repliesLabel}
+							label={expanded ? t("comments.hideReplies") : repliesLabel}
 							variant="ghost"
 							size="sm"
 							onPress={() => setExpanded((open) => !open)}
@@ -151,14 +153,14 @@ export function CommentThread({
 									<Spinner />
 								) : state === "offline" ? (
 									<Notice
-										message="You're not connected right now. Replies reload once you're connected."
-										actionLabel="Try again"
+										message={t("comments.repliesOffline")}
+										actionLabel={t("common:actions.tryAgain")}
 										onAction={() => void replies.refetch()}
 									/>
 								) : state === "failed" ? (
 									<Notice
-										message={REPLIES_LOAD_FAILURE}
-										actionLabel="Try again"
+										message={repliesLoadFailure()}
+										actionLabel={t("common:actions.tryAgain")}
 										onAction={() => void replies.refetch()}
 									/>
 								) : state === "empty" ? (
@@ -167,7 +169,7 @@ export function CommentThread({
 									 * from a blocked author. Drawing nothing there would make an expanded thread look like a
 									 * failed load.
 									 */
-									<Notice message="No replies to show." />
+									<Notice message={t("comments.noReplies")} />
 								) : (
 									<View>
 										{rows.map((reply, index) => (
@@ -189,7 +191,9 @@ export function CommentThread({
 							{expanded && replies.hasNextPage && (
 								<Button
 									label={
-										replies.isFetchingNextPage ? "Loading" : "More replies"
+										replies.isFetchingNextPage
+											? t("comments.loading")
+											: t("comments.moreReplies")
 									}
 									variant="outline"
 									size="sm"

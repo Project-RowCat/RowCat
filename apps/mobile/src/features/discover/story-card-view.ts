@@ -1,4 +1,5 @@
-import { type Story, storyVisibilityBadgeLabel } from "@rowcat/domain";
+import type { Story } from "@rowcat/domain";
+import { visibilityBadgeLabel } from "../../lib/i18n/vocab.ts";
 
 /**
  * Shape carrying **only the values the discover grid card actually draws.**
@@ -48,5 +49,5 @@ export const storyCardView = (story: Story): StoryCardView => ({
 	title: story.title,
 	coverUrl: story.coverUrl,
 	adult: story.adult,
-	visibilityLabel: storyVisibilityBadgeLabel(story.visibility),
+	visibilityLabel: visibilityBadgeLabel(story.visibility),
 });

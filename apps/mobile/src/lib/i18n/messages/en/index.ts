@@ -1,7 +1,10 @@
 import { common } from "./common.ts";
+import { discover } from "./discover.ts";
 import { settings } from "./settings.ts";
 import { shell } from "./shell.ts";
 import { signIn } from "./sign-in.ts";
+import { story } from "./story.ts";
+import { vocab } from "./vocab.ts";
 
 /**
  * The source dictionary. One namespace per feature area, named after it, so a screen's copy is
@@ -15,4 +18,7 @@ export const en = {
 	shell,
 	signIn,
 	settings,
+	vocab,
+	discover,
+	story,
 };

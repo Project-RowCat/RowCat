@@ -1,8 +1,10 @@
 import { space } from "@rowcat/design";
-import { creatorLabel, type Story } from "@rowcat/domain";
+import type { Story } from "@rowcat/domain";
 import { Text } from "@rowcat/ui-native";
 import { useRouter } from "expo-router";
+import { useTranslation } from "react-i18next";
 import { Pressable, StyleSheet } from "react-native";
+import { creatorName } from "../../lib/i18n/vocab.ts";
 import { CREATOR_ROUTE } from "../profile/creator-route.ts";
 
 /**
@@ -41,8 +43,9 @@ export function StoryByline({
 	variant?: "caption" | "body";
 	numberOfLines?: number;
 }) {
+	useTranslation("vocab");
 	const router = useRouter();
-	const label = creatorLabel(story);
+	const label = creatorName(story);
 	const creator = story.creator;
 
 	/**
