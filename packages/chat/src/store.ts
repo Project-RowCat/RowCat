@@ -79,6 +79,9 @@ export interface ChatStore extends ChatMemoryStore, ChatPersonaStore {
 	 * happens in memory (`search.ts`). If the query crossed this boundary, the next step would always
 	 * be an index, which would store a second plaintext copy of the user's messages. Missing or
 	 * deleted rooms return an empty list, not an error.
+	 *
+	 * Two later readers: background maintenance, and the history window of a room past its cap whose
+	 * summary is not keeping up (`loadChatHistoryWindow`), which needs the count after the frontier.
 	 */
 	listAllMessages(roomId: string): Promise<ChatMessage[]>;
 

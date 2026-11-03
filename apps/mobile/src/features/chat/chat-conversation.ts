@@ -1,13 +1,12 @@
 import {
 	type AssistantContinuation,
-	CHAT_HISTORY_WINDOW_MAX,
 	type ChatRoom,
 	type ChatStore,
 	type ConversationSession,
-	chatHistoryWindow,
 	effectiveChatPersona,
 	type GeneratedAssistantMessage,
 	type GenerationPreferenceStore,
+	loadChatHistoryWindow,
 	protectedStoryIdOf,
 } from "@rowcat/chat";
 
@@ -18,7 +17,7 @@ import {
  *
  * ```text
  * save user turn   store.appendMessage(...)      room activity time rises in the same transaction
- * history          store.listRecentMessages      the store's order is the next turn's history
+ * history          loadChatHistoryWindow         the store's order is the next turn's history
  * memory           store.listMemories            per room
  * this layer's override  preferences.getRoom(room.id)  device-local, not synced
  * execution identity     store instance + effective persona  differs across `Alice → guest → Alice` and persona swaps
@@ -88,14 +87,15 @@ export function createChatConversation(input: {
 		loadPreference: async () => (await preferences?.getRoom(room.id)) ?? null,
 		// The window starts at the summary frontier (`chatHistoryWindow`), so the summary is read here
 		// as well as in `loadSummary`. If maintenance commits between the two reads, this turn's window
-		// overlaps the new summary once: an event seen twice, never one seen by neither.
-		loadHistory: async () => {
-			const [messages, summary] = await Promise.all([
-				store.listRecentMessages(room.id, { limit: CHAT_HISTORY_WINDOW_MAX }),
-				store.getSummary(room.id),
-			]);
-			return chatHistoryWindow(messages, summary?.frontier ?? null);
-		},
+		// overlaps the new summary once: an event seen twice, never one seen by neither. How many
+		// messages to read is the shared loader's rule (`loadChatHistoryWindow`), the same one web uses.
+		loadHistory: () =>
+			loadChatHistoryWindow({
+				recent: (limit) => store.listRecentMessages(room.id, { limit }),
+				all: () => store.listAllMessages(room.id),
+				frontier: async () =>
+					(await store.getSummary(room.id))?.frontier ?? null,
+			}),
 		loadMemories: () => store.listMemories(room.id),
 		// Characters added in this conversation are frozen at start, like memory.
 		loadCharacters: () => store.listCharacters(room.id),
