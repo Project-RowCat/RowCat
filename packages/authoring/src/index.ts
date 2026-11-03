@@ -20,5 +20,6 @@ export * from "./recovery.ts";
 export * from "./runtime.ts";
 export * from "./runtime-templates/index.ts";
 export * from "./store.ts";
+export * from "./story-archive.ts";
 export * from "./sync-codec.ts";
 export * from "./validation.ts";

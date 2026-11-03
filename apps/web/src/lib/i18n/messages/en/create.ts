@@ -2,6 +2,57 @@
  * Copy for the creation workspace (/create): drafts, the editor, publishing, analytics and comments.
  */
 export const create = {
+	archive: {
+		export: {
+			button: "Export file",
+			title: "Export this draft as a file",
+			description:
+				"Saves this draft — text, lore, opening scenes, images, sounds and runtime code — as one file you can open on another RowCat as a new draft.",
+			plaintext:
+				"The file is not encrypted, and prompt protection does not apply to it. Anyone holding it can read the whole draft, so keep it as carefully as the original.",
+			noAccount:
+				"Your account, other drafts and publication status are not included.",
+			confirm: "Export",
+			exporting: "Exporting…",
+		},
+		import: {
+			button: "Import file",
+			title: "Import a story file",
+			description:
+				"Opens a story file exported from RowCat as a new draft on this device. Nothing is published, and your existing drafts aren't changed.",
+			rights:
+				"Import only work you have the right to publish. The file doesn't record who wrote it.",
+			choose: "Choose a file",
+			reading: "Reading the file…",
+			uploading: "Uploading images and sounds ({{uploaded}} of {{total}})",
+			waiting:
+				"This server limits how many files you can upload at a time. Continuing in {{seconds}} seconds.",
+			saving: "Saving the draft…",
+		},
+		failure: {
+			not_archive: "This isn't a RowCat story file.",
+			newer_version:
+				"This file was made by a newer version of RowCat. Update this RowCat to open it.",
+			invalid:
+				"This file is damaged or was edited by hand, so it can't be opened.",
+			media_mismatch:
+				"An image or sound in this file is damaged, so it can't be opened.",
+			too_large: "This file is too large to open here.",
+			media_unavailable:
+				"Couldn't read an image or sound this draft uses. Check your connection and try again.",
+			unsupported_media:
+				"This draft uses a file format that can't be exported.",
+			not_found: "This draft couldn't be found.",
+			upload_rejected:
+				"This server didn't accept an image or sound in the file. Nothing was imported.",
+			upload_failed:
+				"Uploading an image or sound failed. Nothing was imported — please try again.",
+			save_failed: "Couldn't save the draft on this device. Please try again.",
+			unsaved:
+				"Couldn't save your latest edits, so the file wasn't made. Check the save status, then try again.",
+			generic: "Something went wrong. Please try again.",
+		},
+	},
 	coverFile: {
 		inputHint: "{{formats}} · up to {{max}}MB ({{maxAnimated}}MB for GIF)",
 		empty: "The file is empty. Please choose another image.",

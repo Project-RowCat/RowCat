@@ -17,6 +17,7 @@ import { PageEnter } from "#/lib/motion/page-transition.tsx";
 import { showErrorToast } from "#/lib/toast.ts";
 import { Route } from "#/routes/(app)/create/index.tsx";
 import { CreatorAnalyticsPanel } from "./analytics/panel.tsx";
+import { ImportDraftDialogButton } from "./archive/import-draft-dialog.tsx";
 import { CreatorCommentsPanel } from "./comments/panel.tsx";
 import {
 	analyticsWindowFromSearch,
@@ -183,17 +184,20 @@ export function CreateHomePage() {
 					 * is the storage format. Putting the internal structure name on the button would make the product
 					 * describe its implementation. Pressing it still creates a draft locally, with no server request.
 					 */}
-					<Button
-						disabled={creating}
-						onClick={() => {
-							void onCreate();
-						}}
-					>
-						<Plus aria-hidden="true" />
-						{creating
-							? t("createHomePage.creating")
-							: t("createHomePage.newStory")}
-					</Button>
+					<div className="flex items-center gap-2">
+						<ImportDraftDialogButton />
+						<Button
+							disabled={creating}
+							onClick={() => {
+								void onCreate();
+							}}
+						>
+							<Plus aria-hidden="true" />
+							{creating
+								? t("createHomePage.creating")
+								: t("createHomePage.newStory")}
+						</Button>
+					</div>
 				</header>
 
 				<CreateWorkspaceNavigation search={search} draftCount={items.length} />

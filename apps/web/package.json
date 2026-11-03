@@ -50,6 +50,7 @@
     "better-auth": "1.7.2",
     "dexie": "^4.2.0",
     "dexie-react-hooks": "^4.2.0",
+    "fflate": "^0.8.3",
     "i18next": "^26.5.11",
     "lucide-react": "^1.33.0",
     "monaco-editor": "^0.56.0",

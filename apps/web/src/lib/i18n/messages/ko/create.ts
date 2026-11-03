@@ -1,6 +1,53 @@
 import type { Messages } from "../../types.ts";
 
 export const create: Messages["create"] = {
+	archive: {
+		export: {
+			button: "파일로 내보내기",
+			title: "이 초안을 파일로 내보내기",
+			description:
+				"이 초안의 본문·로어·시작 장면·이미지·소리·런타임 코드를 파일 하나로 저장합니다. 다른 RowCat에서 새 초안으로 열 수 있습니다.",
+			plaintext:
+				"파일은 암호화되지 않고 프롬프트 보호도 적용되지 않습니다. 파일을 가진 사람은 초안 전체를 읽을 수 있으니 원고처럼 보관해 주세요.",
+			noAccount: "계정, 다른 초안, 발행 상태는 담기지 않습니다.",
+			confirm: "내보내기",
+			exporting: "내보내는 중…",
+		},
+		import: {
+			button: "파일 가져오기",
+			title: "작품 파일 가져오기",
+			description:
+				"RowCat에서 내보낸 작품 파일을 이 기기의 새 초안으로 엽니다. 아무것도 발행되지 않고, 있던 초안은 바뀌지 않습니다.",
+			rights:
+				"발행할 권리가 있는 작품만 가져와 주세요. 파일에는 누가 썼는지 기록되지 않습니다.",
+			choose: "파일 고르기",
+			reading: "파일을 읽는 중…",
+			uploading: "이미지와 소리를 올리는 중({{uploaded}}/{{total}})",
+			waiting:
+				"이 서버는 한 번에 올릴 수 있는 파일 수를 제한합니다. {{seconds}}초 뒤에 이어서 올립니다.",
+			saving: "초안을 저장하는 중…",
+		},
+		failure: {
+			not_archive: "RowCat 작품 파일이 아닙니다.",
+			newer_version:
+				"더 새 RowCat에서 만든 파일입니다. 이 RowCat을 업데이트한 뒤 열어 주세요.",
+			invalid: "파일이 손상됐거나 직접 고쳐져서 열 수 없습니다.",
+			media_mismatch: "파일 안의 이미지나 소리가 손상돼서 열 수 없습니다.",
+			too_large: "여기서 열기에는 파일이 너무 큽니다.",
+			media_unavailable:
+				"이 초안이 쓰는 이미지나 소리를 읽지 못했습니다. 연결을 확인하고 다시 시도해 주세요.",
+			unsupported_media: "이 초안은 내보낼 수 없는 형식의 파일을 씁니다.",
+			not_found: "초안을 찾을 수 없습니다.",
+			upload_rejected:
+				"이 서버가 파일 안의 이미지나 소리를 받지 않았습니다. 아무것도 가져오지 않았습니다.",
+			upload_failed:
+				"이미지나 소리를 올리지 못했습니다. 아무것도 가져오지 않았으니 다시 시도해 주세요.",
+			save_failed: "이 기기에 초안을 저장하지 못했습니다. 다시 시도해 주세요.",
+			unsaved:
+				"최근 수정 내용을 저장하지 못해 파일을 만들지 않았습니다. 저장 상태를 확인한 뒤 다시 시도해 주세요.",
+			generic: "문제가 생겼습니다. 다시 시도해 주세요.",
+		},
+	},
 	coverFile: {
 		inputHint: "{{formats}} · 최대 {{max}}MB(GIF는 {{maxAnimated}}MB)",
 		empty: "빈 파일입니다. 다른 이미지를 골라 주세요.",

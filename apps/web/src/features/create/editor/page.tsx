@@ -18,6 +18,7 @@ import { Link, useParams } from "@tanstack/react-router";
 import { LayoutGroup } from "motion/react";
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
+import { ExportDraftDialogButton } from "#/features/create/archive/export-draft-dialog.tsx";
 import { StartPlaytestButton } from "#/features/playtest/start-playtest-button.tsx";
 import { RuntimeSection } from "#/features/runtime-studio/runtime-section.tsx";
 import { getRowCatClient } from "#/lib/api.ts";
@@ -253,6 +254,7 @@ function DraftEditor({ draft }: { draft: StoryDraft }) {
 					 */}
 					<div className="flex items-center gap-3">
 						<AutosaveIndicator autosave={autosave} />
+						<ExportDraftDialogButton draftId={draft.id} autosave={autosave} />
 						<StartPlaytestButton draftId={draft.id} autosave={autosave} />
 					</div>
 				</header>
