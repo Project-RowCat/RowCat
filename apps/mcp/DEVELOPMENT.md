@@ -98,11 +98,11 @@ rowcat-mcp setup && rowcat-mcp pair && rowcat-mcp doctor
 손으로 올라갔고, 소스맵에 `packages/*`의 TypeScript 원본이 `sourcesContent`로 실려 있었습니다 —
 `tsdown.config.ts`의 `sourcemapExcludeSources`가 그 재발을 막습니다.
 
-⚠️ **`0.1.0-alpha.2`·`alpha.3`은 운영 서비스 시절의 빌드입니다.** `homepage`가 문을 닫은 서비스의
-도메인이고 `license`가 `SEE LICENSE IN LICENSE`이며, 그 뒤 소스에서 기본 API 주소가 사라졌습니다.
-게다가 npm은 첫 게시 때 `latest`를 스스로 붙이므로 지금 `latest`와 `next`가 둘 다 alpha.3을
-가리킵니다 — `npx @rowcat/mcp@next`가 공개 소스가 아닌 그 판을 받습니다. 이 저장소의 첫 공개 판
-(`alpha.4`)이 올라간 **뒤에** 레지스트리를 정리합니다. 레지스트리에 닿는 조작이라 사람이 합니다.
+`0.1.0-alpha.2`·`alpha.3`은 운영 서비스 시절의 빌드입니다(`homepage`가 문을 닫은 서비스의 도메인이고
+`license`가 `SEE LICENSE IN LICENSE`이며, 그 뒤 소스에서 기본 API 주소가 사라졌습니다). npm은 첫 게시 때
+`latest`를 스스로 붙여서 한동안 `latest`와 `next`가 둘 다 alpha.3을 가리켰습니다. **레지스트리는 정리됐습니다**
+(2026-11-03 확인) — 두 판은 deprecated이고, `latest`와 `next`는 이 저장소의 첫 공개 판 `alpha.4`를 가리키며,
+alpha.4에는 SLSA provenance가 붙어 있습니다. 다시 할 일은 없습니다. 이때 쓴 명령은 기록으로 남깁니다.
 
 ```bash
 npm dist-tag add @rowcat/mcp@0.1.0-alpha.4 latest
@@ -110,6 +110,10 @@ npm deprecate @rowcat/mcp@"0.1.0-alpha.2 || 0.1.0-alpha.3" \
   "Built for the RowCat hosted service, which has shut down. Use 0.1.0-alpha.4 or later with your own instance."
 ```
 
-`latest`는 지울 수 없어(npm이 거절합니다) 옮기는 것이 답입니다. `distTagFor`가 `latest`로 게시하는
-것을 여전히 거절하는 것과는 다른 일입니다 — 저것은 워크플로의 게시이고 이것은 이미 남은 꼬리표를
-최신 프리릴리스로 맞추는 일입니다.
+`latest`는 지울 수 없어(npm이 거절합니다) 옮기는 것이 답이었습니다. `distTagFor`가 `latest`로 게시하는
+것을 여전히 거절하는 것과는 다른 일입니다 — 저것은 워크플로의 게시이고 이것은 남아 있던 꼬리표를
+최신 프리릴리스로 맞춘 일입니다. **다음 판부터는 `latest`가 저절로 따라오지 않습니다**(워크플로는 `next`로만
+게시합니다) — 프리릴리스를 올릴 때마다 `latest`를 옮길지는 그때 사람이 정합니다.
+
+같은 날 npm에서 받은 alpha.4(Node 22.23)로 깨끗한 인스턴스에 대해 `verify-installed-pairing.ts`와
+`verify-installed-loop.ts`가 모두 통과했습니다 — 설치본에 기본 API 주소가 없고 옛 운영 도메인 문자열도 없습니다.
