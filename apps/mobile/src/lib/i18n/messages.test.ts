@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+	providerCancelled,
+	providerSurfaceFailed,
+} from "../../features/adult-verification/adult-verification-error.ts";
+import { AGE_COPY } from "../../features/onboarding/gate-copy.ts";
+import { membershipAges } from "../membership-ages.ts";
+import {
 	activeLocale,
 	deferredGroup,
 	setActiveLocale,
@@ -98,5 +104,33 @@ describe("switching the language", () => {
 		expect(
 			translator("signIn")("social.continue", { provider: "Google" }),
 		).toBe("Google로 계속하기");
+	});
+});
+
+/**
+ * A failure that stays on screen is held in state as a value, and that value must not freeze the
+ * language it was made in. The adult-verification failure carries its sentence as a getter for
+ * that reason; the gate's empty-date error is a flag for the same one.
+ */
+describe("held failures follow the language", () => {
+	afterEach(() => setActiveLocale("en"));
+
+	it("an adult-verification failure made in English reads Korean after a switch", () => {
+		const held = providerSurfaceFailed();
+		expect(held.message).toBe(en.membership.adult.error.surfaceFailed);
+		setActiveLocale("ko");
+		expect(held.message).toBe(ko.membership.adult.error.surfaceFailed);
+	});
+
+	it("cancel stays silent in every language", () => {
+		setActiveLocale("ko");
+		expect(providerCancelled().message).toBeNull();
+	});
+
+	it("the gate's ages come from the deployment, in both languages", () => {
+		setActiveLocale("ko");
+		expect(AGE_COPY.description).toContain(
+			`만 ${membershipAges().guardianConsent}세`,
+		);
 	});
 });

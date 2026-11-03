@@ -1,6 +1,7 @@
 import type { Messages } from "../../types.ts";
 import { common } from "./common.ts";
 import { discover } from "./discover.ts";
+import { membership } from "./membership.ts";
 import { moderation } from "./moderation.ts";
 import { notifications } from "./notifications.ts";
 import { persona } from "./persona.ts";
@@ -25,4 +26,5 @@ export const ko: Messages = {
 	profile,
 	notifications,
 	updates,
+	membership,
 };

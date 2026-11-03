@@ -3,22 +3,13 @@ import { declareAgeMutationOptions } from "@rowcat/query";
 import { Button, Input, Notice, Text } from "@rowcat/ui-native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 import { getRowCatClient } from "../../lib/api.ts";
 import { DeletionTerminal } from "../account/deletion-terminal.tsx";
 import { useAccountDeletion } from "../account/use-account-deletion.ts";
 import { formatBirthDateInput } from "./birth-date-input.ts";
-import {
-	AGE_EMPTY_ERROR,
-	AGE_EXIT_NOTE,
-	AGE_FIELD_HINT,
-	AGE_FIELD_LABEL,
-	AGE_FIELD_PLACEHOLDER,
-	AGE_SUBMIT_LABEL,
-	AGE_SUBMITTING_LABEL,
-	AGE_TITLE,
-	ageDescription,
-} from "./gate-copy.ts";
+import { AGE_COPY } from "./gate-copy.ts";
 import { GateExit, GateSurface } from "./gate-shell.tsx";
 import { ageDeclarationError } from "./membership-gate-state.ts";
 
@@ -54,9 +45,11 @@ import { ageDeclarationError } from "./membership-gate-state.ts";
  * guardian consent, is a supported path.
  */
 export function AgePanel() {
+	useTranslation("membership");
 	const queryClient = useQueryClient();
 	const [birthDate, setBirthDate] = useState("");
-	const [localError, setLocalError] = useState<string | null>(null);
+	/** A flag, not the sentence: a sentence held in state keeps the language it was set in. */
+	const [empty, setEmpty] = useState(false);
 	const deletion = useAccountDeletion();
 
 	const declare = useMutation(
@@ -80,34 +73,34 @@ export function AgePanel() {
 	const submit = (): void => {
 		const value = birthDate.trim();
 		if (!value) {
-			setLocalError(AGE_EMPTY_ERROR);
+			setEmpty(true);
 			return;
 		}
-		setLocalError(null);
+		setEmpty(false);
 		declare.mutate({ birthDate: value });
 	};
 
-	const error = localError ?? ageDeclarationError(declare.error);
+	const error = empty ? AGE_COPY.empty : ageDeclarationError(declare.error);
 
 	return (
 		<GateSurface>
 			<Text accessibilityRole="header" variant="heading">
-				{AGE_TITLE}
+				{AGE_COPY.title}
 			</Text>
 			<Text variant="body" tone="muted-foreground">
-				{ageDescription()}
+				{AGE_COPY.description}
 			</Text>
 
 			<View style={age.field}>
 				<Input
-					label={AGE_FIELD_LABEL}
+					label={AGE_COPY.fieldLabel}
 					value={birthDate}
 					/**
 					 * Hyphens are separators only (`birth-date-input.ts`). The value is not altered, so the date
 					 * the user typed goes to the server unchanged.
 					 */
 					onChangeText={(text) => setBirthDate(formatBirthDateInput(text))}
-					placeholder={AGE_FIELD_PLACEHOLDER}
+					placeholder={AGE_COPY.placeholder}
 					keyboardType="number-pad"
 					autoCapitalize="none"
 					autoCorrect={false}
@@ -116,7 +109,7 @@ export function AgePanel() {
 					maxLength={10}
 				/>
 				<Text variant="caption" tone="muted-foreground">
-					{AGE_FIELD_HINT}
+					{AGE_COPY.hint}
 				</Text>
 			</View>
 
@@ -124,14 +117,14 @@ export function AgePanel() {
 			{error ? <Notice tone="destructive" message={error} /> : null}
 
 			<Button
-				label={declare.isPending ? AGE_SUBMITTING_LABEL : AGE_SUBMIT_LABEL}
+				label={declare.isPending ? AGE_COPY.submitting : AGE_COPY.submit}
 				fullWidth
 				busy={declare.isPending}
 				disabled={busy}
 				onPress={submit}
 			/>
 
-			<GateExit note={AGE_EXIT_NOTE} deletion={deletion} busy={busy} />
+			<GateExit note={AGE_COPY.exitNote} deletion={deletion} busy={busy} />
 		</GateSurface>
 	);
 }

@@ -1,6 +1,7 @@
 import { GUARDIAN_ERROR_CODE } from "@rowcat/contracts";
 import type { MembershipGate, Viewer } from "@rowcat/domain";
 import { isRowCatApiError } from "@rowcat/sdk";
+import { translator } from "../../lib/i18n/instance.ts";
 
 /**
  * Which screen the entry gate raises, and which sentence a failure becomes.
@@ -68,8 +69,7 @@ export function appGateFor(viewer: Viewer | null): AppGate | null {
  * **Unknown codes fall back to the generic sentence.** A new failure leaves the screen neither
  * empty nor showing developer text.
  */
-const GENERIC = "This can't be done right now. Please try again in a moment.";
-const OFFLINE = "Couldn't send the request. Please check your connection.";
+const t = () => translator("membership");
 
 const codeOf = (error: unknown): string | null =>
 	isRowCatApiError(error) ? error.code : null;
@@ -83,12 +83,11 @@ const codeOf = (error: unknown): string | null =>
 export function ageDeclarationError(error: unknown): string | null {
 	if (!error) return null;
 	const code = codeOf(error);
-	if (!code) return OFFLINE;
+	if (!code) return t()("offline");
 	if (code === "invalid_input" || code === "invalid_request")
-		return "Please check your date of birth. A date after today can't be entered.";
-	if (code === "login_required")
-		return "Your sign-in has expired. Please sign in again.";
-	return GENERIC;
+		return t()("age.invalid");
+	if (code === "login_required") return t()("sessionExpired");
+	return t()("generic");
 }
 
 /**
@@ -102,14 +101,14 @@ export function guardianRequestError(error: unknown): string | null {
 	if (!error) return null;
 	switch (codeOf(error)) {
 		case GUARDIAN_ERROR_CODE.verifierUnavailable:
-			return "Guardian consent can't be started right now. You'll be able to use it once it's ready.";
+			return t()("guardian.unavailable");
 		case GUARDIAN_ERROR_CODE.notRequired:
-			return "This account doesn't need guardian consent. Please reopen the screen.";
+			return t()("guardian.notRequired");
 		case "login_required":
-			return "Your sign-in has expired. Please sign in again.";
+			return t()("sessionExpired");
 		case null:
-			return OFFLINE;
+			return t()("offline");
 		default:
-			return GENERIC;
+			return t()("generic");
 	}
 }

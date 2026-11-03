@@ -1,5 +1,7 @@
 import { isRowCatApiError } from "@rowcat/sdk";
-import { membershipAges } from "../../lib/membership-ages.ts";
+import { translator } from "../../lib/i18n/instance.ts";
+
+const t = () => translator("membership");
 
 /**
  * Failure vocabulary for adult verification; the axis is the next action, not the sentence. Folding
@@ -47,10 +49,10 @@ export type AdultVerificationFailureKind =
 export interface AdultVerificationFailure {
 	kind: AdultVerificationFailureKind;
 	/**
-	 * Sentence for the screen. `null` draws nothing: cancel and account switch (something the user did
-	 * themselves, or happened without their knowledge).
+	 * Sentence for the screen, in the language drawn now. `null` draws nothing: cancel and account
+	 * switch (something the user did themselves, or happened without their knowledge).
 	 */
-	message: string | null;
+	readonly message: string | null;
 }
 
 /**
@@ -91,34 +93,33 @@ export function adultVerificationRecovery(
  * `adultVerificationErrorMessage`, with sentences of its own.
  */
 export function adultVerificationErrorMessage(error: unknown): string {
-	if (!isRowCatApiError(error))
-		return "Couldn't send the request. Please check your connection.";
+	if (!isRowCatApiError(error)) return t()("offline");
 
 	switch (error.code) {
 		// No verification method in this deployment; not something the user can fix.
 		case "identity_verification_unavailable":
-			return "Identity verification isn't available right now. Please check again in a moment.";
+			return t()("adult.error.unavailable");
 		case "identity_verification_not_found":
-			return "No identity verification is in progress. Please start again from the beginning.";
+			return t()("adult.error.notFound");
 		case "identity_verification_expired":
-			return "The identity verification screen expired. Please start again.";
+			return t()("adult.error.expired");
 		// Window closed or not finished yet; not a failure.
 		case "identity_verification_not_completed":
-			return "Identity verification didn't complete. Please try again.";
+			return t()("adult.error.notCompleted");
 		case "identity_verification_conflict":
-			return "Identity verification was carried out somewhere else. Please start over.";
+			return t()("adult.error.conflict");
 		case "identity_verification_provider_failed":
-			return "Identity verification failed. Please try again.";
+			return t()("adult.error.providerFailed");
 		case "identity_verification_rate_limited":
-			return "Too many identity verification attempts. Please try again in a moment.";
+			return t()("adult.error.rateLimited");
 		// Under 14. This screen does not draw that button, but an account re-judged while the window was
 		// open can exist; the server refuses then.
 		case "minor_adult_restricted":
-			return `Accounts under ${membershipAges().guardianConsent} can't use adult content.`;
+			return t()("adult.error.minor");
 		case "login_required":
-			return "You've been signed out. Please sign in again.";
+			return t()("adult.error.signedOut");
 		default:
-			return "Couldn't complete identity verification. Please try again in a moment.";
+			return t()("adult.error.failed");
 	}
 }
 
@@ -136,10 +137,23 @@ export function isExhaustedAttempt(error: unknown): boolean {
 	);
 }
 
-export const beginFailure = (error: unknown): AdultVerificationFailure => ({
-	kind: "begin_failed",
-	message: adultVerificationErrorMessage(error),
+/**
+ * A failure carries its sentence as a **getter**, read in the drawn language each time. The failure
+ * object sits in phase state for as long as the screen shows it, and a string captured there would
+ * keep the language it was made in after the person switched.
+ */
+const failure = (
+	kind: AdultVerificationFailureKind,
+	sentence: (() => string) | null,
+): AdultVerificationFailure => ({
+	kind,
+	get message() {
+		return sentence ? sentence() : null;
+	},
 });
+
+export const beginFailure = (error: unknown): AdultVerificationFailure =>
+	failure("begin_failed", () => adultVerificationErrorMessage(error));
 
 /**
  * Verification finished but could not be applied; can re-ask if the attempt is still alive. When
@@ -147,39 +161,25 @@ export const beginFailure = (error: unknown): AdultVerificationFailure => ({
  * so start over.
  */
 export const completionFailure = (error: unknown): AdultVerificationFailure =>
-	isExhaustedAttempt(error)
-		? { kind: "attempt_expired", message: adultVerificationErrorMessage(error) }
-		: {
-				kind: "completion_failed",
-				message: adultVerificationErrorMessage(error),
-			};
+	failure(
+		isExhaustedAttempt(error) ? "attempt_expired" : "completion_failed",
+		() => adultVerificationErrorMessage(error),
+	);
 
 /** The user closed it: no sentence; an error is not shown for their own action. */
-export const providerCancelled = (): AdultVerificationFailure => ({
-	kind: "provider_cancelled",
-	message: null,
-});
+export const providerCancelled = (): AdultVerificationFailure =>
+	failure("provider_cancelled", null);
 
 /** The provider refused. The original text is not carried (see header). */
-export const providerFailed = (): AdultVerificationFailure => ({
-	kind: "provider_failed",
-	message: "Identity verification didn't complete. Please try again.",
-});
+export const providerFailed = (): AdultVerificationFailure =>
+	failure("provider_failed", () => t()("adult.error.notCompleted"));
 
-export const providerSurfaceFailed = (): AdultVerificationFailure => ({
-	kind: "provider_surface_failed",
-	message:
-		"Couldn't open the verification screen. Please try again in a moment.",
-});
+export const providerSurfaceFailed = (): AdultVerificationFailure =>
+	failure("provider_surface_failed", () => t()("adult.error.surfaceFailed"));
 
 /** The account changed mid-procedure; nothing is said to the new account. */
-export const staleAccount = (): AdultVerificationFailure => ({
-	kind: "stale_account",
-	message: null,
-});
+export const staleAccount = (): AdultVerificationFailure =>
+	failure("stale_account", null);
 
-export const unsupportedHandoff = (): AdultVerificationFailure => ({
-	kind: "unsupported_handoff",
-	message:
-		"Identity verification can't be done in the app right now. Please continue on the web.",
-});
+export const unsupportedHandoff = (): AdultVerificationFailure =>
+	failure("unsupported_handoff", () => t()("adult.error.unsupported"));

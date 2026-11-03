@@ -114,7 +114,7 @@ pnpm --filter @rowcat/mobile exec vitest run src/lib/i18n
 화면 단위로 옮긴다 — 한 번에 하나의 기능 폴더, 그 폴더의 문구 모듈과 정적 스캔을 함께. 남은 폴더:
 대화(`chat`, `chat-library` — 대화 설정의 페르소나 칸은 옮겼다)·만들기(`create`)·작품 테스트
 (`playtest`)·런타임 재생(`runtime-player`)·계정(`account`)·설정의 나머지(AI·페르소나·테마)·
-진입 게이트(`onboarding`)·성인 확인·동기화·`lib`의 실패 표들. **날짜와 수의 형식**
+동기화·`lib`의 실패 표들. **날짜와 수의 형식**
 (`lib/format.ts`)은 아직 한 형식이다 — 그 파일을 옮길 때 로캘을 인자로 받게 한다(시간대는 제품 시간대
 그대로다).
 
@@ -123,3 +123,9 @@ pnpm --filter @rowcat/mobile exec vitest run src/lib/i18n
 자리에 있다(`notifications.unseenUpdate` — 탭과 종 · `updates.unseen` — 기록의 줄). 둘 다 도메인의
 `UPDATE_UNSEEN_LABEL_SUFFIX`와 같은지 `vocab.test.ts`가 본다. 종의 이름은 `notificationAttention`이 정한
 배지에 낱말만 붙인다(웹 종의 `bellLabel`과 같은 판단).
+
+진입 게이트(`onboarding`)와 성인 자격 확인은 `membership` 이름 공간이다. 나이는 사전 안의
+`{{guardianAge}}`·`{{adultAge}}`이고 번역하는 순간 배포의 값으로 채워진다 — 문구 모듈이
+`membershipAges()`를 직접 읽지 않는다. 화면에 오래 머무는 실패는 **문장을 들고 있지 않는다**: 생년월일
+칸의 빈 값 오류는 깃발이고, 성인 확인의 실패는 문장을 **getter**로 든다(그 값이 단계 상태에 들어 있는
+동안 언어를 바꾸면 다음 그림이 새 언어로 읽는다 — `messages.test.ts`).

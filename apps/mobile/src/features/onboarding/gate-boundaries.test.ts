@@ -171,7 +171,7 @@ describe("the device doesn't compute age", () => {
 	/** The screen checks one thing: whether the value is empty. */
 	it("the age screen's only validation is emptiness", () => {
 		const panel = fileAt("features/onboarding/age-panel.tsx");
-		expect(panel).toContain("AGE_EMPTY_ERROR");
+		expect(panel).toContain("AGE_COPY.empty");
 		expect(panel).toMatch(/if \(!value\)/);
 	});
 });
@@ -287,7 +287,7 @@ describe("doesn't trap people", () => {
 		 * held in local `useState` is therefore already gone when the component mounts again. The person
 		 * stuck in the gate would press exit and nothing would happen.
 		 */
-		expect(shell).toContain("GATE_SIGN_OUT_FAILED");
+		expect(shell).toContain("GATE_COPY.signOutFailed");
 		expect(shell).toContain("identity.failure");
 		expect(shell).not.toContain("useState");
 	});

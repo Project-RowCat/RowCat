@@ -1,11 +1,9 @@
 import { IdentityVerification } from "@portone/react-native-sdk";
 import { space } from "@rowcat/design";
 import { Dialog, Text } from "@rowcat/ui-native";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
-import {
-	ADULT_VERIFICATION_SURFACE_NOTE,
-	ADULT_VERIFICATION_SURFACE_TITLE,
-} from "./adult-verification-copy.ts";
+import { ADULT_VERIFICATION_COPY } from "./adult-verification-copy.ts";
 import {
 	type PortOneIdentityRequest,
 	providerReportedSuccess,
@@ -48,9 +46,10 @@ export function AdultVerificationSurface({
 	/** The window itself failed to appear (SDK, webview or network). */
 	onCrashed: () => void;
 }) {
+	useTranslation("membership");
 	return (
 		<Dialog
-			title={ADULT_VERIFICATION_SURFACE_TITLE}
+			title={ADULT_VERIFICATION_COPY.surfaceTitle}
 			open
 			size="full"
 			/** Off for this window only; the child scrolls itself (see the header). */
@@ -61,7 +60,7 @@ export function AdultVerificationSurface({
 		>
 			<View style={surface.body}>
 				<Text variant="label" tone="muted-foreground">
-					{ADULT_VERIFICATION_SURFACE_NOTE}
+					{ADULT_VERIFICATION_COPY.surfaceNote}
 				</Text>
 				<IdentityVerification
 					request={request}

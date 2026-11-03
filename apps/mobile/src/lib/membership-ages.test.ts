@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { ADULT_UNAVAILABLE_TITLE } from "../features/account/account-copy.ts";
-import { ageDescription } from "../features/onboarding/gate-copy.ts";
+import { AGE_COPY } from "../features/onboarding/gate-copy.ts";
 import { providerByoLocked } from "../features/settings/provider-copy.ts";
 import {
 	__setMembershipAgesForTest,
@@ -25,8 +25,8 @@ describe("membership ages in copy", () => {
 		__setMembershipAgesForTest({ guardianConsent: 13, adult: 18 });
 		expect(ADULT_UNAVAILABLE_TITLE.child).toBe("This account is under 13.");
 		expect(ADULT_UNAVAILABLE_TITLE.minor).toBe("This account is under 18.");
-		expect(ageDescription()).toContain("the date you turn 13");
-		expect(ageDescription()).not.toContain("14");
+		expect(AGE_COPY.description).toContain("the date you turn 13");
+		expect(AGE_COPY.description).not.toContain("14");
 		expect(providerByoLocked()).toContain("Members under 13");
 	});
 });

@@ -9,18 +9,14 @@ import {
 } from "@rowcat/ui-native";
 import * as WebBrowser from "expo-web-browser";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 import { useMobileIdentity } from "../../lib/identity.tsx";
 import { activeWebOrigin } from "../../lib/instances/device-registry.ts";
 import { accountDeletionGuideUrl } from "../../lib/public-web.ts";
 import { DeleteAccountTrigger } from "../account/delete-account-trigger.tsx";
 import type { AccountDeletion } from "../account/use-account-deletion.ts";
-import {
-	GATE_DELETE_GUIDE_LABEL,
-	GATE_SIGN_OUT_FAILED,
-	GATE_SIGN_OUT_LABEL,
-	GATE_SIGNING_OUT_LABEL,
-} from "./gate-copy.ts";
+import { GATE_COPY } from "./gate-copy.ts";
 
 /**
  * The surface and exit path shared by the entry gates (the native counterpart of web's
@@ -70,6 +66,7 @@ export function GateExit({
 	/** Whether the gate's primary action is in progress; the exit path is locked too. */
 	busy?: boolean;
 }) {
+	useTranslation("membership");
 	const identity = useMobileIdentity();
 	const signingOut = identity.pending === "sign-out";
 	const disabled = Boolean(busy) || signingOut || deletion.phase === "deleting";
@@ -84,7 +81,7 @@ export function GateExit({
 			</Text>
 			<View style={surface.exitActions}>
 				<Button
-					label={signingOut ? GATE_SIGNING_OUT_LABEL : GATE_SIGN_OUT_LABEL}
+					label={signingOut ? GATE_COPY.signingOut : GATE_COPY.signOut}
 					variant="ghost"
 					disabled={disabled}
 					busy={signingOut}
@@ -111,7 +108,7 @@ export function GateExit({
 			 * (a successful auth clears this slot when its next procedure starts).
 			 */}
 			{identity.failure ? (
-				<Notice tone="destructive" message={GATE_SIGN_OUT_FAILED} />
+				<Notice tone="destructive" message={GATE_COPY.signOutFailed} />
 			) : null}
 			{/**
 			 * The guide stays a link. Having the trigger here does not mean copying "what is deleted
@@ -120,7 +117,7 @@ export function GateExit({
 			{guideUrl ? (
 				<View style={surface.links}>
 					<LinkButton
-						label={GATE_DELETE_GUIDE_LABEL}
+						label={GATE_COPY.deleteGuide}
 						onPress={() => void WebBrowser.openBrowserAsync(guideUrl)}
 					/>
 				</View>

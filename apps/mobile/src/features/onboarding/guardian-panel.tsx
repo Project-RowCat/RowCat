@@ -8,32 +8,14 @@ import { Button, Notice, Panel, Text } from "@rowcat/ui-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { AccessibilityInfo, Share, StyleSheet, View } from "react-native";
 import { getRowCatClient } from "../../lib/api.ts";
 import { activeWebOrigin } from "../../lib/instances/device-registry.ts";
 import { guardianConsentUrl } from "../../lib/public-web.ts";
 import { DeletionTerminal } from "../account/deletion-terminal.tsx";
 import { useAccountDeletion } from "../account/use-account-deletion.ts";
-import {
-	GUARDIAN_COPIED_LABEL,
-	GUARDIAN_COPY_FAILED,
-	GUARDIAN_COPY_LABEL,
-	GUARDIAN_CREATE_LABEL,
-	GUARDIAN_CREATING_LABEL,
-	GUARDIAN_DECLINED,
-	GUARDIAN_EXIT_NOTE,
-	GUARDIAN_LINK_TITLE,
-	GUARDIAN_NEW_LINK_LABEL,
-	GUARDIAN_NEW_LINK_NOTE,
-	GUARDIAN_ORIGIN_MISSING,
-	GUARDIAN_RECREATE_LABEL,
-	GUARDIAN_SHARE_FAILED,
-	GUARDIAN_SHARE_LABEL,
-	GUARDIAN_STEPS,
-	GUARDIAN_TITLE,
-	GUARDIAN_WAITING,
-	guardianDescription,
-} from "./gate-copy.ts";
+import { GUARDIAN_COPY, guardianSteps } from "./gate-copy.ts";
 import { GateExit, GateSurface } from "./gate-shell.tsx";
 import { guardianRequestError } from "./membership-gate-state.ts";
 
@@ -68,6 +50,7 @@ import { guardianRequestError } from "./membership-gate-state.ts";
  * screens, follows that article rather than taste.
  */
 export function GuardianPanel() {
+	useTranslation("membership");
 	const client = getRowCatClient();
 	const queryClient = useQueryClient();
 	const deletion = useAccountDeletion();
@@ -138,15 +121,15 @@ export function GuardianPanel() {
 	return (
 		<GateSurface>
 			<Text accessibilityRole="header" variant="heading">
-				{GUARDIAN_TITLE}
+				{GUARDIAN_COPY.title}
 			</Text>
 			<Text variant="body" tone="muted-foreground">
-				{guardianDescription()}
+				{GUARDIAN_COPY.description}
 			</Text>
 
 			{/** States what is being consented to, on the child's screen too (the intent of art. 22-2(3)). */}
 			<View style={guardian.steps}>
-				{GUARDIAN_STEPS.map((step) => (
+				{guardianSteps().map((step) => (
 					<Text key={step} variant="label" tone="muted-foreground">
 						{`• ${step}`}
 					</Text>
@@ -154,11 +137,11 @@ export function GuardianPanel() {
 			</View>
 
 			{/** **A refusal is not the end either**: the account stays, and the request can be made again. */}
-			{declined ? <Notice message={GUARDIAN_DECLINED} /> : null}
+			{declined ? <Notice message={GUARDIAN_COPY.declined} /> : null}
 
 			{consentUrl ? (
 				<Panel style={guardian.card}>
-					<Text variant="label">{GUARDIAN_LINK_TITLE}</Text>
+					<Text variant="label">{GUARDIAN_COPY.linkTitle}</Text>
 					{/**
 					 * The address is **shown as is.** It is not wrapped in a short code, because what the
 					 * guardian receives is this address and the child must be able to verify it. Not
@@ -171,9 +154,7 @@ export function GuardianPanel() {
 					<View style={guardian.actions}>
 						<Button
 							label={
-								handoff === "copied"
-									? GUARDIAN_COPIED_LABEL
-									: GUARDIAN_COPY_LABEL
+								handoff === "copied" ? GUARDIAN_COPY.copied : GUARDIAN_COPY.copy
 							}
 							size="sm"
 							onPress={() => {
@@ -181,7 +162,7 @@ export function GuardianPanel() {
 									() => {
 										setHandoff("copied");
 										AccessibilityInfo.announceForAccessibility(
-											GUARDIAN_COPIED_LABEL,
+											GUARDIAN_COPY.copied,
 										);
 									},
 									() => setHandoff("copy-failed"),
@@ -194,7 +175,7 @@ export function GuardianPanel() {
 						 * sharing package is not pulled in (the core API is enough).
 						 */}
 						<Button
-							label={GUARDIAN_SHARE_LABEL}
+							label={GUARDIAN_COPY.share}
 							variant="outline"
 							size="sm"
 							onPress={() => {
@@ -205,7 +186,7 @@ export function GuardianPanel() {
 							}}
 						/>
 						<Button
-							label={GUARDIAN_NEW_LINK_LABEL}
+							label={GUARDIAN_COPY.newLink}
 							variant="ghost"
 							size="sm"
 							disabled={busy}
@@ -214,26 +195,26 @@ export function GuardianPanel() {
 					</View>
 					{handoff === "copy-failed" ? (
 						<Text accessibilityRole="alert" variant="label" tone="destructive">
-							{GUARDIAN_COPY_FAILED}
+							{GUARDIAN_COPY.copyFailed}
 						</Text>
 					) : null}
 					{handoff === "share-failed" ? (
 						<Text accessibilityRole="alert" variant="label" tone="destructive">
-							{GUARDIAN_SHARE_FAILED}
+							{GUARDIAN_COPY.shareFailed}
 						</Text>
 					) : null}
 					<Text variant="caption" tone="muted-foreground">
-						{GUARDIAN_NEW_LINK_NOTE}
+						{GUARDIAN_COPY.newLinkNote}
 					</Text>
 				</Panel>
 			) : (
 				<Button
 					label={
 						request.isPending
-							? GUARDIAN_CREATING_LABEL
+							? GUARDIAN_COPY.creating
 							: waiting
-								? GUARDIAN_RECREATE_LABEL
-								: GUARDIAN_CREATE_LABEL
+								? GUARDIAN_COPY.recreate
+								: GUARDIAN_COPY.create
 					}
 					fullWidth
 					busy={request.isPending}
@@ -243,7 +224,7 @@ export function GuardianPanel() {
 			)}
 
 			{originMissing ? (
-				<Notice tone="destructive" message={GUARDIAN_ORIGIN_MISSING} />
+				<Notice tone="destructive" message={GUARDIAN_COPY.originMissing} />
 			) : null}
 			{error ? <Notice tone="destructive" message={error} /> : null}
 
@@ -258,11 +239,11 @@ export function GuardianPanel() {
 					variant="label"
 					tone="muted-foreground"
 				>
-					{GUARDIAN_WAITING}
+					{GUARDIAN_COPY.waiting}
 				</Text>
 			) : null}
 
-			<GateExit note={GUARDIAN_EXIT_NOTE} deletion={deletion} busy={busy} />
+			<GateExit note={GUARDIAN_COPY.exitNote} deletion={deletion} busy={busy} />
 		</GateSurface>
 	);
 }

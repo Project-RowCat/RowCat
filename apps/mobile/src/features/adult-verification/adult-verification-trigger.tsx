@@ -1,21 +1,11 @@
 import { space } from "@rowcat/design";
 import { Button, Notice, Text } from "@rowcat/ui-native";
 import * as WebBrowser from "expo-web-browser";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 import { activeWebOrigin } from "../../lib/instances/device-registry.ts";
 import { accountWebUrl } from "../../lib/public-web.ts";
-import {
-	ADULT_RENEW_NOTE,
-	ADULT_RENEW_TITLE,
-	ADULT_REVERIFY_LABEL,
-	ADULT_VERIFICATION_BUSY_LABEL,
-	ADULT_VERIFICATION_DONE,
-	ADULT_VERIFICATION_RECHECK_LABEL,
-	ADULT_VERIFICATION_RECHECK_NOTE,
-	ADULT_VERIFY_LABEL,
-	ADULT_VERIFY_ON_WEB_LABEL,
-	ADULT_VERIFY_ON_WEB_NOTE,
-} from "./adult-verification-copy.ts";
+import { ADULT_VERIFICATION_COPY } from "./adult-verification-copy.ts";
 import { adultVerificationRecovery } from "./adult-verification-error.ts";
 import {
 	type AdultVerificationOffer,
@@ -44,6 +34,7 @@ export function AdultVerificationTrigger({
 	/** The composing side judges `none` and does not render this component. */
 	offer: Exclude<AdultVerificationOffer, "none">;
 }) {
+	useTranslation("membership");
 	const verification = useAdultVerification(viewerId);
 	const { phase } = verification;
 	const busy = adultVerificationBusy(phase);
@@ -65,8 +56,8 @@ export function AdultVerificationTrigger({
 		return (
 			<View style={trigger.stack}>
 				<Notice
-					message={ADULT_VERIFICATION_RECHECK_NOTE}
-					actionLabel={ADULT_VERIFICATION_RECHECK_LABEL}
+					message={ADULT_VERIFICATION_COPY.recheckNote}
+					actionLabel={ADULT_VERIFICATION_COPY.recheck}
 					onAction={verification.recheck}
 				/>
 			</View>
@@ -81,9 +72,9 @@ export function AdultVerificationTrigger({
 			 */}
 			{offer === "renew" ? (
 				<View style={trigger.stack}>
-					<Text variant="body">{ADULT_RENEW_TITLE}</Text>
+					<Text variant="body">{ADULT_VERIFICATION_COPY.renewTitle}</Text>
 					<Text variant="label" tone="muted-foreground">
-						{ADULT_RENEW_NOTE}
+						{ADULT_VERIFICATION_COPY.renewNote}
 					</Text>
 				</View>
 			) : null}
@@ -91,10 +82,10 @@ export function AdultVerificationTrigger({
 				<Button
 					label={
 						busy && phase.kind !== "idle"
-							? ADULT_VERIFICATION_BUSY_LABEL[phase.kind]
+							? ADULT_VERIFICATION_COPY.busy[phase.kind]
 							: offer === "reverify"
-								? ADULT_REVERIFY_LABEL
-								: ADULT_VERIFY_LABEL
+								? ADULT_VERIFICATION_COPY.reverify
+								: ADULT_VERIFICATION_COPY.verify
 					}
 					/**
 					 * Not a prominent retry for someone under 19: all they can do is wait, and emphasis would read
@@ -110,7 +101,7 @@ export function AdultVerificationTrigger({
 
 			{phase.kind === "idle" && phase.settled ? (
 				<Text variant="label" tone="muted-foreground">
-					{ADULT_VERIFICATION_DONE}
+					{ADULT_VERIFICATION_COPY.done}
 				</Text>
 			) : null}
 
@@ -131,11 +122,11 @@ export function AdultVerificationTrigger({
 			{recovery === "web" && webUrl ? (
 				<View style={trigger.stack}>
 					<Text variant="label" tone="muted-foreground">
-						{ADULT_VERIFY_ON_WEB_NOTE}
+						{ADULT_VERIFICATION_COPY.onWebNote}
 					</Text>
 					<View style={trigger.actionRow}>
 						<Button
-							label={ADULT_VERIFY_ON_WEB_LABEL}
+							label={ADULT_VERIFICATION_COPY.onWeb}
 							variant="ghost"
 							size="sm"
 							onPress={() => void WebBrowser.openBrowserAsync(webUrl)}
