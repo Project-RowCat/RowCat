@@ -1,6 +1,7 @@
 import { iconSize, radiusScale, space } from "@rowcat/design";
 import { isUnread, type Notification } from "@rowcat/domain";
 import { Icon, Text, touchTarget, useTheme } from "@rowcat/ui-native";
+import { useTranslation } from "react-i18next";
 import { Pressable, StyleSheet, View } from "react-native";
 import { relativeTime } from "../../lib/format.ts";
 import {
@@ -58,6 +59,7 @@ export function NotificationRow({
 	 */
 	onActivate: () => void;
 }) {
+	useTranslation("notifications");
 	const { colors, alpha } = useTheme();
 	const unread = isUnread(notification);
 	const detail = notificationDetail(notification);

@@ -2,7 +2,13 @@ import { space } from "@rowcat/design";
 import type { UpdateNote, UpdateNoteSectionId } from "@rowcat/domain";
 import type { IconName } from "@rowcat/ui-native";
 import { Button, Dialog, DialogActions, Icon, Text } from "@rowcat/ui-native";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
+import {
+	updateNoteDismissLabel,
+	updateNoteSectionLabel,
+	updateNoteTitle,
+} from "./update-note-copy.ts";
 import { UpdateNoteText } from "./update-note-text.tsx";
 
 /**
@@ -86,9 +92,10 @@ export function UpdateNoteDialog({
 	 */
 	onDismiss: () => void;
 }) {
+	useTranslation("updates");
 	return (
 		<Dialog
-			title={note.title}
+			title={updateNoteTitle(note)}
 			open={open}
 			onOpenChange={(next) => {
 				if (!next) onDismiss();
@@ -119,7 +126,7 @@ export function UpdateNoteDialog({
 							 */}
 							<Icon name={SECTION_ICON[section.id]} size="md" />
 							<Text variant="title" style={styles.sectionTitleText}>
-								{section.label}
+								{updateNoteSectionLabel(section.id)}
 							</Text>
 						</View>
 						{section.items.map((item) => (
@@ -145,7 +152,7 @@ export function UpdateNoteDialog({
 				 * uses the same pairing.
 				 */}
 				<Button
-					label="OK"
+					label={updateNoteDismissLabel()}
 					fullWidth
 					style={styles.action}
 					onPress={onDismiss}

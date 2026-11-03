@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { en } from "../../lib/i18n/messages/en/index.ts";
 
 /**
  * Static boundaries of the update notes: they must not surface on their own and must not become
@@ -82,13 +83,14 @@ const screen = () => fileAt("features/notifications/notifications-screen.tsx");
 describe("the files to check actually exist", () => {
 	/**
 	 * It grew from four files: history split out the seen-fact owner (provider), the list, and the
-	 * row. The old update-note-entry.tsx is gone; left unused, a reader would assume a latest-only
+	 * row, and the drawn language added the copy module. The old update-note-entry.tsx is gone; left unused, a reader would assume a latest-only
 	 * entry point still exists somewhere.
 	 */
-	it("update notes have eight files", () => {
+	it("update notes have nine files", () => {
 		expect(feature.map((file) => file.path).sort()).toEqual([
 			"features/updates/device-seen-storage.ts",
 			"features/updates/seen-store.ts",
+			"features/updates/update-note-copy.ts",
 			"features/updates/update-note-dialog.tsx",
 			"features/updates/update-note-row.tsx",
 			"features/updates/update-note-text.tsx",
@@ -164,11 +166,10 @@ describe("one container with two cells", () => {
 	 * would stack the same text twice and blur the relation between the two tabs.
 	 */
 	it("the cells are named General and Updates", () => {
-		const copy = fileAt("features/notifications/notification-copy.ts");
-		const table = /NOTIFICATION_TABS?[\s\S]*?\}/.exec(copy);
-		expect(copy).toContain('general: "General"');
-		expect(copy).toContain('updates: "Updates"');
-		expect(table?.[0] ?? "").not.toMatch(/general: "Notifications"/);
+		const table = en.notifications.tab;
+		expect(table.general).toBe("General");
+		expect(table.updates).toBe("Updates");
+		expect(table.general).not.toBe(en.notifications.screen.title);
 	});
 
 	/**
@@ -346,7 +347,10 @@ describe("the notification domain doesn't absorb update notes", () => {
 		const shortcut = fileAt("features/notifications/notification-shortcut.tsx");
 		expect(shortcut).toContain("attention.badge");
 		expect(shortcut).toContain("attention.dot");
-		expect(shortcut).toContain("accessibilityLabel={attention.label}");
+		/** The name is assembled from the same decision, in the drawn language (the web bell's `bellLabel`). */
+		expect(shortcut).toContain(
+			"accessibilityLabel={notificationBellName(attention, unseenUpdate)}",
+		);
 		/** The condition "draw the dot only when there is no badge" is not written by hand. */
 		expect(shortcut).not.toMatch(/!attention\.badge|badge === null/);
 		/** The dot has no number; a `1` would be a lie. */

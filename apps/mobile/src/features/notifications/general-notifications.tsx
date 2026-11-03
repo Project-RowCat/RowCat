@@ -11,22 +11,13 @@ import {
 } from "@rowcat/ui-native";
 import { useRouter } from "expo-router";
 import { useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { FlatList, StyleSheet, View } from "react-native";
 import { useMobileIdentity } from "../../lib/identity.tsx";
 import { CREATOR_ROUTE } from "../profile/creator-route.ts";
 import {
 	canMarkAllRead,
-	NOTIFICATIONS_EMPTY,
-	NOTIFICATIONS_ERROR,
-	NOTIFICATIONS_GUEST,
-	NOTIFICATIONS_MARK_ALL_LABEL,
-	NOTIFICATIONS_MARK_ALL_READ_FAILED,
-	NOTIFICATIONS_MORE_BUSY_LABEL,
-	NOTIFICATIONS_MORE_LABEL,
-	NOTIFICATIONS_OFFLINE,
-	NOTIFICATIONS_RETRY_LABEL,
-	NOTIFICATIONS_STALE,
-	NOTIFICATIONS_UNAVAILABLE,
+	NOTIFICATIONS_COPY,
 	notificationUnreadSummary,
 } from "./notification-copy.ts";
 import type { NotificationDestination } from "./notification-destination.ts";
@@ -62,6 +53,7 @@ import { useNotifications } from "./use-notifications.ts";
  * know how far they have read, and a list that grows each time the bottom is reached never ends.
  */
 export function GeneralNotifications() {
+	useTranslation("notifications");
 	const router = useRouter();
 	const { session, retry: retrySession } = useMobileIdentity();
 	const authenticated = session.phase === "authenticated";
@@ -175,8 +167,8 @@ export function GeneralNotifications() {
 						<Button
 							label={
 								list.isFetchingNextPage
-									? NOTIFICATIONS_MORE_BUSY_LABEL
-									: NOTIFICATIONS_MORE_LABEL
+									? NOTIFICATIONS_COPY.moreBusy
+									: NOTIFICATIONS_COPY.more
 							}
 							variant="outline"
 							disabled={list.isFetchingNextPage}
@@ -221,6 +213,7 @@ function InboxHeader({
 	retrying: boolean;
 	onRetry: () => void;
 }) {
+	useTranslation("notifications");
 	const summary = notificationUnreadSummary(unreadCount);
 	const markAll = canMarkAllRead(unreadCount);
 	if (!summary && !markAll && !markAllFailed && !stale) return null;
@@ -238,7 +231,7 @@ function InboxHeader({
 					)}
 					{markAll ? (
 						<Button
-							label={NOTIFICATIONS_MARK_ALL_LABEL}
+							label={NOTIFICATIONS_COPY.markAll}
 							variant="outline"
 							size="sm"
 							busy={markAllBusy}
@@ -249,10 +242,7 @@ function InboxHeader({
 			) : null}
 
 			{markAllFailed ? (
-				<Notice
-					tone="destructive"
-					message={NOTIFICATIONS_MARK_ALL_READ_FAILED}
-				/>
+				<Notice tone="destructive" message={NOTIFICATIONS_COPY.markAllFailed} />
 			) : null}
 
 			{/**
@@ -261,8 +251,8 @@ function InboxHeader({
 			 */}
 			{stale ? (
 				<Notice
-					message={NOTIFICATIONS_STALE}
-					actionLabel={NOTIFICATIONS_RETRY_LABEL}
+					message={NOTIFICATIONS_COPY.stale}
+					actionLabel={NOTIFICATIONS_COPY.retry}
 					onAction={onRetry}
 					busy={retrying}
 				/>
@@ -290,6 +280,7 @@ function InboxPlaceholder({
 	onRetrySession: () => void;
 	onSignIn: () => void;
 }) {
+	useTranslation("notifications");
 	if (state.kind === "booting")
 		return (
 			<View style={inbox.center}>
@@ -303,9 +294,9 @@ function InboxPlaceholder({
 			<View style={inbox.center}>
 				<EmptyState
 					icon="notifications"
-					title={NOTIFICATIONS_GUEST.title}
-					description={NOTIFICATIONS_GUEST.description}
-					actionLabel={NOTIFICATIONS_GUEST.action}
+					title={NOTIFICATIONS_COPY.guest.title}
+					description={NOTIFICATIONS_COPY.guest.description}
+					actionLabel={NOTIFICATIONS_COPY.guest.action}
 					onAction={onSignIn}
 				/>
 			</View>
@@ -316,8 +307,8 @@ function InboxPlaceholder({
 		return (
 			<View style={inbox.center}>
 				<Notice
-					message={NOTIFICATIONS_UNAVAILABLE}
-					actionLabel={NOTIFICATIONS_RETRY_LABEL}
+					message={NOTIFICATIONS_COPY.unavailable}
+					actionLabel={NOTIFICATIONS_COPY.retry}
 					onAction={onRetrySession}
 				/>
 			</View>
@@ -337,8 +328,8 @@ function InboxPlaceholder({
 		return (
 			<View style={inbox.center}>
 				<Notice
-					message={NOTIFICATIONS_OFFLINE}
-					actionLabel={NOTIFICATIONS_RETRY_LABEL}
+					message={NOTIFICATIONS_COPY.offline}
+					actionLabel={NOTIFICATIONS_COPY.retry}
 					onAction={onRetry}
 					busy={retrying}
 				/>
@@ -350,8 +341,8 @@ function InboxPlaceholder({
 			<View style={inbox.center}>
 				<Notice
 					tone="destructive"
-					message={NOTIFICATIONS_ERROR}
-					actionLabel={NOTIFICATIONS_RETRY_LABEL}
+					message={NOTIFICATIONS_COPY.error}
+					actionLabel={NOTIFICATIONS_COPY.retry}
 					onAction={onRetry}
 					busy={retrying}
 				/>
@@ -370,14 +361,14 @@ function InboxPlaceholder({
 		<View style={inbox.center}>
 			{panel.retryable ? (
 				<Notice
-					message={NOTIFICATIONS_STALE}
-					actionLabel={NOTIFICATIONS_RETRY_LABEL}
+					message={NOTIFICATIONS_COPY.stale}
+					actionLabel={NOTIFICATIONS_COPY.retry}
 					onAction={onRetry}
 					busy={retrying}
 				/>
 			) : null}
 			<Text variant="label" tone="muted-foreground" style={inbox.empty}>
-				{NOTIFICATIONS_EMPTY}
+				{NOTIFICATIONS_COPY.empty}
 			</Text>
 		</View>
 	);

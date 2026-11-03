@@ -11,15 +11,29 @@ import {
 	DELETED_COMMENT_PLACEHOLDER,
 	DELETED_CREATOR_LABEL,
 	sortTriggerLabel as domainSortTriggerLabel,
+	updateNoteTitle as domainUpdateNoteTitle,
 	GALLERY_FILTER_AXIS_LABEL,
+	notificationAttention,
 	ORIENTATION_LABEL,
 	STORY_PERIOD_LABEL,
 	STORY_RATING_LABEL,
 	STORY_SORT_LABEL,
 	STORY_START_LABEL,
 	STORY_VISIBILITY_LABEL,
+	UPDATE_NOTE_SECTION_LABEL,
+	UPDATE_NOTE_SECTION_ORDER,
+	UPDATE_UNSEEN_LABEL_SUFFIX,
 } from "@rowcat/domain";
 import { afterEach, describe, expect, it } from "vitest";
+import {
+	notificationBellName,
+	unseenUpdateSuffix,
+} from "../../features/notifications/notification-copy.ts";
+import {
+	updateNoteSectionLabel,
+	updateNoteTitle,
+	updateUnseenSuffix,
+} from "../../features/updates/update-note-copy.ts";
 import { setActiveLocale } from "./instance.ts";
 import { en } from "./messages/en/index.ts";
 import {
@@ -117,5 +131,45 @@ describe("the named decisions match the domain's in English", () => {
 		setActiveLocale("ko");
 		expect(visibilityBadgeLabel("public")).toBeNull();
 		expect(visibilityBadgeLabel("unlisted")).toBe("링크 공개");
+	});
+});
+
+/**
+ * The inbox and the update history draw the domain's notification and release-note words in the
+ * chosen language. The domain still decides the badge, its cap and the section order; these hold the
+ * English words to the domain's own values.
+ */
+describe("notification and update-note words are the domain's own", () => {
+	afterEach(() => setActiveLocale("en"));
+
+	it("the bell's name, every badge and the unseen suffix", () => {
+		for (const unread of [null, 0, 1, 42, 99, 100, 1247])
+			for (const unseenUpdate of [false, true])
+				expect(
+					notificationBellName(
+						notificationAttention({ unread, unseenUpdate }),
+						unseenUpdate,
+					),
+				).toBe(notificationAttention({ unread, unseenUpdate }).label);
+	});
+
+	it("the tab and the history row say the same suffix", () => {
+		expect(unseenUpdateSuffix()).toBe(UPDATE_UNSEEN_LABEL_SUFFIX);
+		expect(updateUnseenSuffix()).toBe(UPDATE_UNSEEN_LABEL_SUFFIX);
+	});
+
+	it("section labels", () => {
+		for (const id of UPDATE_NOTE_SECTION_ORDER)
+			expect(updateNoteSectionLabel(id)).toBe(UPDATE_NOTE_SECTION_LABEL[id]);
+	});
+
+	it("the title is the domain's, from the same date", () => {
+		expect(updateNoteTitle({ id: "2026-08-30" })).toBe(
+			domainUpdateNoteTitle("2026-08-30"),
+		);
+		setActiveLocale("ko");
+		expect(updateNoteTitle({ id: "2026-08-30" })).toBe(
+			"2026.08.30 업데이트 안내",
+		);
 	});
 });

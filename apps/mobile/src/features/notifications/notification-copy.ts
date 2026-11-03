@@ -3,7 +3,9 @@ import {
 	isUnread,
 	type Notification,
 	type NotificationActor,
+	type NotificationAttention,
 } from "@rowcat/domain";
+import { deferredGroup, translator } from "../../lib/i18n/instance.ts";
 
 /**
  * The copy for one notification row, built here rather than on the server.
@@ -14,7 +16,8 @@ import {
  * sentences under its own name. Sameness is intended (one event reads the same in both apps). If
  * they must diverge, each file diverges separately.
  *
- * Pure functions, so they can be checked without rendering. Copy scattered through components would
+ * The sentences live in the dictionaries (`notifications`, English and Korean); this module names
+ * them. Pure functions, so they can be checked without rendering. Copy scattered through components would
  * make questions like "what does the notice for a comment by a departed member say?" require a
  * simulator.
  *
@@ -27,9 +30,17 @@ import {
  * this file cannot draw them by mistake. The absence is recorded as intentional.
  */
 
-export const NOTIFICATIONS_TITLE = "Notifications";
-
-export const NOTIFICATIONS_EMPTY = "No notifications yet.";
+/**
+ * The screen's fixed copy: title, empty state, offline · failure · stale bands, retry, `Show more`,
+ * `Mark all read` and its failure, the guest invitation and the session-check failure.
+ *
+ * `Mark all read` is not optimistic (`@rowcat/query`): on failure the badge and list are unchanged, so
+ * the failure gets its own sentence, kept inline next to the button (this app has no toast system).
+ * Marking one row read is different — there navigation is the action and a silent rollback is enough.
+ * A guest gets the reason before the login offer (the same judgment as `/chats`), and the session
+ * failure is **not a sign-out**: the stored session is intact; we simply could not ask the server.
+ */
+export const NOTIFICATIONS_COPY = deferredGroup("notifications", "screen");
 
 /**
  * The two tabs on this screen. The first is not named `Notifications`: the bar already says that, and
@@ -42,74 +53,37 @@ export const NOTIFICATIONS_EMPTY = "No notifications yet.";
  */
 export type NotificationsTab = "general" | "updates";
 
-export const NOTIFICATIONS_TABS_LABEL = "Notification types";
+export const NOTIFICATIONS_TAB_LABEL: Record<NotificationsTab, string> =
+	deferredGroup("notifications", "tab");
 
-export const NOTIFICATIONS_TAB_LABEL: Record<NotificationsTab, string> = {
-	general: "General",
-	updates: "Updates",
-};
+const t = () => translator("notifications");
 
 /**
- * The fact that a new update exists, as part of the tab name.
- *
- * The web adds an invisible text node to the tab; native has no such mechanism. A dot alone would
- * convey the state only through color and shape, and assistive tech would receive nothing.
+ * The fact that a new update exists, as part of the tab's and the bell's name. The web adds an
+ * invisible text node; native has no such mechanism, and a dot alone conveys the state only through
+ * color and shape. The English is the domain's `UPDATE_UNSEEN_LABEL_SUFFIX`, held equal by a test.
  */
-export const NOTIFICATIONS_TAB_UNSEEN_SUFFIX = ", new update available";
-
-/** The two states that draw no list. Pause and failure are different facts. */
-export const NOTIFICATIONS_OFFLINE =
-	"Not connected right now. Notifications load again once connected.";
-export const NOTIFICATIONS_ERROR = "Couldn't load notifications.";
+export const unseenUpdateSuffix = (): string => t()("unseenUpdate");
 
 /**
- * Values are on screen but the last refresh failed, whether or not rows exist.
- *
- * Same band and sentence as the web. It says "state", not "notifications": an inbox the server
- * reported as empty can also show this band, and "showing previously received notifications" would
- * not make sense on a screen with none to show.
+ * The bell's accessible name in the drawn language. `notificationAttention` still decides everything
+ * (the badge, its `99+` cap, the dot, that an update hidden behind a count still appears in the name);
+ * only the words around its badge are assembled here — the web bell's `bellLabel` does the same. The
+ * English equals the domain's `notificationBellLabel`, held equal by a test.
  */
-export const NOTIFICATIONS_STALE =
-	"The last refresh failed, so the previous state is shown.";
-
-export const NOTIFICATIONS_RETRY_LABEL = "Try again";
-export const NOTIFICATIONS_MORE_LABEL = "Show more";
-export const NOTIFICATIONS_MORE_BUSY_LABEL = "Loading…";
-export const NOTIFICATIONS_MARK_ALL_LABEL = "Mark all read";
-
-/**
- * `Mark all read` failed.
- *
- * This operation is not optimistic (`@rowcat/query`): on failure the badge and list are unchanged,
- * so the screen cannot distinguish "the button did nothing" from "the button failed". The failure
- * therefore gets its own sentence. This app has no toast system and this one notice does not
- * justify building one: the failure stays as inline guidance next to the button, and retry is the
- * button that is still there.
- *
- * **This differs from the failure of marking one row read.** There, the user's requested action is
- * navigation and marking read is a side effect, so a silent rollback is enough. Speaking about the
- * notification after the screen has already moved would attach a sentence unrelated to what they
- * just did.
- */
-export const NOTIFICATIONS_MARK_ALL_READ_FAILED =
-	"Couldn't mark all notifications as read. Please try again in a moment.";
+export function notificationBellName(
+	attention: Pick<NotificationAttention, "badge">,
+	unseenUpdate: boolean,
+): string {
+	const base =
+		attention.badge === null
+			? t()("bell.label")
+			: t()("bell.unread", { badge: attention.badge });
+	return unseenUpdate ? `${base}${unseenUpdateSuffix()}` : base;
+}
 
 /**
- * Guest: explain why the inbox cannot be viewed before offering login, rather than bouncing to
- * login (the same judgment as `/chats`).
- */
-export const NOTIFICATIONS_GUEST = {
-	title: "Sign in to see notifications",
-	description: "Follows, comments and account notices arrive in this inbox.",
-	action: "Sign in",
-} as const;
-
-/** **Not a sign-out.** The stored session is intact; we simply could not ask the server. */
-export const NOTIFICATIONS_UNAVAILABLE =
-	"Couldn't check your session. Please try again in a moment.";
-
-/**
- * Store platform labels, as a single table.
+ * Store platform labels, as a single table. Product names, so not dictionary entries.
  *
  * `Record<AppUpdatePlatform, string>`, so adding a platform to the shared vocabulary breaks
  * compilation here. A ternary would silently fold a third platform into one of the two.
@@ -119,9 +93,6 @@ const APP_PLATFORM_LABEL: Record<AppUpdatePlatform, string> = {
 	android: "Android",
 };
 
-/** Placeholder for a departed actor. The name is not kept as a snapshot, so it is filled in here. */
-const DELETED_ACTOR = "Deleted user";
-
 /**
  * Display name for the actor.
  *
@@ -130,8 +101,9 @@ const DELETED_ACTOR = "Deleted user";
  * screen unable to express the difference. The web's same function has the same rule.
  */
 export function notificationActorName(actor: NotificationActor | null): string {
-	if (!actor) return DELETED_ACTOR;
-	return actor.displayName || "No name";
+	/** A departed actor's name is not kept as a snapshot, so it is filled in here. */
+	if (!actor) return t()("deletedActor");
+	return actor.displayName || t()("unnamed");
 }
 
 /**
@@ -144,7 +116,9 @@ export function notificationActorName(actor: NotificationActor | null): string {
 export function notificationMessage(notification: Notification): string {
 	switch (notification.kind) {
 		case "follow":
-			return `${notificationActorName(notification.actor)} followed you.`;
+			return t()("message.follow", {
+				who: notificationActorName(notification.actor),
+			});
 		/**
 		 * **The subject differs from `story_comment`**: "on your comment", not "on your work". The
 		 * recipient is the author of that comment, not the work owner. Someone replying to your comment
@@ -153,14 +127,14 @@ export function notificationMessage(notification: Notification): string {
 		case "comment_reply": {
 			const who = notificationActorName(notification.actor);
 			return notification.story
-				? `${who} replied to your comment on "${notification.story.title}".`
-				: `${who} replied to your comment.`;
+				? t()("message.commentReply", { who, title: notification.story.title })
+				: t()("message.commentReplyUntitled", { who });
 		}
 		case "story_comment": {
 			const who = notificationActorName(notification.actor);
 			return notification.story
-				? `${who} commented on "${notification.story.title}".`
-				: `${who} commented on your story.`;
+				? t()("message.storyComment", { who, title: notification.story.title })
+				: t()("message.storyCommentUntitled", { who });
 		}
 		/**
 		 * **The title does not enter this sentence** — the second line draws it (`notificationDetail`).
@@ -172,25 +146,27 @@ export function notificationMessage(notification: Notification): string {
 		 * reached the same judgment, and the two apps' sentences must match.
 		 */
 		case "creator_story_published":
-			return `${notificationActorName(notification.actor)} published a new story.`;
+			return t()("message.published", {
+				who: notificationActorName(notification.actor),
+			});
 		/**
 		 * **Does not state an outcome.** `Approve`, `dismissed` and `Action taken` are all unusable here: the internal
 		 * disposition is not carried in the contract, and not sending it is intentional. One fact
 		 * remains: the review is complete.
 		 */
 		case "report_reviewed":
-			return "We reviewed your report.";
+			return t()("message.reportReviewed");
 		case "moderation_action":
-			return "A moderation action was applied to your account.";
+			return t()("message.moderationAction");
 		case "moderation_reversed":
-			return "A moderation action on your account was lifted.";
+			return t()("message.moderationReversed");
 		/**
 		 * **States end of support, not a release.** It does not say "a new version is out": the event
 		 * that creates this row is a raised floor, and a floor means *versions below it are no longer
 		 * accepted*.
 		 */
 		case "app_update":
-			return "An app update is required.";
+			return t()("message.appUpdate");
 		case "appeal_resolved":
 			/**
 			 * The outcome goes in the sentence, but **the reviewer's note does not**. A row whose reference
@@ -198,11 +174,11 @@ export function notificationMessage(notification: Notification): string {
 			 */
 			switch (notification.appeal?.status) {
 				case "accepted":
-					return "Your appeal was accepted.";
+					return t()("message.appealAccepted");
 				case "rejected":
-					return "Your appeal was not accepted.";
+					return t()("message.appealRejected");
 				default:
-					return "Your appeal has a result.";
+					return t()("message.appealResolved");
 			}
 	}
 }
@@ -222,7 +198,10 @@ export function notificationDetail(notification: Notification): string | null {
 	if (notification.kind === "creator_story_published")
 		return notification.story ? `"${notification.story.title}"` : null;
 	if (notification.kind === "app_update")
-		return `${APP_PLATFORM_LABEL[notification.appPlatform]} app versions below ${notification.appVersion} are no longer supported.`;
+		return t()("appUpdateDetail", {
+			platform: APP_PLATFORM_LABEL[notification.appPlatform],
+			version: notification.appVersion,
+		});
 	if (
 		notification.kind !== "moderation_action" &&
 		notification.kind !== "moderation_reversed"
@@ -262,7 +241,7 @@ export function notificationActorInitial(
  */
 export function notificationUnreadSummary(count: number | null): string | null {
 	if (count === null || count <= 0) return null;
-	return `${count.toLocaleString("en-US")} unread`;
+	return t()("unreadSummary", { total: count.toLocaleString("en-US") });
 }
 
 /**
@@ -284,5 +263,5 @@ export const canMarkAllRead = (unread: number | null): boolean =>
 export function notificationRowLabel(notification: Notification): string {
 	const message = notificationMessage(notification);
 	/** The predicate is one domain function (`isUnread`); do not write `readAt === null` here again. */
-	return isUnread(notification) ? `Unread, ${message}` : message;
+	return isUnread(notification) ? t()("unreadRow", { message }) : message;
 }

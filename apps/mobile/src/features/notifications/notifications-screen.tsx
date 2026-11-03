@@ -3,13 +3,14 @@ import { AppBar, Screen } from "@rowcat/ui-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useMobileIdentity } from "../../lib/identity.tsx";
 import { AppSidebarTrigger } from "../shell/app-sidebar.tsx";
 import { ShellUtilities } from "../shell/shell-utilities.tsx";
 import { UpdateNotesList } from "../updates/update-notes-list.tsx";
 import { GeneralNotifications } from "./general-notifications.tsx";
 import {
-	NOTIFICATIONS_TITLE,
+	NOTIFICATIONS_COPY,
 	type NotificationsTab,
 } from "./notification-copy.ts";
 import { NotificationsTabs } from "./notifications-tabs.tsx";
@@ -65,6 +66,7 @@ import { NotificationsTabs } from "./notifications-tabs.tsx";
  * call the server.
  */
 export function NotificationsScreen() {
+	useTranslation("notifications");
 	const router = useRouter();
 	const queryClient = useQueryClient();
 	const { session } = useMobileIdentity();
@@ -93,7 +95,7 @@ export function NotificationsScreen() {
 			 */}
 			<AppBar
 				navigation={<AppSidebarTrigger />}
-				title={NOTIFICATIONS_TITLE}
+				title={NOTIFICATIONS_COPY.title}
 				onBack={() => router.back()}
 				actions={<ShellUtilities />}
 			/>

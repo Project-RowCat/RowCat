@@ -1,7 +1,13 @@
 import { radiusScale, space } from "@rowcat/design";
 import { type UpdateNote, updateNotePlainText } from "@rowcat/domain";
 import { Icon, Text, touchTarget, useTheme } from "@rowcat/ui-native";
+import { useTranslation } from "react-i18next";
 import { Pressable, StyleSheet, View } from "react-native";
+import {
+	updateNoteOpenHint,
+	updateNoteTitle,
+	updateUnseenSuffix,
+} from "./update-note-copy.ts";
 import { UpdateNoteText } from "./update-note-text.tsx";
 
 /** Diameter of one dot. It shows no count, so it is an indicator, not a badge. */
@@ -40,15 +46,16 @@ export function UpdateNoteRow({
 	unseen: boolean;
 	onOpen: () => void;
 }) {
+	useTranslation("updates");
 	const { colors } = useTheme();
 	const summary = note.intro ? `, ${updateNotePlainText(note.intro)}` : "";
-	const state = unseen ? ", new update available" : "";
+	const state = unseen ? updateUnseenSuffix() : "";
 
 	return (
 		<Pressable
 			accessibilityRole="button"
-			accessibilityLabel={`${note.title}${summary}${state}`}
-			accessibilityHint="Opens this release's update note"
+			accessibilityLabel={`${updateNoteTitle(note)}${summary}${state}`}
+			accessibilityHint={updateNoteOpenHint()}
 			onPress={onOpen}
 			style={({ pressed }) => [
 				row.root,
@@ -69,7 +76,7 @@ export function UpdateNoteRow({
 			/>
 			<View style={row.body}>
 				<Text variant="body" weight="medium" numberOfLines={1}>
-					{note.title}
+					{updateNoteTitle(note)}
 				</Text>
 				{note.intro ? (
 					<Text variant="label" tone="muted-foreground" leading="reading">

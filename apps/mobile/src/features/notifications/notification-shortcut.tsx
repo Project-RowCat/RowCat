@@ -4,12 +4,14 @@ import { notificationUnreadCountQueryOptions } from "@rowcat/query";
 import { controlHeight, Icon, targetSlop, useTheme } from "@rowcat/ui-native";
 import { useQuery } from "@tanstack/react-query";
 import { usePathname, useRouter } from "expo-router";
+import { useTranslation } from "react-i18next";
 import { Pressable, StyleSheet, View } from "react-native";
 import { getRowCatClient } from "../../lib/api.ts";
 import { useMobileIdentity } from "../../lib/identity.tsx";
 import { AnimatedCount } from "../../lib/motion/animated-count.tsx";
 import { mobileShellRouteFor } from "../shell/shell-route.ts";
 import { useUpdateNotesUnseen } from "../updates/update-notes-unseen-dot.tsx";
+import { notificationBellName } from "./notification-copy.ts";
 
 /**
  * The notification bell: the one global utility in the shell. Same position and rules as the web
@@ -88,6 +90,7 @@ export function NotificationShortcut() {
 }
 
 function NotificationBell() {
+	useTranslation("notifications");
 	const router = useRouter();
 	const pathname = usePathname();
 	const { colors } = useTheme();
@@ -125,7 +128,7 @@ function NotificationBell() {
 			 * unknown counts are not spoken, the `99+` cap is decided there, and an update note hidden
 			 * behind a count still appears in the name.
 			 */
-			accessibilityLabel={attention.label}
+			accessibilityLabel={notificationBellName(attention, unseenUpdate)}
 			accessibilityState={{ selected: active }}
 			/**
 			 * `navigate`, not `push`. A global utility's job is to return to its destination, and `push`

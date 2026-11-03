@@ -1,24 +1,9 @@
 import { space } from "@rowcat/design";
 import { Button, Notice, Text } from "@rowcat/ui-native";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 import { SettingsField, SettingsSection } from "../settings/settings-parts.tsx";
-import {
-	PUSH_BLOCKED_DESCRIPTION,
-	PUSH_DISABLE_LABEL,
-	PUSH_DISABLE_NOTE,
-	PUSH_DISABLING_LABEL,
-	PUSH_ENABLE_LABEL,
-	PUSH_ENABLED_DESCRIPTION,
-	PUSH_ENABLING_LABEL,
-	PUSH_FAILURE_MESSAGE,
-	PUSH_FIELD_LABEL,
-	PUSH_INCOMPLETE_DESCRIPTION,
-	PUSH_OFFER_DESCRIPTION,
-	PUSH_OPEN_SETTINGS_LABEL,
-	PUSH_RETRY_LABEL,
-	PUSH_SECTION_DESCRIPTION,
-	PUSH_SECTION_TITLE,
-} from "./push-copy.ts";
+import { PUSH_COPY } from "./push-copy.ts";
 import { useMobilePush } from "./push-provider.tsx";
 
 /**
@@ -49,15 +34,16 @@ import { useMobilePush } from "./push-provider.tsx";
  * read as "coming soon" for what is only an unknown state.
  */
 export function PushNotificationSection() {
+	useTranslation("notifications");
 	const { state, enable, disable, retry, openSystemSettings } = useMobilePush();
 
 	return (
 		<SettingsSection
-			title={PUSH_SECTION_TITLE}
-			description={PUSH_SECTION_DESCRIPTION}
+			title={PUSH_COPY.sectionTitle}
+			description={PUSH_COPY.sectionDescription}
 		>
 			<SettingsField
-				label={PUSH_FIELD_LABEL}
+				label={PUSH_COPY.fieldLabel}
 				description={describe(state.kind)}
 			>
 				<View style={parts.body}>
@@ -66,7 +52,7 @@ export function PushNotificationSection() {
 					 */}
 					{state.kind === "offer" || state.kind === "retry-permission" ? (
 						<Button
-							label={state.busy ? PUSH_ENABLING_LABEL : PUSH_ENABLE_LABEL}
+							label={state.busy ? PUSH_COPY.enabling : PUSH_COPY.enable}
 							fullWidth
 							busy={state.busy}
 							onPress={() => void enable()}
@@ -75,7 +61,7 @@ export function PushNotificationSection() {
 
 					{state.kind === "blocked" ? (
 						<Button
-							label={PUSH_OPEN_SETTINGS_LABEL}
+							label={PUSH_COPY.openSettings}
 							variant="outline"
 							fullWidth
 							onPress={() => void openSystemSettings()}
@@ -89,8 +75,8 @@ export function PushNotificationSection() {
 					{state.kind === "incomplete" ? (
 						<Notice
 							tone="destructive"
-							message={PUSH_FAILURE_MESSAGE[state.failure]}
-							actionLabel={PUSH_RETRY_LABEL}
+							message={PUSH_COPY.failure[state.failure]}
+							actionLabel={PUSH_COPY.retry}
 							busy={state.busy}
 							onAction={() => void retry()}
 						/>
@@ -99,14 +85,14 @@ export function PushNotificationSection() {
 					{state.kind === "enabled" ? (
 						<>
 							<Button
-								label={state.busy ? PUSH_DISABLING_LABEL : PUSH_DISABLE_LABEL}
+								label={state.busy ? PUSH_COPY.disabling : PUSH_COPY.disable}
 								variant="outline"
 								fullWidth
 								busy={state.busy}
 								onPress={() => void disable()}
 							/>
 							<Text variant="label" tone="muted-foreground">
-								{PUSH_DISABLE_NOTE}
+								{PUSH_COPY.disableNote}
 							</Text>
 						</>
 					) : null}
@@ -121,13 +107,13 @@ function describe(kind: string): string | undefined {
 	switch (kind) {
 		case "offer":
 		case "retry-permission":
-			return PUSH_OFFER_DESCRIPTION;
+			return PUSH_COPY.offer;
 		case "blocked":
-			return PUSH_BLOCKED_DESCRIPTION;
+			return PUSH_COPY.blocked;
 		case "enabled":
-			return PUSH_ENABLED_DESCRIPTION;
+			return PUSH_COPY.enabled;
 		case "incomplete":
-			return PUSH_INCOMPLETE_DESCRIPTION;
+			return PUSH_COPY.incomplete;
 		default:
 			return undefined;
 	}

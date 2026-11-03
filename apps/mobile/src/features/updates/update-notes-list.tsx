@@ -2,7 +2,9 @@ import { space } from "@rowcat/design";
 import type { UpdateNote } from "@rowcat/domain";
 import { screenPadding, Text } from "@rowcat/ui-native";
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { FlatList, StyleSheet } from "react-native";
+import { updateNotesEmpty } from "./update-note-copy.ts";
 import { UpdateNoteDialog } from "./update-note-dialog.tsx";
 import { UpdateNoteRow } from "./update-note-row.tsx";
 import { useUpdateNotes } from "./update-notes-provider.tsx";
@@ -38,6 +40,7 @@ import { useUpdateNotes } from "./update-notes-provider.tsx";
  * `onEndReached`, search, filter or archive in this slice.
  */
 export function UpdateNotesList() {
+	useTranslation("updates");
 	const { notes, unseenId, markSeen } = useUpdateNotes();
 
 	/**
@@ -83,7 +86,7 @@ export function UpdateNotesList() {
 				 */
 				ListEmptyComponent={
 					<Text variant="label" tone="muted-foreground" style={list.empty}>
-						No update notes yet.
+						{updateNotesEmpty()}
 					</Text>
 				}
 			/>

@@ -5,6 +5,7 @@ import {
 	Text,
 	useTheme,
 } from "@rowcat/ui-native";
+import { useTranslation } from "react-i18next";
 import { Pressable, StyleSheet, View } from "react-native";
 import {
 	MotionIndicatorGroup,
@@ -15,10 +16,10 @@ import {
 	useUpdateNotesUnseen,
 } from "../updates/update-notes-unseen-dot.tsx";
 import {
+	NOTIFICATIONS_COPY,
 	NOTIFICATIONS_TAB_LABEL,
-	NOTIFICATIONS_TAB_UNSEEN_SUFFIX,
-	NOTIFICATIONS_TABS_LABEL,
 	type NotificationsTab,
+	unseenUpdateSuffix,
 } from "./notification-copy.ts";
 
 const TABS: readonly NotificationsTab[] = ["general", "updates"];
@@ -60,13 +61,14 @@ export function NotificationsTabs({
 	tab: NotificationsTab;
 	onSelect: (next: NotificationsTab) => void;
 }) {
+	useTranslation("notifications");
 	const { colors } = useTheme();
 	const unseenUpdate = useUpdateNotesUnseen();
 
 	return (
 		<View
 			accessibilityRole="tablist"
-			accessibilityLabel={NOTIFICATIONS_TABS_LABEL}
+			accessibilityLabel={NOTIFICATIONS_COPY.tabsLabel}
 			style={tabs.root}
 		>
 			{/**
@@ -91,7 +93,7 @@ export function NotificationsTabs({
 								accessibilityState={{ selected: active }}
 								accessibilityLabel={
 									updates && unseenUpdate
-										? `${label}${NOTIFICATIONS_TAB_UNSEEN_SUFFIX}`
+										? `${label}${unseenUpdateSuffix()}`
 										: label
 								}
 								/**

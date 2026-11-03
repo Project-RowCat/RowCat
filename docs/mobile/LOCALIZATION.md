@@ -113,7 +113,13 @@ pnpm --filter @rowcat/mobile exec vitest run src/lib/i18n
 
 화면 단위로 옮긴다 — 한 번에 하나의 기능 폴더, 그 폴더의 문구 모듈과 정적 스캔을 함께. 남은 폴더:
 대화(`chat`, `chat-library` — 대화 설정의 페르소나 칸은 옮겼다)·만들기(`create`)·작품 테스트
-(`playtest`)·런타임 재생(`runtime-player`)·계정(`account`)·설정의 나머지(AI·페르소나·테마·푸시)·알림·
+(`playtest`)·런타임 재생(`runtime-player`)·계정(`account`)·설정의 나머지(AI·페르소나·테마)·
 진입 게이트(`onboarding`)·성인 확인·동기화·`lib`의 실패 표들. **날짜와 수의 형식**
 (`lib/format.ts`)은 아직 한 형식이다 — 그 파일을 옮길 때 로캘을 인자로 받게 한다(시간대는 제품 시간대
 그대로다).
+
+알림함·푸시 구획·업데이트 안내는 옮겼다. 업데이트 안내는 **자기 이름 공간**(`updates`)을 갖는다 — 그
+슬라이스는 알림함을 사전 이름으로도 모른다(`updates-boundaries.test.ts`). 그래서 "새 업데이트 있음"은 두
+자리에 있다(`notifications.unseenUpdate` — 탭과 종 · `updates.unseen` — 기록의 줄). 둘 다 도메인의
+`UPDATE_UNSEEN_LABEL_SUFFIX`와 같은지 `vocab.test.ts`가 본다. 종의 이름은 `notificationAttention`이 정한
+배지에 낱말만 붙인다(웹 종의 `bellLabel`과 같은 판단).
