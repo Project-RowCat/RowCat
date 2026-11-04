@@ -5,7 +5,7 @@ import {
 	type OpenAiCompatibleConnection,
 	readOpenAiCompatibleConnection,
 } from "@rowcat/chat";
-import { type LocalScope, localScopeKey } from "../local-scope.ts";
+import { type ScopeRef, scopeKeyOf } from "../local-scope.ts";
 
 /**
  * The **physical shape** of a stored provider credential, and the read boundary for it.
@@ -185,12 +185,12 @@ const ENTRY_PREFIX = "rowcat.provider.";
  * of that is the rule that no deletion sweeps by prefix.
  */
 export const providerCredentialEntry = (
-	scope: LocalScope,
+	scope: ScopeRef,
 	provider: ByoProvider,
-): string => `${ENTRY_PREFIX}${localScopeKey(scope)}.${provider}`;
+): string => `${ENTRY_PREFIX}${scopeKeyOf(scope)}.${provider}`;
 
 /** Every provider entry of this member. The side that deletes must be able to enumerate them. */
-export const providerCredentialEntries = (scope: LocalScope): string[] =>
+export const providerCredentialEntries = (scope: ScopeRef): string[] =>
 	MOBILE_BYO_PROVIDERS.map((provider) =>
 		providerCredentialEntry(scope, provider),
 	);

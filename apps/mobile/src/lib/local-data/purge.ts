@@ -1,5 +1,5 @@
 import { providerCredentialEntries } from "../local-provider/record.ts";
-import type { LocalScope } from "../local-scope.ts";
+import type { ScopeRef } from "../local-scope.ts";
 import type { SecureKeyStorage } from "../local-sync/device-key.ts";
 import { deviceKeyEntry } from "../local-sync/device-key.ts";
 import { viewerDatabaseName, viewerDraftCoverDirName } from "./database.ts";
@@ -34,7 +34,7 @@ export interface LocalPurgeTargets {
 }
 
 export async function deleteLocalDataForViewer(
-	scope: LocalScope,
+	scope: ScopeRef,
 	targets: LocalPurgeTargets,
 ): Promise<void> {
 	/**

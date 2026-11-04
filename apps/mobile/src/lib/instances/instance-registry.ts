@@ -47,15 +47,25 @@ export interface InstanceRegistry {
 	add(origin: string): Promise<RegisteredInstance>;
 	remove(origin: string): Promise<void>;
 	activate(instance: LocalInstance): Promise<void>;
+	/**
+	 * Notes that a member's local scope was opened on this instance — **by its key, never the member id**
+	 * (`local-scope.ts`). Removing the instance later deletes exactly these scopes' files; without the
+	 * record, a removed server's conversations would stay on the device under names nothing reopens.
+	 */
+	recordScope(origin: string, scopeKey: string): Promise<void>;
+	/** The scope keys recorded for an instance, for its removal. */
+	scopesOf(origin: string): readonly string[];
 }
 
 interface Stored {
 	version: 1;
 	instances: RegisteredInstance[];
 	active: string | null;
+	/** origin → scope keys opened on it. Absent in values written before scopes were recorded. */
+	scopes: Record<string, string[]>;
 }
 
-const EMPTY: Stored = { version: 1, instances: [], active: null };
+const EMPTY: Stored = { version: 1, instances: [], active: null, scopes: {} };
 
 function parse(raw: string | null): Stored {
 	if (!raw) return EMPTY;
@@ -71,7 +81,16 @@ function parse(raw: string | null): Stored {
 			instances.some((entry) => entry.origin === value.active)
 				? value.active
 				: null;
-		return { version: 1, instances, active };
+		const scopes: Record<string, string[]> = {};
+		const rawScopes =
+			value.scopes && typeof value.scopes === "object" ? value.scopes : {};
+		for (const { origin } of instances) {
+			const keys = (rawScopes as Record<string, unknown>)[origin];
+			scopes[origin] = Array.isArray(keys)
+				? keys.filter((key): key is string => typeof key === "string")
+				: [];
+		}
+		return { version: 1, instances, active, scopes };
 	} catch {
 		return EMPTY;
 	}
@@ -150,6 +169,9 @@ export function createInstanceRegistry(input: {
 				...stored,
 				instances: stored.instances.filter((entry) => entry.origin !== origin),
 				active: stored.active === origin ? null : stored.active,
+				scopes: Object.fromEntries(
+					Object.entries(stored.scopes).filter(([key]) => key !== origin),
+				),
 			});
 		},
 		async activate(instance) {
@@ -166,5 +188,17 @@ export function createInstanceRegistry(input: {
 				);
 			await save({ ...stored, active: instance.origin });
 		},
+		async recordScope(origin, scopeKey) {
+			if (!input.enabled) return;
+			const stored = read();
+			if (!stored.instances.some((entry) => entry.origin === origin)) return;
+			const known = stored.scopes[origin] ?? [];
+			if (known.includes(scopeKey)) return;
+			await save({
+				...stored,
+				scopes: { ...stored.scopes, [origin]: [...known, scopeKey] },
+			});
+		},
+		scopesOf: (origin) => read().scopes[origin] ?? [],
 	};
 }

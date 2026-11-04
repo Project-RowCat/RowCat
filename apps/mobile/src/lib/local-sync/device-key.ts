@@ -1,6 +1,6 @@
 import type { DeviceKeyStore } from "@rowcat/sync";
 import { AEAD, b64ToBytes, bytesToB64 } from "@rowcat/sync";
-import { type LocalScope, localScopeKey } from "../local-scope.ts";
+import { type ScopeRef, scopeKeyOf } from "../local-scope.ts";
 
 /**
  * Mobile implementation of "trust this device": the DEK lives only in Keychain/Keystore.
@@ -45,12 +45,12 @@ const SECURE_KEY_PREFIX = "rowcat.sync.dek.";
  * names persist into backups and diagnostic tools, so there is no reason to write the member
  * identifier there in plain text.
  */
-export const deviceKeyEntry = (scope: LocalScope): string =>
-	`${SECURE_KEY_PREFIX}${localScopeKey(scope)}`;
+export const deviceKeyEntry = (scope: ScopeRef): string =>
+	`${SECURE_KEY_PREFIX}${scopeKeyOf(scope)}`;
 
 export function createMobileDeviceKeyStore(
 	storage: SecureKeyStorage,
-	scope: LocalScope,
+	scope: ScopeRef,
 ): DeviceKeyStore {
 	const entry = deviceKeyEntry(scope);
 	return {

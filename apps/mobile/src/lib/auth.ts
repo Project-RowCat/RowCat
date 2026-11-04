@@ -5,7 +5,11 @@ import { twoFactorClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 import * as SecureStore from "expo-secure-store";
 import type { ActiveInstance } from "./instances/active-instance.ts";
-import { authStoragePrefixFor } from "./instances/auth-storage.ts";
+import {
+	authSessionEntryNames,
+	authStoragePrefixFor,
+	chunkCountOf,
+} from "./instances/auth-storage.ts";
 import { activeInstance } from "./instances/device-registry.ts";
 
 /**
@@ -147,3 +151,34 @@ export const readAuthCookieFor = async (
 /** The active instance's cookie. Transports bound to one origin use `readAuthCookieFor` instead. */
 export const readAuthCookie = (): Promise<string | null> =>
 	readAuthCookieFor(activeInstance());
+
+/**
+ * Forgets an instance's session on this device — for removing the instance, not for signing out of the
+ * active one (that path is `signOutSession`). The server is told first when it can be reached, so the
+ * session ends there too; offline, the device forgets it anyway, because removal must not depend on the
+ * server it removes. Then every entry the client wrote under that instance's prefix is deleted, chunks
+ * included, and the cached client is dropped.
+ */
+export async function forgetInstanceSession(
+	active: ActiveInstance,
+): Promise<void> {
+	/** At most five seconds: a server that never answers must not hold its own removal. */
+	await Promise.race([
+		authClientFor(active)
+			.signOut()
+			.catch(() => {}),
+		new Promise((resolve) => setTimeout(resolve, 5_000)),
+	]);
+	const prefix = authStoragePrefixFor(active.instance);
+	for (const name of authSessionEntryNames(prefix)) {
+		const stored = await SecureStore.getItemAsync(name, OPTIONS).catch(
+			() => null,
+		);
+		for (let i = 0; i < chunkCountOf(stored); i++)
+			await SecureStore.deleteItemAsync(`${name}.${i}`, OPTIONS).catch(
+				() => {},
+			);
+		await SecureStore.deleteItemAsync(name, OPTIONS).catch(() => {});
+	}
+	clients.delete(active.origin);
+}

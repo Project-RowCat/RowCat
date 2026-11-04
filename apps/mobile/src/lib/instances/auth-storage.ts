@@ -22,3 +22,22 @@ export function authStoragePrefixFor(instance: LocalInstance): string {
 	if (instance.kind === "home") return HOME_AUTH_STORAGE_PREFIX;
 	return `${HOME_AUTH_STORAGE_PREFIX}.${bytesToHex(sha256(utf8ToBytes(instance.origin)))}`;
 }
+
+/**
+ * The SecureStore entries one instance's session occupies, for forgetting it when the instance is removed.
+ * Better Auth's Expo client writes two (`<prefix>_cookie`, `<prefix>_session_data`), and a value over its
+ * per-entry limit is split into `<key>.0 … <key>.<n-1>` behind a `ba-chunks:<n>` marker — so deleting the
+ * two names alone would leave the cookie's pieces behind. `chunkCountOf` reads that marker.
+ */
+export const authSessionEntryNames = (prefix: string): readonly string[] => [
+	`${prefix}_cookie`,
+	`${prefix}_session_data`,
+];
+
+const CHUNK_MARKER = "ba-chunks:";
+
+export function chunkCountOf(stored: string | null): number {
+	if (!stored?.startsWith(CHUNK_MARKER)) return 0;
+	const count = Number(stored.slice(CHUNK_MARKER.length));
+	return Number.isInteger(count) && count > 0 && count < 1000 ? count : 0;
+}

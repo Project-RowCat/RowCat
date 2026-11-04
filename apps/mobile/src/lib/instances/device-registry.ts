@@ -1,6 +1,6 @@
 import { deviceValueStorage } from "../device-storage.ts";
 import { API_ORIGIN, INSTANCE_SELECTION_ENABLED, WEB_ORIGIN } from "../env.ts";
-import type { LocalScope } from "../local-scope.ts";
+import { type LocalScope, localScopeKey } from "../local-scope.ts";
 import {
 	type ActiveInstance,
 	type ActiveInstanceSource,
@@ -52,3 +52,17 @@ export const activeLocalScope = (memberId: string): LocalScope => ({
 
 /** Where links into the web go on the active instance, or `null` (do not draw the link). */
 export const activeWebOrigin = (): string | null => activeInstance().webOrigin;
+
+/**
+ * The scope opener's version of `activeLocalScope`: the same scope, and on another instance it is also
+ * **recorded** (by key) so removing that instance later can find its files. Only the opener records — the
+ * deletion paths resolve scopes too, and recording a scope on the way to deleting it would be backwards.
+ */
+export function openActiveLocalScope(memberId: string): LocalScope {
+	const scope = activeLocalScope(memberId);
+	if (scope.instance.kind === "other")
+		void deviceInstanceRegistry()
+			.recordScope(scope.instance.origin, localScopeKey(scope))
+			.catch(() => {});
+	return scope;
+}

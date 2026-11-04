@@ -62,3 +62,17 @@ export function localScopeKey(scope: LocalScope): string {
 		),
 	);
 }
+
+/**
+ * A scope by its key alone — what the device records for another instance's members
+ * (`instances/instance-registry.ts`), so removing that instance can delete their files without the
+ * member ids. The key is the hash every name is built from; it says nothing about who the member is.
+ */
+export interface RecordedScope {
+	readonly scopeKey: string;
+}
+
+export type ScopeRef = LocalScope | RecordedScope;
+
+export const scopeKeyOf = (ref: ScopeRef): string =>
+	"scopeKey" in ref ? ref.scopeKey : localScopeKey(ref);
