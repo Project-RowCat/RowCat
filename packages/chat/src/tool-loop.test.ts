@@ -167,10 +167,17 @@ describe("nextChatToolRequest", () => {
 
 	/**
 	 * Uses the value the plan set. Recomputing it here would make termination decided in two places.
+	 * The last round refuses calls but keeps the tools declared: removing them would rewrite the whole
+	 * cached prefix, since tools come first in Anthropic's cache order.
 	 */
-	it("after withdrawing tools the next request has nothing to call", () => {
-		expect(next({ offersTools: false }).tools).toEqual([]);
-		expect(next({ offersTools: true }).tools).toHaveLength(1);
+	it("the last round refuses calls and keeps the tools declared", () => {
+		const last = next({ offersTools: false });
+		expect(last.toolCallsRefused).toBe(true);
+		expect(last.tools).toHaveLength(1);
+
+		const open = next({ offersTools: true });
+		expect("toolCallsRefused" in open).toBe(false);
+		expect(open.tools).toEqual(last.tools);
 	});
 
 	/**
@@ -246,7 +253,8 @@ describe("nextChatToolRequest", () => {
 		});
 		expect(twice.messages).toHaveLength(5);
 		expect(twice.messages.at(-1)?.role).toBe("tool");
-		expect(twice.tools).toEqual([]);
+		expect(twice.tools).toEqual(once.tools);
+		expect(twice.toolCallsRefused).toBe(true);
 	});
 });
 
@@ -470,8 +478,8 @@ describe("runChatToolLoop", () => {
 	});
 
 	/**
-	 * Termination is structure, not counting. The next request after the last allowed round trip has
-	 * no tool to call, so the loop ends even if the model calls a tool every time.
+	 * Termination is structure, not counting. The next request after the last allowed round trip
+	 * refuses calls, so the loop ends even if the model calls a tool every time.
 	 */
 	it("ends at the cap even when the model calls a tool every time", async () => {
 		const scripts = Array.from({ length: 10 }, (_, index) => [
@@ -482,13 +490,14 @@ describe("runChatToolLoop", () => {
 		const { port, sent } = scriptedPort(scripts);
 		const seen = await drain(runChatToolLoop(request, port));
 		expect(sent).toHaveLength(CHAT_MAX_TOOL_ROUND_TRIPS + 1);
-		expect(sent.at(-1)?.tools).toEqual([]);
+		expect(sent.at(-1)?.toolCallsRefused).toBe(true);
+		expect(sent.slice(0, -1).every((r) => !r.toolCallsRefused)).toBe(true);
 
 		/**
 		 * That turn is not complete. For a while this spot was a silent `done`, so a response that
 		 * stopped mid-sentence was saved as complete with no mark at all, and even `Continue` did not
-		 * appear, since nothing marked the tail as open. A tool call returned to a request that withheld
-		 * tools means upstream ignored our declaration, which is a provider failure.
+		 * appear, since nothing marked the tail as open. A tool call returned to a request that refused
+		 * calls means upstream ignored that refusal, which is a provider failure.
 		 */
 		expect(seen.at(-1)).toMatchObject({ type: "error" });
 		expect(seen.some((event) => event.type === "done")).toBe(false);

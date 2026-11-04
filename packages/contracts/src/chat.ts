@@ -924,6 +924,21 @@ export const ChatGenerationRequest = z.object({
 	 * the managed type would silently remove the feature from BYO conversations.
 	 */
 	tools: z.array(ChatToolDeclaration).max(CHAT_MAX_TOOLS).default([]),
+	/**
+	 * Present only on a tool loop's last round trip, which must end in prose: the model may not call
+	 * the declared tools on this request. Absence is the only representation of "calls allowed".
+	 *
+	 * The tools stay declared on that round rather than being emptied, because tool definitions come
+	 * first in Anthropic's cache order: removing them rewrites the whole cached prefix, system prompt
+	 * included, while refusing calls (`tool_choice: none`) keeps the tools and system caches. Each
+	 * adapter expresses this in its provider's vocabulary, and an adapter whose provider has no
+	 * trusted way to refuse calls simply leaves the tools out, which is the old behaviour.
+	 *
+	 * Clients that do not know this field send what they always sent. A server that does not know it
+	 * strips it and declares callable tools; a call that comes back is then caught by the loop's guard
+	 * and ends the turn instead of looping.
+	 */
+	toolCallsRefused: z.literal(true).optional(),
 });
 export type ChatGenerationRequest = z.infer<typeof ChatGenerationRequest>;
 

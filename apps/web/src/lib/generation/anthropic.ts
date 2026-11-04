@@ -747,10 +747,14 @@ async function* stream(
 								description: tool.description,
 								input_schema: chatToolJsonSchema(tool),
 							})),
-							tool_choice: {
-								type: "auto",
-								disable_parallel_tool_use: true,
-							},
+							/**
+							 * A tool loop's last round refuses calls rather than dropping the tools: tools come first
+							 * in this provider's cache order, so removing them rewrites the system prompt's cache too,
+							 * while a `tool_choice` change leaves the tools and system caches standing.
+							 */
+							tool_choice: request.toolCallsRefused
+								? { type: "none" }
+								: { type: "auto", disable_parallel_tool_use: true },
 						}
 					: {}),
 				/**

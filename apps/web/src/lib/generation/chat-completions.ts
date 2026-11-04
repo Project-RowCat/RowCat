@@ -227,8 +227,13 @@ export function buildChatCompletionsBody(
 		/**
 		 * No tools declared means no key at all. `parallel_tool_calls: false` asks for the one call per
 		 * stream the contract allows; the stream below keeps the first if two arrive anyway.
+		 *
+		 * A refusing round (`toolCallsRefused`, a tool loop's last round) drops the tools rather than
+		 * sending `tool_choice: "none"`: a server that does not honour that parameter (the gateway lacked
+		 * it for at least one Claude upstream, and a user's server is unknown) would let the model's call
+		 * end the turn. The managed body makes the same choice (`buildProviderRequestBody`).
 		 */
-		...(request.tools.length > 0
+		...(request.tools.length > 0 && !request.toolCallsRefused
 			? {
 					tools: request.tools.map((tool) => ({
 						type: "function",

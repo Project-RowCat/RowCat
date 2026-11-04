@@ -187,7 +187,12 @@ function buildRequestBody(
 			systemMessage(request.system, cached),
 			...toChatMessages(messages),
 		],
-		...(request.tools.length > 0
+		/**
+		 * A refusing round (`toolCallsRefused`, a tool loop's last round) drops the tools rather than
+		 * sending `tool_choice: "none"`: a server that does not honour that parameter would let the
+		 * model's call end the turn. The managed body makes the same choice (`buildProviderRequestBody`).
+		 */
+		...(request.tools.length > 0 && !request.toolCallsRefused
 			? {
 					tools: request.tools.map((tool) => ({
 						type: "function",

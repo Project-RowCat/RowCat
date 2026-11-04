@@ -29,8 +29,10 @@ import {
  * or skips it, calls nextChatToolRequest, then calls stream() again. The new billing identity is
  * attached in that stream() call.
  *
- * Termination is structure, not counting. The last round trip's request empties tools (offersTools:
- * false), so the model has nothing to call and the loop ends whether the counter is right or wrong.
+ * Termination is structure, not counting. The last round trip's request refuses calls (offersTools:
+ * false → `toolCallsRefused`), so the model has nothing it may call and the loop ends whether the
+ * counter is right or wrong. The tools stay declared on that request: removing them would rewrite the
+ * whole cached prefix (tools come first in Anthropic's cache order), while refusing calls keeps it.
  *
  * An answer is returned even at the limit. All three providers reject unpaired calls with 400, so
  * one result message always goes out (see the 'failures are results too' note in tool.ts).
@@ -83,7 +85,7 @@ export function planChatToolRoundTrip(
 			offersTools: false,
 		};
 
-	/** If this is the last allowed round trip, the next request offers no tools. */
+	/** If this is the last allowed round trip, the next request refuses tool calls. */
 	const offersTools = remaining > 1;
 
 	const resolution = resolveChatToolCall(input.tools, input.call);
@@ -148,9 +150,10 @@ export function nextChatToolRequest(
 			},
 			chatToolResultMessage(input.call.id, input.result),
 		],
-		tools: input.offersTools ? chatToolDeclarations(input.tools) : [],
+		tools: chatToolDeclarations(input.tools),
 		continuation: false,
 		reasoningEffort: null,
+		...(input.offersTools ? {} : { toolCallsRefused: true as const }),
 	};
 }
 
@@ -329,13 +332,14 @@ export async function* runChatToolLoop(
 		if (!call) break;
 
 		/**
-		 * The tool-less request returned a call, so upstream ignored our declaration. Answering here
-		 * would never end the round trip, because every answer can prompt another call, so counting round
-		 * trips would not stop it. There are three guards by design. Normally the last round trip removes
-		 * tools (`offersTools`). When upstream ignores that, this line applies. The plan's limit check is
-		 * a last guard for callers outside this loop that imitate it.
+		 * A request that refused calls returned one, so upstream ignored our refusal (or a server that
+		 * does not know `toolCallsRefused` declared the tools callable). Answering here would never end the
+		 * round trip, because every answer can prompt another call, so counting round trips would not
+		 * stop it. There are three guards by design. Normally the last round trip refuses calls
+		 * (`offersTools`). When upstream ignores that, this line applies. The plan's limit check is a last
+		 * guard for callers outside this loop that imitate it.
 		 */
-		if (next.tools.length === 0) {
+		if (next.toolCallsRefused || next.tools.length === 0) {
 			unanswerable = true;
 			break;
 		}

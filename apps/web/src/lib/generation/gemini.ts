@@ -592,7 +592,15 @@ async function* stream(
 									})),
 								},
 							],
-							toolConfig: { functionCallingConfig: { mode: "AUTO" } },
+							/**
+							 * A tool loop's last round refuses calls (`NONE`) instead of dropping the declarations, so
+							 * the request keeps the prefix the previous round sent for implicit caching.
+							 */
+							toolConfig: {
+								functionCallingConfig: {
+									mode: request.toolCallsRefused ? "NONE" : "AUTO",
+								},
+							},
 						}
 					: {}),
 				generationConfig: {

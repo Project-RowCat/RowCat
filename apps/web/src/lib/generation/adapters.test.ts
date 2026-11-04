@@ -1249,6 +1249,31 @@ describe("OpenRouter adapter", () => {
 		]);
 	});
 
+	/** A tool loop's last round must end in prose; on this gateway that means no tools at all. */
+	it("a refusing round declares no tools", async () => {
+		const { seen, fetchMock } = recorder(() => sseResponse(OPENROUTER_STREAM));
+		await collect(openRouterAdapter, {
+			model: "anthropic/claude-sonnet-5",
+			secret: "k",
+			fetch: fetchMock,
+			request: {
+				...request,
+				toolCallsRefused: true,
+				tools: [
+					{
+						name: "search_lore",
+						description: "Look up lore.",
+						parameters: [],
+					} as ChatToolDeclaration,
+				],
+			},
+		});
+		const call = seen[0];
+		if (!call) throw new Error("no request");
+		expect(body(call)).not.toHaveProperty("tools");
+		expect(body(call)).not.toHaveProperty("parallel_tool_calls");
+	});
+
 	/** The round trip returns the call's state where it came from, so the next request is valid. */
 	it("returns a call turn with tool_calls and its reasoning details", async () => {
 		const { seen, fetchMock } = recorder(() => sseResponse(OPENROUTER_STREAM));
@@ -2345,6 +2370,23 @@ describe("Anthropic tool calls", () => {
 		]);
 	});
 
+	/**
+	 * A tool loop's last round refuses calls but keeps the tools: tools come first in this provider's
+	 * cache order, so dropping them would rewrite the system prompt's cache too.
+	 */
+	it("a round that refuses calls keeps the tools and sends tool_choice none", async () => {
+		const { seen, fetchMock } = recorder(() => sseResponse(ANTHROPIC_STREAM));
+		await collect(anthropicAdapter, {
+			model: "claude-sonnet-5",
+			secret: "sk-ant",
+			fetch: fetchMock,
+			request: { ...request, tools: [DICE], toolCallsRefused: true },
+		});
+		const sent = body(seen[0] ?? { init: {} });
+		expect(sent.tool_choice).toEqual({ type: "none" });
+		expect(sent.tools).toHaveLength(1);
+	});
+
 	/** This API has no tool role. Results are blocks inside a user turn. */
 	it("maps calls and results to blocks", async () => {
 		const { seen, fetchMock } = recorder(() => sseResponse(ANTHROPIC_STREAM));
@@ -2560,6 +2602,22 @@ describe("Gemini tool calls", () => {
 			sent.tools as { functionDeclarations: { parameters: object }[] }[]
 		)[0]?.functionDeclarations[0]?.parameters;
 		expect(parameters && "additionalProperties" in parameters).toBe(false);
+	});
+
+	/** A tool loop's last round refuses calls and keeps the declarations, so the prefix stays put. */
+	it("a round that refuses calls sends mode NONE with the declarations", async () => {
+		const { seen, fetchMock } = recorder(() => sseResponse(GEMINI_STREAM));
+		await collect(geminiAdapter, {
+			model: "gemini-3.7-flash",
+			secret: "AIza",
+			fetch: fetchMock,
+			request: { ...request, tools: [DICE], toolCallsRefused: true },
+		});
+		const sent = body(seen[0] ?? { init: {} });
+		expect(sent.toolConfig).toEqual({
+			functionCallingConfig: { mode: "NONE" },
+		});
+		expect(sent.tools).toHaveLength(1);
 	});
 
 	/**

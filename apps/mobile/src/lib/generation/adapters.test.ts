@@ -2132,6 +2132,24 @@ describe("Anthropic tool calls", () => {
 		]);
 	});
 
+	/**
+	 * A tool loop's last round refuses calls but keeps the tools: tools come first in this provider's
+	 * cache order, so dropping them would rewrite the system prompt's cache too.
+	 */
+	it("a round that refuses calls keeps the tools and sends tool_choice none", async () => {
+		const transport = respondWith(fakeResponse({ body: anthropicStream() }));
+		await run(anthropicAdapter, {
+			request: request({ tools: [DICE], toolCallsRefused: true }),
+			model: "claude-sonnet-5",
+			secret: "sk",
+			signal: signal(),
+			fetch: transport.fetch,
+		});
+		const sent = bodyOf(transport.calls[0]?.body);
+		expect(sent.tool_choice).toEqual({ type: "none" });
+		expect(sent.tools).toHaveLength(1);
+	});
+
 	/** This API has no tool role. The result is **a block inside the user turn**. */
 	it("moves calls and results into blocks", async () => {
 		const transport = respondWith(fakeResponse({ body: anthropicStream() }));
@@ -2412,6 +2430,23 @@ describe("Gemini tool calls", () => {
 			sent.tools as { functionDeclarations: { parameters: object }[] }[]
 		)[0]?.functionDeclarations[0]?.parameters;
 		expect(parameters && "additionalProperties" in parameters).toBe(false);
+	});
+
+	/** A tool loop's last round refuses calls and keeps the declarations, so the prefix stays put. */
+	it("a round that refuses calls sends mode NONE with the declarations", async () => {
+		const transport = respondWith(fakeResponse({ body: geminiStream() }));
+		await run(geminiAdapter, {
+			request: request({ tools: [DICE], toolCallsRefused: true }),
+			model: "gemini-3-pro",
+			secret: "AIza",
+			signal: signal(),
+			fetch: transport.fetch,
+		});
+		const sent = bodyOf(transport.calls[0]?.body);
+		expect(sent.toolConfig).toEqual({
+			functionCallingConfig: { mode: "NONE" },
+		});
+		expect(sent.tools).toHaveLength(1);
 	});
 
 	/**

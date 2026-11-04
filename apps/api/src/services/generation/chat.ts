@@ -578,8 +578,14 @@ export function buildProviderRequestBody(
 		 * `parallel_tool_calls: false` is the paired half. The contract allows one call per stream, so we
 		 * first ask upstream not to send parallel calls, and the translation side handles the case where
 		 * two arrive anyway. Not asking would make that case the normal path.
+		 *
+		 * A round that refuses calls (`toolCallsRefused`, a tool loop's last round) still drops the
+		 * tools here instead of sending `tool_choice: "none"`. The BYO adapters keep the tools for the
+		 * cache's sake, but the gateway's `supported_parameters` lacked `tool_choice` for at least one
+		 * Claude upstream (2026-09-03, see `managed-models.ts`), and a refusal the gateway drops would
+		 * make the model's call end the turn. Move this once each upstream is confirmed.
 		 */
-		...(request.tools.length > 0
+		...(request.tools.length > 0 && !request.toolCallsRefused
 			? {
 					tools: request.tools.map((tool) => ({
 						type: "function",

@@ -864,6 +864,20 @@ describe("tool declarations", () => {
 	});
 
 	/**
+	 * The gateway's `tool_choice` support is unconfirmed per upstream, so a round that refuses calls
+	 * still leaves the tools out on this path (the BYO adapters keep them).
+	 */
+	it("a round that refuses calls declares no tools", () => {
+		const body = buildProviderRequestBody(
+			{ ...request, tools: [dice], toolCallsRefused: true },
+			"anthropic/claude-sonnet-5",
+		);
+		expect("tools" in body).toBe(false);
+		expect("tool_choice" in body).toBe(false);
+		expect("parallel_tool_calls" in body).toBe(false);
+	});
+
+	/**
 	 * A tool round trip's tail is read back only by the next round of the same turn, seconds later, so
 	 * it is written for five minutes (1.25x), not an hour (2x). The system marker stays an hour, which
 	 * keeps the allowed order (longer before shorter).
