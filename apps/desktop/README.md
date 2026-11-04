@@ -130,15 +130,23 @@ git tag desktop-2026-10-31 && git push origin desktop-2026-10-31
 - Postgres 라이브러리의 심볼릭 링크를 되살린다(`native/pg-symlinks.json`). `pnpm deploy`가 링크를 파일로 복사해
   ICU 데이터 64MB가 세 번 들어갔다.
 - asar는 끈다. Postgres 바이너리는 OS가 실제 경로에서 실행해야 하는 파일이다.
-- API의 `node_modules`에서 런타임에 아무도 읽지 않는 것을 뺀다(`scripts/prune.ts`). 설치 시간은 바이트보다 **파일
-  개수**가 정한다 — NSIS는 파일을 하나씩 쓰고, Windows Defender는 하나씩 검사하고, 업데이트는 이전 파일을 먼저
-  전부 지운다. `dist/`에서 추적해 아무것도 로드되지 않은 패키지는 통째로(선택 peer가 끌고 온 expo·esbuild·babel),
-  Node가 실행하지 않는 파일(`.d.ts`·`.ts`·`.map`·README)은 패턴으로 뺀다. **단위는 파일이 아니라 패키지다** — 추적은
-  `fs`로 읽는 파일을 못 보고, 출판 컴파일러는 TypeScript의 `lib.*.d.ts`를 `readdirSync`로 읽는다. 그래서 자기 파일을
-  읽는 패키지(`READS_OWN_FILES`)는 패턴으로도 건드리지 않는다. 2026-11-04 macOS 측정: API 14,775개 파일 281MB →
-  5,271개 102MB, DMG 341MB → 208MB. 컨테이너 이미지는 전체 `node_modules`를 그대로 싣는다.
-- Electron의 UI 번역은 `en`·`ko`만 남기고(`electronLanguages`), Windows Postgres의 서버 메시지 번역
-  (`share/locale`, 약 470개 파일)은 뺀다. 데이터베이스는 `--no-locale`로 만들어 어차피 영어로 말한다.
+- API의 `node_modules`에서 런타임에 닿지 않는 파일을 뺀다(`scripts/prune.ts`). 설치 시간은 바이트보다 **파일
+  개수**가 정하고, 파일 하나를 여러 번 치른다 — NSIS는 7z를 임시 폴더에 풀고 `CopyFiles`로 한 번 더 쓴 뒤 임시
+  폴더를 지우고, 업데이트는 그 전에 이전 버전의 파일을 전부 옮겨 지운다. Windows Defender는 그때마다 검사한다.
+  `dist/`에서 추적해(`@vercel/nft`, 웹 서버 출력도 Nitro가 이걸로 만든다) 아무것도 로드되지 않은 패키지는 통째로,
+  로드된 패키지에서도 추적이 닿지 않은 파일은 뺀다(다른 SQL 방언, prism의 언어 전부, ESM 옆의 CJS 사본). **추적은
+  `fs`로 읽는 파일을 못 본다** — 출판 컴파일러는 TypeScript의 `lib.*.d.ts`를 `readdirSync`로 읽는다. 그래서 자기
+  파일을 읽는 패키지(`READS_OWN_FILES`)와 네이티브 바이너리가 든 패키지(sharp의 libvips)는 통째로 두고, 모든
+  `package.json`과 라이선스 파일도 남긴다. 컨테이너 이미지는 전체 `node_modules`를 그대로 싣는다.
+- Electron의 UI 번역은 `en`·`ko`만 남긴다(`electronLanguages`). Postgres에서는 확장 설치 스크립트를 `plpgsql`과
+  마이그레이션이 만드는 확장(`CREATE EXTENSION`을 마이그레이션에서 읽는다)만 남기고, Windows 빌드의 서버 메시지
+  번역(`share/locale`)은 뺀다. 데이터베이스는 `--no-locale`로 만들어 영어로 말한다. `lib/`는 건드리지 않는다 —
+  텍스트 검색과 인코딩 변환이 `CREATE EXTENSION` 없이 거기서 읽는다.
+- **차등 업데이트는 그대로 둔다.** `nsis.useZip`은 임시 폴더를 거치지 않고 바로 풀어 설치를 빠르게 하지만
+  `differentialPackage: false`를 요구한다. 실제 릴리스 블록맵으로 재 보면 차등 업데이트는 204MB 중 3–6MB만 받는다
+  (2026-11-02→03, 03→04). 첫 업데이트는 캐시된 블록맵이 없어 전체를 받는다(URL에 버전 대신 날짜가 있다).
+- 2026-11-04 macOS 측정: API 14,775개 파일 281MB → 2,157개 65MB, 앱 전체 4,108개 파일, DMG 341MB → 201MB. Windows
+  설치본은 약 17,000개에서 3,700개 안팎으로 줄 것으로 계산하지만, Windows에서 잰 값은 아니다.
 
 ## 아직 안 된 것
 

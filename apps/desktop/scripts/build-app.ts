@@ -35,7 +35,12 @@ import { APP_BUNDLE_ID, APP_NAME } from "@rowcat/domain";
 import { build, type Configuration } from "electron-builder";
 import sharp from "sharp";
 import { updateFeedFrom, windowsInstallerName } from "../src/update-policy.ts";
-import { countFiles, pruneServerDependencies } from "./prune.ts";
+import {
+	countFiles,
+	extensionFileKept,
+	extensionsCreatedBy,
+	pruneServerDependencies,
+} from "./prune.ts";
 
 const desktop = resolve(fileURLToPath(import.meta.url), "../..");
 const repo = resolve(desktop, "../..");
@@ -131,7 +136,14 @@ cpSync(join(appDeploy, "package.json"), join(app, "package.json"));
 rmSync(appDeploy, { recursive: true, force: true });
 cpSync(join(desktop, "dist"), join(app, "dist"), { recursive: true });
 relinkPostgresLibraries(join(app, "node_modules", "@embedded-postgres"));
-dropPostgresMessageCatalogs(join(app, "node_modules", "@embedded-postgres"));
+trimPostgres(
+	join(app, "node_modules", "@embedded-postgres"),
+	extensionsCreatedBy(
+		readdirSync(join(repo, "apps/api/drizzle"))
+			.filter((file) => file.endsWith(".sql"))
+			.map((file) => readFileSync(join(repo, "apps/api/drizzle", file), "utf8")),
+	),
+);
 const icons = await writeIcons(join(stage, "icons"));
 
 /**
@@ -159,18 +171,32 @@ function relinkPostgresLibraries(scope: string): void {
 }
 
 /**
- * The Windows build of Postgres carries its server messages translated into every language it has
- * (`share/locale`, ~470 files). The database is created with `--no-locale` (`src/stack.ts`), so the
- * server speaks English whatever this computer's language is, and nothing reads those catalogs.
- * The other platforms' builds have no such folder.
+ * Postgres ships with every contrib extension's install scripts and every server-message translation,
+ * and the database here uses neither.
+ *
+ * ```text
+ * share/extension   ~250 files   only plpgsql (initdb installs it) and what a migration creates stay
+ * share/locale      ~470 files   Windows only. The database is created with `--no-locale`
+ *                                (`src/stack.ts`), so the server speaks English whatever this
+ *                                computer's language is
+ * ```
+ *
+ * Which extensions a migration creates is read from the migrations themselves rather than listed
+ * here, so a migration that adds one cannot ship a database that refuses it. The libraries in `lib/`
+ * stay: text search and encoding conversion load from there without any `CREATE EXTENSION`.
  */
-function dropPostgresMessageCatalogs(scope: string): void {
+function trimPostgres(scope: string, extensions: Set<string>): void {
 	if (!existsSync(scope)) return;
-	for (const name of readdirSync(scope))
-		rmSync(join(scope, name, "native", "share", "locale"), {
-			recursive: true,
-			force: true,
-		});
+	for (const name of readdirSync(scope)) {
+		const share = join(scope, name, "native", "share");
+		rmSync(join(share, "locale"), { recursive: true, force: true });
+		// Windows lays the share folder out flat; macOS and Linux put it under `postgresql/`.
+		for (const dir of [join(share, "extension"), join(share, "postgresql", "extension")]) {
+			if (!existsSync(dir)) continue;
+			for (const file of readdirSync(dir))
+				if (!extensionFileKept(file, extensions)) rmSync(join(dir, file));
+		}
+	}
 }
 
 /**

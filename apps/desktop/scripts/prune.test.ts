@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-	fileStrippable,
+	extensionFileKept,
+	extensionsCreatedBy,
+	fileRemovable,
 	loadedPackages,
 	packageDroppable,
 	packageRootOf,
+	wholePackages,
 } from "./prune.ts";
 
 describe("packageRootOf", () => {
@@ -52,41 +55,114 @@ describe("packageDroppable", () => {
 	});
 });
 
-describe("fileStrippable", () => {
-	const none = new Set<string>();
+describe("wholePackages", () => {
+	const loaded = new Set([
+		"node_modules/hono",
+		"node_modules/typescript-compiler-api",
+		"node_modules/@img/sharp-win32-x64",
+	]);
 
-	it("drops what Node never executes", () => {
-		for (const file of [
-			"node_modules/zod/index.d.cts",
-			"node_modules/zod/src/v4/core.ts",
-			"node_modules/hono/dist/index.js.map",
-			"node_modules/hono/README.md",
-		])
-			expect(fileStrippable(file, none)).toBe(true);
+	it("keeps whole what reads its own files and what carries a native binary", () => {
+		const whole = wholePackages(loaded, [
+			"node_modules/hono/dist/index.js",
+			"node_modules/@img/sharp-win32-x64/lib/libvips-42.dll",
+			"node_modules/unloaded/bin/tool.exe",
+		]);
+		expect([...whole].sort()).toEqual([
+			"node_modules/@img/sharp-win32-x64",
+			"node_modules/typescript-compiler-api",
+		]);
+	});
+});
+
+describe("fileRemovable", () => {
+	const traced = new Set([
+		"node_modules/drizzle-orm/pg-core/index.js",
+		"node_modules/odd/loader.ts",
+	]);
+	const whole = new Set([
+		"node_modules/typescript-compiler-api",
+		"node_modules/@img/sharp-win32-x64",
+	]);
+	const removable = (path: string) => fileRemovable(path, traced, whole);
+
+	it("drops what the trace never reached in an ordinary package", () => {
+		expect(removable("node_modules/drizzle-orm/mysql-core/index.js")).toBe(true);
+		expect(removable("node_modules/drizzle-orm/pg-core/index.js")).toBe(false);
 	});
 
-	it("keeps code, native modules and license texts", () => {
+	// A nested {"type":"module"} decides how its folder's files load; a license is owed.
+	it("keeps every package.json and license text", () => {
 		for (const file of [
-			"node_modules/hono/dist/index.js",
-			"node_modules/@img/sharp-win32-x64/lib/sharp.node",
-			"node_modules/hono/LICENSE",
+			"node_modules/drizzle-orm/package.json",
+			"node_modules/drizzle-orm/esm/package.json",
+			"node_modules/drizzle-orm/LICENSE",
 			"node_modules/zod/LICENSE.md",
 		])
-			expect(fileStrippable(file, none)).toBe(false);
+			expect(removable(file)).toBe(false);
 	});
 
 	// The publication compiler reads TypeScript's standard library with readdirSync.
 	it("keeps every file of a package that reads its own files", () => {
 		expect(
-			fileStrippable(
-				"node_modules/typescript-compiler-api/lib/lib.es2022.d.ts",
-				none,
-			),
+			removable("node_modules/typescript-compiler-api/lib/lib.es2022.d.ts"),
 		).toBe(false);
 	});
 
+	it("drops only what Node never executes from a native package", () => {
+		expect(removable("node_modules/@img/sharp-win32-x64/lib/libvips-42.dll")).toBe(
+			false,
+		);
+		expect(removable("node_modules/@img/sharp-win32-x64/README.md")).toBe(true);
+	});
+
 	it("never drops a file the trace loaded, whatever its name", () => {
-		const file = "node_modules/odd/loader.ts";
-		expect(fileStrippable(file, new Set([file]))).toBe(false);
+		expect(removable("node_modules/odd/loader.ts")).toBe(false);
+	});
+});
+
+describe("extensionsCreatedBy", () => {
+	it("reads the extensions the migrations create, and always plpgsql", () => {
+		const names = extensionsCreatedBy([
+			"CREATE EXTENSION IF NOT EXISTS pg_trgm;--> statement-breakpoint",
+			'create extension "citext";',
+			'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";',
+			"CREATE TABLE a (id text);",
+		]);
+		expect([...names].sort()).toEqual([
+			"citext",
+			"pg_trgm",
+			"plpgsql",
+			"uuid-ossp",
+		]);
+	});
+});
+
+describe("extensionFileKept", () => {
+	const kept = new Set(["plpgsql", "pg_trgm"]);
+
+	it("keeps an extension's control file, install script and upgrade chain", () => {
+		for (const file of [
+			"pg_trgm.control",
+			"pg_trgm--1.3.sql",
+			"pg_trgm--1.5--1.6.sql",
+			"plpgsql--1.0.sql",
+		])
+			expect(extensionFileKept(file, kept)).toBe(true);
+	});
+
+	it("drops other extensions, including one whose name starts the same", () => {
+		expect(extensionFileKept("hstore--1.8.sql", kept)).toBe(false);
+		expect(extensionFileKept("pg_trgm_extra.control", kept)).toBe(false);
+		expect(extensionFileKept("uuid-ossp--1.1.sql", kept)).toBe(false);
+		expect(extensionFileKept("uuid-ossp.control", kept)).toBe(false);
+		expect(
+			extensionFileKept("uuid-ossp.control", new Set(["uuid-ossp"])),
+		).toBe(true);
+	});
+
+	// Something that is not an extension file is not ours to judge.
+	it("leaves a file it cannot name", () => {
+		expect(extensionFileKept("README", kept)).toBe(true);
 	});
 });

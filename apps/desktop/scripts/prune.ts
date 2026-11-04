@@ -1,24 +1,24 @@
 /**
- * What the installer leaves out of a server's `node_modules`. The installer's cost is mostly its file
- * count, not its bytes: NSIS writes every file one at a time, Windows Defender scans each one as it
- * lands, and an update first deletes every file the previous version wrote. The API's production
- * dependencies were ~15,000 files, and two kinds of them are never loaded.
+ * What the installer leaves out of a server's `node_modules`. The installer's cost is its file count
+ * more than its bytes, and each file is paid for several times: NSIS extracts the payload into a temp
+ * folder and `CopyFiles` it into place, the temp copy is deleted, and an update first moves every file
+ * the previous version wrote out of the way and deletes it — with Windows Defender scanning each write.
+ * The API's production dependencies were ~15,000 files; what Node loads from them is ~2,000.
  *
  * ```text
- * a package nothing loads      the dev tools an optional peer pulls in (expo through drizzle-orm and
- *                              @better-auth/expo, esbuild, babel) — traced from dist/, dropped whole
- * a file Node never executes   type declarations, source maps, TypeScript sources, READMEs
+ * a package nothing loads           dev tools an optional peer pulls in (expo through drizzle-orm and
+ *                                   @better-auth/expo, esbuild, babel) — dropped whole
+ * a file the trace never reached    other SQL dialects, every prism language, the CJS twin of ESM code
  * ```
  *
- * **The unit of the first decision is the package, never the file.** The trace follows `import` and
- * `require`, not what a package reads from its own folder with `fs` — the publication compiler reads
- * TypeScript's `lib.*.d.ts` with `readdirSync`, and a per-file trace would ship a compiler that cannot
- * find its standard library. A package the trace entered at all is kept whole. One the trace only
- * looked up (its `package.json` and nothing else) is a package nothing loads.
- *
- * **What a package reads as data is not stripped** (`READS_OWN_FILES`). The second decision is a file
- * pattern, and a pattern cannot see `fs` either. A traced file is never stripped, whatever its name.
- * License texts always stay.
+ * The trace (`@vercel/nft`, what Nitro already builds the web server's output with) follows `import`,
+ * `require` and the path patterns Node resolves. **It does not see what a package reads with `fs`**:
+ * the publication compiler lists TypeScript's `lib.*.d.ts` with `readdirSync`, and a per-file trace of
+ * that package ships a compiler with no standard library. So two kinds of package are kept whole —
+ * `READS_OWN_FILES`, and any package that carries a native binary (sharp's libvips is loaded by the
+ * dynamic linker, not by Node). In those, only files Node never executes (declarations, source maps,
+ * READMEs) go, and none at all from `READS_OWN_FILES`. Every `package.json` stays, nested ones too
+ * (`{"type":"module"}` in a subfolder decides how its files load), and so does every license text.
  *
  * The container image keeps its full `node_modules`. The bundle (`dist/`) is the same bytes in both;
  * this narrows only what the desktop copy carries next to it.
@@ -27,8 +27,11 @@ import { lstatSync, readdirSync, rmSync } from "node:fs";
 import { join, sep } from "node:path";
 import { nodeFileTrace } from "@vercel/nft";
 
-/** Packages that read their own files at runtime, so no file in them is dropped by pattern. */
+/** Packages that read their own files at runtime with `fs`: kept whole, nothing dropped by pattern. */
 export const READS_OWN_FILES = ["typescript-compiler-api"];
+
+/** A file the OS loads rather than Node: its package is kept whole. */
+const NATIVE_BINARY = /\.(node|dll|dylib|so|exe)(\.\d+)*$/i;
 
 /** `a/node_modules/@s/p/x.js` → `a/node_modules/@s/p`. Posix separators in and out. */
 export function packageRootOf(path: string): string | null {
@@ -67,16 +70,41 @@ const NEVER_EXECUTED = [
 	/\.map$/i,
 	/\.(md|markdown)$/i,
 ];
-const LICENSE = /^(licen[cs]e|notice|copying|authors)(\.|$)/i;
+const ALWAYS_KEPT = /^(package\.json|(licen[cs]e|notice|copying|authors)(\..*)?)$/i;
 
-/** Whether a file inside `node_modules` is one Node never executes and nothing here reads. */
-export function fileStrippable(path: string, traced: Set<string>): boolean {
+/** The package's name as it appears after the last `node_modules/`. */
+const packageNameOf = (root: string) =>
+	root.slice(root.lastIndexOf("node_modules/") + "node_modules/".length);
+
+/** The loaded packages that keep every file but the never-executed ones. */
+export function wholePackages(
+	loaded: Set<string>,
+	files: Iterable<string>,
+): Set<string> {
+	const whole = new Set(
+		[...loaded].filter((root) => READS_OWN_FILES.includes(packageNameOf(root))),
+	);
+	for (const file of files) {
+		if (!NATIVE_BINARY.test(file)) continue;
+		const root = packageRootOf(file);
+		if (root && loaded.has(root)) whole.add(root);
+	}
+	return whole;
+}
+
+/** Whether a file inside a loaded package can go. */
+export function fileRemovable(
+	path: string,
+	traced: Set<string>,
+	whole: Set<string>,
+): boolean {
 	if (traced.has(path)) return false;
 	const name = path.slice(path.lastIndexOf("/") + 1);
-	if (LICENSE.test(name)) return false;
+	if (ALWAYS_KEPT.test(name)) return false;
 	const root = packageRootOf(path);
-	const pkg = root?.slice(root.lastIndexOf("node_modules/") + "node_modules/".length);
-	if (pkg && READS_OWN_FILES.includes(pkg)) return false;
+	if (!root) return false;
+	if (!whole.has(root)) return true;
+	if (READS_OWN_FILES.includes(packageNameOf(root))) return false;
 	return NEVER_EXECUTED.some((pattern) => pattern.test(name));
 }
 
@@ -122,7 +150,7 @@ export interface PruneResult {
 	bytes: number;
 }
 
-/** Traces `root/dist/**\/*.mjs` and removes from `root/node_modules` what that trace never loads. */
+/** Traces `root/dist/**\/*.mjs` and removes from `root/node_modules` what that trace never reaches. */
 export async function pruneServerDependencies(root: string): Promise<PruneResult> {
 	const entries = readdirSync(join(root, "dist"), { recursive: true })
 		.map(String)
@@ -149,12 +177,31 @@ export async function pruneServerDependencies(root: string): Promise<PruneResult
 			result.packages += 1;
 			remove(folder);
 		}
-	for (const file of filesUnder(root, "node_modules"))
-		if (fileStrippable(file, traced)) remove(file);
+	const files = filesUnder(root, "node_modules");
+	const whole = wholePackages(loaded, files);
+	for (const file of files) if (fileRemovable(file, traced, whole)) remove(file);
 	return result;
 }
 
 /** Files under a folder, for the before/after line the build prints. */
 export function countFiles(dir: string): number {
 	return filesUnder(dir, ".").length;
+}
+
+/** The extensions migrations create, plus `plpgsql`, which initdb installs into every database. */
+export function extensionsCreatedBy(migrations: Iterable<string>): Set<string> {
+	const names = new Set(["plpgsql"]);
+	const statement = /create\s+extension\s+(?:if\s+not\s+exists\s+)?"?([a-z0-9_-]+)"?/gi;
+	for (const sql of migrations)
+		for (const match of sql.matchAll(statement)) names.add((match[1] as string).toLowerCase());
+	return names;
+}
+
+/**
+ * `pg_trgm.control` and `pg_trgm--1.5--1.6.sql` belong to `pg_trgm`; `pg_trgm_x.sql` does not. Names may
+ * hold a hyphen (`uuid-ossp--1.1.sql`), and `--` is what ends one.
+ */
+export function extensionFileKept(file: string, extensions: Set<string>): boolean {
+	const name = /^([a-z0-9_-]+?)(?:--.*\.sql|\.control|\.sql)$/i.exec(file)?.[1];
+	return name === undefined || extensions.has(name.toLowerCase());
 }
