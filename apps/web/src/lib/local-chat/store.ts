@@ -28,6 +28,7 @@ import {
 	type CreateMemoryInput,
 	type CreatePersonaInput,
 	type CreateRoomInput,
+	chatRoomDuplicateRecordCount,
 	createCharacterRecord,
 	createMemoryRecord,
 	createMessageRecord,
@@ -44,6 +45,7 @@ import {
 	mergeMemorySource,
 	nextSummaryEpoch,
 	planMaintenanceRewind,
+	planRoomDuplicate,
 	requireCharacterName,
 	requireCharacterPrompt,
 	requireChatUserNote,
@@ -661,6 +663,57 @@ export function createChatStore(db: LocalDb): ChatStore {
 				});
 				return routingSessionId;
 			});
+		},
+
+		/**
+		 * Reads the source and writes the copy in one transaction (`planRoomDuplicate` decides what a
+		 * copy is). Every child table is in the scope, and `add` rather than `put`: a fresh id that
+		 * already exists is a bug, and overwriting would erase someone else's record.
+		 */
+		async duplicateRoom(id: string, title: string): Promise<ChatRoom | null> {
+			const checked = requireRoomTitle(title);
+			const now = nowIso();
+			return db.transaction(
+				"rw",
+				[
+					db.rooms,
+					db.messages,
+					db.chatMemories,
+					db.chatSummaries,
+					db.chatCharacters,
+					db.syncState,
+				],
+				async () => {
+					const room = await liveRoom(id);
+					// Copying a tombstone would bring back a conversation the user deleted.
+					if (!room) return null;
+					const source = {
+						room,
+						messages: await db.messages.where("roomId").equals(id).toArray(),
+						memories: await db.chatMemories
+							.where("roomId")
+							.equals(id)
+							.toArray(),
+						characters: await db.chatCharacters
+							.where("roomId")
+							.equals(id)
+							.toArray(),
+						summary: (await db.chatSummaries.get(summaryIdFor(id))) ?? null,
+					};
+					const copy = planRoomDuplicate(source, {
+						title: checked,
+						now,
+						newId: newLocalId,
+						revs: await nextRevs(db, chatRoomDuplicateRecordCount(source)),
+					});
+					await db.rooms.add(copy.room);
+					await db.messages.bulkAdd(copy.messages);
+					await db.chatMemories.bulkAdd(copy.memories);
+					await db.chatCharacters.bulkAdd(copy.characters);
+					if (copy.summary) await db.chatSummaries.add(copy.summary);
+					return copy.room;
+				},
+			);
 		},
 
 		async deleteRoom(id: string): Promise<void> {

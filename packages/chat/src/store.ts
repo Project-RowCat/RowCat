@@ -227,6 +227,19 @@ export interface ChatStore extends ChatMemoryStore, ChatPersonaStore {
 	ensureRoomRoutingSession(roomId: string): Promise<string | null>;
 
 	/**
+	 * Copies a room and its four children (messages, memories, characters, summary) under new
+	 * identities, in one transaction. What a copy carries is one pure rule, `planRoomDuplicate`, so
+	 * both implementations write the same copy; this method only reads the source and writes the
+	 * result. Split across transactions, a room could exist with half its messages, and the next sync
+	 * would upload that half as the whole conversation.
+	 *
+	 * The title is the caller's (the suffix is app copy) and is re-checked here (`requireRoomTitle`).
+	 * Returns the new room so the caller can navigate to it. A missing or deleted source returns null
+	 * and writes nothing: copying a tombstone would bring back a conversation the user deleted.
+	 */
+	duplicateRoom(id: string, title: string): Promise<ChatRoom | null>;
+
+	/**
 	 * Soft-deletes a room together with its messages, memories, summary and characters, all in one
 	 * transaction. Forgetting any child leaves an orphaned character on this device that the next
 	 * outbound sync would upload again, bringing back data from a deleted room. The receiving side's

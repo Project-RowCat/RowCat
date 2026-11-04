@@ -5,7 +5,8 @@
  * protected-seed, protected-generation, debug-trace, debug-view, placeholder, ai-evidence,
  * generation (+ preference, availability, summary, options, reasoning, openai-compatible),
  * narration-output,
- * intensity, search, tail-rewrite, message-actions, room-settings-ia, room-actions, room-library,
+ * intensity, search, tail-rewrite, message-actions, room-settings-ia, room-actions, room-duplicate,
+ * room-library,
  * sidebar-rooms.
  *
  * Not here: React and TanStack (each app's UI differs); Dexie, SQLite, and IndexedDB (storage
@@ -52,6 +53,7 @@ export * from "./reply-suggestion.ts";
 export * from "./reply-suggestion-prompt.ts";
 export * from "./reply-suggestion-runner.ts";
 export * from "./room-actions.ts";
+export * from "./room-duplicate.ts";
 export * from "./room-library.ts";
 export * from "./room-settings-ia.ts";
 export * from "./scene-image.ts";

@@ -99,6 +99,7 @@ export const ROOM_SETTINGS_ROW_TITLE: Record<RoomSettingsRowId, string> = {
 	userNote: "User note",
 	info: "Conversation info",
 	rename: "Rename",
+	duplicate: "Duplicate conversation",
 	delete: "Delete conversation",
 };
 
@@ -126,6 +127,7 @@ export const ROOM_SETTINGS_ROW_SUMMARY: Record<
 	userNote: null,
 	info: "Original story and conversation details",
 	rename: null,
+	duplicate: null,
 	delete: null,
 };
 

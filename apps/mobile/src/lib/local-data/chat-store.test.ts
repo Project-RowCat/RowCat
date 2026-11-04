@@ -613,3 +613,57 @@ describe("routing session", () => {
 		expect(await chat.ensureRoomRoutingSession("missing-room")).toBeNull();
 	});
 });
+
+describe("duplicate", () => {
+	/** The same copy the web writes — what a copy carries is pinned in `@rowcat/chat`. */
+	it("copies messages, memories and characters into a new room and leaves the original", async () => {
+		const room = await newRoom();
+		await chat.appendMessage({
+			roomId: room.id,
+			role: "user",
+			content: "Open",
+		});
+		const gone = await chat.appendMessage({
+			roomId: room.id,
+			role: "assistant",
+			content: "Gone",
+		});
+		await chat.appendMessage({
+			roomId: room.id,
+			role: "user",
+			content: "Again",
+		});
+		await chat.deleteMessage(gone.id);
+		await chat.createMemory({ roomId: room.id, content: "Has the key" });
+		await chat.createCharacter({ roomId: room.id, name: "Librarian" });
+		await chat.setRoomUserNote(room.id, "Keep it short");
+
+		const copy = await chat.duplicateRoom(room.id, "The Night Library (copy)");
+		if (!copy) throw new Error("expected a copy");
+
+		expect(copy.id).not.toBe(room.id);
+		expect(copy.userNote).toBe("Keep it short");
+		expect(copy.routingSessionId).not.toBe(room.routingSessionId);
+		expect(await chat.getRoom(copy.id)).toEqual(copy);
+		expect(
+			(await chat.listRecentMessages(copy.id)).map((m) => m.content),
+		).toEqual(["Open", "Again"]);
+		expect((await chat.listMemories(copy.id)).map((m) => m.content)).toEqual([
+			"Has the key",
+		]);
+		expect((await chat.listCharacters(copy.id)).map((c) => c.name)).toEqual([
+			"Librarian",
+		]);
+		expect(
+			(await chat.listRecentMessages(room.id)).map((m) => m.content),
+		).toEqual(["Open", "Again"]);
+		expect((await chat.listRooms())[0]?.id).toBe(copy.id);
+	});
+
+	it("a deleted room is not copied", async () => {
+		const room = await newRoom();
+		await chat.deleteRoom(room.id);
+		expect(await chat.duplicateRoom(room.id, "copy")).toBeNull();
+		expect(await chat.listRooms()).toEqual([]);
+	});
+});

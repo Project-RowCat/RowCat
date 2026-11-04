@@ -1,5 +1,6 @@
 import type { ChatRoom, ChatStore, RoomSettingsRowId } from "@rowcat/chat";
 import { AlertDialog } from "@rowcat/ui-native";
+import { useRouter } from "expo-router";
 import {
 	type ReactNode,
 	useCallback,
@@ -21,11 +22,18 @@ import {
 } from "../../persona/persona-mutations.ts";
 import { MemoryPanel } from "../memory/panel.tsx";
 import { RoomSettingsDialog } from "../room-settings/dialog.tsx";
-import { DELETE_FAILURE_MESSAGE, DELETE_ROOM_CONFIRM } from "./actions.ts";
+import {
+	DELETE_FAILURE_MESSAGE,
+	DELETE_ROOM_CONFIRM,
+	DUPLICATE_FAILURE_MESSAGE,
+	DUPLICATE_TITLE_SUFFIX,
+} from "./actions.ts";
+import { DuplicateRoomDialog } from "./duplicate-dialog.tsx";
 import {
 	createManagedCharacter,
 	deleteManagedCharacter,
 	deleteManagedRoom,
+	duplicateManagedRoom,
 	type ManagedRoom,
 	renameManagedRoom,
 	setManagedRoomIntensity,
@@ -51,7 +59,7 @@ import { RenameRoomDialog } from "./rename-dialog.tsx";
 
 export type { ManagedRoom } from "./mutations.ts";
 
-type Surface = "settings" | "rename" | "memory" | "delete";
+type Surface = "settings" | "rename" | "memory" | "duplicate" | "delete";
 
 interface Target {
 	/** Room identity and name at request time; the window re-resolves the stored value. */
@@ -71,6 +79,8 @@ interface Target {
 export interface RoomActionRequests {
 	requestRename: (room: ManagedRoom) => void;
 	requestSettings: (room: ManagedRoom) => void;
+	/** Reached from room settings only (`ROOM_SETTINGS_IA`); the row menu does not carry it. */
+	requestDuplicate: (room: ManagedRoom) => void;
 	requestDelete: (room: ManagedRoom) => void;
 }
 
@@ -90,7 +100,10 @@ export function useRoomManagement(
 	const [target, setTarget] = useState<Target | null>(null);
 	const [deleting, setDeleting] = useState(false);
 	const [deleteError, setDeleteError] = useState<string | null>(null);
+	const [duplicating, setDuplicating] = useState(false);
+	const [duplicateError, setDuplicateError] = useState<string | null>(null);
 	const { onDeleted } = options;
+	const router = useRouter();
 
 	/** Closes an open window when the scope's owner changes, so another account's data never shows. */
 	useEffect(() => {
@@ -103,6 +116,8 @@ export function useRoomManagement(
 		setTarget(null);
 		setDeleting(false);
 		setDeleteError(null);
+		setDuplicating(false);
+		setDuplicateError(null);
 	}, []);
 
 	const open = useCallback(
@@ -111,6 +126,8 @@ export function useRoomManagement(
 			if (!store) return;
 			setDeleting(false);
 			setDeleteError(null);
+			setDuplicating(false);
+			setDuplicateError(null);
 			setTarget({ room, surface, store });
 		},
 		[store],
@@ -120,6 +137,7 @@ export function useRoomManagement(
 		() => ({
 			requestRename: open("rename"),
 			requestSettings: open("settings"),
+			requestDuplicate: open("duplicate"),
 			requestDelete: open("delete"),
 		}),
 		[open],
@@ -133,6 +151,7 @@ export function useRoomManagement(
 		(room: ManagedRoom, row: RoomSettingsRowId) => {
 			if (row === "rename") return requests.requestRename(room);
 			if (row === "memory") return open("memory")(room);
+			if (row === "duplicate") return requests.requestDuplicate(room);
 			if (row === "delete") return requests.requestDelete(room);
 		},
 		[requests, open],
@@ -162,6 +181,31 @@ export function useRoomManagement(
 				});
 		},
 		[deleting, scopeOf, onDeleted],
+	);
+
+	/**
+	 * The copy opens on success: the user asked for a conversation to continue, and a copy that only
+	 * appears in the list leaves them guessing which row it is. `push`, so back returns to where the
+	 * duplicate was made. Navigating here rather than through a callback means no trigger can forget.
+	 */
+	const confirmDuplicate = useCallback(
+		(owner: ChatStore, room: ManagedRoom) => {
+			if (duplicating) return;
+			setDuplicating(true);
+			setDuplicateError(null);
+			void duplicateManagedRoom(scopeOf(owner), room, DUPLICATE_TITLE_SUFFIX)
+				.then((outcome) => {
+					setDuplicating(false);
+					setTarget(null);
+					if (outcome.status === "done" && outcome.copy)
+						router.push(`/chat/${encodeURIComponent(outcome.copy.id)}`);
+				})
+				.catch(() => {
+					setDuplicating(false);
+					setDuplicateError(DUPLICATE_FAILURE_MESSAGE);
+				});
+		},
+		[duplicating, scopeOf, router],
 	);
 
 	/**
@@ -251,6 +295,13 @@ export function useRoomManagement(
 							onRename={(title: string) =>
 								renameManagedRoom(scopeOf(target.store), room.id, title)
 							}
+						/>
+					) : target.surface === "duplicate" ? (
+						<DuplicateRoomDialog
+							busy={duplicating}
+							error={duplicateError}
+							onConfirm={() => confirmDuplicate(target.store, room)}
+							onClose={close}
 						/>
 					) : target.surface === "memory" ? (
 						<MemoryPanel

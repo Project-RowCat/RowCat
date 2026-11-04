@@ -54,6 +54,7 @@ describe("groups and rows", () => {
 			"userNote",
 			"info",
 			"rename",
+			"duplicate",
 			"delete",
 		] satisfies RoomSettingsRowId[]);
 	});
@@ -73,7 +74,7 @@ describe("groups and rows", () => {
 					"info",
 				],
 			},
-			{ id: "management", rows: ["rename", "delete"] },
+			{ id: "management", rows: ["rename", "duplicate", "delete"] },
 		]);
 	});
 
@@ -83,11 +84,11 @@ describe("groups and rows", () => {
 		expect(rowIds.at(-1)).toBe("delete");
 	});
 
-	/** Delete has no arrow: it opens a confirmation, not a pane, and an arrow would promise "go in and pick more". */
-	it("only delete has no navigation arrow", () => {
+	/** Delete and duplicate have no arrow: they open a confirmation, not a pane, and an arrow would promise "go in and pick more". */
+	it("only the two confirmation rows have no navigation arrow", () => {
 		for (const row of rowIds)
 			expect(ROOM_SETTINGS_NAVIGATIONAL_ROWS.has(row), row).toBe(
-				row !== "delete",
+				row !== "delete" && row !== "duplicate",
 			);
 	});
 });

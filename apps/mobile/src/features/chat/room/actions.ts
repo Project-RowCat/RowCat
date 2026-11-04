@@ -47,5 +47,23 @@ export const DELETE_ROOM_CONFIRM = {
  */
 export const RENAME_FAILURE_MESSAGE = "Couldn't rename it. Please try again.";
 
+/**
+ * Duplicate confirmation; same words as the web's `duplicateDialog`. It names what travels so the
+ * user does not have to open the copy to learn whether memories and characters came along.
+ */
+export const DUPLICATE_ROOM_CONFIRM = {
+	title: "Duplicate this conversation?",
+	message:
+		"A new conversation starts with this one's messages, memories, characters and settings. The original stays as it is, and the two continue separately from here.",
+	confirm: "Duplicate",
+	cancel: "Cancel",
+} as const;
+
+/** Appended to the copy's title (`duplicateRoomTitle` keeps it within the title rule). */
+export const DUPLICATE_TITLE_SUFFIX = "(copy)";
+
+export const DUPLICATE_FAILURE_MESSAGE =
+	"Couldn't duplicate the conversation. Please try again.";
+
 export const DELETE_FAILURE_MESSAGE =
 	"Couldn't delete the conversation. Please try again.";

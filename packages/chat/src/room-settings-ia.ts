@@ -8,8 +8,9 @@
  *   adding a row breaks both apps at compile time.
  * - Groups follow the nature of a setting (how output is made, what the conversation is, how the
  *   conversation is managed), not its storage location.
- * - No rows are added for features that need new product semantics (pin, archive, copy, export,
- *   share, folders). Each would add a screen to both apps.
+ * - No rows are added for features that need new product semantics (pin, archive, export, share,
+ *   folders). Each would add a screen to both apps. `duplicate` is the one that arrived, with its
+ *   semantics written down first (`room-duplicate.ts`).
  */
 
 export type RoomSettingsGroupId = "generation" | "conversation" | "management";
@@ -66,6 +67,14 @@ export type RoomSettingsRowId =
 	| "userNote"
 	| "info"
 	| "rename"
+	/**
+	 * Duplicate: a new conversation that starts as an exact copy of this one (`room-duplicate.ts`).
+	 * It sits between `rename` and `delete`: like rename it does something to the conversation itself,
+	 * and it is not irreversible, so it is neither destructive nor last. It opens a confirmation, not a
+	 * screen, so it carries no navigation arrow. It is not in the row menu (`ROOM_ACTIONS`): the sidebar's three actions are the
+	 * lightweight ones, and a copy is reached from settings everywhere that menu opens.
+	 */
+	| "duplicate"
 	| "delete";
 
 export interface RoomSettingsGroupSpec {
@@ -92,7 +101,7 @@ export const ROOM_SETTINGS_IA: readonly RoomSettingsGroupSpec[] = [
 			"info",
 		],
 	},
-	{ id: "management", rows: ["rename", "delete"] },
+	{ id: "management", rows: ["rename", "duplicate", "delete"] },
 ];
 
 /**

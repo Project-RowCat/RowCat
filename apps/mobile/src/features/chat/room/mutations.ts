@@ -1,9 +1,11 @@
-import type {
-	ChatIntensity,
-	ChatNarrationSettings,
-	ChatPersonaSnapshot,
-	ChatStore,
-	GenerationPreferenceStore,
+import {
+	type ChatIntensity,
+	type ChatNarrationSettings,
+	type ChatPersonaSnapshot,
+	type ChatRoom,
+	type ChatStore,
+	duplicateRoomTitle,
+	type GenerationPreferenceStore,
 } from "@rowcat/chat";
 
 /**
@@ -25,7 +27,7 @@ export interface ManagedRoom {
 /**
  * The stores as of when the operation started, plus a predicate for "is it still mine".
  *
- * Preferences ride along only for deletion. Both come from the same activation bundle, so one
+ * Preferences ride along only for deletion and duplication. Both come from the same activation bundle, so one
  * ownership check on the chat store covers both.
  */
 export interface RoomMutationScope {
@@ -144,6 +146,35 @@ export async function setManagedRoomUserNote(
  * implements; this app's preference table must not leak into it. A cleanup failure does not undo
  * the deletion: the leftover row is never read, and resurrecting a deleted conversation is worse.
  */
+/**
+ * Duplicates a room (`ChatStore.duplicateRoom`, the rule is `planRoomDuplicate`) and carries this
+ * device's generation overrides to the copy, the same composition the web's management hook does.
+ * The overrides stay out of the store port for the reason deletion's cleanup does. A failure to
+ * carry them does not undo the committed copy; the copy then inherits the global preference.
+ *
+ * `null` in `done` means the original vanished meanwhile: nothing was written, and the window
+ * closes on its own when its subscription sees the room gone.
+ */
+export async function duplicateManagedRoom(
+	scope: RoomMutationScope,
+	room: ManagedRoom,
+	suffix: string,
+): Promise<{ status: "foreign" } | { status: "done"; copy: ChatRoom | null }> {
+	if (!scope.owns(scope.store)) return { status: "foreign" };
+	const copy = await scope.store.duplicateRoom(
+		room.id,
+		duplicateRoomTitle(room.title, suffix),
+	);
+	if (copy && scope.preferences) {
+		const preferences = scope.preferences;
+		await preferences
+			.getRoom(room.id)
+			.then((preference) => preferences.setRoom(copy.id, preference))
+			.catch(() => undefined);
+	}
+	return { status: "done", copy };
+}
+
 export async function deleteManagedRoom(
 	scope: RoomMutationScope,
 	roomId: string,

@@ -179,6 +179,7 @@ export const chat = {
 		userNote: "User note",
 		conversationInfo: "Conversation info",
 		rename: "Rename",
+		duplicateConversation: "Duplicate conversation",
 		deleteConversation: "Delete conversation",
 		persona: "Persona",
 		characters: "Characters",
@@ -244,6 +245,15 @@ export const chat = {
 		me: "Me",
 		other: "Other",
 		count: "{{count}} messages",
+	},
+	duplicateDialog: {
+		title: "Duplicate this conversation?",
+		description:
+			"A new conversation starts with the messages, memories, characters and settings of <title>{{title}}</title>. The original stays as it is, and the two continue separately from here.",
+		titleSuffix: "(copy)",
+		duplicate: "Duplicate",
+		duplicating: "Duplicating…",
+		failed: "Couldn't duplicate the conversation. Please try again.",
 	},
 	deleteDialog: {
 		description:

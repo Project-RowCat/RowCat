@@ -49,6 +49,7 @@ export function RoomSettingsHome({
 	onOpenView,
 	onOpenMemory,
 	onRename,
+	onDuplicate,
 	onDelete,
 }: {
 	/**
@@ -68,6 +69,7 @@ export function RoomSettingsHome({
 	/** Trigger that opens the memory window. This screen does not own memory. */
 	onOpenMemory: () => void;
 	onRename: () => void;
+	onDuplicate: () => void;
 	onDelete: () => void;
 }) {
 	const { t } = useTranslation(["chat", "common"]);
@@ -266,6 +268,14 @@ export function RoomSettingsHome({
 					title={t("home.rename")}
 					navigational
 					onClick={onRename}
+				/>
+				{/*
+				 * Duplicate sits between rename and delete (ROOM_SETTINGS_IA). No arrow: it opens a
+				 * confirmation, not a surface, and it is not destructive.
+				 */}
+				<RoomSettingsRow
+					title={t("home.duplicateConversation")}
+					onClick={onDuplicate}
 				/>
 				<RoomSettingsRow
 					title={t("home.deleteConversation")}

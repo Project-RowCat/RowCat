@@ -28,6 +28,7 @@ import {
 	type CreateMemoryInput,
 	type CreatePersonaInput,
 	type CreateRoomInput,
+	chatRoomDuplicateRecordCount,
 	createCharacterRecord,
 	createMemoryRecord,
 	createMessageRecord,
@@ -43,6 +44,7 @@ import {
 	mergeMemorySource,
 	nextSummaryEpoch,
 	planMaintenanceRewind,
+	planRoomDuplicate,
 	requireCharacterName,
 	requireCharacterPrompt,
 	requireChatUserNote,
@@ -629,6 +631,59 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 		 * deletion into a push of thousands of records. So children are cleared with one `UPDATE`
 		 * statement per table, not read and rewritten row by row.
 		 */
+		/**
+		 * The same copy the web writes: `planRoomDuplicate` decides what a copy is, and this reads the
+		 * source and writes the result in one transaction. Children are read with their tombstones; the
+		 * pure rule skips them, so the "live only" decision is not written twice in SQL.
+		 */
+		async duplicateRoom(id: string, title: string): Promise<ChatRoom | null> {
+			const checked = requireRoomTitle(title);
+			const now = nowIso();
+			return db.transaction(async (tx) => {
+				const room = await liveRoom(tx, id);
+				// Copying a tombstone would bring back a conversation the user deleted.
+				if (!room) return null;
+				const children = async <T>(
+					table: string,
+					fromRow: (row: SqlRow) => T,
+				): Promise<T[]> =>
+					(
+						await tx.all<SqlRow>(`SELECT * FROM ${table} WHERE room_id = ?`, [
+							id,
+						])
+					).map(fromRow);
+				const summaryRow = await tx.first<SqlRow>(
+					"SELECT * FROM chat_summary WHERE id = ?",
+					[summaryIdFor(id)],
+				);
+				const source = {
+					room,
+					messages: await children("chat_message", chatMessageTable.fromRow),
+					memories: await children("chat_memory", chatMemoryTable.fromRow),
+					characters: await children(
+						"chat_character",
+						chatCharacterTable.fromRow,
+					),
+					summary: summaryRow ? chatSummaryTable.fromRow(summaryRow) : null,
+				};
+				const copy = planRoomDuplicate(source, {
+					title: checked,
+					now,
+					newId: newLocalId,
+					revs: await nextRevs(tx, chatRoomDuplicateRecordCount(source)),
+				});
+				await chatRoomTable.upsert(tx, copy.room);
+				for (const message of copy.messages)
+					await chatMessageTable.upsert(tx, message);
+				for (const memory of copy.memories)
+					await chatMemoryTable.upsert(tx, memory);
+				for (const character of copy.characters)
+					await chatCharacterTable.upsert(tx, character);
+				if (copy.summary) await chatSummaryTable.upsert(tx, copy.summary);
+				return copy.room;
+			});
+		},
+
 		async deleteRoom(id: string): Promise<void> {
 			const now = nowIso();
 			await db.transaction(async (tx) => {

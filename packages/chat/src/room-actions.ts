@@ -12,8 +12,10 @@
  * Types catch omissions instead: each app's copy table is `Record<RoomActionId, string>`, so adding
  * a line here breaks both apps' compilation until they label it.
  *
- * Items are not added. Pin, archive, copy, export, share and folders each need new product meaning
- * (stored fields and sync rules), and are not added just because common chat apps have them.
+ * Items are not added. Pin, archive, export, share and folders each need new product meaning (stored
+ * fields and sync rules), and are not added just because common chat apps have them. Duplicate has
+ * that meaning (`room-duplicate.ts`) but lives in room settings' management group, not here: this
+ * list is also the sidebar's, and the sidebar keeps its three lightweight actions.
  */
 
 /**

@@ -234,6 +234,7 @@ what binds other packages too.**
   ```text
   @rowcat/chat     chatPlaceholderNames · resolveChatPlaceholders
                    recentSidebarRooms · roomLibraryView · ROOM_ACTIONS · ROOM_SETTINGS_IA
+                   planRoomDuplicate · duplicateRoomTitle
                    roomSettingsGroups · roomSettingsRowAvailable
                    sortCharacters · checkCharacterName · createCharacterRecord
                    resolveNarrationExecution · narrationInjection · narrationWritesUser

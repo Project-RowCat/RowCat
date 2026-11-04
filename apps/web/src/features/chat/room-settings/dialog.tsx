@@ -192,6 +192,11 @@ export function RoomSettingsDialog({
 								onClose();
 								management.requestRename(room);
 							}}
+							onDuplicate={() => {
+								// Duplication is not performed here either; its confirmation is a sibling window.
+								onClose();
+								management.requestDuplicate(room);
+							}}
 							onDelete={() => {
 								// Deletion is not performed here. The confirmation dialog is the real boundary.
 								onClose();

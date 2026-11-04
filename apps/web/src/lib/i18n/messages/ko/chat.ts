@@ -173,6 +173,7 @@ export const chat: Messages["chat"] = {
 		userNote: "유저 노트",
 		conversationInfo: "대화 정보",
 		rename: "이름 변경",
+		duplicateConversation: "대화 복제",
 		deleteConversation: "대화 삭제",
 		persona: "페르소나",
 		characters: "등장인물",
@@ -236,6 +237,15 @@ export const chat: Messages["chat"] = {
 		me: "나",
 		other: "상대",
 		count: "{{count}}개 메시지",
+	},
+	duplicateDialog: {
+		title: "대화를 복제할까요?",
+		description:
+			"<title>{{title}}</title>의 메시지·기억·등장인물·대화 설정을 그대로 담은 새 대화를 만듭니다. 원래 대화는 바뀌지 않고, 두 대화는 이후 따로 이어집니다.",
+		titleSuffix: "(사본)",
+		duplicate: "복제",
+		duplicating: "복제 중…",
+		failed: "대화를 복제하지 못했습니다. 다시 시도해 주세요.",
 	},
 	deleteDialog: {
 		description:

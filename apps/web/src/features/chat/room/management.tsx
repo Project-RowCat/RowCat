@@ -1,15 +1,19 @@
-import type {
-	ChatRoom,
-	ChatStore,
-	GenerationPreferenceStore,
+import {
+	type ChatRoom,
+	type ChatStore,
+	duplicateRoomTitle,
+	type GenerationPreferenceStore,
 } from "@rowcat/chat";
+import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { translator } from "#/lib/i18n/current.ts";
 import { useLocalRoom } from "#/lib/local-chat/hooks.ts";
 import { useChatScope } from "#/lib/local-chat/scope.ts";
 import { useGenerationScope } from "#/lib/local-generation/scope.ts";
 import { MemoryDialog } from "../memory/dialog.tsx";
 import { RoomSettingsDialog } from "../room-settings/dialog.tsx";
 import { DeleteRoomDialog } from "./delete-dialog.tsx";
+import { DuplicateRoomDialog } from "./duplicate-dialog.tsx";
 import { RenameRoomDialog } from "./rename-dialog.tsx";
 
 /**
@@ -43,7 +47,7 @@ export interface ManagedRoom {
  * this value, so stacked dialogs cannot be represented; otherwise it would be unpredictable which
  * one Escape closes.
  */
-type TargetAction = "rename" | "settings" | "delete" | "memory";
+type TargetAction = "rename" | "settings" | "duplicate" | "delete" | "memory";
 
 interface Target {
 	room: ManagedRoom;
@@ -72,6 +76,8 @@ interface Target {
 export interface RoomActionRequests {
 	requestRename: (room: ManagedRoom) => void;
 	requestSettings: (room: ManagedRoom) => void;
+	/** Reached from room settings only (`ROOM_SETTINGS_IA`); the row menu does not carry it. */
+	requestDuplicate: (room: ManagedRoom) => void;
 	requestDelete: (room: ManagedRoom) => void;
 }
 
@@ -92,6 +98,7 @@ export function useRoomManagement(
 	const { store: preferences } = useGenerationScope();
 	const [target, setTarget] = useState<Target | null>(null);
 	const { onDeleted } = options;
+	const navigate = useNavigate();
 
 	/**
 	 * When the scope owner changes, an open dialog is closed. Suppose Alice opens a rename dialog and
@@ -137,6 +144,7 @@ export function useRoomManagement(
 	const requests: RoomActionRequests = {
 		requestRename: request("rename"),
 		requestSettings: request("settings"),
+		requestDuplicate: request("duplicate"),
 		requestDelete: request("delete"),
 	};
 
@@ -171,6 +179,50 @@ export function useRoomManagement(
 							management={requests}
 							onOpenMemory={() => setTarget({ ...target, action: "memory" })}
 							onClose={close}
+						/>
+					) : target.action === "duplicate" ? (
+						<DuplicateRoomDialog
+							room={room}
+							onClose={close}
+							onDuplicate={() =>
+								run(async ({ store: chat, preferences: prefs }) => {
+									const copy = await chat.duplicateRoom(
+										room.id,
+										duplicateRoomTitle(
+											room.title,
+											translator("chat")("duplicateDialog.titleSuffix"),
+										),
+									);
+									/* The original vanished meanwhile; `RoomTarget` closes the dialog on its own. */
+									if (!copy) return;
+									/**
+									 * The room's device generation overrides (model, length, reasoning) travel too, so the
+									 * copy answers with what the original does on this device. They live outside the chat
+									 * store for the reason deletion clears them here: the port does not know this app's
+									 * preference table. A failure does not undo the copy, which is already committed; the
+									 * copy then inherits the global preference, the same as a room the user never tuned.
+									 */
+									try {
+										const preference = await prefs?.getRoom(room.id);
+										if (preference) await prefs?.setRoom(copy.id, preference);
+									} catch (failure) {
+										console.warn(
+											"[chat] couldn't carry the conversation settings to the copy",
+											failure,
+										);
+									}
+									/**
+									 * The copy opens: the user asked for a conversation to continue, and a copy that only
+									 * appears in the list leaves them guessing which row it is. Navigating from here rather
+									 * than through a callback means no call site can forget it.
+									 */
+									setTarget(null);
+									void navigate({
+										to: "/chat/$roomId",
+										params: { roomId: copy.id },
+									});
+								})
+							}
 						/>
 					) : target.action === "memory" ? (
 						/**
