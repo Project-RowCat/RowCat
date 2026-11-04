@@ -28,24 +28,31 @@ import { z } from "zod";
 /**
  * Features a switch can apply to. A closed vocabulary.
  *
- * Four keys, each backed by a server path that actually checks it:
+ * Each key has a path that reads it:
  * - chat: POST /v2/chat/generate. Managed generation, sent on our key.
  * - publish: POST and PUT /v2/stories. Writes to the catalog.
  * - sync: POST /v2/me/sync/records. Push for encrypted sync.
  * - signup: POST /v2/auth/sign-up/*. Creating new member accounts.
+ * - prompt-guards: prompt wrapping in managed generation and in updated BYO clients.
  *
  * Limit: chat cannot block BYO generation, because that request never passes through this server.
  * Moderation omits a chat.generate capability for the same reason. The switch closes managed
  * generation only, and the comment says so plainly.
  */
-export const FeatureFlagKey = z.enum(["chat", "publish", "sync", "signup"]);
+export const FeatureFlagKey = z.enum([
+	"chat",
+	"publish",
+	"sync",
+	"signup",
+	"prompt-guards",
+]);
 export type FeatureFlagKey = z.infer<typeof FeatureFlagKey>;
 
 /**
  * Three states. This is why default does not collapse into a boolean:
  * - default: follows this deployment's default. The operator has not touched it.
  * - on: explicitly enabled.
- * - off: explicitly disabled. The server rejects the operation.
+ * - off: explicitly disabled. Breakers reject the operation; prompt-guards skips wrapping.
  *
  * Merging default and on would make the operator having turned it on and nobody having touched it
  * the same value. Changing the product default would then also move deployments that were
@@ -68,11 +75,18 @@ export interface FeatureFlagDefinition {
 	key: FeatureFlagKey;
 	defaultState: Extract<FeatureFlagState, "on" | "off">;
 	label: string;
-	/** What the server rejects while this switch is off. Written concretely, not in abstract terms. */
+	/** What changes while this switch is off, including whether the operation continues. */
 	description: string;
 }
 
 export const FEATURE_FLAGS: readonly FeatureFlagDefinition[] = [
+	{
+		key: "prompt-guards",
+		defaultState: "on",
+		label: "Prompt guards",
+		description:
+			"Adds absolute, rating, minor-character, house-rule and tail guards to AI prompts. When off, generation continues without those blocks. Applies to managed generation and updated web/mobile BYO and runtime clients. Roleplay rules and chosen expression intensity stay in place.",
+	},
 	{
 		key: "chat",
 		defaultState: "on",
@@ -242,8 +256,8 @@ export type AppVersionFloorSetRequest = z.infer<
 /**
  * Values the client reads at boot from GET /v2/runtime-config. Public.
  *
- * Only what the app needs to draw its screens: which features are off (so it does not draw dead
- * buttons), and the minimum supported version.
+ * Client presentation and prompt policy: which features are off (so it does not draw dead buttons
+ * or add disabled prompt guards), and the minimum supported version.
  *
  * Operator fields are not in this response. updatedBy, updatedAt and internal reasons have no place
  * in it. The guarantee comes from using a different type, not from a function that picks fields,

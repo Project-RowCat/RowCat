@@ -10,7 +10,6 @@ import { afterAll, afterEach, describe, expect, test, vi } from "vitest";
 import { app } from "../app.ts";
 import { closeDb, db } from "../db/client.ts";
 import { member } from "../db/schema.ts";
-
 import {
 	__setRateLimitStoreForTest,
 	createMemoryRateLimitStore,
@@ -18,6 +17,7 @@ import {
 import { RATE_LIMIT_POLICIES } from "../lib/rate-limit/policy.ts";
 import type { RateLimitStore } from "../lib/rate-limit/store.ts";
 import { listManagedModels } from "../services/generation/managed-models.ts";
+import { setFeatureFlag } from "../services/ops.ts";
 import { allowManagedGeneration, createTestMember } from "../test/auth.ts";
 import { connectTestDatabase, deleteTestUsers } from "../test/database.ts";
 import { WEB_ORIGIN } from "../test/http.ts";
@@ -169,6 +169,43 @@ afterAll(async () => {
 });
 
 describe.skipIf(!databaseReady)("generation policy — server authority", () => {
+	test("the operator can disable and re-enable prompt guards", async () => {
+		const viewer = await signUp();
+		try {
+			for (const enabled of [false, true]) {
+				await setFeatureFlag({
+					key: "prompt-guards",
+					actorId: viewer.memberId,
+					request: {
+						state: enabled ? "on" : "off",
+						message: "",
+						reason: "Test prompt guard setting",
+					},
+				});
+				const provider = captureProviderRequest();
+				const response = await generate(
+					viewer.cookie,
+					hostileRequest("all-ages"),
+				);
+				expect(response.status).toBe(200);
+				await drain(response);
+				const system = systemTextOf(provider.body());
+				expect(system.includes(ABSOLUTE_GUARD)).toBe(enabled);
+				if (!enabled) expect(system).toBe(hostileRequest("all-ages").system);
+			}
+		} finally {
+			await setFeatureFlag({
+				key: "prompt-guards",
+				actorId: viewer.memberId,
+				request: {
+					state: "default",
+					message: "",
+					reason: "Reset test setting",
+				},
+			});
+		}
+	});
+
 	test("even a request with its guards removed goes out with the absolute guard attached", async () => {
 		const { cookie } = await signUp();
 		const provider = captureProviderRequest();

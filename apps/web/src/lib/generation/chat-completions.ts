@@ -42,9 +42,11 @@ import type {
  * that file's rules re-established in the browser. What differs on purpose, because here the account
  * is the user's, not the operator's:
  *
- * - No `provider` routing block. Managed pins the operator's sub-processors and retention; on this
- *   path the relationship is between the user and their server, and adding ours would make models
- *   their account can call fail for reasons they cannot see.
+ * - No `provider` routing block of ours. Managed pins the operator's sub-processors and retention; on
+ *   this path the relationship is between the user and their server, and adding ours would make
+ *   models their account can call fail for reasons they cannot see. The one block that does go out is
+ *   the person's own: an upstream they pinned for this model (`upstreamRouting`, OpenRouter only),
+ *   sent verbatim and honoured strictly.
  * - Continuation is always the nudge shape. The device has no per-upstream registry, and the nudge
  *   ends on a user turn, which every chat-completions server accepts.
  *
@@ -74,6 +76,8 @@ export interface ChatCompletionsProfile {
 	routingSession: boolean;
 	/** Whether the server understands the unified `reasoning: { effort }` parameter. */
 	unifiedReasoning: boolean;
+	/** Whether the server understands `provider: { order, allow_fallbacks }` (a pinned upstream). */
+	upstreamRouting: boolean;
 	/** HTTP status → our vocabulary; the shared table unless the server gives a code its own meaning. */
 	failureForStatus(status: number, retryAfterSeconds?: number): ProviderError;
 }
@@ -203,6 +207,7 @@ export function buildChatCompletionsBody(
 	profile: ChatCompletionsProfile,
 	request: ByoTransportInput["request"],
 	model: string,
+	upstream?: string,
 ): Record<string, unknown> {
 	const messages = request.continuation
 		? toContinuationMessages(request.messages)
@@ -216,6 +221,14 @@ export function buildChatCompletionsBody(
 		 */
 		...(profile.routingSession && request.routingSessionId
 			? { session_id: request.routingSessionId }
+			: {}),
+		/**
+		 * The upstream the person pinned, and only that one. No fallback: falling back would send the
+		 * prompt to a company they chose not to use, and if that endpoint is down the turn fails and
+		 * says so. Absent means the gateway chooses, as before.
+		 */
+		...(profile.upstreamRouting && upstream
+			? { provider: { order: [upstream], allow_fallbacks: false } }
 			: {}),
 		...(cached
 			? { cache_control: { type: "ephemeral", ttl: tailCacheTtl(messages) } }
@@ -333,6 +346,8 @@ async function* stream(
 		model: input.model,
 		continuation: request.continuation,
 		reasoning: profile.unifiedReasoning && request.reasoningEffort !== null,
+		/** Whether an upstream was pinned (not which: the cause needs the fact, not the company). */
+		pinned: profile.upstreamRouting && Boolean(input.upstream),
 	} as const;
 
 	const base = profile.baseUrl(input.endpoint);
@@ -350,7 +365,7 @@ async function* stream(
 			signal: input.signal,
 			headers: headersFor(profile, input.secret),
 			body: JSON.stringify(
-				buildChatCompletionsBody(profile, request, input.model),
+				buildChatCompletionsBody(profile, request, input.model, input.upstream),
 			),
 		});
 	} catch (thrown) {

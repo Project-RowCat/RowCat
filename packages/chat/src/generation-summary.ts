@@ -3,9 +3,11 @@ import { resolveGenerationExecution } from "./generation-availability.ts";
 import type {
 	EffectiveGeneration,
 	GenerationProvider,
+	GenerationTarget,
 	ResponseLength,
 } from "./generation-preference.ts";
 import { generationTargetKey } from "./generation-preference.ts";
+import { openRouterUpstreamOf } from "./openrouter.ts";
 import type { ReasoningEffort } from "./reasoning.ts";
 import { resolveExecutableReasoning } from "./reasoning.ts";
 
@@ -105,7 +107,12 @@ export function resolveGenerationSummary(
 	});
 
 	return {
-		modelLabel: entry?.label ?? target.model,
+		/**
+		 * A pinned OpenRouter upstream rides on the name as its tag: the room's line says where it is
+		 * pinned, and the tag is the only name this pure function holds (the gateway's display names
+		 * arrive with the live listing, which the summary does not wait for).
+		 */
+		modelLabel: withUpstreamTag(entry?.label ?? target.model, target),
 		responseLength: input.effective.responseLength,
 		/**
 		 * Built from the capabilities the catalog reports, not from the stored step. Copying the stored
@@ -122,3 +129,8 @@ export function resolveGenerationSummary(
 		blocked: execution.status === "blocked",
 	};
 }
+
+const withUpstreamTag = (label: string, target: GenerationTarget): string => {
+	const upstream = openRouterUpstreamOf(target);
+	return upstream ? `${label} · ${upstream}` : label;
+};

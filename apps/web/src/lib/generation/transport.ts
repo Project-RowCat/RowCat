@@ -65,6 +65,12 @@ export interface ByoTransportInput {
 	 * choose where the conversation goes.
 	 */
 	endpoint?: string;
+	/**
+	 * The gateway endpoint the person pinned for this model (`GenerationTarget.upstream`, already
+	 * checked by `readOpenRouterUpstream`). Only the OpenRouter profile sends it; absent means the
+	 * gateway chooses.
+	 */
+	upstream?: string;
 	signal: AbortSignal;
 	/** Test seam. When unset, the runtime's fetch is used. */
 	fetch?: typeof globalThis.fetch;

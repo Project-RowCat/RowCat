@@ -49,6 +49,7 @@ export function assembleProtectedStoryGeneration(input: {
 	seed: StoryChatSeedDto;
 	request: StoryChatGenerationRequest;
 	allAges: boolean;
+	promptGuardsEnabled: boolean;
 }): AssembledStoryGeneration {
 	const assembled = buildChatGenerationRequest(
 		storyAssemblyInput({
@@ -62,6 +63,7 @@ export function assembleProtectedStoryGeneration(input: {
 		system: applyPlatformSafetyPolicy(assembled.system, {
 			...conversationSafetyPolicy(assembled.context),
 			allAges: input.allAges,
+			enabled: input.promptGuardsEnabled,
 		}),
 	};
 

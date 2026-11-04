@@ -44,6 +44,10 @@ import {
 	buildModelOptions,
 	unavailableMessage,
 } from "../generation/model-options.ts";
+import {
+	OpenRouterTargetFields,
+	openRouterFieldsStand,
+} from "../generation/openrouter-target-fields.tsx";
 import { ReasoningEffortSelect } from "../generation/reasoning-effort-select.tsx";
 import { useRoomGenerationState } from "../generation/use-room-generation.ts";
 
@@ -274,6 +278,15 @@ export function RoomSettingsGeneration({ roomId }: { roomId: string }) {
 						))}
 					</Select>
 				</SubField>
+				{/** OpenRouter: a typed model id and its provider, for a target this layer chose, while connected. */}
+				{openRouterFieldsStand(room.target, connections.providers) ? (
+					<OpenRouterTargetFields
+						label={MODEL_TARGET_FIELD.label}
+						target={room.target}
+						disabled={!store}
+						onChange={applyTarget}
+					/>
+				) : null}
 
 				{/* State below the row that the effective target is unusable; do not clear or swap the model, or the user would run one they never chose. */}
 				{options.unavailable ? (

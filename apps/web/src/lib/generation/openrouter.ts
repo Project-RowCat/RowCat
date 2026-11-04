@@ -14,6 +14,9 @@ import { ProviderError, providerErrorForStatus } from "./errors.ts";
  *   `usesExplicitPromptCaching` is the same rule); other upstreams cache implicitly.
  * - `session_id` and the unified `reasoning.effort` are the gateway's parameters, the same ones the
  *   managed body sends.
+ * - `reasoning.effort: "none"` is thinking off, listed per model by the catalogue.
+ * - A model provider the person typed for this model goes out as
+ *   `provider: { order: [slug], allow_fallbacks: false }` (`upstreamRouting`); none typed, none sent.
  * - 403 is a moderation flag on this gateway, not a bad key (that is 401). Sending the user to fix a
  *   key that works would hide the real cause.
  * - The credential check is `/key`, which requires auth and spends nothing.
@@ -30,6 +33,7 @@ export const OPENROUTER_PROFILE: ChatCompletionsProfile = {
 	explicitPromptCaching: (model) => model.startsWith("anthropic/"),
 	routingSession: true,
 	unifiedReasoning: true,
+	upstreamRouting: true,
 	failureForStatus: (status, retryAfterSeconds) =>
 		status === 403
 			? new ProviderError("content_blocked")

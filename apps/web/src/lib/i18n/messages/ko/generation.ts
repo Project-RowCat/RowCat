@@ -60,6 +60,17 @@ export const generation: Messages["generation"] = {
 		byoNotPermitted: " · 만 {{guardianAge}}세 미만 이용 불가",
 		providerNotConnected: " · 먼저 제공자 연결",
 		missingFromCatalog: " · 목록에 없음",
+		customModel: "모델 ID",
+		customModelHint:
+			"OpenRouter 모델 ID(vendor/model)를 직접 입력할 수 있습니다. 목록에 없는 모델도 입력하면 그대로 사용합니다.",
+		customModelInvalid:
+			"qwen/qwen3-max처럼 OpenRouter 표기 그대로 모델 ID를 입력해 주세요.",
+		upstream: "모델 제공자",
+		upstreamPlaceholder: "자동 (예: anthropic, deepinfra/fp8)",
+		upstreamHint:
+			"OpenRouter의 제공자 이름(slug)을 입력하면 그 제공자만 사용하고, 응답할 수 없을 때 다른 곳으로 넘기지 않습니다. 비워 두면 OpenRouter가 고릅니다.",
+		upstreamInvalid:
+			"anthropic, amazon-bedrock 같은 제공자 이름을 입력해 주세요.",
 		managedOnly:
 			"이 작품은 {{app}} 제공 모델로만 대화할 수 있습니다. 제공자에서 {{app}}을 선택해 주세요.",
 		byoNotPermittedMessage:

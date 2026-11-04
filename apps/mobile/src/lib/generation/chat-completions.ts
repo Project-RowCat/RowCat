@@ -36,7 +36,8 @@ import { readSse } from "./sse.ts";
  * answering differently per app.
  *
  * What differs from the managed body is on purpose, because the account is the user's: no
- * `provider` routing block (the user's own account settings apply), and continuation is always the
+ * `provider` routing block of ours (the user's own account settings apply; the one block that goes
+ * out is an upstream the person pinned, `upstreamRouting`), and continuation is always the
  * nudge shape (the device has no per-upstream registry; the nudge ends on a user turn, which every
  * server accepts).
  *
@@ -65,6 +66,8 @@ export interface ChatCompletionsProfile {
 	routingSession: boolean;
 	/** Whether the server understands the unified `reasoning: { effort }` parameter. */
 	unifiedReasoning: boolean;
+	/** Whether the server understands `provider: { order, allow_fallbacks }` (a pinned upstream). */
+	upstreamRouting: boolean;
 	/** HTTP status → vocabulary; the shared table unless the server gives a code its own meaning. */
 	failureForStatus(status: number, retryAfterSeconds?: number): ProviderError;
 }
@@ -169,6 +172,7 @@ function buildRequestBody(
 	profile: ChatCompletionsProfile,
 	request: ByoTransportInput["request"],
 	model: string,
+	upstream: string | undefined,
 ): Record<string, unknown> {
 	const messages = request.continuation
 		? toContinuationMessages(request.messages)
@@ -179,6 +183,13 @@ function buildRequestBody(
 		/** Sticky routing: the conversation's opaque key; the parameter name ends in this file. */
 		...(profile.routingSession && request.routingSessionId
 			? { session_id: request.routingSessionId }
+			: {}),
+		/**
+		 * The upstream the person pinned, and only that one, with no fallback to a company they chose
+		 * against; absent means the gateway chooses (the web's `buildChatCompletionsBody` is the pair).
+		 */
+		...(profile.upstreamRouting && upstream
+			? { provider: { order: [upstream], allow_fallbacks: false } }
 			: {}),
 		...(cached
 			? { cache_control: { type: "ephemeral", ttl: tailCacheTtl(messages) } }
@@ -406,7 +417,7 @@ export async function startChatCompletions(
 			signal: input.signal,
 			headers: headersFor(profile, input.secret),
 			body: JSON.stringify(
-				buildRequestBody(profile, input.request, input.model),
+				buildRequestBody(profile, input.request, input.model, input.upstream),
 			),
 		});
 	} catch (thrown) {

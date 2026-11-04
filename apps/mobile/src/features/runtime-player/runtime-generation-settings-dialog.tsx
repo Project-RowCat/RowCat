@@ -34,6 +34,10 @@ import {
 	buildModelOptions,
 	unavailableMessage,
 } from "../chat/generation/model-options.ts";
+import {
+	OpenRouterTargetFields,
+	openRouterFieldsStand,
+} from "../chat/generation/openrouter-target-fields.tsx";
 import { ReasoningEffortSelect } from "../chat/generation/reasoning-effort-select.tsx";
 import { useStaleReasoningReconcile } from "../generation/use-stale-reasoning-reconcile.ts";
 import { RUNTIME_PLAYER_COPY } from "./runtime-player-copy.ts";
@@ -293,6 +297,15 @@ function RuntimeGenerationSettings({ storyId }: { storyId: string }) {
 						))}
 					</Select>
 				</SubField>
+				{/** OpenRouter: a typed model id and its provider, for a target this layer chose, while connected. */}
+				{openRouterFieldsStand(override.target, connections.providers) ? (
+					<OpenRouterTargetFields
+						label={MODEL_TARGET_FIELD.label}
+						target={override.target}
+						disabled={!store}
+						onChange={applyTarget}
+					/>
+				) : null}
 
 				{/* Drawn while inheriting as well: the inherited target can be unusable too. */}
 				{/* Says below the line that the target in effect cannot be used. The value is not cleared or swapped for another model: if we overwrote it, the user would run the creator's code on a model they never chose. */}

@@ -261,6 +261,39 @@ describe.skipIf(!databaseReady)("operations console — authorization", () => {
 /* 2. Feature switches: vocabulary and fail-closed */
 
 describe.skipIf(!databaseReady)("feature switches", () => {
+	test("prompt guards can be toggled and published to BYO clients with an audit record", async () => {
+		for (const state of ["off", "on", "default"] as const) {
+			const response = await send(
+				"PUT",
+				"/v2/admin/operations/features/prompt-guards",
+				ADMIN.cookie,
+				{ state, reason: "Configure prompt guards" },
+			);
+			expect(response.status).toBe(200);
+			expect(await response.json()).toMatchObject({
+				key: "prompt-guards",
+				state,
+				enabled: state !== "off",
+			});
+			const config = (await (
+				await get("/v2/runtime-config", GUEST)
+			).json()) as { disabledFeatures: { key: string }[] };
+			expect(
+				config.disabledFeatures.some((f) => f.key === "prompt-guards"),
+			).toBe(state === "off");
+		}
+		const audit = await db
+			.select()
+			.from(admin_audit_log)
+			.where(
+				and(
+					eq(admin_audit_log.action, "ops.feature_flag.set"),
+					eq(admin_audit_log.target_id, "prompt-guards"),
+				),
+			);
+		expect(audit).toHaveLength(3);
+	});
+
 	test("a known key changes, and the list answers with that state as is", async () => {
 		const response = await send(
 			"PUT",
@@ -292,7 +325,7 @@ describe.skipIf(!databaseReady)("feature switches", () => {
 		};
 		/** Untouched keys come back too; otherwise they would be missing from the screen when someone wants to turn them off. */
 		expect(body.items.map((i) => i.key).sort()).toEqual(
-			["chat", "publish", "signup", "sync"].sort(),
+			["chat", "publish", "signup", "sync", "prompt-guards"].sort(),
 		);
 		expect(body.items.find((i) => i.key === "chat")?.enabled).toBe(false);
 		expect(body.items.find((i) => i.key === "sync")?.state).toBe("default");

@@ -1258,6 +1258,25 @@ describe("OpenRouter adapter", () => {
 		expect(sent).not.toHaveProperty("provider");
 	});
 
+	/** The one routing block that goes out is the person's: the pinned host, with no fallback. */
+	it("pins the upstream the person chose and turns thinking off with none", async () => {
+		const transport = respondWith(fakeResponse({ body: openRouterStream() }));
+		await run(openRouterAdapter, {
+			request: request({ reasoningEffort: "off" }),
+			model: "deepseek/deepseek-v4-pro",
+			secret: "k",
+			upstream: "deepinfra/fp8",
+			signal: signal(),
+			fetch: transport.fetch,
+		});
+		const sent = bodyOf(transport.calls[0]?.body);
+		expect(sent.provider).toEqual({
+			order: ["deepinfra/fp8"],
+			allow_fallbacks: false,
+		});
+		expect(sent.reasoning).toEqual({ effort: "none" });
+	});
+
 	it("continues with the shared nudge", async () => {
 		const transport = respondWith(fakeResponse({ body: openRouterStream() }));
 		await run(openRouterAdapter, {

@@ -7,6 +7,7 @@ import type { ByoAdapter, ByoFetch, ByoTransportInput } from "./byo.ts";
 import { ProviderError } from "./errors.ts";
 import {
 	createGenerationTransport,
+	readPromptGuardsEnabled,
 	streamChatGenerationPlan,
 } from "./transport.ts";
 
@@ -367,6 +368,38 @@ describe("the shape of managed requests", () => {
 });
 
 describe("platform safety policy", () => {
+	it.each([
+		false,
+		true,
+	])("the deployment switch controls BYO wrapping: enabled=%s", async (enabled) => {
+		const { client } = fakeClient();
+		const configuredClient = {
+			...client,
+			ops: {
+				runtimeConfig: async () => ({
+					disabledFeatures: enabled
+						? []
+						: [{ key: "prompt-guards", message: "" }],
+				}),
+			},
+		} as unknown as RowCatClient;
+		const { adapter, seen } = fakeAdapter();
+		await drain(
+			createGenerationTransport(
+				{ provider: "anthropic-byo", model: "m" },
+				{
+					client: configuredClient,
+					credentials: credentials({ "anthropic-byo": "sk" }).port,
+					fetch: forbiddenFetch,
+					loadAdapter: () => adapter,
+				},
+			).stream(request(), { signal: new AbortController().signal }),
+		);
+		const system = seen[0]?.request.system ?? "";
+		expect(system.includes(ABSOLUTE_GUARD)).toBe(enabled);
+		if (!enabled) expect(system).toBe(request().system);
+	});
+
 	/**
 	 * **P0.** BYO has no server re-check, so this is the last check. Rather than comparing strings, it
 	 * inspects **the request the adapter actually received** — that value is what goes to the
@@ -806,5 +839,34 @@ describe("assembly plan", () => {
 			),
 		).toThrow();
 		expect(stream).not.toHaveBeenCalled();
+	});
+});
+
+describe("prompt guard config fallback", () => {
+	it("keeps guards on when runtime config is unavailable", async () => {
+		const client = {
+			ops: {
+				runtimeConfig: async () => {
+					throw new Error("offline");
+				},
+			},
+		} as unknown as RowCatClient;
+		expect(
+			await readPromptGuardsEnabled(client, new AbortController().signal),
+		).toBe(true);
+	});
+	it("does not continue a cancelled generation", async () => {
+		const controller = new AbortController();
+		controller.abort("stopped");
+		const client = {
+			ops: {
+				runtimeConfig: async () => {
+					throw new Error("must not read");
+				},
+			},
+		} as unknown as RowCatClient;
+		await expect(
+			readPromptGuardsEnabled(client, controller.signal),
+		).rejects.toBe("stopped");
 	});
 });

@@ -1,6 +1,7 @@
 import {
 	DEFAULT_MANAGED_MODEL,
 	GenerationModelListDto,
+	type ModelReasoningDto,
 	REASONING_EFFORTS,
 	ROWCAT_MANAGED_MODELS,
 } from "@rowcat/contracts";
@@ -299,6 +300,16 @@ describe("BYO entries", () => {
 	 * model does not distinguish.
 	 */
 	it("OpenRouter BYO capability matches the managed route for the same slug", () => {
+		/**
+		 * `off` is the one intended difference: BYO lists it from the gateway's model record, managed
+		 * waits for its pinned upstreams. With `off` set aside, a single level left is no choice at all,
+		 * which is what a `null` row says.
+		 */
+		const withoutOff = (reasoning: ModelReasoningDto | null) => {
+			if (!reasoning) return null;
+			const efforts = reasoning.efforts.filter((effort) => effort !== "off");
+			return efforts.length > 1 ? { ...reasoning, efforts } : null;
+		};
 		const routes = new Map(
 			listManagedModels().map((route) => [route.upstream, route]),
 		);
@@ -309,7 +320,7 @@ describe("BYO entries", () => {
 			const route = routes.get(model.model);
 			if (!route) continue;
 			compared += 1;
-			expect(model.reasoning).toEqual(route.reasoning);
+			expect(withoutOff(model.reasoning)).toEqual(withoutOff(route.reasoning));
 			expect(model.promptPack).toEqual(route.promptPack);
 			expect(model.label).toBe(route.label);
 		}
@@ -517,6 +528,53 @@ describe("reasoning capability", () => {
 			"gpt-5.6-sol",
 		])("rowcat:%s has no minimal", (model) => {
 			expect(effortsOf(`rowcat:${model}`)).toEqual(["low", "medium", "high"]);
+		});
+
+		/**
+		 * OpenRouter BYO lists `off` (`reasoning.effort: "none"`) only where the gateway's model record
+		 * makes thinking optional and the model does not misbehave without it. Read from
+		 * `/api/v1/models` on 2026-11-04; re-check before widening the list.
+		 */
+		it.each([
+			["openai/gpt-6-sol", ["off", "low", "medium", "high"]],
+			["openai/gpt-6-luna", ["off", "low", "medium", "high"]],
+			["openai/gpt-5.6-luna", ["off", "low", "medium", "high"]],
+			["openai/gpt-5.6-terra", ["off", "low", "medium", "high"]],
+			["openai/gpt-5.6-sol", ["off", "low", "medium", "high"]],
+			["anthropic/claude-sonnet-5", ["off", "low", "medium", "high"]],
+			["anthropic/claude-opus-4.7", ["off", "low", "medium", "high"]],
+			["anthropic/claude-opus-4.6", ["off", "low", "medium", "high"]],
+			["anthropic/claude-sonnet-4.6", ["off", "low", "medium", "high"]],
+			["deepseek/deepseek-v4-pro", ["off", "high"]],
+			["deepseek/deepseek-v4-flash", ["off", "high"]],
+			["deepseek/deepseek-v4.1-flash", ["off", "high"]],
+			["z-ai/glm-5.2", ["off", "high"]],
+		] as [
+			string,
+			string[],
+		][])("openrouter-byo:%s can turn thinking off", (model, efforts) => {
+			expect(effortsOf(`openrouter-byo:${model}`)).toEqual(efforts);
+		});
+
+		/** Thinking is mandatory on the gateway, or the model misbehaves without it (Opus 5, Opus 4.8). */
+		it.each([
+			"openai/gpt-6-astra",
+			"openai/gpt-6.1-sol",
+			"anthropic/claude-fable-5.1",
+			"anthropic/claude-fable-5",
+			"anthropic/claude-opus-5.5",
+			"anthropic/claude-opus-5",
+			"anthropic/claude-sonnet-5.5",
+			"anthropic/claude-opus-4.8",
+			"google/gemini-3.8-flash",
+			"google/gemini-3.5-flash",
+		])("openrouter-byo:%s does not offer off", (model) => {
+			expect(effortsOf(`openrouter-byo:${model}`)).not.toContain("off");
+		});
+
+		it("an off row never defaults to off", () => {
+			for (const model of listGenerationModels())
+				expect(model.reasoning?.defaultEffort).not.toBe("off");
 		});
 
 		/** Managed Gemini says the same as BYO; if they diverge the same model differs in two places. */

@@ -1275,12 +1275,13 @@ screen     features/chat/suggestion/                  the panel above the compos
 `docs/chat/PROMPT-PROTECTION.md`.
 
 ```text
-guards           applyPlatformSafetyPolicy only — server (managed) · router (BYO) · runtime port
+guards           applyPlatformSafetyPolicy only — server (managed) · router (BYO), including runtime
 protected seed   /play · /playback blank scenario · playGuide · character prompts · lore (projectProtectedSeed)
 protected turn   POST /v2/chat/stories/:storyId/generate — device sends its share, server assembles
 ```
 
-- **The assembler emits no guard blocks.** Absolute, rating, minor, house rules and tail are attached by
+- **The operator can toggle all prompt guards** (`prompt-guards`, default on) in operations settings. Managed routes read the server setting; updated BYO clients read public runtime config before generation (up to 35 seconds of cache lag, default on if unavailable). Complete existing wrappers, including runtime wrappers, are removed while off. Details: `docs/chat/PROMPT-PROTECTION.md`.
+- **The assembler emits no guard blocks.** When enabled, absolute, rating, minor, house rules and tail are attached by
   `applyPlatformSafetyPolicy` alone; the minor decision rides as `context.minorCharacterPresent` (the
   assembler is where story content is read). **Bytes reaching the model did not change** —
   `guards.test.ts` pins new and legacy bodies to the same string, and legacy (pre-OTA) bodies are not
@@ -1853,6 +1854,12 @@ The only irreversible operation, so the boundaries are tighter than elsewhere. R
   `BYO_EFFORT_OFF_AND_THREE`, pinned by tests on both sides). Opus 5.5 and Fable reject every off value with a 400;
   Opus 5 and Opus 4.8 accept one but misbehave without thinking (a tool call written as reply text; reasoning in
   the visible reply), so neither lists it. No managed model lists it until each upstream is confirmed.
+  **OpenRouter BYO lists it from the gateway's own model record** (`reasoning.mandatory` false and `none` in
+  `supported_efforts` on `/api/v1/models`, read 2026-11-04; Opus 5 and 4.8 still left out for the reasons above) —
+  `OPENROUTER_OFF_OR_HIGH` / `BYO_EFFORT_OFF_AND_THREE` in `services/generation/models.ts`, sent as
+  `reasoning.effort: "none"`. That is the one intended difference from the managed route for the same slug
+  (`models.test.ts` compares the two with `off` set aside); a model whose only level is one effort lists `off`
+  plus that level, because off and on are two runs that do differ.
 - **⚠️ It is not one translation table per company — it differs per generation, and the newest generation
   rejects the old shape with a 400.**
 
@@ -1914,6 +1921,19 @@ The only irreversible operation, so the boundaries are tighter than elsewhere. R
   pickers. It and `openrouter-byo` are two profiles on one chat-completions core per app
   (`lib/generation/chat-completions.ts`); a profile states only where the server is and which non-standard
   parameters it understands.
+- **OpenRouter BYO takes any model id and a model provider, typed in the picker** (`@rowcat/chat`'s
+  `openrouter.ts`). Under an OpenRouter model select stand two fields (web `openrouter-target-fields.tsx`, mobile
+  `features/chat/generation/openrouter-target-fields.tsx`, in every picker). **Model ID** shows the chosen model's id
+  and takes any `vendor/model[:variant]` (`checkOpenRouterModel`; all 455 ids `/api/v1/models` listed on 2026-11-04
+  pass, `~` aliases included) as the target's model. It is **the one target allowed outside the catalogue** —
+  `resolveGenerationExecution` skips the catalogue check for a typed OpenRouter id, and the picker draws it as itself,
+  not "not in the list"; no capabilities are known for it (no reasoning row, no narration pack). **Model provider** is
+  the gateway's provider slug (`checkOpenRouterUpstream`, lowercased; empty = the gateway chooses) stored on the target
+  (`GenerationTarget.upstream`), so it inherits room → global with its model and a different model drops it;
+  `generationTargetKey` ignores it, `sameGenerationTarget` does not. Both commit on blur/Enter, not per keystroke. The
+  provider goes out as `provider: { order: [slug], allow_fallbacks: false }` — **strict**, because a fallback sends the
+  prompt to a company the person chose against. Whether a typed id or slug exists is the gateway's answer at request
+  time; the server never learns either.
 - **BYO credentials are member+device local and are never synced.** The seal is a non-extractable AES-GCM
   wrapping key with domain-separated AAD, and it **only prevents plaintext at rest** — a script on the same
   origin can still call decrypt (we state that honestly).
@@ -2230,7 +2250,9 @@ upstream body   session_id         **this name appears only here** (and in the O
   before the next generation and it is **stored** (`ensureRoomRoutingSession`) — creating one per request makes
   every turn a new conversation, which is worse than not having this axis. Issuance does not bump `updatedAt`.
   **Changing model, reasoning effort, response length, role or title keeps the same value** (do not build a
-  `room → provider endpoint` table on the RowCat side, and do not hand-pin `provider.order` to imitate pinning).
+  `room → provider endpoint` table on the RowCat side, and do not hand-pin `provider.order` to imitate pinning —
+  the one `provider.order` that goes out is a host the person pinned for an OpenRouter BYO model, a choice, not
+  cache affinity).
 - **It syncs and is not erased by merges.** Two rules: if only one side has it, that side wins; if both do, the
   HLC winner. Following the winner blindly **erases** the value when a version that does not know this axis wins;
   defending local unconditionally makes the room record shuttle forever.
@@ -5276,7 +5298,7 @@ admin_audit_log     an observation           — deleting it changes no product 
 - **The vocabulary is closed and unknown keys are rejected** (fail-closed). A free-key/free-JSON settings API makes
   **rows nobody reads** representable, and that row shows as "configured" on the screen — the operator believes they
   turned a feature off while the server runs on.
-- **Adding a key happens in the same commit as adding the route that checks it.** All four have real check points
+- **Adding a key happens in the same commit as adding the route that checks it.** The operation breakers have real check points
   (`chat`, `publish`, `sync`, `signup`). A key added without a place that checks it is a value that blocks
   nothing while looking like it blocks. **Removing a key goes the same way** — `billing` left in the commit that removed
   the routes it guarded, because a switch with nothing behind it reads as a breaker that works.

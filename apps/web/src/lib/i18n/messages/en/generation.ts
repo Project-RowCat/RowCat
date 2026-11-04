@@ -61,6 +61,17 @@ export const generation = {
 		byoNotPermitted: " · Not available under {{guardianAge}}",
 		providerNotConnected: " · Connect the provider first",
 		missingFromCatalog: " · Not in the list",
+		customModel: "Model ID",
+		customModelHint:
+			"Any OpenRouter model id (vendor/model). Type one that isn't in the list to use it.",
+		customModelInvalid:
+			"Enter a model id as OpenRouter writes it, such as qwen/qwen3-max.",
+		upstream: "Model provider",
+		upstreamPlaceholder: "Automatic (e.g. anthropic, deepinfra/fp8)",
+		upstreamHint:
+			"Type OpenRouter's provider slug to use only that provider; if it can't answer, the request isn't sent anywhere else. Leave empty to let OpenRouter choose.",
+		upstreamInvalid:
+			"Enter a provider slug such as anthropic or amazon-bedrock.",
 		managedOnly:
 			"This work can only be used with {{app}}-provided models. Choose {{app}} as the provider.",
 		byoNotPermittedMessage:

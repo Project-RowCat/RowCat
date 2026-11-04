@@ -348,7 +348,11 @@ const GEMINI_MODELS: readonly {
  * and reveals nothing about the managed path, whose contract cannot express a slug at all.
  *
  * Reasoning goes through the gateway's unified `reasoning.effort`, the same translation the managed
- * path uses, so the per-model capability is the managed registry's (same reasons, written there).
+ * path uses, so the per-model capability is the managed registry's (same reasons, written there) —
+ * except `off`, which this list carries from the gateway's own record (`OPENROUTER_OFF_OR_HIGH`).
+ *
+ * Which upstream serves the model is not a catalogue fact, and neither is every model the gateway
+ * routes: the person may type any model id and a model provider in the picker, both on the device (`@rowcat/chat`'s `openrouter.ts`); the server neither lists nor learns them.
  *
  * Every slug verified against OpenRouter `/api/v1/models` on 2026-11-03 (present, `tools` and
  * `reasoning` in `supported_parameters` where a capability is listed). Re-check before adding one.
@@ -364,6 +368,24 @@ const REDUCED_PACK: ModelPromptPackDto = {
 	densities: ["light"],
 };
 
+/**
+ * Thinking off on OpenRouter: `reasoning.effort: "none"`, the adapter's row for `off`. A model lists it
+ * only where the gateway's own model record says thinking is optional for it (`reasoning.mandatory`
+ * false, `none` in `supported_efforts`; read from `/api/v1/models` on 2026-11-04), and not where the
+ * model itself misbehaves without thinking: Opus 5 and Opus 4.8 accept it but fail in the ways the
+ * direct Anthropic list records (`BYO_EFFORT_OFF_AND_THREE`), and that is the model, not the route.
+ *
+ * This is where the BYO list departs from the managed registry on purpose. Managed lists no `off`
+ * until each upstream it pins is confirmed; here the person picks the upstream themselves, and the
+ * gateway's record is the fact for the model. `models.test.ts` compares the two with `off` set aside.
+ *
+ * The default is never `off`: it is something a person chooses, never what an unset value runs.
+ */
+const OPENROUTER_OFF_OR_HIGH: ModelReasoningDto = Object.freeze({
+	efforts: Object.freeze(["off", "high"]),
+	defaultEffort: "high",
+}) as ModelReasoningDto;
+
 const OPENROUTER_MODELS: readonly {
 	model: string;
 	label: string;
@@ -374,19 +396,19 @@ const OPENROUTER_MODELS: readonly {
 }[] = [
 	...(
 		[
-			["openai/gpt-6-astra", "GPT-6 Astra"],
-			["openai/gpt-6.1-sol", "GPT-6.1 Sol"],
-			["openai/gpt-6-sol", "GPT-6 Sol"],
-			["openai/gpt-6-luna", "GPT-6 Luna"],
-			["openai/gpt-5.6-luna", "GPT-5.6 Luna"],
-			["openai/gpt-5.6-terra", "GPT-5.6 Terra"],
-			["openai/gpt-5.6-sol", "GPT-5.6 Sol"],
+			["openai/gpt-6-astra", "GPT-6 Astra", BYO_EFFORT_THREE],
+			["openai/gpt-6.1-sol", "GPT-6.1 Sol", BYO_EFFORT_THREE],
+			["openai/gpt-6-sol", "GPT-6 Sol", BYO_EFFORT_OFF_AND_THREE],
+			["openai/gpt-6-luna", "GPT-6 Luna", BYO_EFFORT_OFF_AND_THREE],
+			["openai/gpt-5.6-luna", "GPT-5.6 Luna", BYO_EFFORT_OFF_AND_THREE],
+			["openai/gpt-5.6-terra", "GPT-5.6 Terra", BYO_EFFORT_OFF_AND_THREE],
+			["openai/gpt-5.6-sol", "GPT-5.6 Sol", BYO_EFFORT_OFF_AND_THREE],
 		] as const
-	).map(([model, label]) => ({
+	).map(([model, label, reasoning]) => ({
 		model,
 		label,
 		vendor: "OpenAI",
-		reasoning: BYO_EFFORT_THREE,
+		reasoning,
 		promptPack: STANDARD_PACK,
 	})),
 	...(
@@ -396,7 +418,11 @@ const OPENROUTER_MODELS: readonly {
 			["anthropic/claude-opus-5.5", "Claude Opus 5.5", BYO_EFFORT_THREE],
 			["anthropic/claude-opus-5", "Claude Opus 5", BYO_EFFORT_THREE],
 			["anthropic/claude-sonnet-5.5", "Claude Sonnet 5.5", BYO_EFFORT_THREE],
-			["anthropic/claude-sonnet-5", "Claude Sonnet 5", BYO_EFFORT_THREE],
+			[
+				"anthropic/claude-sonnet-5",
+				"Claude Sonnet 5",
+				BYO_EFFORT_OFF_AND_THREE,
+			],
 		] as const
 	).map(([model, label, reasoning]) => ({
 		model,
@@ -418,16 +444,28 @@ const OPENROUTER_MODELS: readonly {
 	},
 	...(
 		[
-			["anthropic/claude-opus-4.8", "Claude Opus 4.8"],
-			["anthropic/claude-opus-4.7", "Claude Opus 4.7"],
-			["anthropic/claude-opus-4.6", "Claude Opus 4.6"],
-			["anthropic/claude-sonnet-4.6", "Claude Sonnet 4.6"],
+			["anthropic/claude-opus-4.8", "Claude Opus 4.8", BYO_EFFORT_THREE],
+			[
+				"anthropic/claude-opus-4.7",
+				"Claude Opus 4.7",
+				BYO_EFFORT_OFF_AND_THREE,
+			],
+			[
+				"anthropic/claude-opus-4.6",
+				"Claude Opus 4.6",
+				BYO_EFFORT_OFF_AND_THREE,
+			],
+			[
+				"anthropic/claude-sonnet-4.6",
+				"Claude Sonnet 4.6",
+				BYO_EFFORT_OFF_AND_THREE,
+			],
 		] as const
-	).map(([model, label]) => ({
+	).map(([model, label, reasoning]) => ({
 		model,
 		label,
 		vendor: "Anthropic",
-		reasoning: BYO_EFFORT_THREE,
+		reasoning,
 		promptPack: null,
 	})),
 	{
@@ -457,24 +495,41 @@ const OPENROUTER_MODELS: readonly {
 		promptPack: STANDARD_PACK,
 	})),
 	/**
-	 * No reasoning: each exposes at most one effort overlapping our vocabulary, so a list of levels
-	 * would name runs that do not differ (the managed registry's note on DeepSeek V4).
+	 * At most one effort overlaps our vocabulary on each of these, so a list of thinking levels would
+	 * name runs that do not differ (the managed registry's note on DeepSeek V4). Where the gateway can
+	 * also turn thinking off, "off" and that one level are two runs that do differ, so those list the
+	 * pair; the rest have no reasoning row.
 	 */
 	...(
 		[
-			["deepseek/deepseek-v4-pro", "DeepSeek V4 Pro", "DeepSeek"],
-			["deepseek/deepseek-v4.1-flash", "DeepSeek V4.1 Flash", "DeepSeek"],
-			["deepseek/deepseek-v4-flash", "DeepSeek V4 Flash", "DeepSeek"],
-			["xiaomi/mimo-v2.6-flash", "MiMo v2.6 Flash", "Xiaomi"],
-			["z-ai/glm-5.3", "GLM 5.3", "Z.ai"],
-			["z-ai/glm-5.3-flash", "GLM 5.3 Flash", "Z.ai"],
-			["z-ai/glm-5.2", "GLM 5.2", "Z.ai"],
+			[
+				"deepseek/deepseek-v4-pro",
+				"DeepSeek V4 Pro",
+				"DeepSeek",
+				OPENROUTER_OFF_OR_HIGH,
+			],
+			[
+				"deepseek/deepseek-v4.1-flash",
+				"DeepSeek V4.1 Flash",
+				"DeepSeek",
+				OPENROUTER_OFF_OR_HIGH,
+			],
+			[
+				"deepseek/deepseek-v4-flash",
+				"DeepSeek V4 Flash",
+				"DeepSeek",
+				OPENROUTER_OFF_OR_HIGH,
+			],
+			["xiaomi/mimo-v2.6-flash", "MiMo v2.6 Flash", "Xiaomi", null],
+			["z-ai/glm-5.3", "GLM 5.3", "Z.ai", null],
+			["z-ai/glm-5.3-flash", "GLM 5.3 Flash", "Z.ai", null],
+			["z-ai/glm-5.2", "GLM 5.2", "Z.ai", OPENROUTER_OFF_OR_HIGH],
 		] as const
-	).map(([model, label, vendor]) => ({
+	).map(([model, label, vendor, reasoning]) => ({
 		model,
 		label,
 		vendor,
-		reasoning: null,
+		reasoning,
 		promptPack: REDUCED_PACK,
 	})),
 ];

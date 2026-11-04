@@ -10,6 +10,7 @@ import {
 	readGenerationTarget,
 } from "./generation-preference.ts";
 import { OPENAI_COMPATIBLE_PROVIDER } from "./openai-compatible.ts";
+import { isOpenRouterModelName } from "./openrouter.ts";
 
 /**
  * The model selector's list, with rules that can be checked without rendering.
@@ -285,8 +286,14 @@ export function buildModelOptions(input: ModelOptionsInput): ModelOptions {
 			input.providerLabel(selected.provider),
 		).entries.push({
 			key: selectedKey,
+			/**
+			 * A name typed for OpenRouter is not missing — it was never meant to be listed — so it is
+			 * drawn as itself (`openrouter.ts`).
+			 */
 			label: `${selected.model}${
-				input.catalogLoaded ? input.labels.missingFromCatalog : ""
+				input.catalogLoaded && !typedOpenRouterModel(selected)
+					? input.labels.missingFromCatalog
+					: ""
 			}`,
 			/**
 			 * It is the current value and must stay selectable. If disabled, the trigger would render empty.
@@ -469,3 +476,6 @@ export function targetForKey(
 	if (!model) return null;
 	return readGenerationTarget({ provider: model.provider, model: model.model });
 }
+
+const typedOpenRouterModel = (target: GenerationTarget): boolean =>
+	target.provider === "openrouter-byo" && isOpenRouterModelName(target.model);

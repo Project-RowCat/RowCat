@@ -8,6 +8,7 @@ import {
 	type RowCatManagedModel,
 } from "@rowcat/contracts/chat";
 import type { UtilityGenerationKind } from "./maintenance-runner.ts";
+import { openRouterUpstreamOf, readOpenRouterUpstream } from "./openrouter.ts";
 import type { ReasoningEffort } from "./reasoning.ts";
 
 /**
@@ -123,7 +124,16 @@ export type GenerationTarget =
 	| { provider: "rowcat"; model: RowCatManagedModel }
 	| { provider: "anthropic-byo"; model: string }
 	| { provider: "gemini-byo"; model: string }
-	| { provider: "openrouter-byo"; model: string }
+	| {
+			provider: "openrouter-byo";
+			model: string;
+			/**
+			 * The gateway endpoint the person pinned for this model (`openrouter-upstream.ts`); absent
+			 * means the gateway chooses. It sits on the target, not beside it, because it belongs to this
+			 * model on this route: it inherits with the model, and choosing another model drops it.
+			 */
+			upstream?: string;
+	  }
 	| { provider: "openai-compatible-byo"; model: string };
 
 /**
@@ -163,6 +173,16 @@ export function readGenerationTarget(value: unknown): GenerationTarget | null {
 	 */
 	if (provider === "rowcat")
 		return isRowCatManagedModel(model) ? { provider, model } : null;
+	/**
+	 * A stored upstream that fails the rule is dropped, not the target: the model is still what this
+	 * layer chose, and the gateway choosing is the state before anything was pinned.
+	 */
+	if (provider === "openrouter-byo") {
+		const upstream = readOpenRouterUpstream(
+			(value as { upstream?: unknown }).upstream,
+		);
+		return upstream ? { provider, model, upstream } : { provider, model };
+	}
 	return { provider, model };
 }
 
@@ -170,7 +190,10 @@ export function readGenerationTarget(value: unknown): GenerationTarget | null {
 export const sameGenerationTarget = (
 	a: GenerationTarget,
 	b: GenerationTarget,
-): boolean => a.provider === b.provider && a.model === b.model;
+): boolean =>
+	a.provider === b.provider &&
+	a.model === b.model &&
+	openRouterUpstreamOf(a) === openRouterUpstreamOf(b);
 
 /**
  * A stable key that links a catalog entry to a stored target.
@@ -178,6 +201,10 @@ export const sameGenerationTarget = (
  * The selection control handles a single string this way. Using the label as the key would make
  * label edits break stored preferences, and comparing objects directly would give each screen its
  * own method.
+ */
+/**
+ * A pinned OpenRouter upstream is not part of it: the catalogue lists models, not the gateway's
+ * endpoints, and a pinned target still meets its model's entry (capability, narration pack).
  */
 export const generationTargetKey = (target: GenerationTarget): string =>
 	`${target.provider}:${target.model}`;

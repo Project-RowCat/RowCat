@@ -30,7 +30,7 @@ import {
 	assembleProtectedStoryGeneration,
 	startProtectedStoryGeneration,
 } from "../services/generation/story.ts";
-import { requireFeatureEnabled } from "../services/ops.ts";
+import { readFeatureState, requireFeatureEnabled } from "../services/ops.ts";
 import {
 	parseChatSeed,
 	requirePlayableStory,
@@ -121,6 +121,7 @@ export const chat = new Hono<AppEnv>()
 			...parsed.data,
 			system: applyPlatformSafetyPolicy(parsed.data.system, {
 				...conversationSafetyPolicy(parsed.data.context),
+				enabled: (await readFeatureState("prompt-guards")).enabled,
 				allAges,
 			}),
 		};
@@ -219,6 +220,7 @@ export const chat = new Hono<AppEnv>()
 			AbortSignal.timeout(MANAGED_GENERATION_WALL_CLOCK_MS),
 		]);
 		const assembled = assembleProtectedStoryGeneration({
+			promptGuardsEnabled: (await readFeatureState("prompt-guards")).enabled,
 			seed,
 			request: parsed.data,
 			allAges,

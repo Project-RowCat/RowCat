@@ -13,8 +13,9 @@ import { readRuntimeConfig } from "../services/ops.ts";
  * refused by the server (`requireFeatureEnabled`); the endpoint only avoids drawing dead buttons.
  *
  * It is identical for everyone, so it can sit in shared caches (`public, max-age=30`); that
- * freshness sets how fast a switch reaches newly booting apps. Already-open apps learn from server
- * refusals, so there is no polling or SSE.
+ * freshness sets how fast a switch reaches newly booting apps. Operation breakers also surface as
+ * server refusals. BYO clients re-read this config before generation for the prompt-guards switch,
+ * because their provider requests do not pass through our server. There is no polling or SSE.
  *
  * The operator axis (`updatedBy`, `updatedAt`, internal reason) has no slot in `RuntimeConfigDto`
  * rather than being filtered out; a member id here would be a public leak.

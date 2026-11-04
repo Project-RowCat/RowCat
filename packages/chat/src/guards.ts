@@ -1,5 +1,5 @@
 /**
- * Safety guards: the sentences that always appear in the prompt, in every room.
+ * Safety guards: platform prompt blocks, enabled by default and controlled by deployment policy.
  *
  * Kept apart from the assembler because they are set by the service, not the creator. Do not trim
  * the wording: it was refined through real failures (over-refusal, guard bypass). Scope limits (the
@@ -321,7 +321,8 @@ export function resolvePlatformAllAges(input: {
 
 /**
  * Wraps the system prompt of a generation request with platform policy. This is the only place
- * guard text is attached.
+ * guard text is attached. The deployment can disable wrapping; complete wrappers from older
+ * clients are then removed so the same switch also works for runtime generation.
  *
  * The policy goes on both ends. A body placed after a head-only policy is nearer the generation
  * point and would override it by recency, and a client-supplied body may tell the model to ignore
@@ -345,6 +346,8 @@ export interface PlatformSafetyPolicy {
 	 * default would be silently inherited by a caller that does not know about it.
 	 */
 	houseRules: boolean;
+	/** Deployment-owned switch, never read from a generation request body. */
+	enabled?: boolean;
 }
 
 /**
@@ -377,6 +380,7 @@ export function applyPlatformSafetyPolicy(
 	system: string,
 	policy: PlatformSafetyPolicy,
 ): string {
+	if (policy.enabled === false) return withoutPlatformSafetyPolicy(system);
 	const { head, tail } = platformPolicyBlocks(policy);
 	/** Marker of an already-wrapped body. Old assemblers always started with these two blocks. */
 	const wrappedPrefix = `${head[0].text}\n\n${head[1].text}`;
@@ -396,6 +400,30 @@ export function applyPlatformSafetyPolicy(
 	]
 		.filter((block): block is string => block !== null)
 		.join("\n\n");
+}
+
+/** Old mobile builds may already carry our wrapper. Remove only a complete, known wrapper. */
+function withoutPlatformSafetyPolicy(system: string): string {
+	for (const allAges of [true, false]) {
+		for (const minorPresent of [true, false]) {
+			for (const houseRules of [true, false]) {
+				const { head, tail } = platformPolicyBlocks({
+					allAges,
+					minorPresent,
+					houseRules,
+				});
+				const prefix = head.map((block) => block.text).join("\n\n");
+				if (system === `${prefix}\n\n${tail.text}`) return "";
+				if (
+					system.startsWith(`${prefix}\n\n`) &&
+					system.endsWith(`\n\n${tail.text}`)
+				) {
+					return system.slice(prefix.length + 2, -(tail.text.length + 2));
+				}
+			}
+		}
+	}
+	return system;
 }
 
 /**
@@ -458,12 +486,15 @@ export function runtimeGenerationSafety(
  * work-test inspector read this value. If each one wrapped its own copy, what they inspect and what
  * is actually sent could diverge.
  */
-export function deliveredChatSystem(request: {
-	system: string;
-	context: ChatGenerationContext;
-}): string {
-	return applyPlatformSafetyPolicy(
-		request.system,
-		conversationSafetyPolicy(request.context),
-	);
+export function deliveredChatSystem(
+	request: {
+		system: string;
+		context: ChatGenerationContext;
+	},
+	enabled = true,
+): string {
+	return applyPlatformSafetyPolicy(request.system, {
+		...conversationSafetyPolicy(request.context),
+		enabled,
+	});
 }

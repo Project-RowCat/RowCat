@@ -186,6 +186,11 @@ export interface ProviderDiagnostics {
 	reasoning: boolean;
 	/** The vendor's error type. Dropped unless it has slug shape (see VENDOR_CODE_SHAPE). */
 	vendorCode?: string | undefined;
+	/**
+	 * Whether the request pinned a gateway upstream (OpenRouter). A pinned endpoint that is down or
+	 * refuses a parameter fails where the gateway's own choice would not, so it is half the cause.
+	 */
+	pinned?: boolean;
 }
 
 /**
@@ -204,6 +209,6 @@ export function logProviderFailure(diagnostics: ProviderDiagnostics): void {
 		`[generation] provider failure: provider=${diagnostics.provider} model=${diagnostics.model}` +
 			`${diagnostics.status === undefined ? "" : ` status=${diagnostics.status}`}` +
 			` code=${diagnostics.code} continuation=${diagnostics.continuation}` +
-			` reasoning=${diagnostics.reasoning}${vendor}`,
+			` reasoning=${diagnostics.reasoning}${diagnostics.pinned ? " pinned=true" : ""}${vendor}`,
 	);
 }

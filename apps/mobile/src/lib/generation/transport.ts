@@ -4,7 +4,7 @@ import type {
 	ChatTool,
 	GenerationTarget,
 } from "@rowcat/chat";
-import { runChatToolLoop } from "@rowcat/chat";
+import { openRouterUpstreamOf, runChatToolLoop } from "@rowcat/chat";
 import { deliveredChatSystem } from "@rowcat/chat/guards";
 import type { ChatGenerationRequest, ChatStreamEvent } from "@rowcat/contracts";
 import type { RowCatClient } from "@rowcat/sdk";
@@ -92,7 +92,9 @@ export interface GenerationTransportDeps {
 	 * time (see the header of `native-fetch.ts`).
 	 */
 	fetch?: ByoFetch | undefined;
-	/** Test seam for swapping adapters. When unset, the table above is used. */
+	/** Optional turn snapshot, shared with the playtest inspector. */
+	promptGuardsEnabled?: boolean;
+	/** Test seam for swapping provider adapters. */
 	loadAdapter?: ((provider: ByoProvider) => ByoAdapter) | undefined;
 	/**
 	 * This conversation's **tools**. Without them, this axis does not exist.
@@ -175,7 +177,12 @@ export function createGenerationTransport(
 	const transport =
 		target.provider === "rowcat"
 			? rowcatTransport(deps.client, target.model)
-			: byoTransport(target.provider, target.model, deps);
+			: byoTransport(
+					target.provider,
+					target.model,
+					openRouterUpstreamOf(target),
+					deps,
+				);
 	return withToolLoop(transport, deps.toolAccess);
 }
 
@@ -265,17 +272,19 @@ function rowcatTransport(
 function byoTransport(
 	provider: ByoProvider,
 	model: string,
+	upstream: string | null,
 	deps: GenerationTransportDeps,
 ): GenerationTransport {
 	return {
 		stream: (request, options) =>
-			streamByo({ provider, model, request, options, deps }),
+			streamByo({ provider, model, upstream, request, options, deps }),
 	};
 }
 
 async function* streamByo(input: {
 	provider: ByoProvider;
 	model: string;
+	upstream: string | null;
 	request: ChatGenerationRequest;
 	options: { signal: AbortSignal };
 	deps: GenerationTransportDeps;
@@ -312,14 +321,18 @@ async function* streamByo(input: {
 	 * memory and keep the secret alive until the response ends. Opening belongs to the callback;
 	 * reading does not.
 	 */
+	const promptGuardsEnabled =
+		input.deps.promptGuardsEnabled ??
+		(await readPromptGuardsEnabled(input.deps.client, input.options.signal));
 	const events = await credentials.withCredential(
 		input.provider,
 		async (secret, endpoint) =>
 			adapter.start({
-				request: withPlatformPolicy(input.request),
+				request: withPlatformPolicy(input.request, promptGuardsEnabled),
 				model: input.model,
 				secret,
 				...(endpoint === undefined ? {} : { endpoint }),
+				...(input.upstream === null ? {} : { upstream: input.upstream }),
 				signal: input.options.signal,
 				fetch,
 			}),
@@ -346,10 +359,11 @@ async function* streamByo(input: {
  */
 function withPlatformPolicy(
 	request: ChatGenerationRequest,
+	enabled: boolean,
 ): ChatGenerationRequest {
 	return {
 		...request,
-		system: deliveredChatSystem(request),
+		system: deliveredChatSystem(request, enabled),
 	};
 }
 
@@ -379,4 +393,28 @@ export function probeProviderCredential(
 		signal: options.signal,
 		fetch: options.fetch,
 	});
+}
+
+/**
+ * Only deployment metadata is read here; BYO prompts and keys still go straight to the provider.
+ * Failure keeps the default guards and must not make BYO depend on RowCat availability. The bounded
+ * read also handles a server that is unreachable while the provider remains reachable.
+ */
+export async function readPromptGuardsEnabled(
+	client: RowCatClient,
+	signal: AbortSignal,
+): Promise<boolean> {
+	signal.throwIfAborted();
+	try {
+		const config = await client.ops.runtimeConfig({
+			signal: AbortSignal.any([signal, AbortSignal.timeout(2_000)]),
+		});
+		signal.throwIfAborted();
+		return !config.disabledFeatures.some(
+			(feature) => feature.key === "prompt-guards",
+		);
+	} catch {
+		signal.throwIfAborted();
+		return true;
+	}
 }

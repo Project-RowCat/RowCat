@@ -493,6 +493,7 @@ describe.skipIf(!databaseReady)("instance ceilings — tool-loop rounds", () => 
 			.from(story)
 			.where(eq(story.id, storyId));
 		const { firstRequest } = assembleProtectedStoryGeneration({
+			promptGuardsEnabled: true,
 			seed: parseChatSeed(storyId, row?.payload),
 			request: StoryChatGenerationRequest.parse(turn),
 			allAges: true,

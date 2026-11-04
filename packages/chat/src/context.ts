@@ -498,6 +498,8 @@ function roomHasMinorCharacter(
 }
 
 export interface BuildChatGenerationRequestInput {
+	/** Inspector-only: transport still owns the deployment policy and the request body stays guard-free. */
+	promptGuardsEnabled?: boolean;
 	room: ChatRuntimeRoom;
 	/**
 	 * Stored local messages in ascending order (oldest first). The normal path calls this after the
@@ -1140,7 +1142,10 @@ function assembleChatGenerationRequest(
 	return {
 		request,
 		trace: {
-			blocks: [...policy.head, ...blocks, policy.tail],
+			blocks:
+				input.promptGuardsEnabled === false
+					? blocks
+					: [...policy.head, ...blocks, policy.tail],
 			lore: lore.decisions,
 			loreScanText: scanText,
 			personaName,

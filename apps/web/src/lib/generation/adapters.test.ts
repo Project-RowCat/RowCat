@@ -1039,6 +1039,40 @@ describe("OpenRouter adapter", () => {
 		expect(body(call)).not.toHaveProperty("provider");
 	});
 
+	/**
+	 * The one routing block that goes out is the person's own: the upstream they pinned, and no
+	 * fallback to a company they chose against.
+	 */
+	it("pins the upstream the person chose, with no fallback", async () => {
+		const { seen, fetchMock } = recorder(() => sseResponse(OPENROUTER_STREAM));
+		await collect(openRouterAdapter, {
+			model: "anthropic/claude-sonnet-5",
+			secret: "k",
+			upstream: "amazon-bedrock/eu-west-1",
+			fetch: fetchMock,
+		});
+		const call = seen[0];
+		if (!call) throw new Error("no request");
+		expect(body(call).provider).toEqual({
+			order: ["amazon-bedrock/eu-west-1"],
+			allow_fallbacks: false,
+		});
+	});
+
+	/** `off` is the gateway's `none`; the catalogue lists it only where the model takes it. */
+	it("turns thinking off with effort none", async () => {
+		const { seen, fetchMock } = recorder(() => sseResponse(OPENROUTER_STREAM));
+		await collect(openRouterAdapter, {
+			model: "deepseek/deepseek-v4-pro",
+			secret: "k",
+			fetch: fetchMock,
+			request: { ...request, reasoningEffort: "off" },
+		});
+		const call = seen[0];
+		if (!call) throw new Error("no request");
+		expect(body(call).reasoning).toEqual({ effort: "none" });
+	});
+
 	/** Only the Anthropic namespace needs explicit breakpoints; the system block gets its own hour. */
 	it("marks cache breakpoints on Anthropic models only", async () => {
 		const { seen, fetchMock } = recorder(() => sseResponse(OPENROUTER_STREAM));
@@ -1344,8 +1378,8 @@ describe("OpenRouter adapter", () => {
 
 describe("OpenAI-compatible adapter", () => {
 	/**
-	 * Only the standard: no cache breakpoints, `session_id`, unified reasoning or extra headers, which a
-	 * strict server answers with a 400 (or a CORS preflight refuses).
+	 * Only the standard: no cache breakpoints, `session_id`, unified reasoning, a pinned upstream or
+	 * extra headers, which a strict server answers with a 400 (or a CORS preflight refuses).
 	 */
 	it("sends only standard chat-completions fields", async () => {
 		const { seen, fetchMock } = recorder(() => sseResponse(OPENROUTER_STREAM));
@@ -1353,6 +1387,7 @@ describe("OpenAI-compatible adapter", () => {
 			model: "anthropic/claude-sonnet-5",
 			secret: "sk-local",
 			endpoint: "https://llm.example.com/v1",
+			upstream: "anthropic",
 			fetch: fetchMock,
 			request: {
 				...request,

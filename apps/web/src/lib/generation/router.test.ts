@@ -16,6 +16,7 @@ import type { ProviderCredentialAccess } from "#/lib/local-provider/store.ts";
 import { ProviderError } from "./errors.ts";
 import {
 	createGenerationTransport,
+	readPromptGuardsEnabled,
 	streamChatGenerationPlan,
 } from "./router.ts";
 import type { ByoAdapter } from "./transport.ts";
@@ -53,7 +54,8 @@ const GEMINI: GenerationTarget = {
 function harness() {
 	const calls: string[] = [];
 	let rowcatRequest: ManagedChatGenerationRequest | null = null;
-	let byoInput: { model: string; secret: string } | null = null;
+	let byoInput: { model: string; secret: string; upstream?: string } | null =
+		null;
 	/**
 	 * The request the adapter actually received. It checks by value that no managed-only field leaks
 	 * into BYO.
@@ -74,7 +76,11 @@ function harness() {
 	const adapterFor = (label: string): ByoAdapter => ({
 		stream: async function* (input) {
 			calls.push(label);
-			byoInput = { model: input.model, secret: input.secret };
+			byoInput = {
+				model: input.model,
+				secret: input.secret,
+				...(input.upstream === undefined ? {} : { upstream: input.upstream }),
+			};
 			byoRequest = input.request;
 			yield { type: "delta", text: label } satisfies ChatStreamEvent;
 			yield { type: "done" } satisfies ChatStreamEvent;
@@ -175,6 +181,30 @@ describe("target → transport", () => {
 		expect(h.calls).toEqual(["gemini-byo"]);
 		expect(h.byoInput()?.model).toBe("gemini-3.7-flash");
 	});
+
+	/** The pinned upstream travels with the model; it comes from the target, never the request. */
+	it("an OpenRouter target hands its pinned upstream to the adapter", async () => {
+		const h = harness();
+		const transport = createGenerationTransport(
+			{
+				provider: "openrouter-byo",
+				model: "anthropic/claude-sonnet-5",
+				upstream: "anthropic",
+			},
+			{
+				client: h.client,
+				credentials: h.credentials({ "openrouter-byo": "sk-or" }),
+				loadAdapter: async (provider) => h.adapterFor(provider),
+			},
+		);
+
+		await h.drain(transport.stream(request, { signal: signal() }));
+		expect(h.byoInput()).toEqual({
+			model: "anthropic/claude-sonnet-5",
+			secret: "sk-or",
+			upstream: "anthropic",
+		});
+	});
 });
 
 describe("no silent substitution", () => {
@@ -230,6 +260,31 @@ describe("no silent substitution", () => {
 });
 
 describe("platform policy", () => {
+	it.each([
+		false,
+		true,
+	])("the deployment switch controls BYO wrapping: enabled=%s", async (enabled) => {
+		const h = harness();
+		const client = {
+			...h.client,
+			ops: {
+				runtimeConfig: async () => ({
+					disabledFeatures: enabled
+						? []
+						: [{ key: "prompt-guards", message: "" }],
+				}),
+			},
+		} as unknown as RowCatClient;
+		const transport = createGenerationTransport(ANTHROPIC, {
+			client,
+			credentials: h.credentials({ "anthropic-byo": "sk-ant" }),
+			loadAdapter: async () => capture,
+		});
+		await h.drain(transport.stream(request, { signal: signal() }));
+		expect(seenSystem.includes(ABSOLUTE_GUARD)).toBe(enabled);
+		if (!enabled) expect(seenSystem).toBe(request.system);
+	});
+
 	/**
 	 * BYO has no server re-check, so the guard must be in place where the router passes the request.
 	 * That fact must be visible in the value the adapter receives.
@@ -591,5 +646,34 @@ describe("assembly plan", () => {
 			),
 		).toThrow();
 		expect(h.calls).toEqual([]);
+	});
+});
+
+describe("prompt guard config fallback", () => {
+	it("keeps guards on when runtime config is unavailable", async () => {
+		const client = {
+			ops: {
+				runtimeConfig: async () => {
+					throw new Error("offline");
+				},
+			},
+		} as unknown as RowCatClient;
+		expect(
+			await readPromptGuardsEnabled(client, new AbortController().signal),
+		).toBe(true);
+	});
+	it("does not continue a cancelled generation", async () => {
+		const controller = new AbortController();
+		controller.abort("stopped");
+		const client = {
+			ops: {
+				runtimeConfig: async () => {
+					throw new Error("must not read");
+				},
+			},
+		} as unknown as RowCatClient;
+		await expect(
+			readPromptGuardsEnabled(client, controller.signal),
+		).rejects.toBe("stopped");
 	});
 });

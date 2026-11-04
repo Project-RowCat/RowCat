@@ -77,6 +77,12 @@ export interface ByoTransportInput {
 	 * from the request.
 	 */
 	endpoint?: string;
+	/**
+	 * The gateway endpoint the person pinned for this model (`GenerationTarget.upstream`, already
+	 * checked by `readOpenRouterUpstream`). Only the OpenRouter profile sends it; absent means the
+	 * gateway chooses.
+	 */
+	upstream?: string;
 	signal: AbortSignal;
 	fetch: ByoFetch;
 }

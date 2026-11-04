@@ -46,6 +46,10 @@ import {
 	buildModelOptions,
 	unavailableMessage,
 } from "../chat/generation/model-options.ts";
+import {
+	OpenRouterTargetFields,
+	openRouterFieldsStand,
+} from "../chat/generation/openrouter-target-fields.tsx";
 import { ReasoningEffortSelect } from "../chat/generation/reasoning-effort-select.tsx";
 import {
 	useGlobalGenerationState,
@@ -325,6 +329,15 @@ export function GenerationDefaultsSection() {
 						))}
 					</Select>
 				</SubField>
+				{/** OpenRouter: a typed model id and its provider, for a target this layer chose, while connected. */}
+				{openRouterFieldsStand(global.target, connections.providers) ? (
+					<OpenRouterTargetFields
+						label={MODEL_TARGET_FIELD.label}
+						target={global.target}
+						disabled={!store}
+						onChange={applyTarget}
+					/>
+				) : null}
 
 				{/**
 				 * The fact that the effective target is unavailable is **stated below the row**. The value is not
@@ -500,6 +513,15 @@ function UtilityModelField({
 					))}
 				</Select>
 			</SubField>
+			{/** OpenRouter: a typed model id and its provider, for a target this layer chose, while connected. */}
+			{openRouterFieldsStand(chosen.value, connected) ? (
+				<OpenRouterTargetFields
+					label={copy.label}
+					target={chosen.value}
+					disabled={disabled}
+					onChange={choose}
+				/>
+			) : null}
 			{options.unavailable ? (
 				<Text variant="label" tone="destructive">
 					{utilityUnavailableMessage(options.unavailable, copy.subject)}

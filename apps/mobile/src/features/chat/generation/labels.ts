@@ -105,6 +105,24 @@ export const MODEL_TARGET_FIELD = {
 } as const;
 
 /**
+ * The two typed fields under an OpenRouter target — the model id and the model provider (which company
+ * serves it); the same sentences as web (`target.customModel*` · `target.upstream*`).
+ */
+export const OPENROUTER_CUSTOM_MODEL_FIELD = {
+	label: "Model ID",
+	placeholder: "qwen/qwen3-max",
+	hint: "Any OpenRouter model id (vendor/model). Type one that isn't in the list to use it.",
+	invalid: "Enter a model id as OpenRouter writes it, such as qwen/qwen3-max.",
+} as const;
+
+export const OPENROUTER_UPSTREAM_FIELD = {
+	label: "Model provider",
+	placeholder: "Automatic (e.g. anthropic, deepinfra/fp8)",
+	hint: "Type OpenRouter's provider slug to use only that provider; if it can't answer, the request isn't sent anywhere else. Leave empty to let OpenRouter choose.",
+	invalid: "Enter a provider slug such as anthropic or amazon-bedrock.",
+} as const;
+
+/**
  * The two auxiliary-request models; the same sentences as web (`utility.*` in the generation
  * messages). The descriptions say where the conversation goes, because the choice may sit at a
  * different provider than the room.

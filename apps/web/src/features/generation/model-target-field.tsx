@@ -32,6 +32,7 @@ import {
 	targetForKey,
 	unavailableMessage,
 } from "./model-options.ts";
+import { OpenRouterTargetFields } from "./openrouter-target-fields.tsx";
 
 /**
  * The row for choosing the generation target. Global settings and room settings share it.
@@ -356,6 +357,21 @@ export function ModelTargetField({
 							</Select>
 						)}
 					</div>
+
+					{/*
+					 * OpenRouter: the model id can be typed (the gateway routes far more models than the list),
+					 * and the model provider beside it. Only for a target this layer chose, while connected.
+					 */}
+					{value?.provider === "openrouter-byo" &&
+						connected.includes("openrouter-byo") && (
+							<OpenRouterTargetFields
+								target={value}
+								titleId={titleId}
+								describedBy={describedBy}
+								disabled={disabled}
+								onChange={onChange}
+							/>
+						)}
 
 					{/*
 					 * The line below the controls states that the currently applied target cannot be used. It

@@ -29,7 +29,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getRowCatClient } from "#/lib/api.ts";
 import { useHoldBuildSwitch } from "#/lib/build-freshness/hold.ts";
 import { GenerationBlockedError } from "#/lib/generation/availability.ts";
-import { streamChatGenerationPlan } from "#/lib/generation/router.ts";
+import {
+	readPromptGuardsEnabled,
+	streamChatGenerationPlan,
+} from "#/lib/generation/router.ts";
 import { useGenerationScope } from "#/lib/local-generation/scope.ts";
 import {
 	useProviderCredentialScope,
@@ -772,8 +775,16 @@ export function useConversationGeneration(
 					 * sent is identical either way. That this is guaranteed by structure rather than by promise is
 					 * what makes this branch safe.
 					 */
+					const promptGuardsEnabled = debug
+						? await readPromptGuardsEnabled(client, controller.signal)
+						: undefined;
 					const plan = planChatGeneration({
-						assembly: assemblyInput,
+						assembly: {
+							...assemblyInput,
+							...(promptGuardsEnabled === undefined
+								? {}
+								: { promptGuardsEnabled }),
+						},
 						protectedStoryId: session.protectedStoryId ?? null,
 						trace: Boolean(debug) && turnId !== null,
 					});
@@ -797,6 +808,9 @@ export function useConversationGeneration(
 					 * decides. The loop reads the same ChatStreamEvent either way.
 					 */
 					const routerDeps = {
+						...(promptGuardsEnabled === undefined
+							? {}
+							: { promptGuardsEnabled }),
 						client,
 						credentials: credentials ?? null,
 						/**

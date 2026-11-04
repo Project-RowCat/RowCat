@@ -3,6 +3,7 @@ import {
 	type GenerationTarget,
 	isByoProvider,
 } from "./generation-preference.ts";
+import { isOpenRouterModelName } from "./openrouter.ts";
 
 /**
  * Maps the requested target to the target this device can actually run.
@@ -159,8 +160,17 @@ export function resolveGenerationExecution(
 	 * unchanged. A model may be withdrawn temporarily and return; overwriting the value would leave
 	 * the user on a model they never chose.
 	 */
+	/**
+	 * A model name typed for OpenRouter is the one target allowed outside the catalogue: the gateway
+	 * routes far more models than the server lists, and the person chose this one by name
+	 * (`openrouter.ts`). Whether it exists is the gateway's answer when the request is sent.
+	 */
 	if (
 		catalog &&
+		!(
+			target.provider === "openrouter-byo" &&
+			isOpenRouterModelName(target.model)
+		) &&
 		!catalog.some(
 			(entry) =>
 				entry.provider === target.provider && entry.model === target.model,

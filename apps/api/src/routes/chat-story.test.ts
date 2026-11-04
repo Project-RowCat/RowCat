@@ -10,6 +10,7 @@ import { app } from "../app.ts";
 import { closeDb, db } from "../db/client.ts";
 import { story } from "../db/schema.ts";
 import { newId } from "../lib/id.ts";
+import { setFeatureFlag } from "../services/ops.ts";
 import { allowManagedGeneration, createTestMember } from "../test/auth.ts";
 import { connectTestDatabase, deleteTestUsers } from "../test/database.ts";
 import { WEB_ORIGIN } from "../test/http.ts";
@@ -195,6 +196,43 @@ describe.skipIf(!databaseReady)("the seed sent down to the device", () => {
 });
 
 describe.skipIf(!databaseReady)("server-assembled generation", () => {
+	test("the operator can disable and re-enable prompt guards", async () => {
+		const viewer = await signUp();
+		try {
+			for (const enabled of [false, true]) {
+				await setFeatureFlag({
+					key: "prompt-guards",
+					actorId: viewer.memberId,
+					request: {
+						state: enabled ? "on" : "off",
+						message: "",
+						reason: "Test prompt guard setting",
+					},
+				});
+
+				const id = await seedStory(viewer.memberId);
+				const upstream = provider([() => TEXT_REPLY.clone()]);
+				const response = await generate(viewer.cookie, id, assembly());
+				expect(response.status).toBe(200);
+				await response.text();
+				const system = systemOf(upstream.bodies()[0]);
+				expect(system.includes(ABSOLUTE_GUARD)).toBe(enabled);
+				expect(system).toContain("SCENARIO_MARKER");
+				expect(system.includes(HOUSE_RULES)).toBe(enabled);
+			}
+		} finally {
+			await setFeatureFlag({
+				key: "prompt-guards",
+				actorId: viewer.memberId,
+				request: {
+					state: "default",
+					message: "",
+					reason: "Reset test setting",
+				},
+			});
+		}
+	});
+
 	test("the server assembles from the published manuscript and the guards and sends it upstream", async () => {
 		const owner = await signUp();
 		const id = await seedStory(owner.memberId);

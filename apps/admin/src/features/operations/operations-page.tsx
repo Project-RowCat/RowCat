@@ -78,7 +78,7 @@ function FlagRow({
 				<div className="flex items-center gap-2">
 					<p className="font-medium text-sm">{definition.label}</p>
 					<Badge variant={flag.enabled ? "secondary" : "destructive"}>
-						{flag.enabled ? "Running" : "Blocked"}
+						{flag.enabled ? "On" : "Off"}
 					</Badge>
 					{flag.state !== "default" ? (
 						<Badge variant="outline">{STATE_LABEL[flag.state]}</Badge>
@@ -424,21 +424,22 @@ export function OperationsPage() {
 						<div className="space-y-2">
 							<p>{featureFlagDefinition(flagChange.flag.key).description}</p>
 							<p className="text-muted-foreground">
-								Now {flagChange.flag.enabled ? "running" : "blocked"} →{" "}
+								Now {flagChange.flag.enabled ? "on" : "off"} →{" "}
 								{flagChange.next === "default"
 									? `default (${
 											FEATURE_FLAGS.find((f) => f.key === flagChange.flag.key)
 												?.defaultState === "on"
-												? "running"
-												: "blocked"
+												? "on"
+												: "off"
 										})`
 									: flagChange.next === "on"
-										? "running"
-										: "blocked"}
+										? "on"
+										: "off"}
 							</p>
 							<p className="text-muted-foreground">
-								Changes apply immediately. With several servers running, all
-								follow within 5 seconds at most.
+								{flagChange.flag.key === "prompt-guards"
+									? "Managed requests follow within 5 seconds across servers. Updated BYO clients read the setting before generation; caches can lag by up to 35 seconds."
+									: "Changes apply immediately. With several servers running, all follow within 5 seconds at most."}
 							</p>
 						</div>
 					) : null

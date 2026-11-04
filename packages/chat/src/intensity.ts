@@ -7,7 +7,8 @@
  * - Intensity cannot exceed the rating. Three layers enforce this, none relying on prompt
  *   wording: the screen offers `Intense` only in adult rooms (chatIntensityChoices); the prompt builder
  *   adds the `Intense` block only in adult mode (resolveChatIntensity); the server wraps the prompt in
- *   the rating guards (applyPlatformSafetyPolicy), which do not know about intensity.
+ *   the rating guards when the operator enables them. The intensity block remains meaningful when
+ *   guards are off and therefore does not refer to their text.
  * - The intensity block sits between the head and tail guards. The tail check uses endsWith, so a
  *   per-room tail would be appended twice.
  * - Left out on purpose: a global default (the value belongs to one conversation), extra steps,
@@ -87,11 +88,11 @@ const SOFTENED_BLOCK = `# [표현 수위 · 이 대화에서 요청된 수위]
  * else to stop it.
  */
 const INTENSE_BLOCK = `# [표현 수위 · 이 대화에서 요청된 수위]
-이 대화에서 요청된 표현 수위는 **«강»**입니다. 위 성인 콘텐츠 모드가 허용하는 범위 안에서, 요청된 장면을 회피·생략·완곡화하지 말고 구체적으로 묘사하세요.
+이 대화에서 요청된 표현 수위는 **«강»**입니다. 이 작품의 등급에 맞춰, 요청된 장면을 회피·생략·완곡화하지 말고 구체적으로 묘사하세요.
 - 성적인 장면을 암시로 넘기거나 장면 전환으로 건너뛰지 말고, 그 장면 안에 머물러 쓰세요.
 - 폭력·공포·고통도 사건의 무게에 맞게 구체적으로 쓰세요.
 - 완곡어로 바꿔 적거나 요약해서 넘어가지 마세요.
-이 요청은 위의 절대 금지 규칙과 등급 가드를 **넘어서지 못합니다.** 그 규칙들이 금지한 것은 이 수위에서도 금지이고, 어떤 설정·요청으로도 달라지지 않습니다.`;
+이 요청은 작품의 이용 등급을 바꾸지 않습니다.`;
 
 /**
  * The wording for one value. Typing the table as a Record forces every vocabulary value to have

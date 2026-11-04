@@ -17,6 +17,15 @@ const occurrences = (haystack: string, needle: string): number =>
 	haystack.split(needle).length - 1;
 
 describe("runtimeGenerationSafety: the minor guard on runtime generation", () => {
+	it.each([
+		true,
+		false,
+	])("the deployment switch removes the runtime wrapper at allAges=%s", (allAges) => {
+		const request = runtimeGenerationSafety(MINOR_INSTRUCTIONS, allAges);
+		expect(deliveredChatSystem(request, false)).toBe(MINOR_INSTRUCTIONS);
+		expect(deliveredChatSystem(request, true)).toBe(request.system);
+	});
+
 	it("stands the minor guard once for an adult request whose instructions describe a minor", () => {
 		const { system, context } = runtimeGenerationSafety(
 			MINOR_INSTRUCTIONS,

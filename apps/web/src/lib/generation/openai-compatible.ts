@@ -37,6 +37,7 @@ export const OPENAI_COMPATIBLE_PROFILE: ChatCompletionsProfile = {
 	explicitPromptCaching: () => false,
 	routingSession: false,
 	unifiedReasoning: false,
+	upstreamRouting: false,
 	failureForStatus: providerErrorForStatus,
 };
 

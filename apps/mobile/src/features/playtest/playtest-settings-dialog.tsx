@@ -42,6 +42,10 @@ import {
 	buildModelOptions,
 	unavailableMessage,
 } from "../chat/generation/model-options.ts";
+import {
+	OpenRouterTargetFields,
+	openRouterFieldsStand,
+} from "../chat/generation/openrouter-target-fields.tsx";
 import { ReasoningEffortSelect } from "../chat/generation/reasoning-effort-select.tsx";
 import { useGlobalGenerationState } from "../chat/generation/use-room-generation.ts";
 import { startSceneHeadline } from "../create/editor-copy.ts";
@@ -454,6 +458,15 @@ function GenerationFields({
 						))}
 					</Select>
 				</SubField>
+				{/** OpenRouter: a typed model id and its provider, for a target this layer chose, while connected. */}
+				{openRouterFieldsStand(preference.target, connected) ? (
+					<OpenRouterTargetFields
+						label={MODEL_TARGET_FIELD.label}
+						target={preference.target}
+						disabled={disabled}
+						onChange={changeTarget}
+					/>
+				) : null}
 
 				{/**
 				 * The reason it is unavailable is **one line below the control**. That sentence now also states the

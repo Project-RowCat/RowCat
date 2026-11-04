@@ -135,6 +135,28 @@ describe("instrumentation does not change the request", () => {
 });
 
 describe("block structure", () => {
+	it("the disabled-policy inspector shows exactly what is sent", () => {
+		const { request, trace } = buildChatGenerationRequestTraced({
+			...FIXTURES[1].input(),
+			promptGuardsEnabled: false,
+		});
+		expect(chatSystemPromptText(trace.blocks)).toBe(request.system);
+		expect(chatSystemPromptText(trace.blocks)).toBe(
+			deliveredChatSystem(request, false),
+		);
+		expect(
+			trace.blocks.some((block) =>
+				[
+					"absolute-guard",
+					"rating-guard",
+					"minor-guard",
+					"house-rules",
+					"tail-guard",
+				].includes(block.id),
+			),
+		).toBe(false);
+	});
+
 	it("joining the blocks gives the system prompt the model receives", () => {
 		for (const fixture of FIXTURES) {
 			const { request, trace } = buildChatGenerationRequestTraced(
