@@ -1499,9 +1499,12 @@ The rationale is in `apps/api/src/services/mail/templates.tsx`, `lib/mail-config
   ⚠️ **The image's largest weight was never this — it was `next`** (~290 MB with `@next/*`). `better-auth`
   names it as an optional peer, and pnpm resolved that peer because `@react-email/ui` (the preview server, a
   devDependency) brings `next` into the workspace — so `pnpm deploy --prod` shipped a framework nothing
-  imports. The root `pnpm.overrides` cuts that one edge (`"better-auth>next": "-"`); the API's deployed
-  `node_modules` went from about 590 MB to 275 MB. Remove the override only in the commit that imports
-  `better-auth/next-js`, which nothing here does.
+  imports. `.pnpmfile.cjs` deletes that peer declaration, and with it `@tanstack/react-start`,
+  `drizzle-kit` and `vitest` (~70 MB more: drizzle-kit brought esbuild) — an override cannot, because the
+  peer is then satisfied from the API's own devDependencies. The API's deployed `node_modules` went from about
+  590 MB to 275 MB with `next` alone. Remove a name there only in the commit that imports the subpath that
+  needs it (`better-auth/next-js`, `/tanstack-start`, `/test-utils`), which nothing here does. Every image's
+  manifest stage copies that file: the lockfile records its checksum, so a frozen install without it fails.
 - **The two passkey notices contain no links.** Putting an action link in a security alert makes that mail a
   template for phishing — what the user should do is reach the account screen through the path they always use.
 - **Code does not choose the vendor.** Transport is SMTP (`services/mail/smtp.ts` is the only file where a

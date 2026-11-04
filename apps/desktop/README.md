@@ -130,6 +130,15 @@ git tag desktop-2026-10-31 && git push origin desktop-2026-10-31
 - Postgres 라이브러리의 심볼릭 링크를 되살린다(`native/pg-symlinks.json`). `pnpm deploy`가 링크를 파일로 복사해
   ICU 데이터 64MB가 세 번 들어갔다.
 - asar는 끈다. Postgres 바이너리는 OS가 실제 경로에서 실행해야 하는 파일이다.
+- API의 `node_modules`에서 런타임에 아무도 읽지 않는 것을 뺀다(`scripts/prune.ts`). 설치 시간은 바이트보다 **파일
+  개수**가 정한다 — NSIS는 파일을 하나씩 쓰고, Windows Defender는 하나씩 검사하고, 업데이트는 이전 파일을 먼저
+  전부 지운다. `dist/`에서 추적해 아무것도 로드되지 않은 패키지는 통째로(선택 peer가 끌고 온 expo·esbuild·babel),
+  Node가 실행하지 않는 파일(`.d.ts`·`.ts`·`.map`·README)은 패턴으로 뺀다. **단위는 파일이 아니라 패키지다** — 추적은
+  `fs`로 읽는 파일을 못 보고, 출판 컴파일러는 TypeScript의 `lib.*.d.ts`를 `readdirSync`로 읽는다. 그래서 자기 파일을
+  읽는 패키지(`READS_OWN_FILES`)는 패턴으로도 건드리지 않는다. 2026-11-04 macOS 측정: API 14,775개 파일 281MB →
+  5,271개 102MB, DMG 341MB → 208MB. 컨테이너 이미지는 전체 `node_modules`를 그대로 싣는다.
+- Electron의 UI 번역은 `en`·`ko`만 남기고(`electronLanguages`), Windows Postgres의 서버 메시지 번역
+  (`share/locale`, 약 470개 파일)은 뺀다. 데이터베이스는 `--no-locale`로 만들어 어차피 영어로 말한다.
 
 ## 아직 안 된 것
 
@@ -137,10 +146,12 @@ git tag desktop-2026-10-31 && git push origin desktop-2026-10-31
   거기서 멈춘다. 운영자 자신의 Apple Developer ID(공증 포함)와 Windows 코드 서명 인증서가 필요하다.
 - **Windows 설치 파일은 CI 러너에서 만들 뿐, 실제 Windows PC에서 열어 본 기록이 아직 없다.** 첫 릴리스가 그
   확인이다. Linux(`AppImage`)는 설정만 있다.
-- **크기.** API의 운영 의존성에 아무도 import하지 않는 `next`(약 290MB)가 실려 있었다 — `react-email`이 아니라
-  `better-auth`의 선택 peer였다. 루트 `package.json`의 `pnpm.overrides`(`"better-auth>next": "-"`)가 그 간선을
-  끊어 API의 `node_modules`가 약 590MB에서 275MB가 됐다(근거는 AGENTS.md의 react-email 항목). 남은 큰 것은
-  `drizzle-kit`과 `typescript-compiler-api`(런타임 컴파일)이다.
+- **크기.** API의 운영 의존성에 아무도 import하지 않는 `next`(약 290MB)와 `drizzle-kit`이 실려 있었다 —
+  `better-auth`의 선택 peer였다. 루트 `.pnpmfile.cjs`가 그 선언을 지운다(근거는 AGENTS.md의 react-email 항목).
+  남은 큰 것은 Electron 자체, Postgres(ICU 데이터만 Windows 30MB·macOS 63MB), `sharp`의 libvips, 그리고
+  `typescript-compiler-api`(런타임 컴파일)이다. Windows Postgres의 wxWidgets DLL(약 13MB)은 쓰지 않는 것으로
+  보이지만 Windows에서 확인하기 전에는 빼지 않는다. **설치 시간이 실제로 얼마나 줄었는지는 아직 Windows에서
+  재지 않았다.**
 - **macOS 자동 업데이트.** Squirrel.Mac은 서명된 앱만 설치한다. 서명 전까지 macOS에서는 새 설치 파일을 다시
   받는다. 데이터 폴더는 그대로 남고, API가 부팅할 때 마이그레이션을 적용한다.
 - **이 기능이 없는 버전(2026-10-31 릴리스)** 을 쓰는 사람은 한 번은 직접 새 설치 파일을 받아야 한다.

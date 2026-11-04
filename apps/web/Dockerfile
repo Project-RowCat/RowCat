@@ -18,7 +18,7 @@ COPY package.json ./
 RUN npm i -g "$(node -p "require('./package.json').packageManager")"
 
 FROM base AS manifests
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .pnpmfile.cjs ./
 COPY apps/api/package.json apps/api/
 # Mobile is not part of this image. Only its manifest is copied because pnpm's --frozen-lockfile checks
 # that every workspace listed in the lockfile exists. If one is missing, the install rejects right there.

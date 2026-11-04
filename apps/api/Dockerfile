@@ -16,7 +16,7 @@ RUN npm i -g "$(node -p "require('./package.json').packageManager")"
 # Manifests first so source edits do not bust the install layer cache. Copy every workspace
 # manifest: with only some, pnpm sees the lockfile importers mismatch and refuses --frozen-lockfile.
 FROM base AS manifests
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .pnpmfile.cjs ./
 COPY apps/api/package.json apps/api/
 # Mobile is not in this image; its manifest is copied only because --frozen-lockfile checks that
 # every workspace in the lockfile exists.

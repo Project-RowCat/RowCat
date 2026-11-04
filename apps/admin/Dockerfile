@@ -18,7 +18,7 @@ COPY package.json ./
 RUN npm i -g "$(node -p "require('./package.json').packageManager")"
 
 FROM base AS manifests
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .pnpmfile.cjs ./
 COPY apps/admin/package.json apps/admin/
 COPY apps/api/package.json apps/api/
 # Manifests only: --frozen-lockfile checks that every workspace in the lockfile exists and
