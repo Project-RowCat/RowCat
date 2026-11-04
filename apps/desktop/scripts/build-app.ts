@@ -35,6 +35,7 @@ import { APP_BUNDLE_ID, APP_NAME } from "@rowcat/domain";
 import { build, type Configuration } from "electron-builder";
 import sharp from "sharp";
 import { updateFeedFrom, windowsInstallerName } from "../src/update-policy.ts";
+import { countFiles, pruneServerDependencies } from "./prune.ts";
 
 const desktop = resolve(fileURLToPath(import.meta.url), "../..");
 const repo = resolve(desktop, "../..");
@@ -104,6 +105,13 @@ cpSync(join(apiDeploy, "package.json"), join(api, "package.json"));
 rmSync(apiDeploy, { recursive: true, force: true });
 cpSync(join(repo, "apps/api/dist"), join(api, "dist"), { recursive: true });
 cpSync(join(repo, "apps/api/drizzle"), join(api, "drizzle"), { recursive: true });
+{
+	const before = countFiles(join(api, "node_modules"));
+	const pruned = await pruneServerDependencies(api);
+	console.log(
+		`api node_modules: ${before} files → ${before - pruned.files} (dropped ${pruned.packages} unloaded packages, ${(pruned.bytes / 1048576).toFixed(0)} MB)`,
+	);
+}
 
 // The web app's server build is self-contained (nitro bundles its dependencies).
 cpSync(join(repo, "apps/web/.output"), join(resources, "web"), { recursive: true });
@@ -123,6 +131,7 @@ cpSync(join(appDeploy, "package.json"), join(app, "package.json"));
 rmSync(appDeploy, { recursive: true, force: true });
 cpSync(join(desktop, "dist"), join(app, "dist"), { recursive: true });
 relinkPostgresLibraries(join(app, "node_modules", "@embedded-postgres"));
+dropPostgresMessageCatalogs(join(app, "node_modules", "@embedded-postgres"));
 const icons = await writeIcons(join(stage, "icons"));
 
 /**
@@ -147,6 +156,21 @@ function relinkPostgresLibraries(scope: string): void {
 			symlinkSync(relative(dirname(linkPath), join(root, source)), linkPath);
 		}
 	}
+}
+
+/**
+ * The Windows build of Postgres carries its server messages translated into every language it has
+ * (`share/locale`, ~470 files). The database is created with `--no-locale` (`src/stack.ts`), so the
+ * server speaks English whatever this computer's language is, and nothing reads those catalogs.
+ * The other platforms' builds have no such folder.
+ */
+function dropPostgresMessageCatalogs(scope: string): void {
+	if (!existsSync(scope)) return;
+	for (const name of readdirSync(scope))
+		rmSync(join(scope, name, "native", "share", "locale"), {
+			recursive: true,
+			force: true,
+		});
 }
 
 /**
@@ -231,6 +255,12 @@ const config: Configuration = {
 	 * `asarUnpack` moves them while the package still computes its path inside the archive.
 	 */
 	asar: false,
+	/**
+	 * Chromium's translated UI strings: the window shows our own pages, and Chromium's own strings
+	 * (a context menu, a permission prompt) fall back to English. Every other language is a file the
+	 * installer writes for nothing — about forty megabytes on Windows. Mac names them `en`/`ko`.
+	 */
+	electronLanguages: ["en", "en-US", "ko"],
 	/**
 	 * The three servers are copied in after packing rather than declared as `extraResources`:
 	 * electron-builder drops `node_modules` from extra resources whatever `filter` says, and an API

@@ -29,7 +29,6 @@
 		"test": "vitest run && vitest run --config vitest.mail.config.ts && vitest run --config vitest.minimal.config.ts && vitest run --config vitest.jurisdiction.config.ts"
 	},
 	"dependencies": {
-		"@apple/app-store-server-library": "^3.1.0",
 		"@better-auth/expo": "1.7.2",
 		"@better-auth/passkey": "1.7.2",
 		"@hono/node-server": "^2.1.1",
