@@ -879,6 +879,12 @@ describe("security — the operations arrived", () => {
 			 */
 			"lib/auth-image.ts",
 			"lib/identity.tsx",
+			/**
+			 * Removing another instance from this device (`docs/mobile/INSTANCES.md`). It calls one auth
+			 * operation, `forgetInstanceSession` (sign out on that server, then delete its stored session),
+			 * for an instance the person chose in settings; no screen reaches the client through it.
+			 */
+			"lib/instances/remove-instance.ts",
 		]);
 
 		/**

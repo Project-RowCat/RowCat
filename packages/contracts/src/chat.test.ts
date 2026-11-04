@@ -99,6 +99,7 @@ describe("ChatGenerationRequest: the routing axis", () => {
 			"reasoningEffort",
 			"routingSessionId",
 			"system",
+			"toolCallsRefused",
 			"tools",
 		]);
 		expect(Object.keys(ManagedChatGenerationRequest.shape).sort()).toEqual([
@@ -110,6 +111,7 @@ describe("ChatGenerationRequest: the routing axis", () => {
 			"reasoningEffort",
 			"routingSessionId",
 			"system",
+			"toolCallsRefused",
 			"tools",
 		]);
 	});

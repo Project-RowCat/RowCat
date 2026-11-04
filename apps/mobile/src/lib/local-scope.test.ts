@@ -113,10 +113,16 @@ describe("the product's scopes follow the active instance", () => {
 		).toEqual(["lib/local-data/dev-harness.ts", "lib/local-scope.ts"]);
 	});
 
+	/**
+	 * The opener's form is `openActiveLocalScope`: the same scope, and on another instance it is also
+	 * recorded so removing that instance can find its files. Deletion paths keep `activeLocalScope`.
+	 */
 	it("the scope opener, account deletion and local reset use the active instance", () => {
 		expect(
 			product
-				.filter(({ text }) => /\bactiveLocalScope\b/.test(text))
+				.filter(({ text }) =>
+					/\b(?:activeLocalScope|openActiveLocalScope)\b/.test(text),
+				)
 				.map(({ path }) => path)
 				.sort(),
 		).toEqual([
