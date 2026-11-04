@@ -133,7 +133,6 @@ Desktop.ini
 # other people's machines. AGENTS.md is the only agent guidance the repo provides.
 .claude/
 .trail/
-graft/
 .github/modernize/
 
 # playwright (browser journeys)
