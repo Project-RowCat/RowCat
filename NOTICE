@@ -35,9 +35,15 @@ the two applies to that package.
 Trademarks
 ----------
 
-The name "RowCat" and the RowCat app icon are not licensed under either of the
-licenses above. The icon files are:
+The name "RowCat" and the RowCat symbol and app icons are not licensed under
+either of the licenses above. The source artwork and generated icon files are:
 
+  assets/brand/rowcat-symbol.svg
+  packages/design/src/brand.ts (generated symbol geometry)
+  apps/web/public/favicon.svg
+  apps/web/public/apple-touch-icon.png
+  apps/admin/public/favicon.svg
+  apps/admin/public/apple-touch-icon.png
   apps/mobile/assets/icon.png
   apps/mobile/assets/adaptive-icon.png
 
