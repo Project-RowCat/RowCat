@@ -5,6 +5,7 @@ import {
 	viewerQueryOptions,
 } from "@rowcat/query";
 import { Badge } from "@rowcat/ui-web/components/badge";
+import { BrandSymbol } from "@rowcat/ui-web/components/brand-symbol";
 import { Button } from "@rowcat/ui-web/components/button";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -253,7 +254,10 @@ export function AdminShell() {
 	return (
 		<div className="flex min-h-dvh flex-col">
 			<header className="sticky top-0 z-40 flex h-12 shrink-0 items-center gap-3 border-border border-b bg-background/95 px-4 backdrop-blur">
-				<span className="font-semibold text-sm">{APP_NAME} Operations</span>
+				<span className="inline-flex items-center gap-2 font-semibold text-sm">
+					<BrandSymbol className="size-5" />
+					{APP_NAME} Operations
+				</span>
 				{/**
 				 * No API-origin badge here. It used to exist ("pressing in production thinking it is
 				 * staging"), but it usually said `localhost:3001`; an always-on indicator with no

@@ -4,12 +4,12 @@ import {
 	setupStatusQueryOptions,
 	viewerQueryOptions,
 } from "@rowcat/query";
+import { BrandSymbol } from "@rowcat/ui-web/components/brand-symbol";
 import { Button } from "@rowcat/ui-web/components/button";
 import { Input } from "@rowcat/ui-web/components/input";
 import { Label } from "@rowcat/ui-web/components/label";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { ShieldCheck } from "lucide-react";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { getRowCatClient } from "#/lib/api.ts";
 import { authClient, onThisComputer, requestLocalSignIn } from "#/lib/auth.ts";
@@ -150,10 +150,7 @@ export function LoginPage() {
 		<div className="flex min-h-dvh items-center justify-center p-6">
 			<form onSubmit={onSubmit} className="w-full max-w-sm space-y-5">
 				<div className="space-y-1 text-center">
-					<ShieldCheck
-						className="mx-auto size-7 text-muted-foreground"
-						aria-hidden
-					/>
+					<BrandSymbol className="mx-auto size-8" />
 					<h1 className="font-semibold text-lg">
 						{APP_NAME} Operations console
 					</h1>
