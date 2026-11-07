@@ -35,7 +35,7 @@ export { AlertDialog } from "./alert-dialog.tsx";
 export { AppBar } from "./app-bar.tsx";
 export { Avatar } from "./avatar.tsx";
 export { Badge, type BadgeVariant } from "./badge.tsx";
-export type { BrandName } from "./brand-mark.tsx";
+export { type BrandName, BrandSymbol } from "./brand-mark.tsx";
 export {
 	Button,
 	type ButtonVariant,

@@ -1,5 +1,9 @@
 import type { ColorName } from "@rowcat/design";
-import { iconSize } from "@rowcat/design";
+import {
+	BRAND_SYMBOL_PATH,
+	BRAND_SYMBOL_VIEW_BOX,
+	iconSize,
+} from "@rowcat/design";
 import Svg, { Path } from "react-native-svg";
 import type { IconSize } from "./icon.tsx";
 import { useTheme } from "./theme.tsx";
@@ -40,6 +44,28 @@ const DECORATION = {
 	accessibilityElementsHidden: true,
 	importantForAccessibility: "no-hide-descendants",
 } as const;
+
+/** App identity, separate from the third-party login-provider vocabulary. */
+export function BrandSymbol({
+	size = "xl",
+	tone = "foreground",
+}: {
+	size?: IconSize;
+	tone?: ColorName;
+}) {
+	const { colors } = useTheme();
+	const box = iconSize[size];
+	return (
+		<Svg
+			viewBox={BRAND_SYMBOL_VIEW_BOX}
+			width={box}
+			height={box}
+			{...DECORATION}
+		>
+			<Path d={BRAND_SYMBOL_PATH} fill={colors[tone]} />
+		</Svg>
+	);
+}
 
 export function BrandMark({
 	name,
