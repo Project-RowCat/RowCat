@@ -99,7 +99,7 @@
 | --- | --- |
 | 껍데기 — 탭 제목·워드마크·푸시 제목·모델 목록의 관리형 그룹 이름·운영 콘솔 제목·운영 CLI 배너·메일 제목·패스키 이름 | `APP_NAME` 하나와 `app.config.ts`의 `name` 리터럴 |
 | 문장 — 웹·모바일의 안내 문구("○○ 계정", "○○ 제공 모델"), `docs/public/runtime` | 직접 고친다. 한국어 조사가 이름에 붙어(`RowCat이`·`RowCat을`) 변수로 바꾸면 문장이 어긋나서 상수로 빼지 않았다 — `grep -rn "RowCat" apps/*/src docs` |
-| 그림 — 모바일 앱 아이콘 `apps/mobile/assets/icon.png`(워드마크 `RowCat`이 그림 안에 있다)·`adaptive-icon.png` | 파일을 갈아 끼운다. 데스크톱 앱의 아이콘은 따로 없고 조립할 때 `icon.png`에서 그린다(`apps/desktop/scripts/build-app.ts`의 `writeIcons`) — 그 파일 하나를 바꾸면 설치 파일도 따라 바뀐다 — 두 파일은 코드 라이선스에 들지 않는다(`NOTICE`의 「Trademarks」). `APP_NAME`을 바꿔도 그림 속 이름은 남아서, 이름을 바꾼 포크의 홈 화면에 이 프로젝트의 로고가 선다. 두 파일의 관계와 규격은 `app.config.ts`의 `icon`·`adaptiveIcon` 주석 |
+| 그림 — `assets/brand/rowcat-symbol.svg` | 이 SVG를 바꾸고 `pnpm brand:generate`를 실행한다. 웹·운영 콘솔·모바일의 심벌 경로, 파비콘, 터치 아이콘, 모바일 앱 아이콘이 함께 생성된다(`assets/brand/README.md`). 데스크톱은 조립할 때 모바일의 `icon.png`에서 아이콘을 그린다(`apps/desktop/scripts/build-app.ts`의 `writeIcons`). 이름과 심벌 그림은 코드 라이선스에 들지 않는다(`NOTICE`의 「Trademarks」). `APP_NAME`만 바꾸면 그림은 남으므로 둘 다 바꾼다. |
 
 `apps/mcp`(`@rowcat/mcp`·`rowcat-mcp`)는 패키지 이름이 곧 이름이라 껍데기에 들지 않는다. 포크가 그 도구를
 따로 내려면 패키지 이름부터 바꾼다(아래 §13).
