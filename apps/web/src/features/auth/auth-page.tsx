@@ -5,6 +5,7 @@ import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
 import { KeyRound } from "lucide-react";
 import { type ReactElement, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Wordmark } from "#/components/wordmark.tsx";
 import { getRowCatClient } from "#/lib/api.ts";
 import {
 	DEFAULT_REDIRECT_PATH,
@@ -276,7 +277,7 @@ export function AuthPage() {
 						search={{}}
 						className="text-2xl font-black tracking-tight no-underline"
 					>
-						RowCat
+						<Wordmark size="display" />
 					</Link>
 					{/*
 					 * The main heading is **what the person is doing now**, not the brand. Both modes share one address, so this line says

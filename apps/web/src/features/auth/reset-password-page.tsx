@@ -8,6 +8,7 @@ import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Wordmark } from "#/components/wordmark.tsx";
 import { redirectTargetFrom } from "#/lib/auth.ts";
 import { feedbackEnter, feedbackExit } from "#/lib/motion/feedback.ts";
 import { PageEnter } from "#/lib/motion/page-transition.tsx";
@@ -109,7 +110,7 @@ export function ResetPasswordPage() {
 						search={{}}
 						className="text-2xl font-black tracking-tight no-underline"
 					>
-						RowCat
+						<Wordmark size="display" />
 					</Link>
 					<h1 className="text-lg font-semibold tracking-tight">
 						{t("reset.title")}

@@ -1,4 +1,3 @@
-import { APP_NAME } from "@rowcat/domain";
 import { Button } from "@rowcat/ui-web/components/button";
 import {
 	Dialog,
@@ -12,6 +11,7 @@ import { Compass, List, Menu, MessagesSquare, PenLine } from "lucide-react";
 import { LayoutGroup } from "motion/react";
 import { lazy, type ReactNode, Suspense, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Wordmark } from "#/components/wordmark.tsx";
 import { useLocalDataScope } from "#/lib/local-data/scope.tsx";
 import { MotionActiveIndicator } from "#/lib/motion/active-indicator.tsx";
 import type { AppSection } from "./shell-route.ts";
@@ -280,7 +280,7 @@ function SidebarBrand({ onNavigate }: { onNavigate?: () => void }) {
 			onClick={onNavigate}
 			className="mb-4 rounded-md px-2 text-lg font-black tracking-tight no-underline outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
 		>
-			{APP_NAME}
+			<Wordmark />
 		</Link>
 	);
 }
