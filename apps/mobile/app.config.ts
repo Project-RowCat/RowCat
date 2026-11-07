@@ -350,6 +350,7 @@ const config: ExpoConfig = {
 	 *
 	 * 1024x1024 opaque PNG: iOS allows no alpha (App Store Connect rejects the upload) and the system
 	 * rounds the corners, so none are applied here.
+	 * Generated from `assets/brand/rowcat-symbol.svg` at the repo root by `pnpm brand:generate`.
 	 */
 	icon: "./assets/icon.png",
 	orientation: "portrait",
@@ -377,29 +378,13 @@ const config: ExpoConfig = {
 		/**
 		 * Android cannot use the same artwork. Adaptive icons are cropped by the launcher into its own
 		 * shape, so on the 108dp canvas only the central 72dp shows and the parallax-safe zone is a
-		 * circle of diameter 66dp. Passing the original would clip the `RowCat` wordmark at the sides,
-		 * and clipped letters are worse than none.
+		 * circle of diameter 66dp. The transparent foreground contains only the new abstract symbol;
+		 * Android draws the app name below it. `pnpm brand:generate` draws it directly from the same SVG
+		 * as web and iOS, inside a 432px square on the 1024px canvas. Even that square's diagonal fits
+		 * inside the 626px safe circle, so launcher masks and parallax cannot clip the symbol.
 		 *
-		 * The foreground is therefore the cat R mark alone; including the wordmark would shrink the mark
-		 * to about 40%, and Android already draws the app name under the icon.
-		 *
-		 * `assets/adaptive-icon.png` derives from `icon.png` and can be rebuilt by hand:
-		 *
-		 * ```text
-		 * mark bounding box  left 113, top 123, 686x603     (original 1024 coordinates)
-		 * mark inscribed circle  diameter 878.3             fit this, not the bounding box
-		 * safe zone          1024 x 66/108 = 626
-		 * scale              626 / 878.3 = 0.7127 -> 488x429   centred (floored) on a 1024 canvas
-		 * ```
-		 *
-		 * The foreground is an opaque purple filling the canvas; the background is not punched
-		 * transparent around the mark, since chroma keying leaves fringes on antialiased edges and
-		 * `backgroundColor` is the same value anyway, so the mask cuts a uniform colour and there is no
-		 * seam even when the launcher shifts the foreground.
-		 *
-		 * That purple (#644ebd) was measured from the original background, not chosen. Design tokens are
-		 * not used because this is the artwork's colour, not product UI colour; following a token change
-		 * in only half the icon would create a seam.
+		 * The purple background preserves the artwork's existing colour. It must match the generator's
+		 * background, rather than follow UI theme tokens (a token change must not create a seam).
 		 */
 		adaptiveIcon: {
 			foregroundImage: "./assets/adaptive-icon.png",
