@@ -1502,10 +1502,14 @@ The rationale is in `apps/api/src/services/mail/templates.tsx`, `lib/mail-config
   `include` — **node's type stripping alone will not run these files.** It amounts to one exception to what
   `erasableSyntaxOnly` guarded, so adding `.tsx` files is done knowing that. The secret-logging scan also sweeps
   `emails/` in full.
-- **`react-email` is a runtime dependency, and that is this change's price** — the package ships a CLI, so
-  **esbuild, socket.io and tailwind come along into the deploy image** (tens of MB). If the image has to shrink,
-  there is one place to fix it: demote it to a devDependency and switch the runtime imports to
-  `@react-email/components` and `@react-email/render` (the copy code does not change by a character).
+- **`react-email` is a devDependency that the bundle carries** (`deps.alwaysBundle` in `apps/api/tsdown.config.ts`).
+  Since v6 the components ship only inside that package — the per-component packages and
+  `@react-email/components` were deprecated on 2026-11-12, so do not swap to them — and the same package ships
+  the preview CLI, whose esbuild, socket.io, tailwindcss and babel used to ride into every image and the desktop
+  installer (~50 MB of the deployed `node_modules`). Bundling keeps only the components the copy imports
+  (`sideEffects: false`); `render` comes from `@react-email/render`, the one runtime dependency left. **Dropping
+  that bundle rule is not a build error** — `dist/` then imports a package the image does not install and the
+  first send dies with `ERR_MODULE_NOT_FOUND`, so `deployment-entries.test.ts` pins it.
   ⚠️ **The image's largest weight was never this — it was `next`** (~290 MB with `@next/*`). `better-auth`
   names it as an optional peer, and pnpm resolved that peer because `@react-email/ui` (the preview server, a
   devDependency) brings `next` into the workspace — so `pnpm deploy --prod` shipped a framework nothing

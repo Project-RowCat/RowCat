@@ -111,6 +111,9 @@ importers:
       '@hono/node-server':
         specifier: ^2.1.1
         version: 2.1.1(hono@4.13.2)
+      '@react-email/render':
+        specifier: ^2.1.0
+        version: 2.1.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@rowcat/authoring':
         specifier: workspace:*
         version: link:../../packages/authoring
@@ -156,9 +159,6 @@ importers:
       react-dom:
         specifier: ^19.2.8
         version: 19.2.8(react@19.2.8)
-      react-email:
-        specifier: ^6.9.2
-        version: 6.9.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       sharp:
         specifier: ^0.35.3
         version: 0.35.3(@types/node@22.20.1)
@@ -190,6 +190,9 @@ importers:
       drizzle-kit:
         specifier: ^0.31.10
         version: 0.31.10
+      react-email:
+        specifier: ^6.9.2
+        version: 6.9.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       tsdown:
         specifier: ^0.22.14
         version: 0.22.14(tsx@4.23.12)(typescript@7.0.2)
@@ -12538,9 +12541,7 @@ snapshots:
       metro-runtime: 0.84.5
     transitivePeerDependencies:
       - '@babel/core'
-      - bufferutil
       - supports-color
-      - utf-8-validate
 
   '@react-native/normalize-colors@0.86.3': {}
 

@@ -38,11 +38,10 @@ COPY packages/ui-web/package.json packages/ui-web/
 # so only those are installed. No --node-linker=hoisted — hoisting ignores --filter/--prod and
 # expands the whole lockfile (web's rolldown/tailwind, mobile's react-native), adding ~250MB.
 #
-# react, react-dom and react-email are runtime deps because mail copy renders with React Email
-# (apps/api/src/services/mail/emails/); missing one, the build passes and the first send dies with
-# ERR_MODULE_NOT_FOUND. react-email drags in its preview CLI (esbuild, socket.io, tailwind); to
-# shrink the image, demote it to a devDependency and import @react-email/components and
-# @react-email/render instead.
+# react, react-dom and @react-email/render are runtime deps because mail copy renders with React
+# Email (apps/api/src/services/mail/emails/); missing one, the build passes and the first send dies
+# with ERR_MODULE_NOT_FOUND. The components come from react-email, which is a devDependency (its
+# preview CLI drags in esbuild, socket.io and tailwind) and is bundled into dist/ by tsdown.config.ts.
 FROM manifests AS prod-deps
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --frozen-lockfile --prod --ignore-scripts --filter @rowcat/api

@@ -32,6 +32,7 @@
 		"@better-auth/expo": "1.7.2",
 		"@better-auth/passkey": "1.7.2",
 		"@hono/node-server": "^2.1.1",
+		"@react-email/render": "^2.1.0",
 		"@rowcat/authoring": "workspace:*",
 		"@rowcat/chat": "workspace:*",
 		"@rowcat/contracts": "workspace:*",
@@ -47,7 +48,6 @@
 		"pg": "^8.23.0",
 		"react": "^19.2.8",
 		"react-dom": "^19.2.8",
-		"react-email": "^6.9.2",
 		"sharp": "^0.35.3",
 		"typescript-compiler-api": "npm:typescript@5.9.3",
 		"zod": "^4.3.6"
@@ -60,6 +60,7 @@
 		"@types/react": "^19.2.18",
 		"@types/react-dom": "^19.2.4",
 		"drizzle-kit": "^0.31.10",
+		"react-email": "^6.9.2",
 		"tsdown": "^0.22.14",
 		"tsx": "^4.23.12",
 		"vite": "^8.0.0",
