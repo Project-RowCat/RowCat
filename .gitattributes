@@ -1,2 +1,4 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Auto detect text files, store them with LF, and check them out with LF on every platform.
+# Without `eol=lf` a Windows checkout gets CRLF (Git's native default there): Biome then flags every
+# file, and tests that read source files with line-anchored patterns fail before anything changes.
+* text=auto eol=lf
