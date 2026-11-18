@@ -1,5 +1,8 @@
 import { passkeyClient } from "@better-auth/passkey/client";
-import { twoFactorClient } from "better-auth/client/plugins";
+import {
+	deviceAuthorizationClient,
+	twoFactorClient,
+} from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 import { API_BASE_URL } from "./api.ts";
 
@@ -40,7 +43,13 @@ export const authClient = createAuthClient({
 	 * place. Leaving navigation to the library would lose `?redirect=` and the in-progress state in
 	 * between.
 	 */
-	plugins: [passkeyClient(), twoFactorClient()],
+	/**
+	 * Device authorization client: the read, approve and deny calls of the page where `rowcat-mcp` is
+	 * approved (`features/device-approval`). Only those three are called from here — issuing and
+	 * redeeming belong to the tool, and the library's token call has no endpoint on this server
+	 * (`apps/api/src/auth/device-authorization.ts`).
+	 */
+	plugins: [passkeyClient(), twoFactorClient(), deviceAuthorizationClient()],
 });
 
 /**

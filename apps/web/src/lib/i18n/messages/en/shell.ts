@@ -64,6 +64,7 @@ export const shell = {
 			"Browse stories posted on {{app}} by orientation, popularity and rating.",
 		login: "Sign in · {{app}}",
 		resetPassword: "Reset password · {{app}}",
+		deviceApproval: "Connect RowCat MCP · {{app}}",
 		guardian: "Guardian consent · {{app}}",
 		notifications: "Notifications · {{app}}",
 		creator: "{{name}}'s public stories · {{app}}",

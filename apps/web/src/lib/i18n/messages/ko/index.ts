@@ -7,6 +7,7 @@ import { comments } from "./comments.ts";
 import { common } from "./common.ts";
 import { conversation } from "./conversation.ts";
 import { create } from "./create.ts";
+import { deviceApproval } from "./device-approval.ts";
 import { docs } from "./docs.ts";
 import { gallery } from "./gallery.ts";
 import { generation } from "./generation.ts";
@@ -55,4 +56,5 @@ export const ko: Messages = {
 	runtimeTemplates,
 	runtimePreview,
 	runtimePlayer,
+	deviceApproval,
 };

@@ -62,6 +62,7 @@ export const shell: Messages["shell"] = {
 			"{{app}}에 올라온 작품을 성향·인기·등급으로 둘러봅니다.",
 		login: "로그인 · {{app}}",
 		resetPassword: "비밀번호 재설정 · {{app}}",
+		deviceApproval: "RowCat MCP 연결 · {{app}}",
 		guardian: "보호자 동의 · {{app}}",
 		notifications: "알림 · {{app}}",
 		creator: "{{name}}님의 공개 작품 · {{app}}",

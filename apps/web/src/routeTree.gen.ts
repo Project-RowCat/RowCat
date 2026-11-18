@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as appRouteRouteImport } from './routes/(app)/route'
+import { Route as DeviceRouteImport } from './routes/device'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as RuntimeTemplateLabRouteImport } from './routes/runtime-template-lab'
@@ -40,6 +41,11 @@ import { Route as appStoriesStoryIdPlayRouteImport } from './routes/(app)/storie
 
 const appRouteRoute = appRouteRouteImport.update({
   id: '/(app)',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DeviceRoute = DeviceRouteImport.update({
+  id: '/device',
+  path: '/device',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -179,6 +185,7 @@ const appStoriesStoryIdPlayRoute = appStoriesStoryIdPlayRouteImport.update({
 } as any)
 
 export interface FileRoutesByFullPath {
+  '/device': typeof DeviceRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/runtime-template-lab': typeof RuntimeTemplateLabRoute
@@ -208,6 +215,7 @@ export interface FileRoutesByFullPath {
   '/docs/runtime/': typeof appDocsRuntimeIndexRoute
 }
 export interface FileRoutesByTo {
+  '/device': typeof DeviceRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/runtime-template-lab': typeof RuntimeTemplateLabRoute
@@ -238,6 +246,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/(app)': typeof appRouteRouteWithChildren
+  '/device': typeof DeviceRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/runtime-template-lab': typeof RuntimeTemplateLabRoute
@@ -269,6 +278,7 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
+    | '/device'
     | '/login'
     | '/reset-password'
     | '/runtime-template-lab'
@@ -298,6 +308,7 @@ export interface FileRouteTypes {
     | '/docs/runtime/'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/device'
     | '/login'
     | '/reset-password'
     | '/runtime-template-lab'
@@ -327,6 +338,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/(app)'
+    | '/device'
     | '/login'
     | '/reset-password'
     | '/runtime-template-lab'
@@ -358,6 +370,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   appRouteRoute: typeof appRouteRouteWithChildren
+  DeviceRoute: typeof DeviceRoute
   LoginRoute: typeof LoginRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   RuntimeTemplateLabRoute: typeof RuntimeTemplateLabRoute
@@ -373,6 +386,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: ''
       preLoaderRoute: typeof appRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/device': {
+      id: '/device'
+      path: '/device'
+      fullPath: '/device'
+      preLoaderRoute: typeof DeviceRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -630,6 +650,7 @@ const appRouteRouteWithChildren = appRouteRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   appRouteRoute: appRouteRouteWithChildren,
+  DeviceRoute: DeviceRoute,
   LoginRoute: LoginRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   RuntimeTemplateLabRoute: RuntimeTemplateLabRoute,
