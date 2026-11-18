@@ -110,7 +110,7 @@ at greater length.
 | `runtime-ai-docs` | `runtime` (declarations), TypeScript **only in `source/api.ts`**, `node:fs` **only under `source/`** | `apps/*`, the compiler, the VM, React, DOM, network. Writing product prose in code — every sentence comes from the markdown |
 | `runtime-mcp` | `authoring`, `runtime-compiler`, `runtime-host`, `runtime-ai-docs`, zod; QuickJS and `node:*` **only in `node/host.ts`** | `apps/*`, `sdk`, `query`, `sync`, DB drivers, shells, `fetch`, `eval`. A second compiler, a second VM, a second authoring store |
 | `apps/desktop` | `domain` (identity only), `embedded-postgres`, Electron, `electron-updater` (**only in `src/updater.ts`**) | Every other workspace package, `apps/*` source. **A desktop code path inside the API** — the servers run as published builds with environment variables, nothing else |
-| `apps/mcp` | `runtime-mcp`, `authoring`, `sdk`, `sync`, `contracts`, the MCP SDK | `apps/web`, `apps/api`, DB drivers, shells. Writing files anywhere but its own config; anything on **stdout** (that stream is JSON-RPC) |
+| `apps/mcp` | `runtime-mcp`, `authoring`, `sdk`, `sync`, `contracts`, the MCP SDK | `apps/web`, `apps/api`, DB drivers, shells. Writing files anywhere but its own config; starting any program but the browser opener (`open-browser.ts` — fixed per platform, `shell: false`); anything on **stdout** (that stream is JSON-RPC) |
 | `ui-web` | `design` | Feature code, API calls, `ui-native` |
 | `ui-native` | `design`, `@rn-primitives/*`, `lucide-react-native` | Feature code, API calls, `ui-web`, DOM libraries, product vocabulary (`Story`, `Viewer`, …) |
 | `apps/api` | `contracts`, `domain`, `chat`, `@rowcat/sync/server`, **one runtime path from `authoring`** (`@rowcat/authoring/runtime`), `runtime-compiler` (+ `@rowcat/runtime` declarations) | `apps/web`, any other path of `@rowcat/sync`, any other path of `authoring` |
@@ -1353,6 +1353,16 @@ table). A callback without a binding hands over nothing — **there is no fallba
 The app's round trip has one door (`apps/mobile/src/lib/auth-browser.ts`), and every redirecting social call passes
 `disableRedirect: true` so the library never opens the sheet itself (`auth-browser-boundaries.test.ts`). A code from a
 flow someone else started cannot be redeemed by the victim's app either — it was bound to their binding, not the victim's verifier.
+
+**`rowcat-mcp` signs in by approval, never by password** (`auth/device-authorization.ts`, `@rowcat/contracts`'
+`device-authorization.ts`, `docs/creator-runtime/ai-authoring.md` §15). It is the library's device authorization grant
+(RFC 8628) minus `/device/token` — that endpoint hands the raw session token out as a bearer credential, and this API has
+no bearer plugin — plus `POST /v2/auth/device/session`, which runs the same `redeemDeviceCode` and ends in
+`setSessionCookie`, so the tool holds the signed cookie every client holds. Two door rules stand in `hooks.before`:
+`/device/code` takes `{ client_id: "rowcat-mcp" }` and nothing else (no `user_id` pre-binding, no `scope`), and
+`/device/approve` needs a fresh session (24h, `SESSION_NOT_FRESH`) — approval mints a fresh session, and without the rule
+an old stolen cookie becomes one, which is what guards passkey registration. The page is the web's `/device`
+(`features/device-approval`), at the address the server builds from `webOrigin`; the tool never asks for a second address.
 
 - **`setPassword` is the only place a password crosses our contract, and that exception has a reason** —
   that endpoint is `createAuthEndpoint.serverOnly`, so it has no HTTP surface at all (passing the session
@@ -4283,6 +4293,10 @@ RUNTIME_AI_CORPUS  →  /llms.txt · /llms-full.txt · /runtime-api.json · the 
   the process to **become one of the account's devices** (session + recovery code + the existing
   sync protocol). Opening a plaintext authoring API on the server would make this executable
   unnecessary and the product's zero-knowledge claim untrue at the same time.
+- **It signs in by browser approval, not a password** (`## Account security`, `docs/creator-runtime/ai-authoring.md`
+  §15). `setup` prints the approval address and code and opens a browser only where one is the person's (not over SSH,
+  not on a Linux session without a display) — the address works from any device. Two approvals, two jobs: the browser
+  one signs the tool in, the paired device's one hands it the key.
 - **That device registers four codecs** (`authoring.draft`, `runtimeProject`, `runtimeFile`,
   `runtimeAsset`). Chat, personas and player saves are `ignored` by the engine — forward
   compatibility's normal path — so this tool **does not hold them and therefore cannot upload
@@ -5944,8 +5958,8 @@ pnpm --filter @rowcat/api jobs:retention:inspect
 pnpm --filter @rowcat/api mobile-updates <register|list|show|rollout|pause|resume|mark-rolled-back|rollback-plan|gc-report>
 pnpm --filter web generate-routes          # regenerate routeTree.gen.ts (tsr)
 pnpm --filter @rowcat/design gen           # tokens.ts → tokens.css + tokens.native.ts
-pnpm --filter @rowcat/mcp start setup      # the normal path — login → pairing code → ready
-pnpm --filter @rowcat/mcp start login      # the MCP device's session (the password is not stored)
+pnpm --filter @rowcat/mcp start setup      # the normal path — browser approval → pairing code → ready (needs the web up)
+pnpm --filter @rowcat/mcp start login      # the MCP device's session only — approved in a browser, no password
 pnpm --filter @rowcat/mcp start unlock     # open the sync key with the recovery code
 pnpm --filter @rowcat/mcp doctor           # what works with this configuration
 pnpm --filter @rowcat/mcp build            # dist/index.mjs — the artifact that ships

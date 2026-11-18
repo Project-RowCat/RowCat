@@ -7,9 +7,10 @@ import { describe, expect, test } from "vitest";
  * The executable's boundaries, pinned as absences by value.
  *
  * - stdout belongs to the protocol: one stray character breaks JSON-RPC
- * - secrets stay out of logs: DEK, recovery code, password, cookie
+ * - secrets stay out of logs: DEK, recovery code, cookie, the device code a sign-in polls with
  * - manuscripts stay out of logs: creator source is not this process's diagnostic subject
- * - no new doors: shell, arbitrary file writes, DB
+ * - no new doors: shell, arbitrary file writes, DB — and one program, the browser opener
+ * - signing in asks no password: it is approved in a browser
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -81,7 +82,12 @@ describe("secrets and manuscripts do not go to logs", () => {
 	/** An optional call (`status?.(…)`, how the injected wrapper is called) is a call too. */
 	const SINK =
 		/\b(?:out|status|console\.\w+|process\.stderr\.write)(?:\?\.)?\(/g;
-	const SECRET = /dek|recoverycode|password|cookie|keyring|content/i;
+	/**
+	 * `device_code` is a secret until it is redeemed: whoever holds it receives the session the person
+	 * approves. The code a person compares is `user_code`, a different value.
+	 */
+	const SECRET =
+		/dek|recoverycode|password|cookie|keyring|content|devicecode|device_code/i;
 
 	/**
 	 * The argument list's code with every string's text removed and template expressions kept.
@@ -236,12 +242,19 @@ describe("secrets and manuscripts do not go to logs", () => {
 			true,
 		);
 		expect(probe("config[`dek`]")).toBe(true);
+		expect(probe("request.device_code")).toBe(true);
+		expect(probe("formatDeviceUserCode(request.user_code)")).toBe(false);
 	});
 });
 
 describe("no doors are added", () => {
 	const DOORS: readonly [RegExp, string, ReadonlySet<string>][] = [
-		[/\bnode:child_process\b/, "shell execution", new Set()],
+		// One program, one file: the browser opener (pinned below).
+		[
+			/\bnode:child_process\b/,
+			"process execution",
+			new Set(["open-browser.ts"]),
+		],
 		[/\bdrizzle-orm\b/, "database", new Set()],
 		[/\bfrom "pg"/, "database", new Set()],
 		[/\bnew Function\b/, "dynamic code", new Set()],
@@ -263,6 +276,45 @@ describe("no doors are added", () => {
 	});
 });
 
+describe("the one program this package starts", () => {
+	/**
+	 * The browser opener may start a program; what keeps that from being a shell is pinned here by
+	 * value: `spawn` alone (not `exec*`, which hands a command line to a shell, and not `fork`), with
+	 * the shell off, and the address checked before it is passed (`open-browser.ts` header).
+	 */
+	const source = (): string => code("open-browser.ts");
+
+	test("imports spawn and nothing else from child_process", () => {
+		expect(source()).toMatch(/import \{ spawn \} from "node:child_process";/);
+		expect(source()).not.toMatch(/\b(?:exec|execSync|execFile|fork)\b/);
+	});
+
+	test("never through a shell", () => {
+		expect(source()).toContain("shell: false");
+		expect(source()).not.toMatch(/shell:\s*true|\bcmd(?:\.exe)?\b/);
+	});
+
+	test("only an address that passed the check is handed over", () => {
+		expect(source()).toMatch(/openableAddress\(address\)/);
+	});
+});
+
+describe("signing in asks no password", () => {
+	/**
+	 * The session comes from an approval in a browser (`browser-sign-in.ts`). A password door coming
+	 * back would again reach only accounts with a password and no second factor, and would put a
+	 * password through this process.
+	 */
+	test.each(files)("%s does not call the password sign-in", (name) => {
+		expect(code(name)).not.toMatch(/sign-in\/email/);
+	});
+
+	test("no prompt asks for one", () => {
+		expect(code("index.ts")).not.toMatch(/ask(?:Secret)?\(\s*"Password/);
+		expect(code("index.ts")).not.toMatch(/ask\(\s*"Email/);
+	});
+});
+
 describe("serve does not talk to people", () => {
 	// This command stands up the transport, whose peer is a parser, not a person. A prompt (email,
 	// pairing code) in the middle of stdio looks like a "server not responding" with no visible cause,
@@ -280,6 +332,8 @@ describe("serve does not talk to people", () => {
 		["askSecret(", /\baskSecret\(/],
 		["pairDevice(", /\bpairDevice\(/],
 		["signInInteractive(", /\bsignInInteractive\(/],
+		["signInWithBrowser(", /\bsignInWithBrowser\(/],
+		["openBrowser(", /\bopenBrowser\(/],
 		["createInterface(", /\bcreateInterface\(/],
 	])("does not call %s", (_name, door) => {
 		expect(serveBody()).not.toMatch(door);
@@ -315,7 +369,7 @@ describe("config file", () => {
 		expect(source).toContain("chmodSync");
 	});
 
-	// The password never stays in this process; it goes out in one request.
+	// No password passes through this process at all; the file must not grow a slot for one.
 	test("does not store the password", () => {
 		expect(code("config.ts")).not.toMatch(/password/i);
 	});

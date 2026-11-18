@@ -65,7 +65,11 @@ const cookieOf = (response: Response): string =>
 async function createAccount(): Promise<{ cookie: string; id: string }> {
 	const email = `mcp-canary-${Date.now()}@rowcat.test`;
 	const password = `canary-${randomUUID().slice(0, 12)}`;
-	/** States the origin for the same reason the product's `signIn` does; Node's fetch gets a 403 without it. */
+	/**
+	 * States the origin for the same reason the product's sign-in requests do (`originOf` in
+	 * `src/auth.ts`); Node's fetch gets a 403 without it. The account is made here, the way the web
+	 * would, because the product's own sign-in is approved in a browser and a script has none.
+	 */
 	const origin = new URL(BASE).origin;
 	const signUp = await fetch(`${BASE}/auth/sign-up/email`, {
 		method: "POST",

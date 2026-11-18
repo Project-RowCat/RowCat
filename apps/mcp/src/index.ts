@@ -1,7 +1,11 @@
 import { createInterface } from "node:readline/promises";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { b64ToBytes, bytesToB64 } from "@rowcat/sync";
-import { fetchViewer, RowCatAuthError, signIn, type Viewer } from "./auth.ts";
+import { fetchViewer, type Viewer } from "./auth.ts";
+import {
+	type BrowserSignInOutcome,
+	signInWithBrowser,
+} from "./browser-sign-in.ts";
 import {
 	configPath,
 	type DekOwnership,
@@ -23,6 +27,7 @@ import {
 	unlockDek,
 	verifyStoredDek,
 } from "./device/device.ts";
+import { openBrowser } from "./open-browser.ts";
 import { pairDevice } from "./pairing.ts";
 import { readSecret } from "./secret-input.ts";
 import { runSelfCheck } from "./selfcheck.ts";
@@ -33,8 +38,8 @@ import { planSetup } from "./setup.ts";
  * `rowcat-mcp`: the MCP server for the RowCat creator runtime.
  *
  * ```text
- * rowcat-mcp setup     first run: log in, get approved from an existing device, connect
- * rowcat-mcp login     get a session again (the password is not stored)
+ * rowcat-mcp setup     first run: approve in a browser, get approved from an existing device, connect
+ * rowcat-mcp login     get a session again: approve it in a browser
  * rowcat-mcp pair      receive the sync key from an already-connected RowCat device
  * rowcat-mcp unlock    when no trusted device exists: open with the recovery code
  * rowcat-mcp doctor    what works and what does not right now
@@ -45,6 +50,9 @@ import { planSetup } from "./setup.ts";
  *   so this tool must become one of the account's devices, which needs the envelope key, which a
  *   person opens. A plaintext authoring API on the server would remove the need for this
  *   executable, but what would disappear is the product's zero-knowledge claim.
+ * - Signing in is an approval, not a password: the session comes from a browser where the person is
+ *   already signed in (`browser-sign-in.ts`), so every way an account signs in works here, and the
+ *   address can be opened on another device when this one has no browser (SSH, a container).
  * - Pairing is the normal path, `unlock` the fallback for when no trusted device exists. The
  *   recovery code is not removed, but it is a procedure that needs a piece of paper, and making it
  *   the first screen was what made the tool hard to use. A key received by pairing is the same
@@ -99,11 +107,10 @@ const ask = async (question: string): Promise<string> => {
 };
 
 /**
- * Password input that leaves no characters on screen.
+ * Recovery-code input that leaves no characters on screen.
  *
  * Turning echo off is all it does; terminal history and the process list are out of this process's
- * reach, which is why the password is not taken as an argument (`--password` would land in shell
- * history).
+ * reach, which is why the code is not taken as an argument (it would land in shell history).
  */
 async function askSecret(question: string): Promise<string> {
 	process.stderr.write(question);
@@ -150,38 +157,63 @@ async function signInInteractive(): Promise<Viewer | null> {
 	const current = readConfig();
 	const apiBaseUrl = current.apiBaseUrl ?? (await askApiBaseUrl());
 	if (apiBaseUrl === null) return null;
-	/** The address just asked for is also kept when login succeeds (`loginTransition` carries it over). */
-	const config: McpConfig = { ...current, apiBaseUrl };
 	out(`RowCat API: ${apiBaseUrl}`);
-	const email = await ask("Email: ");
-	const password = await askSecret("Password: ");
-	try {
-		const { cookie } = await signIn(apiBaseUrl, email, password);
-		const viewer = await fetchViewer(apiBaseUrl, cookie);
-		if (viewer === null) {
-			out("Signed in, but couldn't read the member information.");
-			return null;
-		}
-		/**
-		 * Logging in swaps the account. On entering a different account the previous account's envelope
-		 * key is dropped here: while it stays in the file, the next `serve` could open someone else's
-		 * drafts with the new account's cookie.
-		 */
-		const transition = loginTransition(config, cookie, viewer.id);
-		writeConfig(transition.config);
-		out(`✓ Signed in as ${viewer.nickname || viewer.id}.`);
-		if (transition.discardedDek)
-			out("  Removed the sync key of the other account opened earlier.");
-		return viewer;
-	} catch (error) {
-		out(
-			error instanceof RowCatAuthError
-				? error.message
-				: "The sign-in request failed. Check the API address and the connection.",
-		);
+	out("");
+	const outcome = await signInWithBrowser({
+		baseUrl: apiBaseUrl,
+		out,
+		status,
+		now: () => Date.now(),
+		sleep,
+		openBrowser: (address) => openBrowser(address),
+	});
+	if (outcome.status !== "signed_in") {
+		out("");
+		out(signInFailureMessage(outcome));
 		return null;
 	}
+	let viewer: Viewer | null;
+	try {
+		viewer = await fetchViewer(apiBaseUrl, outcome.cookie);
+	} catch {
+		viewer = null;
+	}
+	if (viewer === null) {
+		out("Signed in, but couldn't read the member information.");
+		return null;
+	}
+	/**
+	 * Logging in swaps the account. On entering a different account the previous account's envelope
+	 * key is dropped here: while it stays in the file, the next `serve` could open someone else's
+	 * drafts with the new account's cookie.
+	 *
+	 * The config is read again here, not before the approval: that can take minutes, and another
+	 * terminal may have written the file meanwhile (a `pair` that stored this account's key). The
+	 * address is the one this sign-in used, because the session belongs to that server
+	 * (`loginTransition` carries it over).
+	 */
+	const transition = loginTransition(
+		{ ...readConfig(), apiBaseUrl },
+		outcome.cookie,
+		viewer.id,
+	);
+	writeConfig(transition.config);
+	out("");
+	out(`✓ Signed in as ${viewer.nickname || viewer.id}.`);
+	if (transition.discardedDek)
+		out("  Removed the sync key of the other account opened earlier.");
+	return viewer;
 }
+
+/** Each ending has its own next step; folding them into one sentence is not guidance. */
+const signInFailureMessage = (
+	outcome: Exclude<BrowserSignInOutcome, { status: "signed_in" }>,
+): string =>
+	outcome.status === "denied"
+		? "The sign-in was denied in the browser. Nothing was saved on this device."
+		: outcome.status === "expired"
+			? "The sign-in request expired. Run the command again for a new code."
+			: outcome.message;
 
 async function login(): Promise<number> {
 	const viewer = await signInInteractive();
@@ -650,10 +682,10 @@ const USAGE: readonly string[] = [
 	"",
 	"Usage: rowcat-mcp <command>",
 	"",
-	"  setup    once at first: sign in and get approved from an existing RowCat device",
+	"  setup    once at first: approve in a browser, then from an existing RowCat device",
 	"  serve    the stdio MCP server (default). Agents launch this",
 	"",
-	"  login    get a new session only",
+	"  login    get a new session only (approve it in a browser)",
 	"  pair     get the sync key from an already connected RowCat device",
 	"  unlock   when there is no device to approve: open with the recovery code",
 	"  doctor   check what works and what doesn't right now",

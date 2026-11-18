@@ -1,15 +1,17 @@
 import { StringDecoder } from "node:string_decoder";
 
 /**
- * No-echo single-line input, where passwords and recovery codes pass.
+ * No-echo single-line input, where the recovery code passes. (Sign-in asks for no password at all:
+ * it is approved in a browser, `browser-sign-in.ts`.)
  *
  * - `resume()` is the first line on purpose: `ask()` closes readline, which explicitly pauses
  *   stdin, and a `data` listener added afterwards does not restart a paused stream. With nothing
- *   left on the event loop Node exited 0 at the password prompt and `login`/`setup` never sent a
- *   request. `secret-input.test.ts` catches this by calling it with a paused stream.
+ *   left on the event loop Node once exited 0 at a secret prompt that followed a readline question,
+ *   and the command never sent a request. `secret-input.test.ts` catches this by calling it with a
+ *   paused stream.
  * - Collects characters, not bytes: joining `String.fromCharCode` per byte turns one UTF-8
- *   character into several Latin ones, so a Korean password would be sent as a different string
- *   than the server stored. The decoder rejoins characters split at chunk boundaries, and backspace
+ *   character into several Latin ones, so a non-ASCII secret would be sent as a different string
+ *   than the one typed. The decoder rejoins characters split at chunk boundaries, and backspace
  *   removes the last character, not the last byte.
  * - End of input ends the read: if the pipe closes without a newline, the value collected so far
  *   is returned instead of waiting.

@@ -108,7 +108,13 @@ describe("the same executable on every platform", () => {
 			/["'`]\$\{[A-Za-z0-9_.]+\}\/[A-Za-z]/,
 		);
 		expect(code, "reads $HOME").not.toMatch(/process\.env\.HOME\b/);
-		expect(code, "calls a shell").not.toMatch(/child_process/);
+		/**
+		 * The browser opener is the one file that starts a program (pinned in `boundaries.test.ts`): a
+		 * fixed opener per platform and never a shell, and a missing one only means the person opens the
+		 * printed address themselves — it cannot make the package POSIX-only.
+		 */
+		if (name !== "open-browser.ts")
+			expect(code, "calls a shell").not.toMatch(/child_process/);
 	});
 
 	test("config comes from the home directory, not cwd or the install path", () => {

@@ -5,16 +5,17 @@ import { readSecret } from "./secret-input.ts";
 
 describe("readSecret", () => {
 	/**
-	 * Mirrors the order `login` actually follows: the email is read through readline, which is closed
-	 * before the password is read. `close()` pauses the input, so without resuming the stream the
-	 * value never arrives (a silent exit 0 in a real process).
+	 * A readline question asked before the secret (the API address, which `ask()` reads) closes
+	 * readline, and `close()` pauses the input, so without resuming the stream the value never
+	 * arrives (a silent exit 0 in a real process — the order the old email-then-password sign-in
+	 * followed when this was found).
 	 */
 	test("reads even from input readline paused", async () => {
 		const input = new PassThrough();
 		const rl = createInterface({ input, output: new PassThrough() });
-		const asked = rl.question("Email: ");
-		input.write("me@rowcat.test\n");
-		expect(await asked).toBe("me@rowcat.test");
+		const asked = rl.question("RowCat API address: ");
+		input.write("https://api.rowcat.test/v2\n");
+		expect(await asked).toBe("https://api.rowcat.test/v2");
 		rl.close();
 		expect(input.isPaused()).toBe(true);
 
@@ -23,7 +24,7 @@ describe("readSecret", () => {
 		expect(await secret).toEqual({ kind: "value", value: "s3cret" });
 	});
 
-	test("collects a UTF-8 password character for character, even when cut at chunk boundaries", async () => {
+	test("collects UTF-8 input character for character, even when cut at chunk boundaries", async () => {
 		const input = new PassThrough();
 		const secret = readSecret(input);
 		const bytes = Buffer.from("\ube44\ubc00\ubc88\ud6381\r", "utf8");

@@ -26,6 +26,14 @@ pnpm --filter @rowcat/mcp test
 pnpm --filter @rowcat/mcp pack:verify    # 팩 → OS 임시 디렉터리에 설치 → 설치본으로 검사
 ```
 
+`setup`과 `login`은 **브라우저 승인**으로 로그인하므로 API만으로는 끝나지 않습니다. 승인
+페이지(`/device`)는 웹에 있고, 그 주소는 API가 `WEB_ORIGIN`의 첫 항목으로 만들어 돌려줍니다 —
+로컬에서는 `pnpm dev:all`로 셋을 함께 띄우고 `http://localhost:3001/v2`를 API 주소로 넣으면
+됩니다. 내 `~/.rowcat`을 건드리지 않으려면 홈을 바꿔 돌립니다(Windows는 `USERPROFILE`,
+그 밖에는 `HOME`). 이 도구가 프로그램을 띄우는 곳은 브라우저를 여는 `src/open-browser.ts`
+하나뿐이고, `SSH_CONNECTION`이 있으면 열지 않습니다 — 자동으로 열리는 것이 싫을 때도 그
+변수로 끕니다.
+
 `pack:verify`가 이 패키지의 핵심 검사입니다. 워크스페이스 안에서 `node dist/index.mjs`를
 돌리는 것은 **거짓 초록**입니다 — 그 자리에서는 `node_modules`가 위로 이어져 있어 선언하지
 않은 의존도 전부 찾아집니다. 그래서 그 스크립트는 OS의 임시 디렉터리에 tarball을 설치하고,
