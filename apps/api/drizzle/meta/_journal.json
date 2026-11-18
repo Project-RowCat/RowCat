@@ -29,6 +29,13 @@
       "when": 1793369656512,
       "tag": "0003_setup_local_owner",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794986424939,
+      "tag": "0004_device_authorization",
+      "breakpoints": true
     }
   ]
 }

@@ -268,12 +268,13 @@ docker compose exec api node dist/jobs/cli.mjs run legal.cleanup-expired-retenti
 | 정책 | 기간 | 대상 | 근거 |
 | --- | --- | --- | --- |
 | `auth.verification-token` | 1시간(토큰 유효기간) | `verification` | 만료 뒤 쓸모가 없다 |
+| `auth.device-code` | 10분(요청 유효기간) | `deviceCode` — `rowcat-mcp`의 로그인 요청 | 만료 뒤 쓸모가 없다 |
 | `auth.session` | 30일 | `session` | 만료 뒤 쓸모가 없다 |
 | `guardian.abandoned-request` | 24시간(링크 유효기간) | `guardian_consent` 중 **버려진 요청** | 만료 뒤 쓸모가 없다 |
 | `identity.abandoned-attempt` | 30분(시도 유효기간) | `identity_verification` 중 `pending` | 만료 뒤 쓸모가 없다 |
 | `sync.pairing-relay` | 5분(중계 유효기간) | `sync_pairing` | 만료 뒤 쓸모가 없다 |
 
-**세 번째와 네 번째가 좁은 것이 요점이다.** 그 테이블들에는 두 종류의 행이 산다 — 하나는
+**네 번째와 다섯 번째가 좁은 것이 요점이다.** 그 테이블들에는 두 종류의 행이 산다 — 하나는
 「개인정보 보호법」 제22조의2가 요구하는 **동의·확인의 기록**이고(계정 수명 동안 남는다),
 다른 하나는 아무도 열지 않은 채 만료된 **요청**이다(24시간·30분). 뒤의 것만 지운다. 확정된
 동의(`approved`)·거절(`declined`)·끝난 확인(`verified`·`failed`)은 만료 시각이 한참 지났어도

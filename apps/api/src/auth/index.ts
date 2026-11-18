@@ -8,6 +8,7 @@ import { twoFactor as twoFactorPlugin } from "better-auth/plugins/two-factor";
 import { db } from "../db/client.ts";
 import {
 	account,
+	deviceCode,
 	passkey,
 	session,
 	twoFactor,
@@ -26,6 +27,7 @@ import {
 	publicApiUrl,
 	trustedOrigins,
 	webauthnConfig,
+	webOrigin,
 } from "../env.ts";
 import { createAppleClientSecretSigner } from "../lib/apple-signin-config.ts";
 import { AUTH_CLIENT_IP_HEADER } from "../lib/client-ip.ts";
@@ -43,6 +45,11 @@ import {
 	nativeExpoPlugin,
 } from "./app-session-handoff.ts";
 import { findAuthUser } from "./auth-user.ts";
+import {
+	DEVICE_CODE_RATE_LIMIT,
+	deviceAuthorizationPlugin,
+	enforceDeviceAuthorizationPolicy,
+} from "./device-authorization.ts";
 import { localSignInPlugin } from "./local-sign-in.ts";
 import { enforcePasswordResetTarget } from "./password-reset-policy.ts";
 import { createRedisAuthRateLimitStorage } from "./rate-limit-storage.ts";
@@ -59,8 +66,10 @@ import { isNewAddressVerification } from "./verification-target.ts";
  * OAuth callback, state, PKCE and cookie signing are not worth hand-writing.
  *
  * Five sign-in methods (credentials, Google, Apple, Kakao, passkey) all end in the same Better Auth
- * user and session. Product identity is resolved from `user.id` by `auth/viewer.ts`, so nothing
- * outside this file sees which method was used. Passkeys live in their own table
+ * user and session. A sixth door is not a method but a hand-off: `rowcat-mcp` gets its session by
+ * being approved from one already signed in on the web (`device-authorization.ts`). Product identity
+ * is resolved from `user.id` by `auth/viewer.ts`, so nothing outside this file sees which method or
+ * door was used. Passkeys live in their own table
  * (`db/tables/passkey.ts`) because one account can hold several, so they cannot be a
  * `LoginMethodProvider` value.
  *
@@ -160,7 +169,15 @@ export const auth = betterAuth({
 		provider: "pg",
 		// Explicit model-to-table map: passing the whole schema lets the adapter guess by name and
 		// mistake tables such as `member` for auth models.
-		schema: { user, session, account, verification, passkey, twoFactor },
+		schema: {
+			user,
+			session,
+			account,
+			verification,
+			passkey,
+			twoFactor,
+			deviceCode,
+		},
 	}),
 	/**
 	 * Redirects after sign-in never leave this list (open-redirect defence). It differs from the
@@ -234,6 +251,12 @@ export const auth = betterAuth({
 		 * the library for any request that is not from this computer.
 		 */
 		localSignInPlugin(),
+		/**
+		 * `rowcat-mcp`'s sign-in: a code the tool shows, approved on the web page at `${webOrigin}/device`
+		 * by someone already signed in there. The library's grant minus its bearer-token endpoint, plus one
+		 * that ends in the signed cookie (`device-authorization.ts`).
+		 */
+		deviceAuthorizationPlugin(webOrigin),
 		twoFactorPlugin({
 			issuer: APP_NAME,
 			skipVerificationOnEnable: false,
@@ -566,13 +589,15 @@ export const auth = betterAuth({
 	hooks: {
 		/**
 		 * Door rules standing in front of the library: two-factor (`two-factor-policy.ts`), account
-		 * deletion's password (`account-deletion-policy.ts`) and where a reset link may land
-		 * (`password-reset-policy.ts`).
+		 * deletion's password (`account-deletion-policy.ts`), where a reset link may land
+		 * (`password-reset-policy.ts`) and the device grant's request shape and recent-sign-in approval
+		 * (`device-authorization.ts`).
 		 */
 		before: createAuthMiddleware(async (ctx) => {
 			enforcePasswordResetTarget(ctx);
 			await enforceTwoFactorPolicy(ctx);
 			await enforceAccountDeletionPolicy(ctx);
+			await enforceDeviceAuthorizationPolicy(ctx);
 		}),
 		after: createAuthMiddleware(async (ctx) => {
 			if (ctx.path !== "/passkey/verify-registration") return;
@@ -604,12 +629,15 @@ export const auth = betterAuth({
 	 * multi-value header folded to `null`, so everyone shared one `no-trusted-ip` bucket and a single
 	 * client could cap the whole deployment's sign-in at 3 per 10 seconds.
 	 *
-	 * Rules (window and cap per path) are the library defaults. The storage (Redis when present) and
-	 * the address are ours: `app.ts` resolves it from the socket and the deployment's proxy list
-	 * (`lib/client-ip.ts`) and hands it over in one header, which is the only one the library reads.
+	 * Rules (window and cap per path) are the library defaults, plus one: issuing a device code is an
+	 * anonymous write of a row, and the default 100 per 10 seconds would let one address fill the table
+	 * faster than its ten-minute expiry empties it (`DEVICE_CODE_RATE_LIMIT`). The storage (Redis when
+	 * present) and the address are ours: `app.ts` resolves it from the socket and the deployment's proxy
+	 * list (`lib/client-ip.ts`) and hands it over in one header, which is the only one the library reads.
 	 */
 	rateLimit: {
 		enabled: isProduction,
+		customRules: DEVICE_CODE_RATE_LIMIT,
 		...(authRateLimitRedis
 			? { customStorage: createRedisAuthRateLimitStorage(authRateLimitRedis) }
 			: {}),

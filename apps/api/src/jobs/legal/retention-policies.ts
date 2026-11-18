@@ -2,6 +2,7 @@ import type { SQL } from "drizzle-orm";
 import { and, eq, isNull, lt, sql } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import {
+	deviceCode,
 	guardian_consent,
 	identity_verification,
 	session,
@@ -54,7 +55,7 @@ export interface RetentionPolicy {
 }
 
 /**
- * ⚠️ These five follow lifetimes the code already enforces. A deployment whose privacy policy
+ * ⚠️ These six follow lifetimes the code already enforces. A deployment whose privacy policy
  * states retention periods should state these; changing a value here without changing that
  * document makes the policy the one that lies.
  */
@@ -72,6 +73,21 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = [
 		 * Better Auth's schema.
 		 */
 		expired: (now) => lt(verification.expiresAt, now),
+	},
+	{
+		id: "auth.device-code",
+		source:
+			"tool sign-in requests (rowcat-mcp) — cannot be approved or redeemed after expiry (10 minutes)",
+		period: "the request's validity (10 minutes)",
+		action: "delete",
+		table: deviceCode,
+		/**
+		 * The library deletes a request when its session is issued, and when a poll finds it expired or
+		 * denied; a request whose tool stopped polling (the terminal was closed) stays until this sweep.
+		 * Past `expiresAt` the library refuses it on every path, so the row only holds which account
+		 * opened an approval page and when. The camelCase column is the plugin's schema.
+		 */
+		expired: (now) => lt(deviceCode.expiresAt, now),
 	},
 	{
 		id: "auth.session",

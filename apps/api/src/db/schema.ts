@@ -4,6 +4,7 @@
  */
 export * from "./tables/auth.ts";
 export * from "./tables/comment.ts";
+export * from "./tables/device-code.ts";
 export * from "./tables/guardian.ts";
 export * from "./tables/identity.ts";
 export * from "./tables/media.ts";
