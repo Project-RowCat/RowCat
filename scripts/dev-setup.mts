@@ -61,13 +61,27 @@ function fail(lines: string[]): never {
 	process.exit(1);
 }
 
+/**
+ * `pnpm` is `pnpm.cmd` on Windows, and Node starts a `.cmd` only through a shell: without one the
+ * spawn fails with ENOENT before pnpm prints a line, and the schema and the development account
+ * were never set up there. The shell gets one string of quoted parts rather than separate
+ * arguments, because Node 24 deprecates handing a shell arguments it only joins (DEP0190). Every
+ * part is this file's own, never user input.
+ */
+const windows = process.platform === "win32";
+
 function run(command: string, commandArgs: string[], hint: string[]) {
-	const result = spawnSync(command, commandArgs, {
-		cwd: root,
-		stdio: "inherit",
-	});
+	const result = windows
+		? spawnSync(
+				[command, ...commandArgs].map((part) => `"${part}"`).join(" "),
+				{ cwd: root, stdio: "inherit", shell: true },
+			)
+		: spawnSync(command, commandArgs, { cwd: root, stdio: "inherit" });
 	if (result.error || result.status !== 0)
-		fail([`${command} ${commandArgs.join(" ")} failed.`, ...hint]);
+		fail([
+			`${command} ${commandArgs.join(" ")} failed${result.error ? `: ${result.error.message}` : "."}`,
+			...hint,
+		]);
 }
 
 function ensureEnvFile(target: string, example: string) {
