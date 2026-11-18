@@ -1,3 +1,4 @@
+import type { CharacterCardLabels } from "@rowcat/authoring";
 import { Button } from "@rowcat/ui-web/components/button";
 import {
 	Dialog,
@@ -32,7 +33,8 @@ type Phase =
 	| { kind: "saving" };
 
 /**
- * `/create`'s `Import file`. An import always makes a **new** draft — it never looks for one to
+ * `/create`'s `Import file`. It opens a RowCat story file, or a character card (PNG or JSON) from
+ * another product, which `draft-archive.ts` folds into the same import. An import always makes a **new** draft — it never looks for one to
  * overwrite, because the file carries no identity this device could match against, and guessing by
  * title would merge two works into one.
  *
@@ -80,6 +82,7 @@ export function ImportDraftDialogButton() {
 					upload: uploader(),
 					stillOwnsStore: () => authoring.ownsStore(store),
 					wait,
+					cardLabels: cardLabels(t),
 					onProgress: (progress) =>
 						setPhase(
 							progress.uploaded === progress.total &&
@@ -145,7 +148,7 @@ export function ImportDraftDialogButton() {
 							<input
 								ref={inputRef}
 								type="file"
-								accept=".zip,application/zip"
+								accept=".zip,.png,.json,application/zip,image/png,application/json"
 								className="sr-only"
 								tabIndex={-1}
 								aria-hidden="true"
@@ -198,6 +201,19 @@ function phaseLabel(phase: Phase, t: TFunction<["create", "common"]>): string {
 						seconds: Math.ceil(phase.progress.waitingMs / 1000),
 					});
 	}
+}
+
+/** A card's text arrives under headings the creator will edit, so they are in the screen's language. */
+function cardLabels(t: TFunction<["create", "common"]>): CharacterCardLabels {
+	return {
+		instructions: t("archive.card.instructions"),
+		character: t("archive.card.character"),
+		personality: t("archive.card.personality"),
+		scenario: t("archive.card.scenario"),
+		examples: t("archive.card.examples"),
+		finalInstructions: t("archive.card.finalInstructions"),
+		greeting: (index) => t("archive.card.greeting", { index }),
+	};
 }
 
 /** The three studio upload doors, folded into the one shape the import reads back. */

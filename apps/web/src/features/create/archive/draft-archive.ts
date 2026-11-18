@@ -2,8 +2,15 @@ import {
 	type ArchivedMedia,
 	type AuthoringStore,
 	buildStoryArchiveManifest,
+	CHARACTER_CARD_LIMITS,
+	type CharacterCardIssue,
+	type CharacterCardLabels,
+	characterCardToManifest,
+	isPngBytes,
 	parseStoryArchiveManifest,
 	planStoryArchiveDraft,
+	readCharacterCardJson,
+	readCharacterCardPng,
 	STORY_ARCHIVE_COVER_KEY,
 	type StoryArchiveIssueCode,
 	type StoryArchiveUpload,
@@ -17,6 +24,7 @@ import { classifyRuntimeAssetValue } from "@rowcat/runtime/asset";
 import { RowCatApiError } from "@rowcat/sdk";
 import type { DraftCoverStore } from "#/lib/local-authoring/draft-cover.ts";
 import {
+	type ArchiveBytes,
 	ArchiveContainerError,
 	packStoryArchive,
 	unpackStoryArchive,
@@ -31,6 +39,10 @@ import {
  * before one record is written, so a refused file, a dropped connection or an abort leaves no draft
  * behind — at most a few uploaded media no draft points at. If writing then fails part-way, the half
  * draft is deleted, because a draft missing its scene images is not the work the person brought.
+ *
+ * **A character card is read as an archive.** A PNG or JSON card from another product is folded into
+ * a manifest by `@rowcat/authoring` (character-card.ts) and from then on takes the archive's path —
+ * the same check, the same writes. Which one a file is, the bytes say, not the file name.
  *
  * **An import never overwrites.** Each one makes a new draft; importing the same file twice makes two.
  * The archive carries no identity to match against (on purpose — it names no device and no server
@@ -50,7 +62,11 @@ export type DraftArchiveFailure =
 	/** An upload did not complete: the network, or the server failing (import). */
 	| "upload_failed"
 	/** The draft could not be written to this device (import). */
-	| "save_failed";
+	| "save_failed"
+	/** An image with no character card in it (import). */
+	| "not_card"
+	/** A character card that could not be read (import). */
+	| "card_invalid";
 
 export class DraftArchiveError extends Error {
 	readonly reason: DraftArchiveFailure;
@@ -194,6 +210,10 @@ export interface DraftArchiveImportDeps {
 	stillOwnsStore: () => boolean;
 	wait: (ms: number, signal?: AbortSignal) => Promise<void>;
 	onProgress?: (progress: DraftArchiveImportProgress) => void;
+	/** The headings and titles a character card's text is placed under, in the screen's language. */
+	cardLabels?: CharacterCardLabels;
+	/** When a character card became a draft. Defaults to the clock. */
+	now?: () => string;
 }
 
 /**
@@ -236,26 +256,11 @@ export async function importDraftArchive(
 	deps: DraftArchiveImportDeps,
 	signal?: AbortSignal,
 ): Promise<StoryDraft> {
-	let unpacked: ReturnType<typeof unpackStoryArchive>;
-	try {
-		unpacked = unpackStoryArchive(new Uint8Array(await file.arrayBuffer()));
-	} catch (error) {
-		if (error instanceof ArchiveContainerError) {
-			throw new DraftArchiveError(
-				error.reason === "too_large" ? "too_large" : "not_archive",
-				error.message,
-			);
-		}
-		throw error;
-	}
-
-	let json: unknown;
-	try {
-		json = JSON.parse(unpacked.manifestText);
-	} catch {
-		throw new DraftArchiveError("not_archive", "manifest is not JSON");
-	}
-	const parsed = parseStoryArchiveManifest(json);
+	const unpacked = await readImportFile(
+		new Uint8Array(await file.arrayBuffer()),
+		deps,
+	);
+	const parsed = parseStoryArchiveManifest(unpacked.manifest);
 	if (!parsed.ok)
 		throw new DraftArchiveError(parsed.issue.code, parsed.issue.detail);
 	const manifest = parsed.value;
@@ -366,4 +371,104 @@ export async function importDraftArchive(
 		throw new DraftArchiveError("save_failed", String(error));
 	}
 	return (await store.getDraft(draft.id)) ?? draft;
+}
+
+interface ImportSource {
+	/** The manifest value, not yet checked — `parseStoryArchiveManifest` is the one gate for both kinds. */
+	manifest: unknown;
+	media: ReadonlyMap<string, ArchiveBytes>;
+}
+
+/**
+ * Tells a story archive from a character card by its first bytes: a zip is an archive, a PNG or a
+ * JSON object is a card. A name can be anything a person renamed it to; the bytes cannot.
+ */
+async function readImportFile(
+	bytes: ArchiveBytes,
+	deps: Pick<DraftArchiveImportDeps, "cardLabels" | "now">,
+): Promise<ImportSource> {
+	if (bytes[0] === 0x50 && bytes[1] === 0x4b) return readArchive(bytes);
+	if (isPngBytes(bytes)) {
+		const read = readCharacterCardPng(bytes);
+		if (!read.ok) throw cardError(read.issue);
+		const image = read.value.image as ArchiveBytes;
+		let cover: ArchivedMedia | null = null;
+		const media = new Map<string, ArchiveBytes>();
+		// Too large a picture to be a cover arrives as a draft without one, not as no draft.
+		if (image.byteLength <= CHARACTER_CARD_LIMITS.coverBytes) {
+			const sha256 = await sha256Hex(image);
+			const path = storyArchiveMediaPath(sha256, "image/png");
+			if (path) {
+				cover = { path, mime: "image/png", bytes: image.byteLength, sha256 };
+				media.set(path, image);
+			}
+		}
+		return { manifest: convertCard(read.value.card, cover, deps), media };
+	}
+	if (startsWithJsonObject(bytes)) {
+		const read = readCharacterCardJson(bytes);
+		if (!read.ok) throw cardError(read.issue);
+		return { manifest: convertCard(read.value, null, deps), media: new Map() };
+	}
+	throw new DraftArchiveError("not_archive", "not a zip, PNG or JSON");
+}
+
+function readArchive(bytes: ArchiveBytes): ImportSource {
+	let unpacked: ReturnType<typeof unpackStoryArchive>;
+	try {
+		unpacked = unpackStoryArchive(bytes);
+	} catch (error) {
+		if (error instanceof ArchiveContainerError) {
+			throw new DraftArchiveError(
+				error.reason === "too_large" ? "too_large" : "not_archive",
+				error.message,
+			);
+		}
+		throw error;
+	}
+	try {
+		return {
+			manifest: JSON.parse(unpacked.manifestText),
+			media: unpacked.media,
+		};
+	} catch {
+		throw new DraftArchiveError("not_archive", "manifest is not JSON");
+	}
+}
+
+function convertCard(
+	card: unknown,
+	cover: ArchivedMedia | null,
+	deps: Pick<DraftArchiveImportDeps, "cardLabels" | "now">,
+): unknown {
+	const converted = characterCardToManifest(card, {
+		cover,
+		convertedAt: deps.now?.() ?? new Date().toISOString(),
+		labels: deps.cardLabels,
+	});
+	if (!converted.ok) throw cardError(converted.issue);
+	return converted.value;
+}
+
+function cardError(issue: CharacterCardIssue): DraftArchiveError {
+	const reason: DraftArchiveFailure =
+		issue.code === "too_large"
+			? "too_large"
+			: issue.code === "not_card"
+				? "not_card"
+				: "card_invalid";
+	return new DraftArchiveError(reason, issue.detail);
+}
+
+/** A byte-order mark and whitespace, then `{`. */
+function startsWithJsonObject(bytes: Uint8Array): boolean {
+	let index =
+		bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? 3 : 0;
+	while (
+		index < bytes.length &&
+		[0x20, 0x09, 0x0a, 0x0d].includes(bytes[index] ?? 0)
+	) {
+		index += 1;
+	}
+	return bytes[index] === 0x7b;
 }

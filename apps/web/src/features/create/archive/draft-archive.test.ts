@@ -382,6 +382,136 @@ describe("what an import refuses", () => {
 	});
 });
 
+describe("a character card from another product", () => {
+	const utf8 = (value: string) => new TextEncoder().encode(value);
+	const card = {
+		spec: "chara_card_v2",
+		spec_version: "2.0",
+		data: {
+			name: "Sena",
+			description: "{{char}} keeps the night shift.",
+			first_mes: "*{{char}} looks up.* Closed, {{user}}.",
+			alternate_greetings: ["*A lamp flickers.*"],
+			creator_notes: "A gentle mystery.",
+			tags: ["mystery"],
+			character_book: {
+				entries: [{ keys: ["ink"], content: "Ink remembers.", enabled: true }],
+			},
+		},
+	};
+
+	/** Signature, IHDR, the given text chunks, IDAT, IEND — the reader walks lengths, not CRCs. */
+	function png(texts: Array<[string, string]>): Uint8Array<ArrayBuffer> {
+		const chunk = (type: string, data: Uint8Array) => {
+			const out = new Uint8Array(12 + data.length);
+			new DataView(out.buffer).setUint32(0, data.length);
+			out.set(utf8(type), 4);
+			out.set(data, 8);
+			return [...out];
+		};
+		return new Uint8Array([
+			0x89,
+			0x50,
+			0x4e,
+			0x47,
+			0x0d,
+			0x0a,
+			0x1a,
+			0x0a,
+			...chunk("IHDR", new Uint8Array(13).fill(1)),
+			...texts.flatMap(([keyword, text]) =>
+				chunk("tEXt", utf8(`${keyword}\u0000${text}`)),
+			),
+			...chunk("IDAT", bytes(9, 9, 9)),
+			...chunk("IEND", new Uint8Array(0)),
+		]);
+	}
+	const base64 = (value: string) =>
+		Buffer.from(value, "utf8").toString("base64");
+
+	const reasonOf = async (promise: Promise<unknown>) => {
+		try {
+			await promise;
+		} catch (error) {
+			return error instanceof DraftArchiveError ? error.reason : String(error);
+		}
+		return "accepted";
+	};
+
+	it("a PNG card becomes a private draft, and its picture a cover without the card in it", async () => {
+		const b = instance();
+		const { upload, received } = serverB();
+		const imported = await importDraftArchive(
+			new Blob([png([["chara", base64(JSON.stringify(card))]])], {
+				type: "image/png",
+			}),
+			{ ...importDeps(b, upload), now: () => NOW },
+		);
+
+		expect(imported).toMatchObject({
+			title: "Sena",
+			description: "A gentle mystery.",
+			tags: ["mystery"],
+			visibility: "private",
+			adult: false,
+			promptProtected: false,
+			publishedStoryId: null,
+			prompt: "## Sena\n\nSena keeps the night shift.",
+		});
+		const scenes = await b.store.listStartScenes(imported.id);
+		expect(scenes.map((scene) => [scene.title, scene.content])).toEqual([
+			["Greeting 1", "*Sena looks up.* Closed, {{user}}."],
+			["Greeting 2", "*A lamp flickers.*"],
+		]);
+		expect(imported.defaultStartSceneId).toBe(scenes[0]?.id);
+		const lore = await b.store.listLore(imported.id);
+		expect(lore.map((entry) => [entry.keys, entry.content])).toEqual([
+			[["ink"], "Ink remembers."],
+		]);
+
+		const cover = await b.covers.get(imported.id);
+		expect(cover?.mime).toBe("image/png");
+		expect([
+			...new Uint8Array(await new Blob([cover?.blob ?? ""]).arrayBuffer()),
+		]).toEqual([...png([])]);
+		expect(received).toEqual([]);
+	});
+
+	it("a JSON card arrives without a cover", async () => {
+		const b = instance();
+		const { upload } = serverB();
+		const imported = await importDraftArchive(
+			new Blob([`\ufeff  ${JSON.stringify(card)}`], {
+				type: "application/json",
+			}),
+			importDeps(b, upload),
+		);
+		expect(imported.title).toBe("Sena");
+		expect(await b.covers.get(imported.id)).toBeNull();
+	});
+
+	it("says which way a file is not a card, and writes nothing", async () => {
+		const b = instance();
+		const { upload } = serverB();
+		const deps = importDeps(b, upload);
+		expect(await reasonOf(importDraftArchive(new Blob([png([])]), deps))).toBe(
+			"not_card",
+		);
+		expect(
+			await reasonOf(
+				importDraftArchive(new Blob([png([["chara", "%%%"]])]), deps),
+			),
+		).toBe("card_invalid");
+		expect(
+			await reasonOf(importDraftArchive(new Blob(['{"hello":1}']), deps)),
+		).toBe("not_card");
+		expect(await reasonOf(importDraftArchive(new Blob(["hello"]), deps))).toBe(
+			"not_archive",
+		);
+		expect(await b.store.listDrafts()).toEqual([]);
+	});
+});
+
 describe("file name", () => {
 	it("keeps the title readable and drops what file systems refuse", () => {
 		expect(storyArchiveFileName({ title: ' 밤의 도서관: a/b "c" ' })).toBe(

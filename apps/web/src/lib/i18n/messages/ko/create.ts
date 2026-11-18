@@ -17,7 +17,7 @@ export const create: Messages["create"] = {
 			button: "파일 가져오기",
 			title: "작품 파일 가져오기",
 			description:
-				"RowCat에서 내보낸 작품 파일을 이 기기의 새 초안으로 엽니다. 아무것도 발행되지 않고, 있던 초안은 바뀌지 않습니다.",
+				"RowCat에서 내보낸 작품 파일이나 캐릭터 카드(PNG·JSON)를 이 기기의 새 초안으로 엽니다. 아무것도 발행되지 않고, 있던 초안은 바뀌지 않습니다.",
 			rights:
 				"발행할 권리가 있는 작품만 가져와 주세요. 파일에는 누가 썼는지 기록되지 않습니다.",
 			choose: "파일 고르기",
@@ -27,8 +27,19 @@ export const create: Messages["create"] = {
 				"이 서버는 한 번에 올릴 수 있는 파일 수를 제한합니다. {{seconds}}초 뒤에 이어서 올립니다.",
 			saving: "초안을 저장하는 중…",
 		},
+		card: {
+			instructions: "지시",
+			character: "캐릭터",
+			personality: "성격",
+			scenario: "상황",
+			examples: "대화 예시",
+			finalInstructions: "마지막 지시",
+			greeting: "첫 인사 {{index}}",
+		},
 		failure: {
-			not_archive: "RowCat 작품 파일이 아닙니다.",
+			not_archive: "RowCat 작품 파일이나 캐릭터 카드가 아닙니다.",
+			not_card: "이 파일에는 캐릭터 카드가 들어 있지 않습니다.",
+			card_invalid: "캐릭터 카드가 손상됐거나 읽을 수 없는 형식입니다.",
 			newer_version:
 				"더 새 RowCat에서 만든 파일입니다. 이 RowCat을 업데이트한 뒤 열어 주세요.",
 			invalid: "파일이 손상됐거나 직접 고쳐져서 열 수 없습니다.",

@@ -19,7 +19,7 @@ export const create = {
 			button: "Import file",
 			title: "Import a story file",
 			description:
-				"Opens a story file exported from RowCat as a new draft on this device. Nothing is published, and your existing drafts aren't changed.",
+				"Opens a story file exported from RowCat, or a character card (PNG or JSON), as a new draft on this device. Nothing is published, and your existing drafts aren't changed.",
 			rights:
 				"Import only work you have the right to publish. The file doesn't record who wrote it.",
 			choose: "Choose a file",
@@ -29,8 +29,20 @@ export const create = {
 				"This server limits how many files you can upload at a time. Continuing in {{seconds}} seconds.",
 			saving: "Saving the draft…",
 		},
+		card: {
+			instructions: "Instructions",
+			character: "Character",
+			personality: "Personality",
+			scenario: "Scenario",
+			examples: "Example dialogue",
+			finalInstructions: "Final instructions",
+			greeting: "Greeting {{index}}",
+		},
 		failure: {
-			not_archive: "This isn't a RowCat story file.",
+			not_archive: "This isn't a RowCat story file or a character card.",
+			not_card: "This file doesn't contain a character card.",
+			card_invalid:
+				"This character card is damaged or in a format that can't be read.",
 			newer_version:
 				"This file was made by a newer version of RowCat. Update this RowCat to open it.",
 			invalid:

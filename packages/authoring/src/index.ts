@@ -11,6 +11,7 @@
  * Depends only on @rowcat/contracts and @rowcat/domain.
  */
 export * from "./autosave-queue.ts";
+export * from "./character-card.ts";
 export * from "./conversation-authoring.ts";
 export * from "./legacy.ts";
 export * from "./model.ts";
