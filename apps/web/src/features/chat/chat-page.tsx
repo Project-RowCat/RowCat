@@ -41,6 +41,7 @@ import { ChatComposer, type ChatComposerHandle } from "./composer/composer.tsx";
 import { MessageActionBar } from "./messages/action-bar.tsx";
 import { MessageList } from "./messages/list.tsx";
 import { useMessageActions } from "./messages/use-actions.tsx";
+import { AddCharacterDialog } from "./room-settings/add-character-dialog.tsx";
 import { ChatSearchDialog } from "./search/dialog.tsx";
 import { useChatSearch } from "./search/use-search.ts";
 import { ReplySuggestionPanel } from "./suggestion/panel.tsx";
@@ -99,6 +100,9 @@ export function ChatPage() {
 	 *
 	 * The storage layer sorts (`sortCharacters`). Sorting again here could make the first character in
 	 * the prompt a different person from the one `{{char}}` refers to.
+	 *
+	 * The quick add reads its count from here too, so it knows whether the room is full on its first
+	 * frame instead of one frame after opening (`add-character-dialog.tsx`).
 	 */
 	const { items: characters } = useLocalCharacters(roomId);
 	/**
@@ -251,6 +255,11 @@ export function ChatPage() {
 	const [composerEmpty, setComposerEmpty] = useState(true);
 	/** The channel for filling in a chosen sentence. **It does not send** — that action belongs to the person. */
 	const composerRef = useRef<ChatComposerHandle>(null);
+	/**
+	 * Whether the quick add for this room's cast is open. UI state only: which room it adds to is the
+	 * route's room, read when it is drawn, so there is no second "selected room" here.
+	 */
+	const [addingCharacter, setAddingCharacter] = useState(false);
 
 	/**
 	 * The bottom scroll gesture: on a cut response, **continue generation**; on a finished response,
@@ -631,6 +640,7 @@ export function ChatPage() {
 						onSend={generation.send}
 						onStop={generation.stop}
 						onEmptyChange={setComposerEmpty}
+						onAddCharacter={() => setAddingCharacter(true)}
 					/>
 				</ChatColumn>
 
@@ -645,6 +655,19 @@ export function ChatPage() {
 						focusToken={search.focusToken}
 						onSelect={search.select}
 						onClose={search.close}
+					/>
+				)}
+
+				{/*
+				 * Quick add for the cast, opened from the composer. **Drawn only when there is a room**, for the same
+				 * reason as search: if the room leaves this device's database (deleted elsewhere, account switch), the
+				 * window leaves with it instead of writing a character for a room that is gone.
+				 */}
+				{room && addingCharacter && (
+					<AddCharacterDialog
+						roomId={room.id}
+						characterCount={characters.length}
+						onClose={() => setAddingCharacter(false)}
 					/>
 				)}
 

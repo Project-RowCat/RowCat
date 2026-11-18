@@ -3,6 +3,7 @@ import {
 	COMPOSER_BUTTON,
 	COMPOSER_FIELD_MIN_H,
 	COMPOSER_FRAME,
+	COMPOSER_LEADING_BUTTON,
 	COMPOSER_SURFACE,
 	LIST_PADDING_END_PX,
 	LIST_PADDING_START_PX,
@@ -123,6 +124,8 @@ function ComposerSkeleton() {
 	return (
 		<div className={COMPOSER_FRAME}>
 			<div className={COMPOSER_SURFACE}>
+				{/* The conversation's composer leads with the quick add, so the field starts where it will after hydration. */}
+				<Skeleton className={`size-9 ${COMPOSER_LEADING_BUTTON}`} />
 				<Skeleton className={`${COMPOSER_FIELD_MIN_H} w-full rounded-2xl`} />
 				{/* The ghost emphasis button and the send button, sized like the real composer's two targets. */}
 				<Skeleton className={`size-9 ${COMPOSER_BUTTON}`} />

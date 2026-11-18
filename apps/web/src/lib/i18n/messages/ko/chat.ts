@@ -21,6 +21,8 @@ export const chat: Messages["chat"] = {
 		ifLeftEmptyOnlyThe: "비워 두면 이름만 등장인물 목록에 들어갑니다.",
 		noCharactersAddedYet: "아직 더한 인물이 없습니다.",
 		addCharacter: "인물 추가",
+		quickAddDescription:
+			"이 대화에만 등장하는 인물이며, 다음 응답부터 함께 전달됩니다. 나중에 대화 설정 → 등장인물에서 고치거나 지울 수 있습니다.",
 		name: "이름",
 		description: "설명",
 		add: "추가",
@@ -320,6 +322,7 @@ export const chat: Messages["chat"] = {
 		loadingTheConversation: "대화를 불러오는 중입니다",
 		typeAMessage: "메시지를 입력하세요",
 		insertActionMarker: "행동 표시 넣기",
+		addCharacter: "인물 추가",
 		message: "메시지 입력",
 		stopGenerating: "생성 중지",
 		send: "보내기",

@@ -194,3 +194,46 @@ describe("action marker", () => {
 		expect(flat).toContain("update(next.text)");
 	});
 });
+
+/**
+ * Quick add for the cast — **the composer only asks.**
+ *
+ * The button reports the person's intent and nothing more; which window opens and what it writes
+ * belong to the screen (`chat-page.tsx`). If this box grew a dialog or a write of its own, the story
+ * test could no longer share it, and the composer would know the storage layer again.
+ */
+describe("quick add for the cast", () => {
+	const composer = codeOf("composer.tsx");
+	const flat = flatOf("composer.tsx");
+
+	it("only reports the request", () => {
+		expect(flat).toContain("onClick={onAddCharacter}");
+		expect(composer).not.toContain("createCharacter");
+		expect(composer).not.toContain("AddCharacterDialog");
+	});
+
+	/** No handler, no button: the story test has no room whose cast could grow. */
+	it("is drawn only when the screen handles it", () => {
+		expect(flat).toContain("{onAddCharacter && (");
+		expect(codeOf("../../playtest/playtest-page.tsx")).not.toContain(
+			"onAddCharacter",
+		);
+	});
+
+	/**
+	 * Pressing it leaves the caret in the sentence, so the window it opens hands focus back to where
+	 * the person was writing.
+	 */
+	it("pressing it does not take focus", () => {
+		const button = flat.slice(
+			flat.indexOf("{onAddCharacter && ("),
+			flat.indexOf("onClick={onAddCharacter}"),
+		);
+		expect(button).toContain("onMouseDown={(event) => event.preventDefault()}");
+	});
+
+	/** A person-plus glyph alone does not say what it adds. */
+	it("has an accessible name", () => {
+		expect(flat).toContain('aria-label={t("composer.addCharacter")}');
+	});
+});

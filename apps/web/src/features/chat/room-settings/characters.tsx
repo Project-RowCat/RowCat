@@ -14,6 +14,7 @@ import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocalCharacters } from "#/lib/local-chat/hooks.ts";
 import { useChatScope } from "#/lib/local-chat/scope.ts";
+import { characterSaveFailureMessage } from "./character-copy.ts";
 
 /**
  * The **characters** surface of room settings: add characters to this conversation.
@@ -56,12 +57,9 @@ export function RoomSettingsCharacters({ room }: { room: ChatRoom }) {
 			await task();
 			return true;
 		} catch (failure) {
-			if (failure instanceof ChatCharacterLimitError)
-				setError(t("characters.limit", { limit: failure.limit }));
-			else {
+			if (!(failure instanceof ChatCharacterLimitError))
 				console.error("[chat] couldn't save the character", failure);
-				setError(t("characters.couldnTSaveTheCharacter"));
-			}
+			setError(characterSaveFailureMessage(failure));
 			return false;
 		}
 	};
@@ -186,17 +184,31 @@ export function RoomSettingsCharacters({ room }: { room: ChatRoom }) {
  * Not reviving legacy's five fields (appearance, personality, speech, example lines) is the **same
  * judgment** v2 made when it folded the draft body into one field. When a field cannot answer its
  * question, it becomes an obstacle rather than a classification, and the user writes anywhere.
+ *
+ * **There is one form and two containers.** This pane splits it on the settings surface; the
+ * composer's quick add (`add-character-dialog.tsx`) puts the same form in a window of its own. A
+ * second copy would let the two doors drift on limits, the empty-description rule and the button
+ * lock — exactly the place nobody compares, because each one looks right on its own.
  */
-function CharacterForm({
+export function CharacterForm({
 	character,
 	error,
 	onCancel,
 	onSave,
+	autoFocus = true,
 }: {
 	character: ChatCharacter | null;
 	error: string | null;
 	onCancel: () => void;
 	onSave: (values: { name: string; prompt: string }) => Promise<void>;
+	/**
+	 * Whether the name field takes focus as the form appears. **The container decides.** This pane
+	 * swaps the form into a window that is already open, so nothing else would move focus there. A
+	 * window that opens *with* the form places focus itself, after first recording where focus came
+	 * from; grabbing it earlier makes that record point into the window, and closing then drops focus
+	 * on the page instead of returning it.
+	 */
+	autoFocus?: boolean;
 }) {
 	const { t } = useTranslation(["chat", "common"]);
 	const nameId = useId();
@@ -226,7 +238,7 @@ function CharacterForm({
 					id={nameId}
 					value={name}
 					maxLength={CHAT_CHARACTER_NAME_MAX_LENGTH}
-					autoFocus
+					autoFocus={autoFocus}
 					onChange={(event) => setName(event.target.value)}
 				/>
 			</div>

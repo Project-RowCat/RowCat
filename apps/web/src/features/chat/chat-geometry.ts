@@ -443,3 +443,17 @@ export const COMPOSER_FIELD_TEXT = "text-base sm:text-[0.9375rem]";
  * stay the same.
  */
 export const COMPOSER_BUTTON = "shrink-0 rounded-full";
+
+/**
+ * The leading control — the quick add for this room's cast — is the same quiet circle as the action
+ * marker, standing alone at the **left** edge of the surface.
+ *
+ * It sits opposite the marker and send on purpose. Those two act on the sentence being written; this
+ * one acts on the room (it opens a window and writes a record). A third glyph in their cluster would
+ * read as one more way to shape the text.
+ *
+ * `-ml-1` hands back the 4px that `pl-3` adds for text. That padding lets text start inside the
+ * curve; a circle there would stand 12px from the left edge while send stands 8px from the right,
+ * and the surface would look lopsided. The placeholder reads this value too.
+ */
+export const COMPOSER_LEADING_BUTTON = `${COMPOSER_BUTTON} -ml-1`;

@@ -2,7 +2,7 @@ import { applyChatEmphasisMarker } from "@rowcat/chat";
 import { Button } from "@rowcat/ui-web/components/button";
 import { Textarea } from "@rowcat/ui-web/components/textarea";
 import { cn } from "@rowcat/ui-web/lib/utils";
-import { Asterisk, Send, Square } from "lucide-react";
+import { Asterisk, Send, Square, UserRoundPlus } from "lucide-react";
 import {
 	type KeyboardEvent,
 	type Ref,
@@ -18,6 +18,7 @@ import {
 	COMPOSER_FIELD_MIN_H,
 	COMPOSER_FIELD_TEXT,
 	COMPOSER_FRAME,
+	COMPOSER_LEADING_BUTTON,
 	COMPOSER_SURFACE,
 } from "../chat-geometry.ts";
 import { canSendComposerText, shouldSubmitOnEnter } from "./submit.ts";
@@ -77,6 +78,12 @@ export interface ChatComposerHandle {
  * (`onEmptyChange`). That axis lets the screen keep "do not show the suggestion button while there
  * is text in the box", and that one rule makes **filling overwriting someone else's text
  * unrepresentable** (`canSuggestReply` in `@rowcat/chat`).
+ *
+ * ## Adding a character is a request, not a feature of this box
+ *
+ * The leading button only says "the person wants to add a character" (`onAddCharacter`). Which
+ * window opens, what it writes and to which room are the screen's: this box still knows no store,
+ * and a conversation kind with no room to add to (the story test) passes nothing and gets no button.
  */
 
 export function ChatComposer({
@@ -85,6 +92,7 @@ export function ChatComposer({
 	onSend,
 	onStop,
 	onEmptyChange,
+	onAddCharacter,
 	ref,
 }: {
 	/** The local store is not ready yet, or the room was not found. */
@@ -104,6 +112,11 @@ export function ChatComposer({
 	 * hosts the virtualized list. It flips only twice per message.
 	 */
 	onEmptyChange?: (empty: boolean) => void;
+	/**
+	 * Asks to add a character to this conversation's cast. **Without it there is no button** — the
+	 * story test has no room whose cast could grow.
+	 */
+	onAddCharacter?: () => void;
 	ref?: Ref<ChatComposerHandle>;
 }) {
 	const { t } = useTranslation(["chat", "common"]);
@@ -293,6 +306,34 @@ export function ChatComposer({
 					"focus-within:border-ring focus-within:bg-background focus-within:shadow-md focus-within:ring-2 focus-within:ring-ring/40",
 				)}
 			>
+				{/*
+				 * Quick add for this room's cast — **the left edge, apart from the two controls that act on the
+				 * sentence** (the reason for the position is at `COMPOSER_LEADING_BUTTON`). It is as quiet as the
+				 * action marker: ghost, small, faint. Send stays the strongest thing on this surface.
+				 *
+				 * **It does not take focus when pressed**, for the opposite reason from the marker. The window it
+				 * opens returns focus to whatever held it before opening, so if the caret stays in the sentence,
+				 * closing the window puts the person back where they were writing. Keyboard users who tab here
+				 * come back here.
+				 *
+				 * It stays live during generation, like the rest of the composer: the cast is read once when a
+				 * generation starts, so a character added now joins from the next reply.
+				 */}
+				{onAddCharacter && (
+					<Button
+						type="button"
+						variant="ghost"
+						size="icon"
+						aria-label={t("composer.addCharacter")}
+						title={t("composer.addCharacter")}
+						disabled={disabled}
+						className={`${COMPOSER_LEADING_BUTTON} text-muted-foreground`}
+						onMouseDown={(event) => event.preventDefault()}
+						onClick={onAddCharacter}
+					>
+						<UserRoundPlus aria-hidden="true" />
+					</Button>
+				)}
 				<Textarea
 					ref={inputRef}
 					value={text}

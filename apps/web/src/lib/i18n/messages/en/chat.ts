@@ -22,6 +22,8 @@ export const chat = {
 		ifLeftEmptyOnlyThe: "If left empty, only the name goes on the cast list.",
 		noCharactersAddedYet: "No characters added yet.",
 		addCharacter: "Add character",
+		quickAddDescription:
+			"This character appears only in this conversation, starting with the next reply. You can edit or remove it later in Conversation settings → Characters.",
 		name: "Name",
 		description: "Description",
 		add: "Add",
@@ -330,6 +332,7 @@ export const chat = {
 		loadingTheConversation: "Loading the conversation",
 		typeAMessage: "Type a message",
 		insertActionMarker: "Insert action marker",
+		addCharacter: "Add character",
 		message: "Message",
 		stopGenerating: "Stop generating",
 		send: "Send",

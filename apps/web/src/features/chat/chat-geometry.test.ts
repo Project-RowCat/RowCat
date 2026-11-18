@@ -4,9 +4,11 @@ import { cn } from "@rowcat/ui-web/lib/utils";
 import { describe, expect, it } from "vitest";
 import {
 	ASSISTANT_PROSE,
+	COMPOSER_BUTTON,
 	COMPOSER_FIELD_MIN_H,
 	COMPOSER_FIELD_TEXT,
 	COMPOSER_FRAME,
+	COMPOSER_LEADING_BUTTON,
 	COMPOSER_SURFACE,
 	ESTIMATED_LINE_CHARS,
 	ESTIMATED_LINE_HEIGHT_PX,
@@ -386,6 +388,22 @@ describe("composer geometry", () => {
 	 */
 	it("the input's minimum height exceeds the send button (size-10)", () => {
 		expect(COMPOSER_FIELD_MIN_H).toBe("min-h-11");
+	});
+
+	/*
+	 * The leading circle stands as far from the left edge as send stands from the right. The surface's
+	 * left padding is wider for text, and the circle hands that difference back; if one value moves
+	 * without the other, the surface turns lopsided and nothing else fails.
+	 */
+	it("the leading circle mirrors send's inset", () => {
+		const step = (classes: string, prefix: string): number =>
+			Number(
+				classes.match(new RegExp(`(?:^|\\s)${prefix}-(\\d+)(?:\\s|$)`))?.[1],
+			);
+		expect(COMPOSER_LEADING_BUTTON).toContain(COMPOSER_BUTTON);
+		expect(
+			step(COMPOSER_SURFACE, "pl") - step(COMPOSER_LEADING_BUTTON, "-ml"),
+		).toBe(step(COMPOSER_SURFACE, "p"));
 	});
 });
 
