@@ -7,7 +7,8 @@
  * rules of the local stores (`maintenanceStillApplies`; add/replace/remove on auto memories only),
  * and the history-rewrite rule (`planMaintenanceRewind`, applied for each deleted message as a
  * single-message delete does). Timeline: messages are written in transcript order; maintenance is
- * attempted after every reply, as the apps do after a turn; the transcript's deletions happen after
+ * attempted after every reply, as the apps do after a turn (a rejected response is retried on the
+ * next turn with a fresh sample); the transcript's deletions happen after
  * their session; the planted edits happen as soon as the line is written (V2 never sees the old
  * wording), so the replay does not charge V2 for a late edit.
  *
@@ -56,6 +57,7 @@ const log = {
 	skipped: 0,
 	failed: {} as Record<string, number>,
 	requests: 0,
+	retries: 0,
 	inputChars: 0,
 	outputChars: 0,
 	rewinds: 0,
@@ -63,13 +65,25 @@ const log = {
 	autoMemoriesRemovedByRewind: 0,
 };
 
+/**
+ * Attempts per batch. The app sends the same request again on the next turn after a rejected
+ * response and gets a fresh sample; the proxy's response cache would replay the rejected one
+ * forever. A retry therefore asks for one more output token, a different cache key with the same
+ * prompt.
+ */
+const attempts = new Map<string, number>();
+
 async function requestMaintenance(request: ChatGenerationRequest): Promise<string> {
 	log.requests++;
+	const key = JSON.stringify([summary?.epoch ?? 0, summary?.frontier ?? null, memories.length]);
+	const attempt = attempts.get(key) ?? 0;
+	attempts.set(key, attempt + 1);
+	if (attempt > 0) log.retries++;
 	const body = {
 		model: "rowcat-maintenance",
 		system: request.system,
 		messages: request.messages.map((m) => ({ role: m.role, content: m.content })),
-		max_tokens: request.maxOutputTokens,
+		max_tokens: request.maxOutputTokens + attempt,
 	};
 	log.inputChars += request.system.length + request.messages.reduce((n, m) => n + m.content.length, 0);
 	const response = await fetch(`${proxy}/v1/messages`, {
