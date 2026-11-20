@@ -1,3 +1,4 @@
+import type { ChatScene } from "./scene.ts";
 import type { ChatCharacter } from "./character.ts";
 import type { ChatRuntimeMessage, ChatRuntimeRoom } from "./context.ts";
 import type { AssistantContinuation } from "./continuation.ts";
@@ -108,6 +109,13 @@ export interface ConversationSession {
 	 * no room record to hold them.
 	 */
 	loadCharacters(): Promise<ChatCharacter[]>;
+	/**
+	 * Who witnessed which part of this conversation (`scene.ts`). Optional: sessions without a room
+	 * (replay, runtime) have none, and a room without scenes returns an empty array; either way the
+	 * request carries no scene marks and is exactly what it was before scenes existed. Same snapshot
+	 * rule as memories.
+	 */
+	loadScenes?(): Promise<ChatScene[]>;
 	/**
 	 * The summary of history that has fallen outside the history window. Empty string if there is
 	 * none.

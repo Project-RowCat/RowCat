@@ -59,6 +59,7 @@ export * from "./room-actions.ts";
 export * from "./room-duplicate.ts";
 export * from "./room-library.ts";
 export * from "./room-settings-ia.ts";
+export * from "./scene.ts";
 export * from "./scene-image.ts";
 export * from "./scroll-advance.ts";
 export * from "./search.ts";

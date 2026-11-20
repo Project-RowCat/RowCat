@@ -38,6 +38,13 @@ export interface ChatCharacter extends ChatSyncMeta, ChatSoftDelete {
 	 * valid, because even the name alone informs the model.
 	 */
 	prompt: string;
+	/**
+	 * Other names this character has gone by in this conversation (former names, nicknames the user
+	 * listed). Optional: absent means none. A rename keeps the old name here (`aliasesAfterRename`),
+	 * so memory recall can find scenes written under the old name; the old dialogue is never
+	 * rewritten. Not identity: two characters may share an alias, and recall then expands neither.
+	 */
+	aliases?: string[];
 	/** ISO 8601 timestamp. It is the sort axis for lists. */
 	createdAt: string;
 	updatedAt: string;
@@ -162,6 +169,8 @@ export interface CreateCharacterInput {
 export interface UpdateCharacterPatch {
 	name?: string;
 	prompt?: string;
+	/** Replaces the alias list (normalized by storage with `normalizeCharacterAliases`). */
+	aliases?: string[];
 }
 
 export function createCharacterRecord(
@@ -195,3 +204,32 @@ export const sortCharacters = (
 		if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? -1 : 1;
 		return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 	});
+
+/** At most this many aliases per character (recall sends ≤ 8 names per group, the name included). */
+export const CHAT_CHARACTER_MAX_ALIASES = 7;
+
+/**
+ * The one representation of an alias list: trimmed, non-empty, within the name length limit, unique
+ * (case-insensitive), without the current name, capped. Storage calls it before writing and the
+ * codec after reading.
+ */
+export function normalizeCharacterAliases(aliases: readonly string[] | undefined, name: string): string[] {
+	const seen = new Set([name.trim().toLowerCase()]);
+	const out: string[] = [];
+	for (const raw of aliases ?? []) {
+		const alias = raw.trim();
+		if (!alias || [...alias].length > CHAT_CHARACTER_NAME_MAX_LENGTH) continue;
+		const key = alias.toLowerCase();
+		if (seen.has(key)) continue;
+		seen.add(key);
+		out.push(alias);
+	}
+	return out.slice(-CHAT_CHARACTER_MAX_ALIASES);
+}
+
+/** The aliases after renaming `previous` to `next`: the old name is kept as an alias. */
+export function aliasesAfterRename(current: readonly string[] | undefined, previous: string, next: string): string[] {
+	return previous.trim() && previous.trim() !== next.trim()
+		? normalizeCharacterAliases([...(current ?? []), previous], next)
+		: normalizeCharacterAliases(current, next);
+}
