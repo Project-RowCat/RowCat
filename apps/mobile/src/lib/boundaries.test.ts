@@ -495,6 +495,9 @@ describe("doesn't draw what doesn't exist yet", () => {
 			"lib/local-data/chat-store.ts",
 			"lib/local-data/stores.ts",
 			"lib/local-data/dev-harness.ts",
+			// The afterstate index check on `/dev-tools` (dev builds only): it compares the index with
+			// every room, so it needs the ids — and draws only counts.
+			"lib/afterstate/dev-index-check.ts",
 		]);
 		const readers = product
 			.filter((file) => !STORE_LAYER.has(file.path))

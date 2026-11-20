@@ -8,18 +8,22 @@ import {
 	Text,
 } from "@rowcat/ui-native";
 import { Redirect, useGlobalSearchParams, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { RuntimeNativeLab } from "../features/runtime-native-lab/runtime-native-lab.tsx";
 import { RuntimeVmLab } from "../features/runtime-vm-lab/runtime-vm-lab.tsx";
 import { Wordmark } from "../features/shell/wordmark.tsx";
+import {
+	type IndexCheckRow,
+	runAfterstateIndexCheck,
+} from "../lib/afterstate/dev-index-check.ts";
 import { useMobileIdentity } from "../lib/identity.tsx";
 import {
 	clearSelfCheckData,
 	runLocalStorageSelfCheck,
 	type SelfCheckStep,
 } from "../lib/local-data/dev-harness.ts";
-import { useMobileLocalScope } from "../lib/local-data/scope.tsx";
+import { useChatScope, useMobileLocalScope } from "../lib/local-data/scope.tsx";
 import { sharedPackageProbes } from "../lib/shared-packages.ts";
 
 /**
@@ -75,13 +79,22 @@ export default function DevTools() {
 			</ListSection>
 
 			<ListSection title="Foundation">
-				<ListRow label="Local scope" value={scope.status} />
+				<ListRow
+					label="Local scope"
+					value={
+						scope.error
+							? `${scope.status}: ${scope.error.name}: ${scope.error.message.slice(0, 240)}`
+							: scope.status
+					}
+				/>
 				{sharedPackageProbes().map((probe) => (
 					<ListRow key={probe.name} label={probe.name} value={probe.detail} />
 				))}
 			</ListSection>
 
 			<SelfCheck />
+
+			<AfterstateIndexCheck />
 
 			{/**
 			 * Phase 3 native PoC: the WASM VM runs in a WebView, not Hermes. It lives on the diagnostics screen
@@ -159,6 +172,60 @@ function SelfCheck() {
 					label={`${step.ok ? "PASS" : "FAIL"} · ${step.label}`}
 					value={step.detail}
 				/>
+			))}
+		</ListSection>
+	);
+}
+
+/**
+ * The member's afterstate index against the local store — dry runs and counts only
+ * (`lib/afterstate/dev-index-check.ts`). `rowcat://dev-tools?index=run` runs it on open, for the same
+ * reason `vm=run` exists.
+ */
+function AfterstateIndexCheck() {
+	const scope = useMobileLocalScope();
+	const { store } = useChatScope();
+	const { index } = useGlobalSearchParams<{ index?: string }>();
+	const [rows, setRows] = useState<IndexCheckRow[] | null>(null);
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+	const scopeKey = scope.scope?.scopeKey ?? null;
+
+	const run = useCallback(async () => {
+		setBusy(true);
+		setError(null);
+		try {
+			setRows(await runAfterstateIndexCheck(scopeKey, store));
+		} catch (cause) {
+			setError(cause instanceof Error ? cause.message : String(cause));
+		} finally {
+			setBusy(false);
+		}
+	}, [scopeKey, store]);
+
+	const autoRun = index === "run" && scopeKey !== null && store !== null;
+	useEffect(() => {
+		if (autoRun) void run();
+	}, [autoRun, run]);
+
+	return (
+		<ListSection title="Afterstate index">
+			<View style={dev.actions}>
+				<Button
+					label={busy ? "Checking" : "Check"}
+					variant="secondary"
+					size="sm"
+					onPress={() => void run()}
+					busy={busy}
+				/>
+			</View>
+			{error ? (
+				<Text variant="label" tone="destructive">
+					{error}
+				</Text>
+			) : null}
+			{rows?.map((row) => (
+				<ListRow key={row.label} label={row.label} value={row.value} />
 			))}
 		</ListSection>
 	);
