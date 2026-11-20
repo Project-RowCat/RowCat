@@ -17,6 +17,7 @@ import {
 	type ConversationGenerationState,
 	useConversationGeneration,
 } from "#/features/conversation/use-conversation-generation.ts";
+import { useMemoryRuntime } from "#/lib/afterstate/use-memory-runtime.ts";
 import { useChatScope } from "#/lib/local-chat/scope.ts";
 import { useGenerationScope } from "#/lib/local-generation/scope.ts";
 import { useMemoryMaintenance } from "./memory/use-maintenance.ts";
@@ -192,7 +193,9 @@ export function createChatConversation(input: {
 export function useChatGeneration(
 	room: ChatRoom | null,
 ): ConversationGenerationState {
-	const { store } = useChatScope();
+	const { store, viewerId } = useChatScope();
+	// The local afterstate index (desktop only; null in a browser or in legacy mode).
+	const memory = useMemoryRuntime(viewerId, store);
 	const { store: preferences } = useGenerationScope();
 	/**
 	 * The function that wakes maintenance. It is not an identity axis of the session: ownership is the
@@ -226,9 +229,16 @@ export function useChatGeneration(
 	const session = useMemo(
 		() =>
 			room && store
-				? createChatConversation({ room, store, preferences, maintain, token })
+				? createChatConversation({
+						room,
+						store,
+						preferences,
+						maintain,
+						token,
+						memory,
+					})
 				: null,
-		[room, store, preferences, maintain, token],
+		[room, store, preferences, maintain, token, memory],
 	);
 
 	return useConversationGeneration(session);
