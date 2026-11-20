@@ -326,6 +326,8 @@ export interface MobileChatScope {
 	/** The store open right now; `null` while opening or for guests. */
 	store: ChatStore | null;
 	viewerId: string | null;
+	/** The open member scope's key (`MobileLocalScope.scopeKey`): the memory index's owner. */
+	scopeKey: string | null;
 	ensureStore: () => Promise<ChatStore | null>;
 	ownsStore: (store: ChatStore) => boolean;
 }
@@ -336,6 +338,7 @@ export function useChatScope(): MobileChatScope {
 		() => ({
 			store: scope?.stores.chat ?? null,
 			viewerId,
+			scopeKey: scope?.scopeKey ?? null,
 			ensureStore: async () => (await ensureScope())?.stores.chat ?? null,
 			/**
 			 * Compares the **scope**, not the store. When a member's scope reopens, the store inside is a

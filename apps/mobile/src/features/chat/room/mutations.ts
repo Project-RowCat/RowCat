@@ -34,6 +34,8 @@ export interface RoomMutationScope {
 	store: ChatStore;
 	preferences: GenerationPreferenceStore | null;
 	owns: (store: ChatStore) => boolean;
+	/** Erases a deleted room from the memory index at once; must not throw (`eraseRoomMemory`). */
+	eraseMemory?: (roomId: string) => Promise<void>;
 }
 
 /**
@@ -182,5 +184,6 @@ export async function deleteManagedRoom(
 	if (!scope.owns(scope.store)) return "foreign";
 	await scope.store.deleteRoom(roomId);
 	await scope.preferences?.clearRoom(roomId).catch(() => undefined);
+	await scope.eraseMemory?.(roomId).catch(() => undefined);
 	return "done";
 }

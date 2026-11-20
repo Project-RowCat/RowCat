@@ -90,6 +90,34 @@ describe("the target needn't be the open room", () => {
 	 * by value that the composition layer does not delete separately, which would turn atomicity into
 	 * screen discipline and make a half-failed state representable.
 	 */
+	it("erases the deleted room from the memory index, and a failing erase does not undo it", async () => {
+		const room = await newRoom(alice, "Indexed room");
+		const erased: string[] = [];
+		const scope = {
+			...scopeOf(alice),
+			eraseMemory: async (id: string) => void erased.push(id),
+		};
+		expect(await deleteManagedRoom(scope, room.id)).toBe("done");
+		expect(erased).toEqual([room.id]);
+		const other = await newRoom(alice, "Another");
+		const failing = {
+			...scopeOf(alice),
+			eraseMemory: async () => {
+				throw new Error("index closed");
+			},
+		};
+		expect(await deleteManagedRoom(failing, other.id)).toBe("done");
+		expect(
+			(await alice.stores.chat.listRooms()).map((r) => r.id),
+		).not.toContain(other.id);
+		// Not the owner any more: nothing is deleted, so nothing is erased.
+		const stranger = { ...scope, owns: () => false };
+		erased.length = 0;
+		const third = await newRoom(alice, "Third");
+		expect(await deleteManagedRoom(stranger, third.id)).toBe("foreign");
+		expect(erased).toEqual([]);
+	});
+
 	it("messages and memories disappear together", async () => {
 		const room = await newRoom(alice, "A room to delete");
 		await alice.stores.chat.appendMessage({
