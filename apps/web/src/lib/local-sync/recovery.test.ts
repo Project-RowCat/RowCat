@@ -305,6 +305,8 @@ describe("protocol boundary", () => {
 			 * @rowcat/chat.
 			 */
 			"chat.character",
+			/** Also a room child appended at the end (`chat.scene`). */
+			"chat.scene",
 			"authoring.draft",
 			"authoring.lore",
 			"authoring.scene",

@@ -121,6 +121,7 @@ export function createChatConversation(input: {
 		 * roster it started with.
 		 */
 		loadCharacters: () => store.listCharacters(room.id),
+		loadScenes: () => store.listScenes(room.id),
 		/**
 		 * Summary is read once, at start, like memory. Background maintenance may update the summary
 		 * while a response streams (which is exactly this slice's job). If the in-flight request picked

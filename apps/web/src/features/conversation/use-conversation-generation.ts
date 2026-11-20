@@ -615,6 +615,8 @@ export function useConversationGeneration(
 					const recall = session.loadRecall
 						? await session.loadRecall(recallRequestFor(history, memories))
 						: null;
+					/** Scenes (who witnessed what), a snapshot at the same moment; none: no scene marks. */
+					const scenes = (await session.loadScenes?.()) ?? [];
 
 					/**
 					 * Step ②-e: secure this conversation's routing key. Some conversations have none.
@@ -762,6 +764,14 @@ export function useConversationGeneration(
 						characters,
 						summary,
 						...(recall ? { recall } : {}),
+						...(scenes.length > 0
+							? {
+									scenes: {
+										scenes,
+										cast: characters.map((c) => ({ id: c.id, name: c.name })),
+									},
+								}
+							: {}),
 						allAges,
 						maxOutputTokens: effective.maxOutputTokens,
 						reasoningEffort,

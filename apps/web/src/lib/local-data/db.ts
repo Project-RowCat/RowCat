@@ -18,6 +18,7 @@ import type {
 	ChatMessage,
 	ChatPersona,
 	ChatRoom,
+	ChatScene,
 	ChatSummary,
 } from "@rowcat/chat";
 import type { Rev } from "@rowcat/contracts/sync";
@@ -125,6 +126,12 @@ export class LocalDb extends Dexie {
 	 */
 	chatMemories!: Table<ChatMemory, string>;
 	chatCharacters!: Table<ChatCharacter, string>;
+	/**
+	 * Scenes, the room's fifth child (`packages/chat/src/scene.ts`): who witnessed which part of the
+	 * conversation. All sync axes, like characters. Members are stored as references (`user`,
+	 * `seed:<n>`, `char:<id>`), never names.
+	 */
+	chatScenes!: Table<ChatScene, string>;
 	storyDrafts!: Table<StoryDraft, string>;
 	draftLoreEntries!: Table<DraftLoreEntry, string>;
 	draftStartScenes!: Table<DraftStartScene, string>;
@@ -674,6 +681,18 @@ export class LocalDb extends Dexie {
 			legacyMigrationIds: null,
 			legacyMigrationAssets: null,
 			legacyMigrationUnits: null,
+		});
+
+		/**
+		 * Schema v25 adds the room's fifth child table: scenes (who witnessed which part of the
+		 * conversation). There is no upgrade function. The table is new, and empty means the room has no
+		 * scene, which keeps memory V2's "everything is shared history" semantics. Nothing is inferred
+		 * from existing messages: an audience is only ever what the user said.
+		 *
+		 * The indexes mirror characters: the room's scene list and outbound collection.
+		 */
+		this.version(25).stores({
+			chatScenes: "id, roomId, [dirty+id]",
 		});
 
 		/**

@@ -1,6 +1,7 @@
 import {
 	type AppendMessageInput,
 	type AssistantContinuation,
+	aliasesAfterRename,
 	applyRoomIntensity,
 	applyRoomNarration,
 	applyRoomPersona,
@@ -20,6 +21,7 @@ import {
 	type ChatPersonaSnapshot,
 	type ChatRoom,
 	ChatRoomMissingError,
+	type ChatScene,
 	type ChatStore,
 	type ChatSummary,
 	type ChatTailMode,
@@ -34,6 +36,7 @@ import {
 	createMessageRecord,
 	createPersonaRecord,
 	createRoomRecord,
+	createSceneRecord,
 	createSummaryRecord,
 	extendAssistantRecord,
 	isAutoMemory,
@@ -43,6 +46,7 @@ import {
 	markLocalUpdate,
 	mergeMemorySource,
 	nextSummaryEpoch,
+	normalizeCharacterAliases,
 	planMaintenanceRewind,
 	planRoomDuplicate,
 	requireCharacterName,
@@ -54,7 +58,10 @@ import {
 	requirePersonaDescription,
 	requirePersonaName,
 	requireRoomTitle,
+	requireSceneAudience,
 	rewindChangesAnything,
+	type SetSceneInput,
+	sameAudience,
 	selectChatTail,
 	sortCharacters,
 	sortMemories,
@@ -74,6 +81,7 @@ import {
 	chatMessageTable,
 	chatPersonaTable,
 	chatRoomTable,
+	chatSceneTable,
 	chatSummaryTable,
 	type SqlRow,
 } from "./tables.ts";
@@ -623,8 +631,8 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 		},
 
 		/**
-		 * Soft-deletes a room, **together with its four children (messages, memories, summary,
-		 * characters) in the same transaction.**
+		 * Soft-deletes a room, **together with its five children (messages, memories, summary,
+		 * characters, scenes) in the same transaction.**
 		 *
 		 * Children get only `deletedAt` (`markCascadeDeleted`). Revisions and dirty flags are not raised,
 		 * because the room tombstone stands in for the whole subtree. Raising them would turn one
@@ -664,6 +672,7 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 						"chat_character",
 						chatCharacterTable.fromRow,
 					),
+					scenes: await children("chat_scene", chatSceneTable.fromRow),
 					summary: summaryRow ? chatSummaryTable.fromRow(summaryRow) : null,
 				};
 				const copy = planRoomDuplicate(source, {
@@ -679,6 +688,7 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 					await chatMemoryTable.upsert(tx, memory);
 				for (const character of copy.characters)
 					await chatCharacterTable.upsert(tx, character);
+				for (const scene of copy.scenes) await chatSceneTable.upsert(tx, scene);
 				if (copy.summary) await chatSummaryTable.upsert(tx, copy.summary);
 				return copy.room;
 			});
@@ -723,6 +733,15 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 				 */
 				await tx.run(
 					"UPDATE chat_character SET deleted_at = ? WHERE room_id = ? AND deleted_at IS NULL",
+					[now, id],
+				);
+				/**
+				 * Scenes are the **fifth child**, by the same rule. A live scene left behind would be
+				 * re-uploaded as the audience of a room that no longer exists. The receiving side's
+				 * cascade (`cascadeRoomChildren` in `sync-store.ts`) lists the same five.
+				 */
+				await tx.run(
+					"UPDATE chat_scene SET deleted_at = ? WHERE room_id = ? AND deleted_at IS NULL",
 					[now, id],
 				);
 			});
@@ -904,13 +923,25 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 				 * (same judgment as web).
 				 */
 				if (!current || !isLiveChatRecord(current)) return;
+				/**
+				 * A rename keeps the old name as an alias; an explicit list replaces the stored one first.
+				 * Same rule and same shape as the web (an empty list is no key at all).
+				 */
+				const nextName = name ?? current.name;
+				const base = patch.aliases ?? current.aliases;
+				const aliases =
+					name !== undefined
+						? aliasesAfterRename(base, current.name, nextName)
+						: normalizeCharacterAliases(base, nextName);
+				const { aliases: _previous, ...rest } = current;
 				await chatCharacterTable.upsert(
 					tx,
 					markLocalUpdate(
 						{
-							...current,
+							...rest,
 							...(name !== undefined ? { name } : {}),
 							...(prompt !== undefined ? { prompt } : {}),
+							...(aliases.length > 0 ? { aliases } : {}),
 						},
 						now,
 						await nextRev(tx),
@@ -931,6 +962,69 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 				if (!current || !isLiveChatRecord(current)) return;
 				/** Soft delete. Removing the row would leave no way to tell other devices about the deletion. */
 				await chatCharacterTable.upsert(
+					tx,
+					markLocalDelete(current, now, await nextRev(tx)),
+				);
+			});
+		},
+
+		/* ── Scenes: the room's fifth child ─────────────────────────────────────── */
+
+		async listScenes(roomId: string): Promise<ChatScene[]> {
+			/** A deleted room's scenes count as absent, the same rule as other reads. */
+			if (!(await liveRoom(db, roomId))) return [];
+			const rows = await db.all<SqlRow>(
+				"SELECT * FROM chat_scene WHERE room_id = ? AND deleted_at IS NULL",
+				[roomId],
+			);
+			return rows.map(chatSceneTable.fromRow);
+		},
+
+		setScene(input: SetSceneInput): Promise<ChatScene | null> {
+			/** Validated and normalized outside the transaction, so the error's type is preserved. */
+			const audience = requireSceneAudience(input.audience);
+			const now = nowIso();
+			return db.transaction(async (tx) => {
+				/** A missing or deleted room is a no-op; the room's activity time is never bumped. */
+				if (!(await liveRoom(tx, input.roomId))) return null;
+				const row = await tx.first<SqlRow>(
+					`SELECT * FROM chat_scene
+					 WHERE room_id = ? AND start_created_at = ? AND start_message_id = ? AND deleted_at IS NULL
+					 ORDER BY id LIMIT 1`,
+					[input.roomId, input.startAt.createdAt, input.startAt.messageId],
+				);
+				const current = row ? chatSceneTable.fromRow(row) : null;
+				if (current) {
+					// No change, no revision (same as web).
+					if (sameAudience(current.audience, audience)) return current;
+					const next = markLocalUpdate(
+						{ ...current, audience },
+						now,
+						await nextRev(tx),
+					);
+					await chatSceneTable.upsert(tx, next);
+					return next;
+				}
+				const scene = createSceneRecord(
+					{ roomId: input.roomId, startAt: input.startAt, audience },
+					{ id: newLocalId(), now, rev: await nextRev(tx) },
+				);
+				await chatSceneTable.upsert(tx, scene);
+				return scene;
+			});
+		},
+
+		async deleteScene(id: string): Promise<void> {
+			const now = nowIso();
+			await db.transaction(async (tx) => {
+				const row = await tx.first<SqlRow>(
+					"SELECT * FROM chat_scene WHERE id = ?",
+					[id],
+				);
+				const current = row ? chatSceneTable.fromRow(row) : null;
+				// Idempotent, and soft (the tombstone is how other devices learn of it).
+				if (!current || !isLiveChatRecord(current)) return;
+				await chatSceneTable.upsert(
 					tx,
 					markLocalDelete(current, now, await nextRev(tx)),
 				);

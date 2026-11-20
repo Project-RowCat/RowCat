@@ -21,19 +21,19 @@ import type { ChatMessage, ChatRoom } from "./model.ts";
 import { applyRoomNarration } from "./narration.ts";
 import type { ChatPersona } from "./persona.ts";
 import {
-	type ChatScene,
-	mergeSceneAudience,
-	narrowerAudience,
-	normalizeSceneAudience,
-	sameAudience,
-} from "./scene.ts";
-import {
 	applyRoomPersona,
 	checkPersonaDescription,
 	checkPersonaName,
 	normalizePersonaDescription,
 	normalizePersonaName,
 } from "./persona.ts";
+import {
+	type ChatScene,
+	mergeSceneAudience,
+	narrowerAudience,
+	normalizeSceneAudience,
+	sameAudience,
+} from "./scene.ts";
 import { type ChatSummary, clampSummary } from "./summary.ts";
 import { applyRoomUserNote } from "./user-note.ts";
 
@@ -726,7 +726,9 @@ export const chatCharacterSyncCodec = {
 			roomId: record.roomId,
 			name: record.name,
 			prompt: record.prompt,
-			...(record.aliases && record.aliases.length > 0 ? { aliases: [...record.aliases] } : {}),
+			...(record.aliases && record.aliases.length > 0
+				? { aliases: [...record.aliases] }
+				: {}),
 			createdAt: record.createdAt,
 			updatedAt: record.updatedAt,
 		};
@@ -993,11 +995,21 @@ const SceneData = z.object({
 	audience: z.discriminatedUnion("kind", [
 		z.object({ kind: z.literal("room") }).strict(),
 		z.object({ kind: z.literal("narrator") }).strict(),
-		z.object({ kind: z.literal("participants"), members: z.array(z.string()) }).strict(),
+		z
+			.object({ kind: z.literal("participants"), members: z.array(z.string()) })
+			.strict(),
 	]),
 	createdAt: z.string(),
 	updatedAt: z.string(),
 });
+
+/**
+ * Kinds whose codec resolves concurrent edits itself, so an older but unseen inbound copy reaches
+ * `merge` while a local edit is unsent (`decideInbound`'s `mergeConcurrent`).
+ */
+export const CHAT_SYNC_CONCURRENT_MERGE_TYPES: ReadonlySet<string> = new Set([
+	"chat.scene",
+]);
 
 export const chatSceneSyncCodec = {
 	type: "chat.scene",
@@ -1006,7 +1018,10 @@ export const chatSceneSyncCodec = {
 	encode(record: ChatScene): unknown {
 		return {
 			roomId: record.roomId,
-			startAt: { createdAt: record.startAt.createdAt, messageId: record.startAt.messageId },
+			startAt: {
+				createdAt: record.startAt.createdAt,
+				messageId: record.startAt.messageId,
+			},
 			audience:
 				record.audience.kind === "participants"
 					? { kind: "participants", members: [...record.audience.members] }
@@ -1039,26 +1054,50 @@ export const chatSceneSyncCodec = {
 	 * narrower audience on both sides (`mergeSceneAudience`). A later, non-concurrent widening still
 	 * wins by HLC: the user can reopen a scene on purpose.
 	 */
-	merge(local: ChatScene, remote: ChatScene, context: MergeCtx): Merged<ChatScene> {
+	merge(
+		local: ChatScene,
+		remote: ChatScene,
+		context: MergeCtx,
+	): Merged<ChatScene> {
 		const order = compareRev(remote.rev, local.rev);
 		const differ = !sameAudience(local.audience, remote.audience);
-		if (differ && local.dirty === 1 && narrowerAudience(local.audience, remote.audience)) {
-			context.note(CHAT_MERGE_NOTE.sceneRestrictiveKept);
-			return { record: { ...local, rev: mergedRev(local.rev, remote.rev) }, remoteWins: false };
+		/*
+		 * An unsent local edit (`dirty`) is concurrent with whatever arrives now — older or newer by
+		 * the clock (the sync stores route older-but-unseen copies here for this kind,
+		 * `CHAT_SYNC_CONCURRENT_MERGE_TYPES`). Both settle on the narrower audience; the local copy
+		 * keeps the result, at a revision no lower than either, and pushes it.
+		 */
+		if (differ && local.dirty === 1) {
+			const audience = mergeSceneAudience(local.audience, remote.audience);
+			if (
+				!sameAudience(audience, remote.audience) ||
+				narrowerAudience(remote.audience, local.audience)
+			)
+				context.note(CHAT_MERGE_NOTE.sceneRestrictiveKept);
+			return {
+				record: { ...local, audience, rev: mergedRev(local.rev, remote.rev) },
+				remoteWins: false,
+			};
 		}
 		if (differ && order === 0) {
 			const audience = mergeSceneAudience(local.audience, remote.audience);
 			const remoteWins = sameAudience(audience, remote.audience);
 			return {
 				record: remoteWins
-					? { ...remote, dirty: local.dirty, serverVersion: local.serverVersion }
+					? {
+							...remote,
+							dirty: local.dirty,
+							serverVersion: local.serverVersion,
+						}
 					: { ...local, audience },
 				remoteWins,
 			};
 		}
 		const remoteWins = order >= 0;
 		return {
-			record: remoteWins ? { ...remote, dirty: local.dirty, serverVersion: local.serverVersion } : local,
+			record: remoteWins
+				? { ...remote, dirty: local.dirty, serverVersion: local.serverVersion }
+				: local,
 			remoteWins,
 		};
 	},

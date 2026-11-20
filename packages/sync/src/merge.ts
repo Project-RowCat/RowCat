@@ -63,6 +63,14 @@ export interface InboundFacts {
 	deleted: boolean;
 	/** Remote revision. Null for tombstones, which have no payload to decrypt. */
 	rev: Rev | null;
+	/** The server version of this inbound copy (absent: unknown). */
+	version?: number;
+	/**
+	 * The record kind's codec resolves concurrent edits itself (`chat.scene`): an older inbound that
+	 * this device has not seen yet (`version` above the local `serverVersion`) while the local copy has
+	 * an unsent edit is concurrent, not a replay, and goes to the codec's merge.
+	 */
+	mergeConcurrent?: boolean;
 }
 
 /**
@@ -85,7 +93,13 @@ export function decideInbound(
 	 * Only a strictly older revision is a replay. An equal revision goes to merge, usually because our
 	 * own write came back. The codec then keeps the local value and decides `remoteWins` exactly.
 	 */
-	if (inbound.rev && compareRev(inbound.rev, local.rev) < 0)
-		return { action: "replay" };
+	if (inbound.rev && compareRev(inbound.rev, local.rev) < 0) {
+		const concurrent =
+			inbound.mergeConcurrent === true &&
+			local.dirty === 1 &&
+			inbound.version !== undefined &&
+			inbound.version > local.serverVersion;
+		return concurrent ? { action: "merge" } : { action: "replay" };
+	}
 	return { action: "merge" };
 }

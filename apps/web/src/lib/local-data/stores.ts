@@ -131,6 +131,8 @@ const CHAT_READS: ReadonlySet<keyof ChatStore & string> = new Set([
 	"listMemories",
 	/** This entry was missing. Each time a chat room subscribed to its characters, sync woke once. */
 	"listCharacters",
+	/** Scenes are read by the memory index and the assembler, so a missing entry would wake sync per turn. */
+	"listScenes",
 	"getSummary",
 	"listPersonas",
 	"getPersona",

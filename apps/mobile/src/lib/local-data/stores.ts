@@ -358,6 +358,7 @@ const CHAT_READS: ReadonlySet<keyof ChatStore & string> = new Set([
 	 * `listSceneImages` in `AUTHORING_READS` below suffered.
 	 */
 	"listCharacters",
+	"listScenes",
 	"getSummary",
 	"listPersonas",
 	"getPersona",

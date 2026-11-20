@@ -109,6 +109,7 @@ export function createChatConversation(input: {
 		loadMemories: () => store.listMemories(room.id),
 		// Characters added in this conversation are frozen at start, like memory.
 		loadCharacters: () => store.listCharacters(room.id),
+		loadScenes: () => store.listScenes(room.id),
 		// Summary is frozen at start, like memory: background maintenance may update it mid-stream, and
 		// picking up the new version would make the request's context depend on timing.
 		loadSummary: async () => (await store.getSummary(room.id))?.summary ?? "",
