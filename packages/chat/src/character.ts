@@ -213,7 +213,10 @@ export const CHAT_CHARACTER_MAX_ALIASES = 7;
  * (case-insensitive), without the current name, capped. Storage calls it before writing and the
  * codec after reading.
  */
-export function normalizeCharacterAliases(aliases: readonly string[] | undefined, name: string): string[] {
+export function normalizeCharacterAliases(
+	aliases: readonly string[] | undefined,
+	name: string,
+): string[] {
 	const seen = new Set([name.trim().toLowerCase()]);
 	const out: string[] = [];
 	for (const raw of aliases ?? []) {
@@ -228,7 +231,11 @@ export function normalizeCharacterAliases(aliases: readonly string[] | undefined
 }
 
 /** The aliases after renaming `previous` to `next`: the old name is kept as an alias. */
-export function aliasesAfterRename(current: readonly string[] | undefined, previous: string, next: string): string[] {
+export function aliasesAfterRename(
+	current: readonly string[] | undefined,
+	previous: string,
+	next: string,
+): string[] {
 	return previous.trim() && previous.trim() !== next.trim()
 		? normalizeCharacterAliases([...(current ?? []), previous], next)
 		: normalizeCharacterAliases(current, next);

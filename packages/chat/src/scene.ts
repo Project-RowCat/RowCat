@@ -83,16 +83,23 @@ export class ChatSceneAudienceError extends Error {
  */
 export function normalizeSceneAudience(
 	audience: ChatSceneAudience,
-): { ok: true; audience: ChatSceneAudience } | { ok: false; reason: ChatSceneIssue } {
-	if (audience.kind !== "participants") return { ok: true, audience: { kind: audience.kind } };
+):
+	| { ok: true; audience: ChatSceneAudience }
+	| { ok: false; reason: ChatSceneIssue } {
+	if (audience.kind !== "participants")
+		return { ok: true, audience: { kind: audience.kind } };
 	const members = [...new Set(audience.members.map((m) => m.trim()))].sort();
 	if (members.length === 0) return { ok: false, reason: "empty" };
-	if (members.length > CHAT_SCENE_MAX_MEMBERS) return { ok: false, reason: "too_many" };
-	if (!members.every(isChatSceneMember)) return { ok: false, reason: "invalid_member" };
+	if (members.length > CHAT_SCENE_MAX_MEMBERS)
+		return { ok: false, reason: "too_many" };
+	if (!members.every(isChatSceneMember))
+		return { ok: false, reason: "invalid_member" };
 	return { ok: true, audience: { kind: "participants", members } };
 }
 
-export function requireSceneAudience(audience: ChatSceneAudience): ChatSceneAudience {
+export function requireSceneAudience(
+	audience: ChatSceneAudience,
+): ChatSceneAudience {
 	const checked = normalizeSceneAudience(audience);
 	if (!checked.ok) throw new ChatSceneAudienceError(checked.reason);
 	return checked.audience;
@@ -104,11 +111,17 @@ export interface SetSceneInput {
 	audience: ChatSceneAudience;
 }
 
-export function createSceneRecord(input: SetSceneInput, stamp: ChatStamp): ChatScene {
+export function createSceneRecord(
+	input: SetSceneInput,
+	stamp: ChatStamp,
+): ChatScene {
 	return {
 		id: stamp.id,
 		roomId: input.roomId,
-		startAt: { createdAt: input.startAt.createdAt, messageId: input.startAt.messageId },
+		startAt: {
+			createdAt: input.startAt.createdAt,
+			messageId: input.startAt.messageId,
+		},
 		audience: requireSceneAudience(input.audience),
 		createdAt: stamp.now,
 		updatedAt: stamp.now,
@@ -136,15 +149,22 @@ const RANK = { narrator: 0, participants: 1, room: 2 } as const;
  * Whether `a` admits strictly fewer perspectives than `b`: narrator < participants < room, and
  * among participants a strict subset of witnesses. Undefined for incomparable member sets.
  */
-export function narrowerAudience(a: ChatSceneAudience, b: ChatSceneAudience): boolean {
+export function narrowerAudience(
+	a: ChatSceneAudience,
+	b: ChatSceneAudience,
+): boolean {
 	if (a.kind !== b.kind) return RANK[a.kind] < RANK[b.kind];
 	if (a.kind !== "participants" || b.kind !== "participants") return false;
 	const wider = new Set(b.members);
-	return a.members.length < b.members.length && a.members.every((m) => wider.has(m));
+	return (
+		a.members.length < b.members.length && a.members.every((m) => wider.has(m))
+	);
 }
 
-export const sameAudience = (a: ChatSceneAudience, b: ChatSceneAudience): boolean =>
-	audienceKey(a) === audienceKey(b);
+export const sameAudience = (
+	a: ChatSceneAudience,
+	b: ChatSceneAudience,
+): boolean => audienceKey(a) === audienceKey(b);
 
 /** A canonical string of an audience (for revisions and comparisons; carries refs, not names). */
 export const audienceKey = (a: ChatSceneAudience): string =>
@@ -155,23 +175,34 @@ export const audienceKey = (a: ChatSceneAudience): string =>
  * edit): the narrower; for incomparable member sets, the witnesses both name (narrator if none).
  * Deterministic and symmetric, so every device reaches the same value.
  */
-export function mergeSceneAudience(a: ChatSceneAudience, b: ChatSceneAudience): ChatSceneAudience {
+export function mergeSceneAudience(
+	a: ChatSceneAudience,
+	b: ChatSceneAudience,
+): ChatSceneAudience {
 	if (sameAudience(a, b)) return a;
 	if (narrowerAudience(a, b)) return a;
 	if (narrowerAudience(b, a)) return b;
 	if (a.kind === "participants" && b.kind === "participants") {
 		const other = new Set(b.members);
 		const both = a.members.filter((m) => other.has(m)).sort();
-		return both.length > 0 ? { kind: "participants", members: both } : { kind: "narrator" };
+		return both.length > 0
+			? { kind: "participants", members: both }
+			: { kind: "narrator" };
 	}
 	return RANK[a.kind] <= RANK[b.kind] ? a : b;
 }
 
 /** Live scenes in position order; scenes sharing a start are merged to their narrower audience. */
-export function orderScenes(scenes: readonly ChatScene[]): { startAt: ChatSceneStart; audience: ChatSceneAudience }[] {
+export function orderScenes(
+	scenes: readonly ChatScene[],
+): { startAt: ChatSceneStart; audience: ChatSceneAudience }[] {
 	const live = scenes
 		.filter((s) => s.deletedAt === null)
-		.sort((a, b) => comparePosition(a.startAt, b.startAt) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+		.sort(
+			(a, b) =>
+				comparePosition(a.startAt, b.startAt) ||
+				(a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+		);
 	const out: { startAt: ChatSceneStart; audience: ChatSceneAudience }[] = [];
 	for (const s of live) {
 		const last = out[out.length - 1];
@@ -199,16 +230,22 @@ export function resolveMessageAudiences(
 ): Map<string, ResolvedAudience> {
 	const ordered = orderScenes(scenes);
 	const sorted = [...messages].sort((a, b) =>
-		comparePosition({ createdAt: a.createdAt, messageId: a.id }, { createdAt: b.createdAt, messageId: b.id }),
+		comparePosition(
+			{ createdAt: a.createdAt, messageId: a.id },
+			{ createdAt: b.createdAt, messageId: b.id },
+		),
 	);
 	const out = new Map<string, ResolvedAudience>();
 	let next = 0;
 	let current: ResolvedAudience = { kind: "unknown" };
 	for (const m of sorted) {
 		const at = { createdAt: m.createdAt, messageId: m.id };
-		while (next < ordered.length && comparePosition(ordered[next]!.startAt, at) <= 0) {
-			current = ordered[next]!.audience;
-			next++;
+		for (
+			let s = ordered[next];
+			s && comparePosition(s.startAt, at) <= 0;
+			s = ordered[++next]
+		) {
+			current = s.audience;
 		}
 		out.set(m.id, current);
 	}
@@ -218,14 +255,20 @@ export function resolveMessageAudiences(
 /** Whose knowledge a turn may draw on: the scene in effect at the end of the conversation. */
 export type ChatPerspective =
 	| { kind: "room"; unknown: "include" | "exclude" }
-	| { kind: "participants"; members: readonly ChatSceneMember[]; unknown: "include" | "exclude" }
+	| {
+			kind: "participants";
+			members: readonly ChatSceneMember[];
+			unknown: "include" | "exclude";
+	  }
 	| { kind: "narrator"; unknown: "include" | "exclude" };
 
 /**
  * The perspective for the next turn. A room without scenes is `room` with unknown history included
  * (memory V2's semantics, stated rather than assumed); a room with scenes excludes unknown history.
  */
-export function recallPerspective(scenes: readonly ChatScene[]): ChatPerspective {
+export function recallPerspective(
+	scenes: readonly ChatScene[],
+): ChatPerspective {
 	const ordered = orderScenes(scenes);
 	const last = ordered[ordered.length - 1];
 	if (!last) return { kind: "room", unknown: "include" };
@@ -241,7 +284,10 @@ export function recallPerspective(scenes: readonly ChatScene[]): ChatPerspective
  * only when **every** present member witnessed it; narrator-only to a narrator perspective; unknown
  * only when the perspective includes it.
  */
-export function perspectiveAdmits(perspective: ChatPerspective, audience: ResolvedAudience): boolean {
+export function perspectiveAdmits(
+	perspective: ChatPerspective,
+	audience: ResolvedAudience,
+): boolean {
 	switch (audience.kind) {
 		case "room":
 			return true;
@@ -250,7 +296,11 @@ export function perspectiveAdmits(perspective: ChatPerspective, audience: Resolv
 		case "narrator":
 			return perspective.kind === "narrator";
 		case "participants": {
-			if (perspective.kind !== "participants" || perspective.members.length === 0) return false;
+			if (
+				perspective.kind !== "participants" ||
+				perspective.members.length === 0
+			)
+				return false;
 			const witnesses = new Set(audience.members);
 			return perspective.members.every((m) => witnesses.has(m));
 		}

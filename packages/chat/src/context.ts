@@ -43,13 +43,6 @@ import type { ChatMessage, ChatRoom, ChatSeed } from "./model.ts";
 import type { ChatNarrationInjection } from "./narration.ts";
 import { resolveOpeningScene } from "./opening.ts";
 import type { ChatPersonaSnapshot } from "./persona.ts";
-import {
-	type ChatScene,
-	perspectiveAdmits,
-	recallPerspective,
-	resolveMessageAudiences,
-	sceneMemberNames,
-} from "./scene.ts";
 import { effectiveChatPersona, effectiveChatUserName } from "./persona.ts";
 import type { ChatPlaceholderNames } from "./placeholder.ts";
 import {
@@ -64,6 +57,13 @@ import type {
 } from "./prompt-trace.ts";
 import { chatSystemPromptText } from "./prompt-trace.ts";
 import type { ReasoningEffort } from "./reasoning.ts";
+import {
+	type ChatScene,
+	perspectiveAdmits,
+	recallPerspective,
+	resolveMessageAudiences,
+	sceneMemberNames,
+} from "./scene.ts";
 import { clampSummary } from "./summary.ts";
 import {
 	applyRoomUserNote,
@@ -440,7 +440,8 @@ export function recallBlock(
 		const date = p.at ? `기록 ${p.at.slice(0, 10)}` : null;
 		const earlier = p.superseded ? "이전 기록" : null;
 		const text = quoteRecalled(p.text);
-		if (p.layer === "notes") return `- (기억${p.superseded ? " · 이전 기록" : ""}) ${text}`;
+		if (p.layer === "notes")
+			return `- (기억${p.superseded ? " · 이전 기록" : ""}) ${text}`;
 		if (p.layer === "ooc")
 			return `- [${[date, earlier, "이용자의 대화 밖 메모"].filter(Boolean).join(" · ")}] ${text}`;
 		const who = p.speaker ?? (p.role === "user" ? "이용자" : "인물");
@@ -461,7 +462,9 @@ export function quoteRecalled(text: string): string {
 		.replaceAll(RECALL_FOOTER, "(발췌 끝)")
 		.split("\n")
 		.map((line, i) => {
-			const t = line.replace(/^\s*[#[]+/, (m) => m.replace(/[#[]/g, (c) => (c === "#" ? "＃" : "［")));
+			const t = line.replace(/^\s*[#[]+/, (m) =>
+				m.replace(/[#[]/g, (c) => (c === "#" ? "＃" : "［")),
+			);
 			return i === 0 ? t : `  ${t}`;
 		})
 		.join("\n");
@@ -480,21 +483,35 @@ function withScenes(
 	history: ChatGenerationMessage[],
 	window: readonly ChatRuntimeMessage[],
 	scenes: BuildChatGenerationRequestInput["scenes"],
-	names: { seed: { characters?: readonly { name?: string }[] }; userName: string },
+	names: {
+		seed: { characters?: readonly { name?: string }[] };
+		userName: string;
+	},
 	continuation: boolean,
 ): void {
 	const live = (scenes?.scenes ?? []).filter((s) => s.deletedAt === null);
 	if (live.length === 0) return;
-	const cast = { seed: names.seed, characters: scenes?.cast ?? [], userName: names.userName };
+	const cast = {
+		seed: names.seed,
+		characters: scenes?.cast ?? [],
+		userName: names.userName,
+	};
 	const perspective = recallPerspective(live);
 	const placed = window.filter(
-		(m): m is ChatRuntimeMessage & { id: string; createdAt: string } => !!m.id && !!m.createdAt,
+		(m): m is ChatRuntimeMessage & { id: string; createdAt: string } =>
+			!!m.id && !!m.createdAt,
 	);
 	const audiences = resolveMessageAudiences(placed, live);
 	const marks = new Map<string, string>();
 	for (const m of placed) {
 		const a = audiences.get(m.id);
-		if (!a || a.kind === "unknown" || a.kind === "room" || perspectiveAdmits(perspective, a)) continue;
+		if (
+			!a ||
+			a.kind === "unknown" ||
+			a.kind === "room" ||
+			perspectiveAdmits(perspective, a)
+		)
+			continue;
 		marks.set(
 			m.content.trim(),
 			a.kind === "narrator"
@@ -504,7 +521,8 @@ function withScenes(
 	}
 	if (marks.size > 0) {
 		for (let i = 0; i < history.length; i++) {
-			const h = history[i]!;
+			const h = history[i];
+			if (!h) continue;
 			for (const [content, mark] of marks) {
 				if (h.content === content || h.content.endsWith(`: ${content}`)) {
 					history[i] = { ...h, content: clampContent(`${mark}\n${h.content}`) };
@@ -522,7 +540,10 @@ function withScenes(
 				? "없음 (인물이 보지 못하는 서술)"
 				: "이야기의 모든 인물";
 	const notice = `[장면 정보] 지금 이 장면에 있는 인물: ${present}. 목격자가 표시된 기록은 표시된 인물만 아는 내용입니다. 그 자리에 없던 인물은 그 내용을 모르는 것처럼 행동하고 말하게 하세요. 요약과 기억에는 비공개 장면의 내용이 섞여 있을 수 있으니, 인물이 직접 보거나 들은 것만 알게 하세요.`;
-	history[history.length - 1] = { ...last, content: clampContent(`${notice}\n\n${last.content}`) };
+	history[history.length - 1] = {
+		...last,
+		content: clampContent(`${notice}\n\n${last.content}`),
+	};
 }
 
 /**

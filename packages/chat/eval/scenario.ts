@@ -40,7 +40,12 @@ export interface Transcript {
 	format: string;
 	generator: string;
 	seed: number;
-	characters: [string, string][];
+	/** [id, name] or, in the Phase 12 Korean corpus, [id, name, aliases]. */
+	characters: ([string, string] | [string, string, string[]])[];
+	/** User-authored memory notes (Phase 12 Korean corpus). */
+	notes?: { id: string; text: string }[];
+	language?: string;
+	user_character?: string;
 	now: string;
 	turns: Turn[];
 	deletions: { after_session: string; turns: string[] }[];
@@ -50,7 +55,8 @@ export interface Transcript {
 }
 
 
-export function loadScenario(base: Transcript) {
+export function loadScenario(base: Transcript, options: { plant?: boolean } = {}) {
+	const planting = options.plant ?? true;
 	// ── Phase 11 probe families (RowCat-specific), planted into the same transcript ──────────────────
 	
 	/** Edits applied after indexing (the user rewrote a message): id → new text. */
@@ -198,7 +204,8 @@ export function loadScenario(base: Transcript) {
 		return { turns, probes, items };
 	}
 	
-	const planted = plant();
+	const planted = planting ? plant() : { turns: [...base.turns], probes: [], items: {} };
+	for (const n of base.notes ?? []) userNotes.push({ id: n.id, text: n.text, at: base.now });
 	const turns = planted.turns;
 	const items = { ...base.items, ...planted.items };
 	const probes = [...base.probes, ...planted.probes];
@@ -213,7 +220,7 @@ export function loadScenario(base: Transcript) {
 			id: t.id,
 			roomId: ROOM,
 			role: t.role === "user" || t.role === "player" ? "user" : "assistant",
-			speaker: t.speaker === "Player" ? "Rowan" : t.speaker,
+			speaker: t.speaker === "Player" ? (base.user_character ?? "Rowan") : t.speaker,
 			content,
 			createdAt: t.at,
 			updatedAt: t.at,

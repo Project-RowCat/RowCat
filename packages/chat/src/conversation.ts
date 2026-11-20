@@ -1,4 +1,3 @@
-import type { ChatScene } from "./scene.ts";
 import type { ChatCharacter } from "./character.ts";
 import type { ChatRuntimeMessage, ChatRuntimeRoom } from "./context.ts";
 import type { AssistantContinuation } from "./continuation.ts";
@@ -11,6 +10,7 @@ import type { GenerationPreference } from "./generation-preference.ts";
 import type { ChatMemory } from "./memory.ts";
 import type { ChatMessage } from "./model.ts";
 import type { ChatNarrationSettings } from "./narration.ts";
+import type { ChatScene } from "./scene.ts";
 
 /**
  * This module was moved out of `apps/web/src/features/conversation/`, because it now has three

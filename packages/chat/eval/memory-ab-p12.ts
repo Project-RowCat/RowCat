@@ -54,7 +54,11 @@ import {
 import { loadScenario, type Probe, type Transcript, type Turn } from "./scenario.ts";
 
 const args = new Map<string, string>();
-for (let i = 2; i < process.argv.length; i += 2) args.set(process.argv[i] ?? "", process.argv[i + 1] ?? "");
+for (let i = 2; i < process.argv.length; i++) {
+	const k = process.argv[i] ?? "";
+	if (k === "--no-plant") args.set(k, "1");
+	else args.set(k, process.argv[++i] ?? "");
+}
 const transcriptPath = args.get("--transcript");
 const outDir = args.get("--out");
 const v2StatePath = args.get("--v2-state");
@@ -65,7 +69,8 @@ if (!transcriptPath || !outDir || !v2StatePath) {
 }
 const SEED = Number(args.get("--seed") ?? 20261121);
 const base = JSON.parse(readFileSync(transcriptPath, "utf8")) as Transcript;
-const S = loadScenario(base);
+const plant = args.get("--no-plant") === undefined;
+const S = loadScenario(base, { plant });
 const { turns, items, probes, deleted, ROOM, room, toMessage, live, notesM1 } = S;
 
 interface V2State {
@@ -125,15 +130,15 @@ function scenesFrom(fromIndex: number): ChatScene[] {
 	return out;
 }
 const scenesFull = scenesFrom(0);
-const halfway = turns.findIndex((t) => t.session >= "s030");
+const halfway = Math.floor(turns.length / 2);
 const scenesLate = scenesFrom(halfway);
 const turnAudience = new Map(turns.map((t) => [t.id, audienceOfTurn(t as TurnWithAudience)]));
 
 // Characters: the transcript's four companions, plus the renamed minor character (renamed in room
 // settings, so the old name is kept as an alias — `aliasesAfterRename`).
 const characters: ChatCharacter[] = [
-	...base.characters.map(([id, name]) => ({ id, name, prompt: "" })),
-	{ id: "tamsa", name: "Tamsa", prompt: "", aliases: ["Tamsin"] },
+	...base.characters.map(([id, name, aliases]) => ({ id, name, prompt: "", ...(aliases?.length ? { aliases } : {}) })),
+	...(plant ? [{ id: "tamsa", name: "Tamsa", prompt: "", aliases: ["Tamsin"] }] : []),
 ].map(
 	(c) =>
 		({
@@ -334,7 +339,7 @@ async function main() {
 	const aliases = recallAliases(characters);
 
 	for (const p of probes) {
-		const q = toMessage({ id: "probe", session: "now", at: base.now, speaker: "Rowan", role: "user", channel: "scene", text: p.query });
+		const q = toMessage({ id: "probe", session: "now", at: base.now, speaker: base.user_character ?? "Rowan", role: "user", channel: "scene", text: p.query });
 		const forbiddenAll = unauthorizedItems(p);
 		for (const spec of ARMS) {
 			const memories = spec.v2 ? [...notesM1, ...autoMemories] : notesM1;

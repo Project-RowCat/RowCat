@@ -145,7 +145,9 @@ export function messageItem(
 		conversation: message.roomId,
 		record: "message",
 		id: message.id,
-		revision: known ? `${revisionOf(message)}~${audienceKey(known)}`.slice(0, 128) : revisionOf(message),
+		revision: known
+			? `${revisionOf(message)}~${audienceKey(known)}`.slice(0, 128)
+			: revisionOf(message),
 		...(known
 			? {
 					audience:
@@ -445,13 +447,18 @@ export function containsTerm(text: string, term: string): boolean {
 	const lower = text.toLowerCase();
 	if (HANGUL.test(term)) return lower.includes(term);
 	const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`, "u").test(lower);
+	return new RegExp(
+		`(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`,
+		"u",
+	).test(lower);
 }
 
 /** Words that ask about the present ("is it still…", "지금"). Then superseded passages are left out. */
-const CURRENT = /\b(now|currently|current|still|anymore|nowadays|today|these days|at the moment)\b|지금|현재|요즘|아직|이제는|최근/i;
+const CURRENT =
+	/\b(now|currently|current|still|anymore|nowadays|today|these days|at the moment)\b|지금|현재|요즘|아직|이제는|최근/i;
 /** Words that ask about the past. Then superseded passages stay, marked as earlier. */
-const PAST = /\b(used to|before|originally|at first|back then|formerly|previously|earlier|once|old)\b|예전|처음|원래|전에|그때|옛날|과거/i;
+const PAST =
+	/\b(used to|before|originally|at first|back then|formerly|previously|earlier|once|old)\b|예전|처음|원래|전에|그때|옛날|과거/i;
 
 export type RecallTimeIntent = "current" | "past" | "any";
 
@@ -538,7 +545,8 @@ export interface RecallTurnInput {
 	/** Length of the history window this turn sends: the last N messages are excluded. */
 	windowLength: number;
 	/** This turn's memory snapshot; notes already in the memory block are not repeated. */
-	memories: readonly (Pick<ChatMemory, "id" | "content"> & Partial<Pick<ChatMemory, "createdAt" | "source">>)[];
+	memories: readonly (Pick<ChatMemory, "id" | "content"> &
+		Partial<Pick<ChatMemory, "createdAt" | "source">>)[];
 	/** Ids of memories the memory block will carry. */
 	memoryIdsInContext: ReadonlySet<string>;
 	/** The room's scenes (none: every message is unknown audience, read as shared history). */
@@ -612,7 +620,12 @@ export async function recallForTurn(
 			 * may not be reconciled yet. Story passages only; the OOC layer is the user's literal words.
 			 */
 			const audience = audiences.get(e.id) ?? { kind: "unknown" as const };
-			if (!input.unscoped && e.layer !== "ooc" && !perspectiveAdmits(perspective, audience)) continue;
+			if (
+				!input.unscoped &&
+				e.layer !== "ooc" &&
+				!perspectiveAdmits(perspective, audience)
+			)
+				continue;
 			passages.push({
 				id: e.id,
 				layer: e.layer,
@@ -629,7 +642,12 @@ export async function recallForTurn(
 			 * restate a private scene. The memory block may still carry it (V2's own choice, unchanged);
 			 * recall does not add one the block left out.
 			 */
-			if (!input.unscoped && scenes.length > 0 && notes.get(e.id)?.source === "auto") continue;
+			if (
+				!input.unscoped &&
+				scenes.length > 0 &&
+				notes.get(e.id)?.source === "auto"
+			)
+				continue;
 			const note = notes.get(e.id);
 			if (
 				!note ||
@@ -649,19 +667,31 @@ export async function recallForTurn(
 			termsOf.push([]);
 		}
 	}
-	const withNext = addContinuation(passages, termsOf, input, audiences, perspective);
+	const withNext = addContinuation(
+		passages,
+		termsOf,
+		input,
+		audiences,
+		perspective,
+	);
 	passages.splice(0, passages.length, ...withNext.passages);
 	termsOf.splice(0, termsOf.length, ...withNext.terms);
-	if (input.supersession === false) return { passages: selectRecallForContext(passages) };
+	if (input.supersession === false)
+		return { passages: selectRecallForContext(passages) };
 	const marked = markSuperseded(
 		passages.map((p, i) => ({ passage: p, terms: termsOf[i] ?? [] })),
 		{
-			window: input.messages.slice(Math.max(0, input.messages.length - input.windowLength), -1),
+			window: input.messages.slice(
+				Math.max(0, input.messages.length - input.windowLength),
+				-1,
+			),
 			memories: input.memories,
 		},
+		input.aliases ?? [],
 	);
 	const intent = recallTimeIntent(input.query);
-	const kept = intent === "current" ? marked.filter((p) => !p.superseded) : marked;
+	const kept =
+		intent === "current" ? marked.filter((p) => !p.superseded) : marked;
 	return { passages: selectRecallForContext(kept) };
 }
 
@@ -688,12 +718,16 @@ function addContinuation(
 		const at = position.get(p.id);
 		if (at === undefined) return;
 		const scene = audiences.get(p.id) ?? { kind: "unknown" as const };
-		const key = scene.kind === "participants" ? `p:${scene.members.join(",")}` : scene.kind;
+		const key =
+			scene.kind === "participants"
+				? `p:${scene.members.join(",")}`
+				: scene.kind;
 		for (let j = at + 1; j <= at + n && j < windowStart; j++) {
 			const m = input.messages[j];
 			if (!m || present.has(m.id)) continue;
 			const a = audiences.get(m.id) ?? { kind: "unknown" as const };
-			const aKey = a.kind === "participants" ? `p:${a.members.join(",")}` : a.kind;
+			const aKey =
+				a.kind === "participants" ? `p:${a.members.join(",")}` : a.kind;
 			if (aKey !== key) break;
 			if (!input.unscoped && !perspectiveAdmits(perspective, a)) break;
 			const text = m.content.trim().slice(0, 480);
@@ -719,30 +753,69 @@ function addContinuation(
  * recalled one, or one in the history window) or a user memory written after it contains every
  * content term the passage matched (at least two). Deterministic and cheap; it does not decide what
  * is true. It never marks a user-authored memory (the user's record is authoritative).
+ *
+ * A term that is (part of) a character's name is also covered by any other name of that character
+ * (`aliases`), so "이안 has the map" is overtaken by a later "새벽 has the map" after a rename. A name
+ * two groups share expands nothing, as in the bridge.
  */
 export function markSuperseded(
 	items: readonly { passage: ChatRecalledPassage; terms: readonly string[] }[],
 	later: {
 		window: readonly Pick<ChatMessage, "id" | "content" | "createdAt">[];
-		memories: readonly (Pick<ChatMemory, "id" | "content"> & Partial<Pick<ChatMemory, "createdAt" | "source">>)[];
+		memories: readonly (Pick<ChatMemory, "id" | "content"> &
+			Partial<Pick<ChatMemory, "createdAt" | "source">>)[];
 	},
+	aliases: readonly (readonly string[])[] = [],
 ): ChatRecalledPassage[] {
+	const namesFor = aliasNames(aliases);
+	const has = (text: string, t: string) =>
+		containsTerm(text, t) ||
+		(namesFor(t)?.some((n) => text.toLowerCase().includes(n)) ?? false);
 	return items.map(({ passage, terms }) => {
-		if (passage.layer === "notes" || terms.length < 2 || !passage.at) return passage;
+		if (passage.layer === "notes" || terms.length < 2 || !passage.at)
+			return passage;
 		const at = passage.at;
 		/*
 		 * A question asserts nothing ("Is the bridge standing now?" must not overtake "the bridge was
 		 * rebuilt"), and the turn being answered is one; neither can supersede.
 		 */
-		const covers = (text: string) => !/[?？]\s*$/.test(text.trim()) && terms.every((t) => containsTerm(text, t));
+		const covers = (text: string) =>
+			!/[?？]\s*$/.test(text.trim()) && terms.every((t) => has(text, t));
 		const newer =
 			items.some(
-				(o) => o.passage.id !== passage.id && o.passage.layer !== "notes" && (o.passage.at ?? "") > at && covers(o.passage.text),
+				(o) =>
+					o.passage.id !== passage.id &&
+					o.passage.layer !== "notes" &&
+					(o.passage.at ?? "") > at &&
+					covers(o.passage.text),
 			) ||
-			later.window.some((m) => m.id !== passage.id && m.createdAt > at && covers(m.content)) ||
-			later.memories.some((m) => m.source !== "auto" && (m.createdAt ?? "") > at && covers(m.content));
+			later.window.some(
+				(m) => m.id !== passage.id && m.createdAt > at && covers(m.content),
+			) ||
+			later.memories.some(
+				(m) =>
+					m.source !== "auto" && (m.createdAt ?? "") > at && covers(m.content),
+			);
 		return newer ? { ...passage, superseded: true } : passage;
 	});
+}
+
+/** For an engine term, the other names of the one character whose name contains it (else none). */
+function aliasNames(
+	groups: readonly (readonly string[])[],
+): (term: string) => string[] | undefined {
+	const of = (name: string, t: string) => {
+		const n = name.toLowerCase();
+		return HANGUL.test(t)
+			? n.includes(t)
+			: n.split(/[^\p{L}\p{N}]+/u).includes(t);
+	};
+	return (t) => {
+		const owners = groups.filter((g) => g.some((n) => of(n, t)));
+		const [only] = owners;
+		if (owners.length !== 1 || !only) return undefined;
+		return only.map((n) => n.trim().toLowerCase()).filter((n) => n.length > 0);
+	};
 }
 
 // ── Runtime wiring (shared by web, desktop and mobile) ────────────────────────────────────────────

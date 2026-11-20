@@ -3,7 +3,6 @@ import type {
 	CreateCharacterInput,
 	UpdateCharacterPatch,
 } from "./character.ts";
-import type { ChatScene, SetSceneInput } from "./scene.ts";
 import type { AssistantContinuation } from "./continuation.ts";
 import type { ChatIntensity } from "./intensity.ts";
 import type {
@@ -26,6 +25,7 @@ import type {
 	CreatePersonaInput,
 	UpdatePersonaPatch,
 } from "./persona.ts";
+import type { ChatScene, SetSceneInput } from "./scene.ts";
 import type { ChatSummary } from "./summary.ts";
 import type { ChatTailRewrite } from "./tail-rewrite.ts";
 
