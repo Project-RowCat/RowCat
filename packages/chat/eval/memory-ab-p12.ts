@@ -266,6 +266,8 @@ interface Arm {
 	v2: boolean;
 	recall: "none" | "p11" | "p12";
 	scenes: "full" | "late";
+	/** `false`: the assembler gets no scenes (no window marks, no scene notice); recall still filters. */
+	notice?: boolean;
 }
 const ARMS: Arm[] = [
 	{ arm: "A+V2", v2: true, recall: "none", scenes: "full" },
@@ -273,6 +275,8 @@ const ARMS: Arm[] = [
 	{ arm: "C12+V2", v2: true, recall: "p12", scenes: "full" },
 	{ arm: "C12", v2: false, recall: "p12", scenes: "full" },
 	{ arm: "C12L+V2", v2: true, recall: "p12", scenes: "late" },
+	// Post-hoc (after the in-character run): scene-filtered recall, but no window marks or scene notice.
+	{ arm: "C12n+V2", v2: true, recall: "p12", scenes: "full", notice: false },
 ];
 
 interface Row {
@@ -378,9 +382,9 @@ async function main() {
 				allAges: true,
 				...(spec.v2 && v2.summary?.text ? { summary: v2.summary.text } : {}),
 				...(recall ? { recall } : {}),
-				...(spec.recall === "p12" ? { scenes: { scenes, cast } } : {}),
+				...(spec.recall === "p12" && spec.notice !== false ? { scenes: { scenes, cast } } : {}),
 			});
-			if (dumpPath && ["A+V2", "C11+V2", "C12+V2"].includes(spec.arm)) {
+			if (dumpPath && ["A+V2", "C11+V2", "C12+V2", "C12n+V2"].includes(spec.arm)) {
 				dumped.push({ arm: spec.arm, probe: p.id, context: JSON.stringify(request), tokens: tokens(requestText(request)) });
 			}
 			const full = requestText(request).split(p.query).join(" ");
@@ -425,7 +429,42 @@ async function main() {
 	}
 	for (const port of Object.values(ports)) await port.close();
 	for (const d of dirs) rmSync(d, { recursive: true, force: true });
-	if (dumpPath) writeFileSync(dumpPath, `${dumped.map((d) => JSON.stringify(d)).join("\n")}\n`);
+	if (dumpPath) {
+		writeFileSync(dumpPath, `${dumped.map((d) => JSON.stringify(d)).join("\n")}\n`);
+		const turnText = new Map(turns.map((t) => [t.id, t.text]));
+		const needles = (ids: readonly string[]) => ids.map((i) => items[i]?.needles ?? []);
+		const texts = (ids: readonly string[]) =>
+			ids.map((i) => (items[i]?.turns ?? []).map((t) => turnText.get(t) ?? "").join(" / "));
+		writeFileSync(
+			`${dumpPath}.probes.json`,
+			`${JSON.stringify(
+				{
+					synthetic: true,
+					language: base.language ?? "en",
+					characters: base.characters,
+					userCharacter: base.user_character ?? "Rowan",
+					probes: probes.map((p) => ({
+						id: p.id,
+						kind: p.kind,
+						perspective: p.perspective,
+						query: p.query,
+						split: splitOf(p),
+						cluster: clusterOf(p),
+						gold: needles(p.gold),
+						goldText: texts(p.gold),
+						forbidden: needles(p.forbidden),
+						forbiddenText: texts(p.forbidden),
+						unauthorized: needles(unauthorizedItems(p)),
+						timeline: p.timeline
+							? { current: needles([p.timeline.current])[0], superseded: needles([p.timeline.superseded])[0] }
+							: null,
+					})),
+				},
+				null,
+				1,
+			)}\n`,
+		);
+	}
 
 	// ── Aggregate ──────────────────────────────────────────────────────────────────────────────────
 	const rate = (rs: Row[], k: keyof Row) => {

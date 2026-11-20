@@ -31,18 +31,22 @@ import type { ChatMessage } from "../src/model.ts";
 import { type ChatSummary, createSummaryRecord } from "../src/summary.ts";
 import { loadScenario, type Transcript } from "./scenario.ts";
 
+const argv = process.argv.slice(2);
+/** `--no-plant`: replay the transcript as written (the Korean corpus has its own families). */
+const plant = !argv.includes("--no-plant");
+const pairs = argv.filter((a) => a !== "--no-plant");
 const args = new Map<string, string>();
-for (let i = 2; i < process.argv.length; i += 2)
-	args.set(process.argv[i] ?? "", process.argv[i + 1] ?? "");
+for (let i = 0; i < pairs.length; i += 2)
+	args.set(pairs[i] ?? "", pairs[i + 1] ?? "");
 const transcriptPath = args.get("--transcript");
 const outPath = args.get("--out");
 const proxy = args.get("--proxy") ?? "http://127.0.0.1:8282";
 if (!transcriptPath || !outPath) {
-	console.error("usage: v2-replay.ts --transcript FILE --out FILE [--proxy URL]");
+	console.error("usage: v2-replay.ts --transcript FILE --out FILE [--proxy URL] [--no-plant]");
 	process.exit(2);
 }
 const base = JSON.parse(readFileSync(transcriptPath, "utf8")) as Transcript;
-const S = loadScenario(base);
+const S = loadScenario(base, { plant });
 
 let messages: ChatMessage[] = [];
 let summary: ChatSummary | null = null;
