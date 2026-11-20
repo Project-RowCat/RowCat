@@ -5,18 +5,21 @@ import {
 	readFileSync,
 	writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { APP_NAME } from "@rowcat/domain";
 import {
 	app,
 	BrowserWindow,
 	dialog,
+	ipcMain,
 	Menu,
 	type MenuItemConstructorOptions,
 	nativeTheme,
 	screen,
 	shell,
 } from "electron";
+import { AfterstateHosts, afterstateIpc } from "./afterstate-host.ts";
 import {
 	PortsBusyError,
 	type RunningStack,
@@ -70,6 +73,12 @@ const windowStateFile = join(app.getPath("userData"), "window-state.json");
 type WindowKind = "main" | "console";
 
 let stack: RunningStack | null = null;
+/**
+ * The local conversation-memory index (`afterstate-host.ts`): one engine process per member store,
+ * under `<userData>/afterstate`, reached only by the main window's web origin. Derived data: the
+ * conversations it indexes stay in the page's IndexedDB and sync as before.
+ */
+let afterstate: AfterstateHosts | null = null;
 const windows = new Map<WindowKind, BrowserWindow>();
 /** Where launch is, so a launch page that finishes loading after a stage moved can catch up. */
 let launchStage: LaunchStage | null = "database";
@@ -110,6 +119,13 @@ function artifacts() {
 		apiDir: join(root, "api"),
 		webServerEntry: join(root, "web", "server", "index.mjs"),
 		consoleDistDir: join(root, "console"),
+		afterstateBridge: join(
+			root,
+			"afterstate",
+			process.platform === "win32"
+				? "afterstate-bridge.exe"
+				: "afterstate-bridge",
+		),
 		// Electron is the Node runtime for the two servers — no second Node ships with the app.
 		node: {
 			command: process.execPath,
@@ -205,7 +221,19 @@ function createWindow(kind: WindowKind): BrowserWindow {
 		 */
 		show: false,
 		backgroundColor: backgroundColor(),
-		webPreferences: { contextIsolation: true, sandbox: true },
+		webPreferences: {
+			contextIsolation: true,
+			sandbox: true,
+			// Only the main window (the web app) gets the memory index port; the console never does.
+			...(kind === "main"
+				? {
+						preload: join(
+							dirname(fileURLToPath(import.meta.url)),
+							"preload.cjs",
+						),
+					}
+				: {}),
+		},
 	});
 	window.once("ready-to-show", () => {
 		if (saved?.maximized) window.maximize();
@@ -638,7 +666,22 @@ if (!app.requestSingleInstanceLock()) {
 		} else if (stack) openWindow("main", stack.origins.web);
 	});
 
-	app.whenReady().then(launch);
+	app.whenReady().then(() => {
+		const bridge = artifacts().afterstateBridge;
+		if (existsSync(bridge)) {
+			const storeDir = join(app.getPath("userData"), "afterstate");
+			mkdirSync(storeDir, { recursive: true });
+			afterstate = new AfterstateHosts(bridge, storeDir);
+			const ipc = afterstateIpc(afterstate, () => stack?.origins.web ?? null);
+			ipcMain.handle("afterstate:call", (event, memberKey, op, params) =>
+				ipc.call(event, memberKey, op, params),
+			);
+			ipcMain.handle("afterstate:destroy", (event, memberKey) =>
+				ipc.destroy(event, memberKey),
+			);
+		}
+		return launch();
+	});
 
 	// `kill`, a logout and an OS shutdown arrive as signals; they take the same path as the menu's quit.
 	for (const signal of ["SIGTERM", "SIGINT"] as const)
@@ -675,7 +718,8 @@ if (!app.requestSingleInstanceLock()) {
 		if (!stack) return;
 		event.preventDefault();
 		stopping = true;
-		void stack.stop().finally(() => {
+		const engines = afterstate?.closeAll() ?? Promise.resolve();
+		void Promise.allSettled([engines, stack.stop()]).finally(() => {
 			stopped = true;
 			app.exit(0);
 		});
