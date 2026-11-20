@@ -27,9 +27,8 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { StoryChatSeedDto } from "@rowcat/contracts/chat";
 import { spawnAfterstate } from "../src/afterstate-stdio.test.helper.ts";
-import { buildChatGenerationRequest, type ChatRuntimeRoom } from "../src/context.ts";
+import { buildChatGenerationRequest } from "../src/context.ts";
 import {
 	type AfterstatePort,
 	CHAT_RECALL_CONTEXT_CHAR_BUDGET,
@@ -41,50 +40,8 @@ import {
 } from "../src/conversation-memory.ts";
 import { chatHistoryWindow } from "../src/history-window.ts";
 import type { ChatMemory } from "../src/memory.ts";
-import { type ChatMessage, createRoomRecord } from "../src/model.ts";
-
-// ── Input ────────────────────────────────────────────────────────────────────────────────────────
-
-interface Turn {
-	id: string;
-	session: string;
-	at: string;
-	speaker: string;
-	role: "user" | "character" | "narrator" | "player";
-	channel: "scene" | "world" | "ooc";
-	text: string;
-}
-interface Item {
-	needles: string[];
-	turns: string[];
-}
-interface Probe {
-	id: string;
-	kind: string;
-	perspective: string;
-	query: string;
-	gold: string[];
-	forbidden: string[];
-	timeline: { current: string; superseded: string } | null;
-}
-interface StateFact {
-	id: string;
-	namespace: string;
-	text: string;
-	from_turn: string;
-	supersedes: string | null;
-}
-interface Transcript {
-	format: string;
-	generator: string;
-	seed: number;
-	now: string;
-	turns: Turn[];
-	deletions: { after_session: string; turns: string[] }[];
-	items: Record<string, Item>;
-	state: StateFact[];
-	probes: Probe[];
-}
+import type { ChatMessage } from "../src/model.ts";
+import { loadScenario, type Probe, type Transcript } from "./scenario.ts";
 
 const args = new Map<string, string>();
 for (let i = 2; i < process.argv.length; i += 2)
@@ -96,227 +53,26 @@ if (!transcriptPath || !outDir) {
 	process.exit(2);
 }
 const SEED = Number(args.get("--seed") ?? 20261121);
+/** Optional: V2's own summary and auto-memories from `v2-replay.ts` (adds the `+V2` arms). */
+const v2StatePath = args.get("--v2-state");
+/** Optional: write the M1 requests of A, C*, A+V2, C*+V2 for an answer stage (JSONL). */
+const dumpPath = args.get("--dump-contexts");
 const base = JSON.parse(readFileSync(transcriptPath, "utf8")) as Transcript;
-
-// ── Phase 11 probe families (RowCat-specific), planted into the same transcript ──────────────────
-
-/** Edits applied after indexing (the user rewrote a message): id → new text. */
-const edits = new Map<string, string>();
-/** User-authored memory records (ChatMemory, source "user"). */
-const userNotes: { id: string; text: string; at: string }[] = [];
-/** Character renames: messages from this id on carry the new speaker name. */
-
-function plant(): { turns: Turn[]; probes: Probe[]; items: Record<string, Item> } {
-	const turns = [...base.turns];
-	const probes: Probe[] = [];
-	const items: Record<string, Item> = {};
-	const after = (session: string, k: number) => {
-		const inSession = turns.filter((t) => t.session === session);
-		const anchor = inSession[Math.min(k, inSession.length - 1)];
-		if (!anchor) throw new Error(`no session ${session}`);
-		return anchor;
-	};
-	let seq = 0;
-	const insert = (anchor: Turn, t: Omit<Turn, "id" | "session" | "at">) => {
-		const at = new Date(Date.parse(anchor.at) + 1_000 + seq * 10).toISOString();
-		const turn: Turn = { ...t, id: `x${String(seq++).padStart(3, "0")}`, session: anchor.session, at };
-		turns.splice(turns.indexOf(anchor) + 1, 0, turn);
-		return turn;
-	};
-	const probe = (p: Omit<Probe, "perspective" | "forbidden" | "timeline"> & Partial<Probe>) =>
-		probes.push({ perspective: "story", forbidden: [], timeline: null, ...p });
-
-	// 1. Character rename: a minor character speaks early, is renamed later; asked by the new name.
-	const renames = [
-		["brass astrolabe", "the old mill"],
-		["oilcloth satchel", "the chapel steps"],
-		["cracked hourglass", "the salt cellar"],
-	] as const;
-	renames.forEach(([obj, place], i) => {
-		const t = insert(after(`s00${3 + i}`, 4), {
-			speaker: "Tamsin",
-			role: "character",
-			channel: "scene",
-			text: `Tamsin: I buried the ${obj} beneath ${place}, where no one will look.`,
-		});
-		items[`rename_${i}`] = { needles: [obj, place], turns: [t.id] };
-		probe({ id: `q-rename-${i}`, kind: "p11_rename", query: `Tamsa, what did you bury long ago, and where?`, gold: [`rename_${i}`] });
-	});
-	insert(after("s046", 2), {
-		speaker: "Tamsa",
-		role: "character",
-		channel: "scene",
-		text: "Tamsa: Tamsin was a name for a smaller life. Call me Tamsa now.",
-	});
-
-	// 2. User-authored memory overrides an old scene.
-	const pets = [
-		["horse", "Bramble", "Thistle"],
-		["hawk", "Juniper", "Saffron"],
-		["boat", "Cobble", "Pebble"],
-	] as const;
-	pets.forEach(([pet, old, now], i) => {
-		const t = insert(after(`s00${6 + i}`, 3), {
-			speaker: "Rowan",
-			role: "user",
-			channel: "scene",
-			text: `Rowan: My ${pet} is called ${old}, and that will never change.`,
-		});
-		items[`override_old_${i}`] = { needles: [old], turns: [t.id] };
-		items[`override_new_${i}`] = { needles: [now], turns: [] };
-		userNotes.push({ id: `note-override-${i}`, text: `Rowan's ${pet} is now called ${now} (renamed by the user).`, at: base.now });
-		probe({
-			id: `q-override-${i}`,
-			kind: "p11_memory_override",
-			query: `What is Rowan's ${pet} called?`,
-			gold: [`override_new_${i}`],
-			timeline: { current: `override_new_${i}`, superseded: `override_old_${i}` },
-		});
-	});
-
-	// 3. Edited message: the user rewrote a line after it was indexed; the old words must be gone.
-	const edited = [
-		["spare key", "blue", "red"],
-		["signet ring", "mossy", "cracked"],
-		["sealed letter", "flat", "round"],
-	] as const;
-	edited.forEach(([obj, old, now], i) => {
-		const t = insert(after(`s01${1 + i}`, 5), {
-			speaker: "Rowan",
-			role: "user",
-			channel: "scene",
-			text: `Rowan: I hid the ${obj} under the ${old} stone by the gate.`,
-		});
-		edits.set(t.id, `Rowan: I hid the ${obj} under the ${now} stone by the gate.`);
-		items[`edit_new_${i}`] = { needles: [`${now} stone`], turns: [t.id] };
-		items[`edit_old_${i}`] = { needles: [`${old} stone`], turns: [t.id] };
-		probe({
-			id: `q-edit-${i}`,
-			kind: "p11_edited",
-			query: `Where did Rowan hide the ${obj}?`,
-			gold: [`edit_new_${i}`],
-			forbidden: [`edit_old_${i}`],
-		});
-	});
-
-	// 4. Temporal contradiction in the world: destroyed early, rebuilt late.
-	const things = ["Kestrel bridge", "east beacon", "ferry landing"];
-	things.forEach((thing, i) => {
-		const a = insert(after(`s01${4 + i}`, 2), {
-			speaker: "Narrator",
-			role: "narrator",
-			channel: "world",
-			text: `Narrator: The ${thing} was destroyed in the autumn storm.`,
-		});
-		const b = insert(after(`s05${0 + i}`, 2), {
-			speaker: "Narrator",
-			role: "narrator",
-			channel: "world",
-			text: `Narrator: After months of work the ${thing} has been rebuilt.`,
-		});
-		items[`temporal_old_${i}`] = { needles: [`${thing} was destroyed`], turns: [a.id] };
-		items[`temporal_new_${i}`] = { needles: [`${thing} has been rebuilt`], turns: [b.id] };
-		probe({
-			id: `q-temporal-${i}`,
-			kind: "p11_temporal",
-			query: `Is the ${thing} standing now?`,
-			gold: [`temporal_new_${i}`],
-			timeline: { current: `temporal_new_${i}`, superseded: `temporal_old_${i}` },
-		});
-	});
-
-	// 5. Long-distance callback in Korean (Hangul bigram path).
-	const korean = [
-		["등대 열쇠", "은색 상자"],
-		["선장의 일지", "부엌 찬장"],
-		["붉은 깃발", "종탑 지붕"],
-	] as const;
-	korean.forEach(([obj, place], i) => {
-		const t = insert(after(`s00${2 + i}`, 6), {
-			speaker: "Kael",
-			role: "character",
-			channel: "scene",
-			text: `Kael: ${obj}는 ${place} 안에 숨겨 두었어. 아무에게도 말하지 마.`,
-		});
-		items[`korean_${i}`] = { needles: [place], turns: [t.id] };
-		probe({ id: `q-korean-${i}`, kind: "p11_korean_callback", query: `${obj}는 어디에 숨겨 두었지?`, gold: [`korean_${i}`] });
-	});
-
-	return { turns, probes, items };
-}
-
-const planted = plant();
-const turns = planted.turns;
-const items = { ...base.items, ...planted.items };
-const probes = [...base.probes, ...planted.probes];
-const deleted = new Set(base.deletions.flatMap((d) => d.turns));
-
-// ── RowCat records ───────────────────────────────────────────────────────────────────────────────
-
-const ROOM = "room-aster-vale";
-let tick = 0;
-const toMessage = (t: Turn, content = t.text): ChatMessage =>
-	({
-		id: t.id,
-		roomId: ROOM,
-		role: t.role === "user" || t.role === "player" ? "user" : "assistant",
-		speaker: t.speaker === "Player" ? "Rowan" : t.speaker,
-		content,
-		createdAt: t.at,
-		updatedAt: t.at,
-		dirty: 0,
-		serverVersion: 0,
-		// Stable: the same record has the same revision on every read; an edit bumps it.
-		rev: { t: Date.parse(t.at) + (content === t.text ? 0 : 1), c: 0, d: "eval" },
-		deletedAt: null,
-	}) as unknown as ChatMessage;
-
-const toMemory = (id: string, content: string, at: string): ChatMemory =>
-	({
-		id,
-		roomId: ROOM,
-		content,
-		source: "user",
-		originAt: null,
-		pinned: false,
-		createdAt: at,
-		updatedAt: at,
-		dirty: 0,
-		serverVersion: 0,
-		rev: { t: Date.parse(at) + tick++, c: 0, d: "eval" },
-		deletedAt: null,
-	}) as unknown as ChatMemory;
-
-const room: ChatRuntimeRoom = createRoomRecord(
-	{
-		originStoryId: "story-aster-vale",
-		seed: StoryChatSeedDto.parse({
-			version: 1,
-			storyId: "story-aster-vale",
-			title: "Aster Vale",
-			adult: false,
-			promptProtected: false,
-			scenario: "A harbor town on a stormy coast. The user plays Rowan, a mapmaker; Mira, Kael, Sable and Oren are companions.",
-		}),
-	},
-	{ id: ROOM, routingSessionId: "eval-aster-vale", now: turns[0]?.at ?? base.now, rev: { t: 1, c: 0, d: "eval" } },
-);
-
-/** Every message ever written, before deletions and edits (what the index first saw). */
-const original = turns.map((t) => toMessage(t));
-/** The store at question time: deleted scenes gone, edited lines rewritten. */
-const live = turns.filter((t) => !deleted.has(t.id)).map((t) => toMessage(t, edits.get(t.id) ?? t.text));
-
-/** Memory conditions: M0 the override notes only; M1 also the current world state as user notes. */
-const notesM0 = userNotes.map((n) => toMemory(n.id, n.text, n.at));
-const superseded = new Set(base.state.map((s) => s.supersedes).filter(Boolean));
-const notesM1 = [
-	...notesM0,
-	...base.state
-		.filter((s) => !superseded.has(s.id))
-		.map((s) => toMemory(`note-${s.id.replace(/_/g, "-")}`, s.text, base.now)),
-];
-
+const {
+	turns,
+	items,
+	probes,
+	deleted,
+	edits,
+	ROOM,
+	room,
+	toMessage,
+	original,
+	live,
+	notesM0,
+	notesM1,
+	planted,
+} = loadScenario(base);
 // ── Measurement helpers ──────────────────────────────────────────────────────────────────────────
 
 const strings = (v: unknown, out: string[] = []): string[] => {
@@ -420,6 +176,8 @@ interface ArmSpec {
 	arm: string;
 	/** `fusion: "default"` sends none (the bridge's default); `query: "product"` is `recallRequestFor`'s. */
 	recall?: { fusion: "rank" | "coverage" | "default"; query: QueryMode };
+	/** With V2's model-written summary (and its frontier-based window) and auto-memories. */
+	v2?: boolean;
 	extended?: boolean;
 }
 const ARMS: ArmSpec[] = [
@@ -431,7 +189,44 @@ const ARMS: ArmSpec[] = [
 	{ arm: "C-cov-user", recall: { fusion: "coverage", query: "user" } },
 	{ arm: "C-cov-short", recall: { fusion: "coverage", query: "short" } },
 	{ arm: "C*", recall: { fusion: "default", query: "product" } },
+	{ arm: "A+V2", v2: true },
+	{ arm: "C*+V2", v2: true, recall: { fusion: "default", query: "product" } },
 ];
+const DUMPED = new Set(["A", "C*", "A+V2", "C*+V2"]);
+
+interface V2State {
+	summary: { text: string; frontier: { createdAt: string; messageId: string } | null } | null;
+	autoMemories: { id: string; content: string; originAt: string | null }[];
+}
+const v2: V2State | null = v2StatePath ? (JSON.parse(readFileSync(v2StatePath, "utf8")) as V2State) : null;
+const ACTIVE = ARMS.filter((a) => !a.v2 || v2 !== null);
+const autoMemories: ChatMemory[] = (v2?.autoMemories ?? []).map(
+	(m) =>
+		({
+			id: m.id,
+			roomId: ROOM,
+			content: m.content,
+			source: "auto",
+			originAt: m.originAt,
+			pinned: false,
+			createdAt: base.now,
+			updatedAt: base.now,
+			dirty: 0,
+			serverVersion: 0,
+			rev: { t: 1, c: 0, d: "eval" },
+			deletedAt: null,
+		}) as unknown as ChatMemory,
+);
+
+/** The request as the answer stage reads it: roles in order, the probe question taken out. */
+function renderForAnswer(request: { system: string; messages: { role: string; content: string }[] }, question: string) {
+	const parts = [`[system]\n${request.system}`];
+	for (const m of request.messages) {
+		const content = m.content.split(question).join("").trim();
+		if (content) parts.push(`[${m.role}]\n${content}`);
+	}
+	return parts.join("\n\n");
+}
 
 /** The query of the first commit: the user's words plus the last 300 characters of the reply. */
 function tailQuery(history: readonly Pick<ChatMessage, "role" | "content">[]): string {
@@ -491,6 +286,9 @@ async function main() {
 	const [second, reconcileMs] = await timed(() => reconcileConversation(port, sourceOf(live, notesM1), ROOM, opts));
 	const [third, noopMs] = await timed(() => reconcileConversation(port, sourceOf(live, notesM1), ROOM, opts));
 	await port.call("checkpoint", {});
+	// The +V2 arms read an index that also holds V2's auto-memories (as the apps would index them).
+	const portV2 = v2 ? await spawnAfterstate() : null;
+	if (portV2) await reconcileConversation(portV2, sourceOf(live, [...notesM1, ...autoMemories]), ROOM, opts);
 	const rssIndexed = rss();
 	const dbBytes = readdirSync(dir).reduce((s, f) => s + statSync(join(dir, f)).size, 0);
 
@@ -505,9 +303,9 @@ async function main() {
 
 	// Engine evidence before selection, for Recall@k; the fusion each arm asks for.
 	let lastEvidence: { text: string }[] = [];
-	const portWith = (fusion: "rank" | "coverage" | "default"): AfterstatePort => ({
+	const portWith = (fusion: "rank" | "coverage" | "default", target: AfterstatePort = port): AfterstatePort => ({
 		call: async <T>(op: Parameters<AfterstatePort["call"]>[0], params: object) => {
-			const r = await port.call<T>(op, op === "recall" && fusion !== "default" ? { ...params, fusion } : params);
+			const r = await target.call<T>(op, op === "recall" && fusion !== "default" ? { ...params, fusion } : params);
 			if (op === "recall") lastEvidence = (r as { evidence: { text: string }[] }).evidence;
 			return r;
 		},
@@ -525,6 +323,8 @@ async function main() {
 		bStart--;
 	}
 	const windowB = live.slice(bStart);
+	const windowV2 = chatHistoryWindow(live, v2?.summary?.frontier ?? null);
+	const dumped: { arm: string; probe: string; context: string; tokens: number }[] = [];
 
 	const rows: Row[] = [];
 	const digests = new Map<string, ReturnType<typeof createHash>>();
@@ -532,11 +332,12 @@ async function main() {
 		toMessage({ id: "probe", session: "now", at: base.now, speaker: "Rowan", role: "user", channel: "scene", text: q });
 
 	for (const memoryCondition of ["M0", "M1"] as const) {
-		const memories = memoryCondition === "M0" ? notesM0 : notesM1;
+		const notes = memoryCondition === "M0" ? notesM0 : notesM1;
 		for (const p of probes) {
 			const q = asked(p.query);
-			for (const spec of ARMS) {
-				const history = [...(spec.extended ? windowB : window), q];
+			for (const spec of ACTIVE) {
+				const memories = spec.v2 ? [...notes, ...autoMemories] : notes;
+				const history = [...(spec.v2 ? windowV2 : spec.extended ? windowB : window), q];
 				let recall: ChatRecallSnapshot | null = null;
 				let recallMs = 0;
 				lastEvidence = [];
@@ -551,7 +352,7 @@ async function main() {
 								? tailQuery(history)
 								: p.query;
 					const r0 = performance.now();
-					recall = await recallForTurn(portWith(spec.recall.fusion), {
+					recall = await recallForTurn(portWith(spec.recall.fusion, spec.v2 && portV2 ? portV2 : port), {
 						roomId: ROOM,
 						query,
 						windowLength: req.windowLength,
@@ -567,8 +368,13 @@ async function main() {
 					messages: history,
 					memories,
 					allAges: true,
+					...(spec.v2 && v2?.summary?.text ? { summary: v2.summary.text } : {}),
 					...(recall ? { recall } : {}),
 				});
+				if (memoryCondition === "M1" && DUMPED.has(spec.arm)) {
+					const context = renderForAnswer(request, p.query);
+					dumped.push({ arm: spec.arm, probe: p.id, context, tokens: tokens(context) });
+				}
 				const assembleMs = performance.now() - a0;
 				const full = requestText(request);
 				const text = full.split(p.query).join(" ");
@@ -600,6 +406,27 @@ async function main() {
 	}
 	const rssEnd = rss();
 	await port.close();
+	await (portV2 as { close?: () => Promise<void> } | null)?.close?.();
+	if (dumpPath) {
+		writeFileSync(dumpPath, `${dumped.map((d) => JSON.stringify(d)).join("\n")}\n`);
+		writeFileSync(
+			`${dumpPath}.probes.json`,
+			`${JSON.stringify(
+				{
+					synthetic: true,
+					characters: base.characters,
+					turns: turns.filter((t) => !deleted.has(t.id)).map((t) => ({ ...t, text: edits.get(t.id) ?? t.text })),
+					probes: probes.map((p) => ({
+						...p,
+						goldNeedles: p.gold.flatMap((g) => items[g]?.needles ?? []),
+						forbiddenNeedles: p.forbidden.flatMap((f) => items[f]?.needles ?? []),
+					})),
+				},
+				null,
+				1,
+			)}\n`,
+		);
+	}
 	rmSync(dir, { recursive: true, force: true });
 
 	// ── Aggregate ────────────────────────────────────────────────────────────────────────────────
@@ -614,7 +441,7 @@ async function main() {
 	const summary: Record<string, unknown> = {};
 	for (const split of SPLITS)
 		for (const m of ["M0", "M1"])
-			for (const { arm, recall } of ARMS) {
+			for (const { arm, recall } of ACTIVE) {
 				const rs = sel(split, m, arm, notBoundary);
 				const ranked = rs.filter((r) => r.gold !== null);
 				summary[`${split}/${m}/${arm}`] = {
@@ -657,7 +484,7 @@ async function main() {
 	for (const k of kinds) {
 		const entry: Record<string, unknown> = {};
 		for (const m of ["M0", "M1"])
-			for (const { arm } of ARMS) {
+			for (const { arm } of ACTIVE) {
 				const rs = sel("all", m, arm, (r) => r.kind === k);
 				entry[`${m}/${arm}`] = { gold: rate(rs, "gold"), forbidden: rate(rs, "forbidden"), stale: rate(rs, "stale") };
 			}
@@ -669,6 +496,7 @@ async function main() {
 		["A", "B"],
 		["A", "C"],
 		["B", "C"],
+		...(v2 ? ([["A", "A+V2"], ["A+V2", "C*+V2"], ["C*", "C*+V2"]] as [string, string][]) : []),
 		...ARMS.filter((a) => a.arm.startsWith("C-")).flatMap((a): [string, string][] => [
 			["A", a.arm],
 			["C", a.arm],
@@ -690,7 +518,8 @@ async function main() {
 		synthetic: true,
 		transcript: { format: base.format, generator: base.generator, seed: base.seed, now: base.now },
 		seed: SEED,
-		arms: ARMS,
+		arms: ACTIVE,
+		v2: v2 ? { summaryChars: v2.summary?.text.length ?? 0, frontier: v2.summary?.frontier ?? null, autoMemories: autoMemories.length, windowV2: windowV2.length } : null,
 		corpus: {
 			messagesWritten: original.length,
 			messagesLive: live.length,
