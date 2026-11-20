@@ -2,7 +2,7 @@ import type { ChatTool } from "@rowcat/chat";
 import { ABSOLUTE_GUARD, ADULT_TAIL, ALL_AGES_TAIL } from "@rowcat/chat/guards";
 import type { ChatGenerationRequest, ChatStreamEvent } from "@rowcat/contracts";
 import type { RowCatClient } from "@rowcat/sdk";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ByoAdapter, ByoFetch, ByoTransportInput } from "./byo.ts";
 import { ProviderError } from "./errors.ts";
 import {
@@ -868,5 +868,80 @@ describe("prompt guard config fallback", () => {
 		await expect(
 			readPromptGuardsEnabled(client, controller.signal),
 		).rejects.toBe("stopped");
+	});
+
+	/**
+	 * React Native's AbortSignal has no `throwIfAborted`, `AbortSignal.any` or `AbortSignal.timeout`.
+	 * Node has all three, so without this case the suite passed while every BYO turn on the device
+	 * failed with "undefined is not a function" before the request left (Phase 12 emulator run).
+	 */
+	describe("on a runtime without the newer AbortSignal API (React Native)", () => {
+		const statics = AbortSignal as unknown as Record<string, unknown>;
+		const proto = AbortSignal.prototype as unknown as Record<string, unknown>;
+		let saved: Record<string, unknown>;
+		beforeEach(() => {
+			saved = {
+				any: statics.any,
+				timeout: statics.timeout,
+				throwIfAborted: proto.throwIfAborted,
+			};
+			statics.any = undefined;
+			statics.timeout = undefined;
+			proto.throwIfAborted = undefined;
+		});
+		afterEach(() => {
+			statics.any = saved.any;
+			statics.timeout = saved.timeout;
+			proto.throwIfAborted = saved.throwIfAborted;
+		});
+
+		it("reads the config", async () => {
+			let received: AbortSignal | undefined;
+			const client = {
+				ops: {
+					runtimeConfig: async (options: { signal: AbortSignal }) => {
+						received = options.signal;
+						return { disabledFeatures: [{ key: "prompt-guards" }] };
+					},
+				},
+			} as unknown as RowCatClient;
+			expect(
+				await readPromptGuardsEnabled(client, new AbortController().signal),
+			).toBe(false);
+			expect(received?.aborted).toBe(false);
+		});
+
+		it("still refuses a cancelled generation", async () => {
+			const controller = new AbortController();
+			controller.abort("stopped");
+			const client = {
+				ops: {
+					runtimeConfig: async () => {
+						throw new Error("must not read");
+					},
+				},
+			} as unknown as RowCatClient;
+			await expect(
+				readPromptGuardsEnabled(client, controller.signal),
+			).rejects.toBe("stopped");
+		});
+
+		it("passes a cancellation through to the read", async () => {
+			const controller = new AbortController();
+			let received: AbortSignal | undefined;
+			const client = {
+				ops: {
+					runtimeConfig: (options: { signal: AbortSignal }) => {
+						received = options.signal;
+						controller.abort("stopped");
+						return Promise.reject(new Error("aborted"));
+					},
+				},
+			} as unknown as RowCatClient;
+			await expect(
+				readPromptGuardsEnabled(client, controller.signal),
+			).rejects.toBe("stopped");
+			expect(received?.aborted).toBe(true);
+		});
 	});
 });

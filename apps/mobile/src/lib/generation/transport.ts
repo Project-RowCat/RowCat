@@ -9,6 +9,7 @@ import { deliveredChatSystem } from "@rowcat/chat/guards";
 import type { ChatGenerationRequest, ChatStreamEvent } from "@rowcat/contracts";
 import type { RowCatClient } from "@rowcat/sdk";
 import type { ProviderCredentialAccess } from "../local-provider/store.ts";
+import { signalWithDeadline, throwIfAborted } from "./abort-signal.ts";
 import { anthropicAdapter } from "./anthropic.ts";
 import type { ByoAdapter, ByoFetch } from "./byo.ts";
 import { ProviderError } from "./errors.ts";
@@ -395,26 +396,33 @@ export function probeProviderCredential(
 	});
 }
 
+/** Bound for the deployment-metadata read; the generation never waits longer than this on RowCat. */
+const PROMPT_GUARD_READ_TIMEOUT_MS = 2_000;
+
 /**
  * Only deployment metadata is read here; BYO prompts and keys still go straight to the provider.
  * Failure keeps the default guards and must not make BYO depend on RowCat availability. The bounded
  * read also handles a server that is unreachable while the provider remains reachable.
+ *
+ * Not `signal.throwIfAborted()` / `AbortSignal.any` / `AbortSignal.timeout`: React Native has none
+ * of them (`abort-signal.ts`).
  */
 export async function readPromptGuardsEnabled(
 	client: RowCatClient,
 	signal: AbortSignal,
 ): Promise<boolean> {
-	signal.throwIfAborted();
+	throwIfAborted(signal);
+	const bounded = signalWithDeadline(signal, PROMPT_GUARD_READ_TIMEOUT_MS);
 	try {
-		const config = await client.ops.runtimeConfig({
-			signal: AbortSignal.any([signal, AbortSignal.timeout(2_000)]),
-		});
-		signal.throwIfAborted();
+		const config = await client.ops.runtimeConfig({ signal: bounded.signal });
+		throwIfAborted(signal);
 		return !config.disabledFeatures.some(
 			(feature) => feature.key === "prompt-guards",
 		);
 	} catch {
-		signal.throwIfAborted();
+		throwIfAborted(signal);
 		return true;
+	} finally {
+		bounded.dispose();
 	}
 }
