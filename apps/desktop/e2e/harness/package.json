@@ -1,0 +1,6 @@
+{
+	"name": "rowcat-desktop-e2e-harness",
+	"private": true,
+	"type": "module",
+	"main": "main.mjs"
+}
