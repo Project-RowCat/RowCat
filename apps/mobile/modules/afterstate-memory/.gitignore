@@ -1,2 +1,3 @@
-# Built from the afterstate repository by scripts/prepare-afterstate.sh; not committed.
 /vendor/
+/android/.cxx/
+/android/build/

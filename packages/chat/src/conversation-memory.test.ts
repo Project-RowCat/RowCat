@@ -450,6 +450,54 @@ describe.skipIf(!hasAfterstateBridge())(
 			return rooms;
 		}
 
+		it("two devices converge: each index follows its own store after sync delivers the same records", async () => {
+			// Two devices of one member, each with its own engine and store copy. Sync is modeled as
+			// what it delivers: the same records (rev and all) and tombstones as removals.
+			const deviceA = await spawnAfterstate();
+			const deviceB = await spawnAfterstate();
+			try {
+				const a = plantedRoom("room-sync");
+				const b = plantedRoom("room-sync");
+				b.messages.set("room-sync", [...(a.messages.get("room-sync") ?? [])]);
+				await reconcileConversation(deviceA, a, "room-sync");
+				await reconcileConversation(deviceB, b, "room-sync");
+				// Device A: the user deletes the planted scene and rewrites a filler line.
+				a.remove("room-sync", "room-sync-plant");
+				a.edit(
+					"room-sync",
+					"room-sync-f3",
+					"등대 아래에서 붉은 우산을 잃어버렸다.",
+				);
+				await reconcileConversation(deviceA, a, "room-sync");
+				// Device B was closed meanwhile; sync then delivers A's state (tombstone + new revision).
+				b.messages.set("room-sync", [...(a.messages.get("room-sync") ?? [])]);
+				const report = await reconcileConversation(deviceB, b, "room-sync");
+				expect(report.messages.orphaned).toBe(1);
+				expect(report.messages.stale).toBe(1);
+				const messages = await a.listAllMessages("room-sync");
+				const ask = async (port: AfterstatePort, q: string) =>
+					(
+						await recallForTurn(port, {
+							roomId: "room-sync",
+							...recallRequestFor(messages.slice(-40), [], q),
+							messages,
+						})
+					).passages.map((p) => `${p.id}:${p.text}`);
+				for (const q of [
+					"은열쇠를 묻은 곳이 어디였지?",
+					"붉은 우산은 어디서 잃어버렸지?",
+				])
+					expect(await ask(deviceB, q)).toEqual(await ask(deviceA, q));
+				expect(await ask(deviceB, "은열쇠를 묻은 곳이 어디였지?")).toEqual([]);
+				expect(
+					(await ask(deviceB, "붉은 우산은 어디서 잃어버렸지?"))[0],
+				).toContain("room-sync-f3");
+			} finally {
+				await deviceA.close();
+				await deviceB.close();
+			}
+		});
+
 		it("indexes a room, recalls an event far outside the window, and skips the window", async () => {
 			const rooms = plantedRoom("room-a");
 			const report = await reconcileConversation(engine, rooms, "room-a");
