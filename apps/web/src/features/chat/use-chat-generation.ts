@@ -2,6 +2,8 @@ import {
 	type AssistantContinuation,
 	type ChatRoom,
 	type ChatStore,
+	type ConversationMemoryRuntime,
+	conversationMemoryHooks,
 	effectiveChatPersona,
 	type GeneratedAssistantMessage,
 	type GenerationPreference,
@@ -73,8 +75,19 @@ export function createChatConversation(input: {
 	 * in here would force every caller, including tests, to wire all five.
 	 */
 	maintain?: (() => void) | undefined;
+	/**
+	 * The memory backend (legacy / afterstate / shadow) and its native port, if this platform has
+	 * one. Absent or legacy: the session has no recall and the request is exactly V2's.
+	 */
+	memory?: ConversationMemoryRuntime | null;
 }): ConversationSession {
 	const { room, store, preferences } = input;
+	const memoryHooks = conversationMemoryHooks(
+		input.memory,
+		store,
+		room.id,
+		input.maintain,
+	);
 	const protectedStoryId = protectedStoryIdOf(room);
 	return {
 		token: input.token,
@@ -129,7 +142,7 @@ export function createChatConversation(input: {
 		 */
 		loadNarration: async () =>
 			(await store.getRoom(room.id))?.narration ?? null,
-		...(input.maintain ? { maintain: input.maintain } : {}),
+		...memoryHooks,
 		appendUserMessage: async (content: string) => {
 			await store.appendMessage({
 				roomId: room.id,

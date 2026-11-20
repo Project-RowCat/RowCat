@@ -23,6 +23,7 @@ export * from "./composer-emphasis.ts";
 export * from "./context.ts";
 export * from "./continuation.ts";
 export * from "./conversation.ts";
+export * from "./conversation-memory.ts";
 export * from "./debug-trace.ts";
 export * from "./debug-view.ts";
 export * from "./generation.ts";

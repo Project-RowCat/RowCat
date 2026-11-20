@@ -1,6 +1,10 @@
 import type { ChatCharacter } from "./character.ts";
 import type { ChatRuntimeMessage, ChatRuntimeRoom } from "./context.ts";
 import type { AssistantContinuation } from "./continuation.ts";
+import type {
+	ChatRecallSnapshot,
+	RecallRequest,
+} from "./conversation-memory.ts";
 import type { GeneratedAssistantMessage } from "./generation.ts";
 import type { GenerationPreference } from "./generation-preference.ts";
 import type { ChatMemory } from "./memory.ts";
@@ -84,6 +88,16 @@ export interface ConversationSession {
 	 * records that belong to no room.
 	 */
 	loadMemories(): Promise<ChatMemory[]>;
+	/**
+	 * Earlier passages of this conversation relevant to the turn, from the local afterstate index
+	 * (`conversation-memory.ts`). Optional: absent in legacy mode, in replay sessions (no room) and
+	 * wherever no native engine is available; the request is then exactly V2's.
+	 *
+	 * Same snapshot rule as memories: read once when the generation starts, never during a stream.
+	 * It resolves `null` rather than throwing and gives up after `CHAT_RECALL_TIMEOUT_MS`, so a slow
+	 * or broken index cannot delay or fail a turn. In shadow mode it measures and returns `null`.
+	 */
+	loadRecall?: (request: RecallRequest) => Promise<ChatRecallSnapshot | null>;
 	/**
 	 * Characters the user has introduced in this conversation. A conversation with none returns an
 	 * empty array.
