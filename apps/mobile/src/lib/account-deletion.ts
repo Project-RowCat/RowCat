@@ -2,6 +2,7 @@ import { resetViewerState } from "@rowcat/query";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { requestAccountDeletion } from "./account-deletion-auth.ts";
+import { deleteDerivedMemory } from "./afterstate/native-memory.ts";
 import type { AuthErrorLike } from "./auth-error.ts";
 import { removeDraftCoverDirectory } from "./draft-cover-files.ts";
 import { activeLocalScope } from "./instances/device-registry.ts";
@@ -48,6 +49,7 @@ export function useAccountDeletionPorts(): AccountDeletionPorts {
 					deleteLocalData: (id) =>
 						deleteLocalDataForViewer(activeLocalScope(id), {
 							deleteDatabase: deleteExpoSqliteDatabase,
+							deleteDerivedMemory,
 							deleteDraftCovers: removeDraftCoverDirectory,
 							secureStorage: expoSecureKeyStorage,
 						}),

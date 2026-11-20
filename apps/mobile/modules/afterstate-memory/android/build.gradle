@@ -1,0 +1,39 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.projectrowcat.afterstatememory'
+version = '0.0.0'
+
+/**
+ * The engine is `libafterstate_ffi.so` (built from the afterstate repository by
+ * `scripts/prepare-afterstate.sh`, 16 KB page aligned) plus a small JNI shim built here with CMake.
+ * Only arm64-v8a (devices) and x86_64 (emulators on Intel hosts) are built: RowCat ships no 32-bit
+ * ABI, and adding one means adding its Rust target to the prepare script first.
+ */
+android {
+  namespace 'com.projectrowcat.afterstatememory'
+  defaultConfig {
+    versionCode 1
+    versionName '0.0.0'
+    ndk {
+      abiFilters 'arm64-v8a', 'x86_64'
+    }
+    externalNativeBuild {
+      cmake {
+        arguments '-DANDROID_STL=c++_static'
+      }
+    }
+  }
+  externalNativeBuild {
+    cmake {
+      path 'CMakeLists.txt'
+    }
+  }
+  sourceSets {
+    main {
+      jniLibs.srcDirs += ["$projectDir/../vendor/jniLibs"]
+    }
+  }
+}

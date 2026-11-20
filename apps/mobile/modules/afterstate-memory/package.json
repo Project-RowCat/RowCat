@@ -1,0 +1,7 @@
+{
+  "name": "afterstate-memory",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The embedded afterstate engine (local derived memory index) behind RowCat's AfterstatePort: C ABI on iOS, JNI shim on Android.",
+  "main": "index.ts"
+}

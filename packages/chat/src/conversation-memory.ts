@@ -307,6 +307,22 @@ export async function sweepConversations(
 	return { orphaned: r.orphaned, erasedPassages: r.erased_passages };
 }
 
+/**
+ * `sweepConversations` against the store's own room list: the call the apps make once the store and
+ * the index are both open. The room list is read here, in the package, so no screen-side code reads
+ * it outside the room-list hook.
+ */
+export async function sweepDeletedRooms(
+	port: AfterstatePort,
+	store: { listRooms(): Promise<readonly { id: string }[]> },
+): Promise<{ orphaned: number; erasedPassages: number }> {
+	const rooms = await store.listRooms();
+	return sweepConversations(
+		port,
+		rooms.map((r) => r.id),
+	);
+}
+
 // ── Recall ─────────────────────────────────────────────────────────────────────────────────────
 
 /**
