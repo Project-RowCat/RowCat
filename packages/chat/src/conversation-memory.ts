@@ -382,9 +382,17 @@ export function passageStillLive(passage: string, content: string): boolean {
 		.every((line) => live.includes(line));
 }
 
+/** User turns shorter than this many words get the end of the reply they answer added. */
+export const CHAT_RECALL_SHORT_TURN_WORDS = 4;
+
 /**
- * The query for this turn: the user's latest words, plus the end of the reply they answer (what "it"
- * and "that" point at). Bounded so a pasted wall of text does not become a slow query.
+ * The query for this turn: the user's latest words. A short turn ("응, 어디 뒀더라", "what about
+ * him?") points at the reply it answers, so for those the end of that reply is added. Bounded so a
+ * pasted wall of text does not become a slow query.
+ *
+ * Not the reply tail on every turn: in the Phase 11 A/B (afterstate `docs/benchmarks/phase11`) the
+ * tail's words matched the recent scene everywhere and outranked the passage the question was about
+ * (gold in context 0.12 with it, 0.76 without, held-out probes).
  */
 export function recallQuery(
 	history: readonly Pick<ChatMessage, "role" | "content">[],
@@ -396,10 +404,12 @@ export function recallQuery(
 				.reverse()
 				.find((m) => m.role === "user")
 				?.content.trim() ?? "");
+	const words = lastUser.split(/\s+/).filter(Boolean).length;
+	if (words >= CHAT_RECALL_SHORT_TURN_WORDS) return lastUser.slice(0, 1_200);
 	const lastAssistant =
 		[...history].reverse().find((m) => m.role === "assistant")?.content ?? "";
 	const tail = lastAssistant.trim().slice(-300);
-	return [lastUser.slice(0, 1_200), tail].filter(Boolean).join("\n");
+	return [lastUser, tail].filter(Boolean).join("\n");
 }
 
 /**

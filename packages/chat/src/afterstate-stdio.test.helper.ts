@@ -23,6 +23,8 @@ export const hasAfterstateBridge = (): boolean =>
 
 export interface StdioAfterstate extends AfterstatePort {
 	close(): Promise<void>;
+	/** The engine process (resident-memory measurements). */
+	readonly pid: number | undefined;
 	/** Raw request (for protocol-level assertions). */
 	raw(
 		op: string,
@@ -66,6 +68,7 @@ export async function spawnAfterstate(
 	if (!opened.ok)
 		throw new Error(`open failed: ${JSON.stringify(opened.error)}`);
 	return {
+		pid: child.pid,
 		raw,
 		async call<T>(op: AfterstateOp, params: object): Promise<T> {
 			const r = await raw(op, params);

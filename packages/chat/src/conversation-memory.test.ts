@@ -217,14 +217,23 @@ describe("recall selection and assembly", () => {
 		).toBe(false);
 	});
 
-	it("builds the query from the user's turn and the end of the reply it answers", () => {
-		const q = recallQuery([
-			{ role: "assistant", content: `${"앞".repeat(400)}그 열쇠 기억나?` },
+	it("queries with the user's words, adding the reply's end only to a short turn", () => {
+		const reply = {
+			role: "assistant" as const,
+			content: `${"앞".repeat(400)}그 열쇠 기억나?`,
+		};
+		const short = recallQuery([
+			reply,
 			{ role: "user", content: "응, 어디 뒀더라" },
 		]);
-		expect(q.startsWith("응, 어디 뒀더라")).toBe(true);
-		expect(q).toContain("그 열쇠 기억나?");
-		expect(q.length).toBeLessThan(400);
+		expect(short.startsWith("응, 어디 뒀더라")).toBe(true);
+		expect(short).toContain("그 열쇠 기억나?");
+		expect(short.length).toBeLessThan(400);
+		const long = recallQuery([
+			reply,
+			{ role: "user", content: "등대지기가 지난번에 숨긴 열쇠는 어디에 있지?" },
+		]);
+		expect(long).toBe("등대지기가 지난번에 숨긴 열쇠는 어디에 있지?");
 	});
 
 	it("puts recalled passages in the last user turn, never in the system prompt", () => {
