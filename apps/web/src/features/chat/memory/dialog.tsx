@@ -6,6 +6,8 @@ import {
 	ChatRoomMissingError,
 	type ChatStore,
 	isAutoMemory,
+	type MemoryAudienceControl,
+	memoryAudienceControl,
 	promoteMemoryPatch,
 } from "@rowcat/chat";
 import { Button } from "@rowcat/ui-web/components/button";
@@ -17,13 +19,27 @@ import {
 	DialogTitle,
 } from "@rowcat/ui-web/components/dialog";
 import { Textarea } from "@rowcat/ui-web/components/textarea";
-import { Pencil, Pin, PinOff, Plus, Sparkles, Trash2 } from "lucide-react";
+import {
+	EyeOff,
+	Pencil,
+	Pin,
+	PinOff,
+	Plus,
+	Sparkles,
+	Trash2,
+	Users,
+} from "lucide-react";
 import { AnimatePresence, LayoutGroup } from "motion/react";
 import * as m from "motion/react-m";
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { shouldCloseDialog } from "#/lib/dialog/dismiss.ts";
-import { useLocalMemories } from "#/lib/local-chat/hooks.ts";
+import {
+	useLocalCharacters,
+	useLocalMemories,
+	useLocalRoom,
+	useLocalScenes,
+} from "#/lib/local-chat/hooks.ts";
 import { useChatScope } from "#/lib/local-chat/scope.ts";
 import { AnimatedCount } from "#/lib/motion/animated-count.tsx";
 import { AnimatedIconSwap } from "#/lib/motion/animated-icon-swap.tsx";
@@ -84,6 +100,21 @@ export function MemoryDialog({
 	const { t } = useTranslation(["chat", "common"]);
 	const { store, ownsStore } = useChatScope();
 	const { items, loading } = useLocalMemories(room.id);
+	/**
+	 * Scenes and the cast decide the audience control on each row (`audience.ts`). Until all three have
+	 * answered no row draws one: drawing `share` before the cast arrives would name nobody, and drawing
+	 * nothing then something reads as a control appearing on its own.
+	 */
+	const roomState = useLocalRoom(room.id);
+	const characters = useLocalCharacters(room.id);
+	const scenes = useLocalScenes(room.id);
+	const audienceFor = (memory: ChatMemory): MemoryAudienceControl | null =>
+		roomState.status === "ready" && !characters.loading && !scenes.loading
+			? memoryAudienceControl(memory, scenes.items, {
+					room: roomState.room,
+					characters: characters.items,
+				})
+			: null;
 	const [adding, setAdding] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
@@ -294,6 +325,7 @@ export function MemoryDialog({
 											<MemoryRow
 												key={memory.id}
 												memory={memory}
+												audience={audienceFor(memory)}
 												pending={pending}
 												run={run}
 											/>
@@ -312,6 +344,7 @@ export function MemoryDialog({
 											<MemoryRow
 												key={memory.id}
 												memory={memory}
+												audience={audienceFor(memory)}
 												pending={pending}
 												run={run}
 											/>
@@ -374,10 +407,13 @@ function MemoryGroup({
  */
 function MemoryRow({
 	memory,
+	audience,
 	pending,
 	run,
 }: {
 	memory: ChatMemory;
+	/** Who may know this memory, in a room with scenes; `null` draws nothing new (`audience.ts`). */
+	audience: MemoryAudienceControl | null;
 	pending: boolean;
 	run: (
 		perform: (store: ChatStore) => Promise<void>,
@@ -510,6 +546,21 @@ function MemoryRow({
 							</p>
 						) : null}
 						{/*
+						 * Who may know a restricted memory, in words: the restriction is otherwise invisible, and a
+						 * character answering as if it never heard of something would read as a malfunction.
+						 */}
+						{audience?.kind === "share" ? (
+							<p className="mt-1.5 flex items-center gap-1 text-muted-foreground text-xs">
+								<EyeOff aria-hidden="true" className="size-3 shrink-0" />
+								{audience.narrator
+									? t("memory.knownByNoOne")
+									: t("memory.knownBy", {
+											names:
+												audience.names.join(", ") || t("memory.knownByUnknown"),
+										})}
+							</p>
+						) : null}
+						{/*
 						 * The delete confirmation **replaces the action group inside this row.** It is one state in the same place, so
 						 * `mode="wait"` applies here too, and the confirmation text arrives exactly where the action buttons were. The
 						 * question being asked reads from its position.
@@ -558,6 +609,45 @@ function MemoryRow({
 									exit={rowExit}
 									transition={rowEnter.transition}
 								>
+									{/*
+									 * One text action, at the start of the row so the three icon actions keep their seats. Its
+									 * name carries the memory's head for the same reason the icon buttons' names do. A failure
+									 * is drawn inline by the window like every other write here (`run`).
+									 */}
+									{audience ? (
+										<Button
+											variant="ghost"
+											size="sm"
+											className="mr-auto h-9 px-2 text-muted-foreground sm:h-8"
+											aria-label={
+												audience.kind === "restrict"
+													? t("memory.restrictToSceneFor", { label })
+													: t("memory.shareWithEveryoneFor", { label })
+											}
+											disabled={pending}
+											onClick={() =>
+												void run(
+													(store) =>
+														store.updateMemory(memory.id, {
+															audience:
+																audience.kind === "restrict"
+																	? audience.audience
+																	: { kind: "room" },
+														}),
+													memorySaveFailureMessage(),
+												)
+											}
+										>
+											{audience.kind === "restrict" ? (
+												<EyeOff aria-hidden="true" />
+											) : (
+												<Users aria-hidden="true" />
+											)}
+											{audience.kind === "restrict"
+												? t("memory.restrictToScene")
+												: t("memory.shareWithEveryone")}
+										</Button>
+									) : null}
 									{/*
 									 * Not icon-only. When a list of memories has pin buttons the same width as the rest, a screen
 									 * reader user hearing `Pin` has no way to know which memory it belongs to.

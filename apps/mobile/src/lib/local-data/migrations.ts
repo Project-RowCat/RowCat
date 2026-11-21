@@ -19,7 +19,7 @@ import type { MobileDatabase, SqlRunner } from "./sqlite.ts";
  * other axes. Those three are agreements between devices: bumping them affects other devices. This
  * value stays inside this file.
  */
-export const MOBILE_SCHEMA_VERSION = 21;
+export const MOBILE_SCHEMA_VERSION = 22;
 
 /**
  * v1 sets up conversation, authoring and sync state in one go.
@@ -1063,6 +1063,23 @@ const V21: readonly MigrationStep[] = [
 	`ALTER TABLE chat_character ADD COLUMN aliases TEXT`,
 ];
 
+/**
+ * v22 adds who may know a human-written memory in a room with scenes (`ChatMemory.audience`).
+ *
+ * One nullable JSON blob, the same spelling as `chat_scene.audience` and for the same reason (kind and
+ * members are one value). `NULL` means **absent**, and absent means shared: that is every memory
+ * written before this axis, and it is the compatibility policy, not a guess (`memory.ts`).
+ *
+ * No backfill. Writing `{ kind: "room" }` into old rows would turn "never chosen" into "widened on
+ * purpose", a different fact the sync merge depends on, and would make every memory dirty.
+ *
+ * Without the column, sync drops the axis: a memory restricted on the web arrives here shared, and
+ * this device's next edit of it would push it back without the field.
+ */
+const V22: readonly MigrationStep[] = [
+	`ALTER TABLE chat_memory ADD COLUMN audience TEXT`,
+];
+
 /** Migration steps per version. The array position is the target version (1-based). */
 const MIGRATIONS: readonly (readonly MigrationStep[])[] = [
 	V1,
@@ -1086,6 +1103,7 @@ const MIGRATIONS: readonly (readonly MigrationStep[])[] = [
 	V19,
 	V20,
 	V21,
+	V22,
 ];
 
 /**

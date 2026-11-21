@@ -5,6 +5,7 @@ import {
 	type ChatMessage,
 	type ChatPersona,
 	type ChatRoom,
+	type ChatScene,
 } from "@rowcat/chat";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useCallback, useState } from "react";
@@ -257,6 +258,27 @@ export function useLocalCharacters(
 			store && roomId
 				? store.listCharacters(roomId)
 				: Promise.resolve(undefined),
+		[store, roomId],
+	);
+	return {
+		items: items ?? [],
+		loading: roomId !== null && (status !== "ready" || items === undefined),
+	};
+}
+
+/**
+ * Subscribes to a room's live scenes (`scene.ts`). Ordering is not done here: every reader goes
+ * through `orderScenes`, which also folds two scenes sharing a start into the narrower one.
+ *
+ * Only the memory window reads it, and only while it is open, for the same reason as memories.
+ */
+export function useLocalScenes(
+	roomId: string | null,
+): LocalListState<ChatScene> {
+	const { store, status } = useChatScope();
+	const items = useLiveQuery(
+		() =>
+			store && roomId ? store.listScenes(roomId) : Promise.resolve(undefined),
 		[store, roomId],
 	);
 	return {

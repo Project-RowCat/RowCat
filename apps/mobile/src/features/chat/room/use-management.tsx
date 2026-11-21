@@ -312,6 +312,11 @@ export function useRoomManagement(
 					) : target.surface === "memory" ? (
 						<MemoryPanel
 							roomId={room.id}
+							room={room}
+							characters={{
+								value: characters.value,
+								loading: characters.status === "loading",
+							}}
 							store={target.store}
 							onClose={close}
 						/>

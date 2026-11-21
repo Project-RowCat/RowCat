@@ -202,6 +202,14 @@ export const chat = {
 		pin: "Pin memory {{label}}",
 		edit: "Edit memory {{label}}",
 		delete: "Delete memory {{label}}",
+		restrictToScene: "Only this scene's characters",
+		restrictToSceneFor:
+			"Let only this scene's characters know memory {{label}}",
+		shareWithEveryone: "Share with every character",
+		shareWithEveryoneFor: "Share memory {{label}} with every character",
+		knownBy: "Known by: {{names}}",
+		knownByUnknown: "unknown",
+		knownByNoOne: "No character knows this",
 		saveFailed: "Couldn't save the memory. Please try again.",
 		deleteFailed: "Couldn't delete the memory. Please try again.",
 		roomGone:

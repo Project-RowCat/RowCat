@@ -48,6 +48,7 @@ import {
 	mergeMemorySource,
 	nextSummaryEpoch,
 	normalizeCharacterAliases,
+	normalizeMemoryAudience,
 	planMaintenanceRewind,
 	planRoomDuplicate,
 	requireCharacterName,
@@ -897,6 +898,8 @@ export function createChatStore(db: LocalDb): ChatStore {
 				patch.content === undefined
 					? undefined
 					: requireMemoryContent(patch.content);
+			// Outside the transaction, so `ChatSceneAudienceError` survives unwrapped (as for content).
+			const audience = normalizeMemoryAudience(patch.audience);
 			const now = nowIso();
 			await db.transaction("rw", [db.chatMemories, db.syncState], async () => {
 				const current = await db.chatMemories.get(id);
@@ -919,6 +922,14 @@ export function createChatStore(db: LocalDb): ChatStore {
 					 */
 					originAt: source === "auto" ? current.originAt : null,
 				};
+				/**
+				 * Only a human-written memory takes an audience (`ChatMemory.audience`). An automatic one is
+				 * never admitted to a room with scenes at all, so a restriction on it would be a value nothing
+				 * reads — and a promotion in the same patch makes it human-written first. Like a pin, an
+				 * audience change is an edit of this memory (its own `updatedAt`), not conversation activity.
+				 */
+				if (audience !== undefined && source === "user")
+					next.audience = audience;
 				// One edit, one revision. serverVersion is unchanged, as with every local edit (see
 				// markLocalUpdate).
 				await db.chatMemories.put(

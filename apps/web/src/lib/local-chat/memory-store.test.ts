@@ -5,6 +5,7 @@ import {
 	ChatMemoryContentError,
 	ChatMemoryLimitError,
 	ChatRoomMissingError,
+	ChatSceneAudienceError,
 } from "@rowcat/chat";
 import { StoryChatSeedDto } from "@rowcat/contracts/chat";
 import { compareRev } from "@rowcat/sync";
@@ -353,5 +354,99 @@ describe("sync metadata", () => {
 		expect((await rawDb(viewer).chatMemories.get(memory.id))?.deletedAt).toBe(
 			first,
 		);
+	});
+});
+
+describe("audience", () => {
+	it("a human-written memory takes a normalized audience and keeps the rest", async () => {
+		const viewer = nextViewer("alice");
+		const store = open(viewer);
+		const room = await roomWith(store);
+		const memory = await store.createMemory({
+			roomId: room.id,
+			content: "Only Mina saw the letter.",
+		});
+		expect(memory.audience).toBeUndefined();
+
+		await store.updateMemory(memory.id, {
+			audience: { kind: "participants", members: ["user", "seed:0", "user"] },
+		});
+		const row = await rawDb(viewer).chatMemories.get(memory.id);
+		// One spelling on every device: sorted and unique.
+		expect(row?.audience).toEqual({
+			kind: "participants",
+			members: ["seed:0", "user"],
+		});
+		expect(row?.content).toBe(memory.content);
+		expect(row?.pinned).toBe(false);
+		expect(row?.dirty).toBe(1);
+		expect(compareRev(row?.rev ?? memory.rev, memory.rev)).toBeGreaterThan(0);
+	});
+
+	it("sharing again writes room, never absence", async () => {
+		const viewer = nextViewer("alice");
+		const store = open(viewer);
+		const room = await roomWith(store);
+		const memory = await store.createMemory({
+			roomId: room.id,
+			content: "Memory",
+		});
+		await store.updateMemory(memory.id, { audience: { kind: "narrator" } });
+		await store.updateMemory(memory.id, { audience: { kind: "room" } });
+		expect((await rawDb(viewer).chatMemories.get(memory.id))?.audience).toEqual(
+			{ kind: "room" },
+		);
+
+		// A patch without the field leaves a present audience alone.
+		await store.updateMemory(memory.id, { pinned: true });
+		expect((await rawDb(viewer).chatMemories.get(memory.id))?.audience).toEqual(
+			{ kind: "room" },
+		);
+	});
+
+	it("an automatic memory ignores the audience", async () => {
+		const viewer = nextViewer("alice");
+		const store = open(viewer);
+		const room = await roomWith(store);
+		const memory = await store.createMemory({
+			roomId: room.id,
+			content: "Auto fact",
+			source: "auto",
+			originAt: new Date().toISOString(),
+		});
+		await store.updateMemory(memory.id, { audience: { kind: "narrator" } });
+		expect(
+			(await rawDb(viewer).chatMemories.get(memory.id))?.audience,
+		).toBeUndefined();
+	});
+
+	it("an invalid audience is refused and nothing is written", async () => {
+		const viewer = nextViewer("alice");
+		const store = open(viewer);
+		const room = await roomWith(store);
+		const memory = await store.createMemory({
+			roomId: room.id,
+			content: "Memory",
+		});
+		await expect(
+			store.updateMemory(memory.id, {
+				audience: { kind: "participants", members: [] },
+			}),
+		).rejects.toBeInstanceOf(ChatSceneAudienceError);
+		const row = await rawDb(viewer).chatMemories.get(memory.id);
+		expect(row?.audience).toBeUndefined();
+		expect(row?.rev).toEqual(memory.rev);
+	});
+
+	it("an audience change does not raise the room's activity time", async () => {
+		const store = open(nextViewer("alice"));
+		const room = await roomWith(store);
+		const before = (await store.getRoom(room.id))?.updatedAt;
+		const memory = await store.createMemory({
+			roomId: room.id,
+			content: "Memory",
+		});
+		await store.updateMemory(memory.id, { audience: { kind: "narrator" } });
+		expect((await store.getRoom(room.id))?.updatedAt).toBe(before);
 	});
 });

@@ -38,6 +38,7 @@ export * from "./lore.ts";
 export * from "./maintenance-prompt.ts";
 export * from "./maintenance-runner.ts";
 export * from "./memory.ts";
+export * from "./memory-audience.ts";
 export * from "./memory-maintenance.ts";
 export * from "./message-actions.ts";
 export * from "./model.ts";

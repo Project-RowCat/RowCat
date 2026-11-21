@@ -451,6 +451,11 @@ const MEMORY_COLUMNS = [
 	"pinned",
 	"source",
 	"origin_at",
+	/**
+	 * Who may know a human-written memory (v22), a nullable JSON blob in `chat_scene.audience`'s
+	 * spelling. `NULL` is absent, which means shared.
+	 */
+	"audience",
 	"created_at",
 	"updated_at",
 ] as const;
@@ -478,6 +483,7 @@ export const chatMemoryTable: RecordTable<ChatMemory> = {
 			source,
 			/** A human-written memory's origin time is not read, even if one remains: its origin is not a conversation. */
 			originAt: source === "auto" ? nullableText(row.origin_at) : null,
+			...memoryAudienceOf(source, row.audience),
 			createdAt: text(row.created_at),
 			updatedAt: text(row.updated_at),
 			...metaOf(row),
@@ -491,11 +497,30 @@ export const chatMemoryTable: RecordTable<ChatMemory> = {
 			toFlag(record.pinned),
 			record.source,
 			record.originAt,
+			record.source === "user" && record.audience
+				? json(audienceJson(record.audience))
+				: null,
 			record.createdAt,
 			record.updatedAt,
 			...metaValues(record),
 		]),
 };
+
+/**
+ * A memory's stored audience. `NULL` is absent (shared — every memory from before v22). A present
+ * value that no longer parses or breaks the scene rules reads as `narrator`, through the same reader
+ * as scenes, rather than as absent: absent would read as **shared**, and a corrupted restriction must
+ * never publish the memory to every character. `narrator` withholds it from every character's turn
+ * until the user shares it again, which they can see and undo; the opposite mistake they cannot.
+ * An automatic memory never carries one (the codec drops it too), so a leftover value is not read.
+ */
+const memoryAudienceOf = (
+	source: ChatMemory["source"],
+	value: unknown,
+): Pick<ChatMemory, "audience"> =>
+	source === "user" && value !== null && value !== undefined
+		? { audience: audienceOf(value) }
+		: {};
 
 /* ── chat.character ────────────────────────────────────────────────────────── */
 
@@ -598,6 +623,12 @@ const audienceOf = (value: unknown): ChatSceneAudience => {
 	return { kind: "narrator" };
 };
 
+/** The stored spelling of an audience (no stray keys from the in-memory value). */
+const audienceJson = (audience: ChatSceneAudience): ChatSceneAudience =>
+	audience.kind === "participants"
+		? { kind: "participants", members: audience.members }
+		: { kind: audience.kind };
+
 /**
  * Who witnessed which part of the conversation: the room's fifth child, the same shape of child as
  * a character. The audience is one JSON column (see v21 in `migrations.ts`).
@@ -625,11 +656,7 @@ export const chatSceneTable: RecordTable<ChatScene> = {
 			record.roomId,
 			record.startAt.createdAt,
 			record.startAt.messageId,
-			json(
-				record.audience.kind === "participants"
-					? { kind: "participants", members: record.audience.members }
-					: { kind: record.audience.kind },
-			),
+			json(audienceJson(record.audience)),
 			record.createdAt,
 			record.updatedAt,
 			...metaValues(record),

@@ -3,6 +3,7 @@ import {
 	CHAT_USER_NOTE_MAX_LENGTH,
 	ChatMemoryContentError,
 	ChatRoomMissingError,
+	ChatSceneAudienceError,
 	ChatUserNoteError,
 } from "@rowcat/chat";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -470,6 +471,93 @@ describe("Memory", () => {
 			[memory.id],
 		);
 		expect(row?.deleted_at).not.toBeNull();
+	});
+
+	it("a human-written memory takes a normalized audience; a patch without it keeps it", async () => {
+		const room = await newRoom();
+		const memory = await chat.createMemory({
+			roomId: room.id,
+			content: "Only Mina saw the letter.",
+		});
+		expect(memory.audience).toBeUndefined();
+		await chat.updateMemory(memory.id, {
+			audience: { kind: "participants", members: ["user", "seed:0", "user"] },
+		});
+		const raw = await db.first<{ audience: string | null; dirty: number }>(
+			"SELECT audience, dirty FROM chat_memory WHERE id = ?",
+			[memory.id],
+		);
+		expect(raw?.dirty).toBe(1);
+		expect(JSON.parse(raw?.audience ?? "null")).toEqual({
+			kind: "participants",
+			members: ["seed:0", "user"],
+		});
+
+		await chat.updateMemory(memory.id, { pinned: true });
+		const [read] = await chat.listMemories(room.id);
+		expect(read.audience).toEqual({
+			kind: "participants",
+			members: ["seed:0", "user"],
+		});
+
+		// Sharing again is `room`, never absence.
+		await chat.updateMemory(memory.id, { audience: { kind: "room" } });
+		expect((await chat.listMemories(room.id))[0].audience).toEqual({
+			kind: "room",
+		});
+	});
+
+	it("an automatic memory ignores the audience", async () => {
+		const room = await newRoom();
+		const memory = await chat.createMemory({
+			roomId: room.id,
+			content: "Auto fact",
+			source: "auto",
+			originAt: new Date().toISOString(),
+		});
+		await chat.updateMemory(memory.id, { audience: { kind: "narrator" } });
+		const raw = await db.first<{ audience: string | null }>(
+			"SELECT audience FROM chat_memory WHERE id = ?",
+			[memory.id],
+		);
+		expect(raw?.audience).toBeNull();
+		expect((await chat.listMemories(room.id))[0].audience).toBeUndefined();
+	});
+
+	it("an invalid audience is refused and nothing is written", async () => {
+		const room = await newRoom();
+		const memory = await chat.createMemory({
+			roomId: room.id,
+			content: "Memory",
+		});
+		await expect(
+			chat.updateMemory(memory.id, {
+				audience: { kind: "participants", members: [] },
+			}),
+		).rejects.toBeInstanceOf(ChatSceneAudienceError);
+		expect((await chat.listMemories(room.id))[0].audience).toBeUndefined();
+	});
+
+	it("a stored audience that no longer parses reads as narrator, never as shared", async () => {
+		const room = await newRoom();
+		const memory = await chat.createMemory({
+			roomId: room.id,
+			content: "Memory",
+		});
+		await db.run("UPDATE chat_memory SET audience = ? WHERE id = ?", [
+			"{not json",
+			memory.id,
+		]);
+		expect((await chat.listMemories(room.id))[0].audience).toEqual({
+			kind: "narrator",
+		});
+		await db.run("UPDATE chat_memory SET audience = ? WHERE id = ?", [
+			JSON.stringify({ kind: "participants", members: ["no such ref"] }),
+			memory.id,
+		]);
+		expect((await chat.listMemories(room.id))[0].audience).toEqual({
+			kind: "narrator",
+		});
 	});
 });
 

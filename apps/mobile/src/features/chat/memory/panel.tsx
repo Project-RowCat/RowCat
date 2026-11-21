@@ -1,10 +1,16 @@
 import {
 	CHAT_MEMORY_CONTENT_MAX_LENGTH,
+	type ChatCharacter,
 	type ChatMemory,
+	type ChatRoom,
+	type ChatScene,
+	type ChatSceneAudience,
 	type ChatStore,
 	chatTextLength,
 	groupMemories,
 	isAutoMemory,
+	type MemoryAudienceControl,
+	memoryAudienceControl,
 	promoteMemoryPatch,
 } from "@rowcat/chat";
 import { borderWidth, radiusScale, space } from "@rowcat/design";
@@ -49,13 +55,21 @@ import {
  *   Re-sorting here would split the screen order from the prompt order; only splitting is done, by
  *   `groupMemories`.
  * - Auto-extraction is out of scope, and the empty-state copy does not hint at it.
+ * - In a room with scenes, each human-written row carries one audience control (`audience.ts`,
+ *   the same three answers as web's memory window).
  */
 export function MemoryPanel({
 	roomId,
+	room,
+	characters,
 	store,
 	onClose,
 }: {
 	roomId: string;
+	/** The room as the window resolved it: its seed and role name the members of an audience. */
+	room: Pick<ChatRoom, "seed" | "persona">;
+	/** The room's added characters, passed by value like room settings does. */
+	characters: { value: readonly ChatCharacter[]; loading: boolean };
 	/**
 	 * The store instance at the moment this surface opened. Not re-read from the scope, so an account
 	 * switch cannot end an operation in another member's database; the parent guards ownership.
@@ -65,6 +79,22 @@ export function MemoryPanel({
 }) {
 	const load = useMemo(() => () => store.listMemories(roomId), [store, roomId]);
 	const memories = useLocalLive<ChatMemory[]>(load, EMPTY);
+	/**
+	 * Scenes are subscribed only while this window is open. Until they and the cast have answered, no
+	 * row draws an audience control: drawing `share` before the cast arrives would name nobody.
+	 */
+	const loadScenes = useMemo(
+		() => () => store.listScenes(roomId),
+		[store, roomId],
+	);
+	const scenes = useLocalLive<ChatScene[]>(loadScenes, NO_SCENES);
+	const audienceFor = (item: ChatMemory): MemoryAudienceControl | null =>
+		scenes.status === "ready" && !characters.loading
+			? memoryAudienceControl(item, scenes.value, {
+					room,
+					characters: characters.value,
+				})
+			: null;
 
 	/** What is being edited: `"new"` adds, an id edits, `null` is the list. */
 	const [editing, setEditing] = useState<"new" | string | null>(null);
@@ -130,6 +160,14 @@ export function MemoryPanel({
 					) : (
 						<MemoryList
 							memories={memories.value}
+							audienceFor={audienceFor}
+							onSetAudience={(item, audience) => {
+								void store
+									.updateMemory(item.id, { audience })
+									.catch((failure: unknown) =>
+										setError(memorySaveFailureMessage(failure)),
+									);
+							}}
 							onEdit={(item) => {
 								setError(null);
 								setEditing(item.id);
@@ -171,11 +209,15 @@ export function MemoryPanel({
  */
 function MemoryList({
 	memories,
+	audienceFor,
+	onSetAudience,
 	onEdit,
 	onTogglePin,
 	onDelete,
 }: {
 	memories: readonly ChatMemory[];
+	audienceFor: (memory: ChatMemory) => MemoryAudienceControl | null;
+	onSetAudience: (memory: ChatMemory, audience: ChatSceneAudience) => void;
 	onEdit: (memory: ChatMemory) => void;
 	onTogglePin: (memory: ChatMemory) => void;
 	onDelete: (memory: ChatMemory) => void;
@@ -197,6 +239,8 @@ function MemoryList({
 				<MotionRow key={item.id}>
 					<MemoryRow
 						memory={item}
+						audience={audienceFor(item)}
+						onSetAudience={onSetAudience}
 						onEdit={onEdit}
 						onTogglePin={onTogglePin}
 						onDelete={onDelete}
@@ -207,6 +251,8 @@ function MemoryList({
 				<MotionRow key={item.id}>
 					<MemoryRow
 						memory={item}
+						audience={audienceFor(item)}
+						onSetAudience={onSetAudience}
 						onEdit={onEdit}
 						onTogglePin={onTogglePin}
 						onDelete={onDelete}
@@ -233,11 +279,16 @@ function excerpt(content: string): string {
 
 function MemoryRow({
 	memory: item,
+	audience,
+	onSetAudience,
 	onEdit,
 	onTogglePin,
 	onDelete,
 }: {
 	memory: ChatMemory;
+	/** `null` draws nothing new: no live scene, or an automatic memory (`audience.ts`). */
+	audience: MemoryAudienceControl | null;
+	onSetAudience: (memory: ChatMemory, audience: ChatSceneAudience) => void;
 	onEdit: (memory: ChatMemory) => void;
 	onTogglePin: (memory: ChatMemory) => void;
 	onDelete: (memory: ChatMemory) => void;
@@ -262,6 +313,17 @@ function MemoryRow({
 						Remembered by AI
 					</Text>
 				</View>
+			) : null}
+			{/*
+			 * Who may know a restricted memory, in words: the restriction is otherwise invisible, and a
+			 * character answering as if it never heard of something would read as a malfunction.
+			 */}
+			{audience?.kind === "share" ? (
+				<Text variant="caption" tone="muted-foreground">
+					{audience.narrator
+						? "No character knows this"
+						: `Known by: ${audience.names.join(", ") || "unknown"}`}
+				</Text>
 			) : null}
 			{confirming ? (
 				<View style={memory.confirm}>
@@ -292,6 +354,36 @@ function MemoryRow({
 				</View>
 			) : (
 				<View style={memory.rowActions}>
+					{/*
+					 * One text action at the start of the row, so the three icon actions keep their seats. Its
+					 * name carries the memory's head for the same reason theirs do; a failure lands in the
+					 * window's one notice, like a pin toggle's.
+					 */}
+					{audience ? (
+						<Button
+							label={
+								audience.kind === "restrict"
+									? "Only this scene's characters"
+									: "Share with every character"
+							}
+							accessibilityLabel={
+								audience.kind === "restrict"
+									? `Let only this scene's characters know memory ${label}`
+									: `Share memory ${label} with every character`
+							}
+							variant="ghost"
+							size="sm"
+							style={memory.audienceAction}
+							onPress={() =>
+								onSetAudience(
+									item,
+									audience.kind === "restrict"
+										? audience.audience
+										: { kind: "room" },
+								)
+							}
+						/>
+					) : null}
 					{/* Pin state is not color-only: the glyph changes and `accessibilityState.selected` carries it. */}
 					<RowAction
 						icon={item.pinned ? "unpin" : "pin"}
@@ -453,6 +545,7 @@ function MemoryEditor({
 
 /** Stable empty array; a fresh one per render would redraw the list every time. */
 const EMPTY: ChatMemory[] = [];
+const NO_SCENES: ChatScene[] = [];
 
 const memory = StyleSheet.create({
 	root: { gap: space.md },
@@ -467,6 +560,7 @@ const memory = StyleSheet.create({
 	// The row's own `gap` already spaces it from above; a margin here would push this line down.
 	origin: { alignItems: "center", flexDirection: "row", gap: space.xs },
 	rowActions: {
+		alignItems: "center",
 		flexDirection: "row",
 		gap: space.xs,
 		justifyContent: "flex-end",
@@ -478,6 +572,7 @@ const memory = StyleSheet.create({
 		gap: space.sm,
 	},
 	confirmText: { flex: 1 },
+	audienceAction: { flexShrink: 1, marginRight: "auto" },
 	action: {
 		alignItems: "center",
 		height: controlHeight.sm,

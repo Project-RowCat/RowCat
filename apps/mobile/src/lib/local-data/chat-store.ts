@@ -47,6 +47,7 @@ import {
 	mergeMemorySource,
 	nextSummaryEpoch,
 	normalizeCharacterAliases,
+	normalizeMemoryAudience,
 	planMaintenanceRewind,
 	planRoomDuplicate,
 	requireCharacterName,
@@ -833,6 +834,8 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 				patch.content === undefined
 					? undefined
 					: requireMemoryContent(patch.content);
+			// Outside the transaction, as on web, so `ChatSceneAudienceError` keeps its type.
+			const audience = normalizeMemoryAudience(patch.audience);
 			const now = nowIso();
 			await db.transaction(async (tx) => {
 				const row = await tx.first<SqlRow>(
@@ -854,6 +857,12 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 					 */
 					originAt: source === "auto" ? current.originAt : null,
 				};
+				/**
+				 * Only a human-written memory takes an audience, the same rule as web: an automatic one never
+				 * reaches a room with scenes, so a restriction on it would be a value nothing reads.
+				 */
+				if (audience !== undefined && source === "user")
+					next.audience = audience;
 				await chatMemoryTable.upsert(
 					tx,
 					markLocalUpdate(next, now, await nextRev(tx)),

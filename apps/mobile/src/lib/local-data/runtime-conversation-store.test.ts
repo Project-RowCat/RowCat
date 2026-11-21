@@ -59,7 +59,7 @@ describe("properties of the SQLite adapter", () => {
 		 * Any commit that changes this line is a commit that adds a migration, and that fact shows up in
 		 * review.
 		 */
-		expect(MOBILE_SCHEMA_VERSION).toBe(21);
+		expect(MOBILE_SCHEMA_VERSION).toBe(22);
 		const table = await db.first<{ name: string }>(
 			"SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'runtime_conversation'",
 		);
