@@ -595,7 +595,9 @@ describe("(3) concurrent conflicting audiences", () => {
 
 		expect((await contestedOn(a))?.audience).toEqual(NARROW(story.kai.id));
 		expect((await contestedOn(b))?.audience).toEqual(NARROW(story.kai.id));
-		expect(sceneView(await contestedOn(b))).toEqual(sceneView(await contestedOn(a)));
+		expect(sceneView(await contestedOn(b))).toEqual(
+			sceneView(await contestedOn(a)),
+		);
 		expect(noteCount(b, "chat_scene_restrictive_kept")).toBeGreaterThan(0);
 	});
 });

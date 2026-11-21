@@ -402,7 +402,12 @@ export async function runGenerationTurn(
 			summary,
 			...(recall ? { recall } : {}),
 			...(scenes.length > 0
-				? { scenes: { scenes, cast: characters.map((c) => ({ id: c.id, name: c.name })) } }
+				? {
+						scenes: {
+							scenes,
+							cast: characters.map((c) => ({ id: c.id, name: c.name })),
+						},
+					}
 				: {}),
 			allAges,
 			maxOutputTokens: effective.maxOutputTokens,
