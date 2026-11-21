@@ -1,6 +1,11 @@
 /**
- * The Phase 11 scenario shared by the A/B (`memory-ab.ts`) and the V2 replay (`v2-replay.ts`): the
- * Phase 10 character-chat transcript plus the Phase 11 probe families, as RowCat records. Synthetic.
+ * The benchmark scenario shared by `memory-ab-p13.ts` (afterstate-only long-term memory) and
+ * `injection-p12.ts`: the Phase 10 character-chat transcript (or the Phase 12 Korean one, with
+ * `plant: false`) plus the Phase 11 probe families, as RowCat records. Synthetic.
+ *
+ * The Phase 10–13 harnesses that replayed or measured Memory V2 (`memory-ab.ts`, `v2-replay.ts`,
+ * `memory-ab-p12.ts`) were removed with V2; their frozen results stay in afterstate
+ * `docs/benchmarks/phase10..13`.
  */
 import { StoryChatSeedDto } from "@rowcat/contracts/chat";
 import type { ChatRuntimeRoom } from "../src/context.ts";
@@ -54,18 +59,24 @@ export interface Transcript {
 	probes: Probe[];
 }
 
-
-export function loadScenario(base: Transcript, options: { plant?: boolean } = {}) {
+export function loadScenario(
+	base: Transcript,
+	options: { plant?: boolean } = {},
+) {
 	const planting = options.plant ?? true;
 	// ── Phase 11 probe families (RowCat-specific), planted into the same transcript ──────────────────
-	
+
 	/** Edits applied after indexing (the user rewrote a message): id → new text. */
 	const edits = new Map<string, string>();
 	/** User-authored memory records (ChatMemory, source "user"). */
 	const userNotes: { id: string; text: string; at: string }[] = [];
 	/** Character renames: messages from this id on carry the new speaker name. */
-	
-	function plant(): { turns: Turn[]; probes: Probe[]; items: Record<string, Item> } {
+
+	function plant(): {
+		turns: Turn[];
+		probes: Probe[];
+		items: Record<string, Item>;
+	} {
 		const turns = [...base.turns];
 		const probes: Probe[] = [];
 		const items: Record<string, Item> = {};
@@ -77,14 +88,28 @@ export function loadScenario(base: Transcript, options: { plant?: boolean } = {}
 		};
 		let seq = 0;
 		const insert = (anchor: Turn, t: Omit<Turn, "id" | "session" | "at">) => {
-			const at = new Date(Date.parse(anchor.at) + 1_000 + seq * 10).toISOString();
-			const turn: Turn = { ...t, id: `x${String(seq++).padStart(3, "0")}`, session: anchor.session, at };
+			const at = new Date(
+				Date.parse(anchor.at) + 1_000 + seq * 10,
+			).toISOString();
+			const turn: Turn = {
+				...t,
+				id: `x${String(seq++).padStart(3, "0")}`,
+				session: anchor.session,
+				at,
+			};
 			turns.splice(turns.indexOf(anchor) + 1, 0, turn);
 			return turn;
 		};
-		const probe = (p: Omit<Probe, "perspective" | "forbidden" | "timeline"> & Partial<Probe>) =>
-			probes.push({ perspective: "story", forbidden: [], timeline: null, ...p });
-	
+		const probe = (
+			p: Omit<Probe, "perspective" | "forbidden" | "timeline"> & Partial<Probe>,
+		) =>
+			probes.push({
+				perspective: "story",
+				forbidden: [],
+				timeline: null,
+				...p,
+			});
+
 		// 1. Character rename: a minor character speaks early, is renamed later; asked by the new name.
 		const renames = [
 			["brass astrolabe", "the old mill"],
@@ -99,7 +124,12 @@ export function loadScenario(base: Transcript, options: { plant?: boolean } = {}
 				text: `Tamsin: I buried the ${obj} beneath ${place}, where no one will look.`,
 			});
 			items[`rename_${i}`] = { needles: [obj, place], turns: [t.id] };
-			probe({ id: `q-rename-${i}`, kind: "p11_rename", query: `Tamsa, what did you bury long ago, and where?`, gold: [`rename_${i}`] });
+			probe({
+				id: `q-rename-${i}`,
+				kind: "p11_rename",
+				query: `Tamsa, what did you bury long ago, and where?`,
+				gold: [`rename_${i}`],
+			});
 		});
 		insert(after("s046", 2), {
 			speaker: "Tamsa",
@@ -107,7 +137,7 @@ export function loadScenario(base: Transcript, options: { plant?: boolean } = {}
 			channel: "scene",
 			text: "Tamsa: Tamsin was a name for a smaller life. Call me Tamsa now.",
 		});
-	
+
 		// 2. User-authored memory overrides an old scene.
 		const pets = [
 			["horse", "Bramble", "Thistle"],
@@ -123,16 +153,23 @@ export function loadScenario(base: Transcript, options: { plant?: boolean } = {}
 			});
 			items[`override_old_${i}`] = { needles: [old], turns: [t.id] };
 			items[`override_new_${i}`] = { needles: [now], turns: [] };
-			userNotes.push({ id: `note-override-${i}`, text: `Rowan's ${pet} is now called ${now} (renamed by the user).`, at: base.now });
+			userNotes.push({
+				id: `note-override-${i}`,
+				text: `Rowan's ${pet} is now called ${now} (renamed by the user).`,
+				at: base.now,
+			});
 			probe({
 				id: `q-override-${i}`,
 				kind: "p11_memory_override",
 				query: `What is Rowan's ${pet} called?`,
 				gold: [`override_new_${i}`],
-				timeline: { current: `override_new_${i}`, superseded: `override_old_${i}` },
+				timeline: {
+					current: `override_new_${i}`,
+					superseded: `override_old_${i}`,
+				},
 			});
 		});
-	
+
 		// 3. Edited message: the user rewrote a line after it was indexed; the old words must be gone.
 		const edited = [
 			["spare key", "blue", "red"],
@@ -146,7 +183,10 @@ export function loadScenario(base: Transcript, options: { plant?: boolean } = {}
 				channel: "scene",
 				text: `Rowan: I hid the ${obj} under the ${old} stone by the gate.`,
 			});
-			edits.set(t.id, `Rowan: I hid the ${obj} under the ${now} stone by the gate.`);
+			edits.set(
+				t.id,
+				`Rowan: I hid the ${obj} under the ${now} stone by the gate.`,
+			);
 			items[`edit_new_${i}`] = { needles: [`${now} stone`], turns: [t.id] };
 			items[`edit_old_${i}`] = { needles: [`${old} stone`], turns: [t.id] };
 			probe({
@@ -157,7 +197,7 @@ export function loadScenario(base: Transcript, options: { plant?: boolean } = {}
 				forbidden: [`edit_old_${i}`],
 			});
 		});
-	
+
 		// 4. Temporal contradiction in the world: destroyed early, rebuilt late.
 		const things = ["Kestrel bridge", "east beacon", "ferry landing"];
 		things.forEach((thing, i) => {
@@ -173,17 +213,26 @@ export function loadScenario(base: Transcript, options: { plant?: boolean } = {}
 				channel: "world",
 				text: `Narrator: After months of work the ${thing} has been rebuilt.`,
 			});
-			items[`temporal_old_${i}`] = { needles: [`${thing} was destroyed`], turns: [a.id] };
-			items[`temporal_new_${i}`] = { needles: [`${thing} has been rebuilt`], turns: [b.id] };
+			items[`temporal_old_${i}`] = {
+				needles: [`${thing} was destroyed`],
+				turns: [a.id],
+			};
+			items[`temporal_new_${i}`] = {
+				needles: [`${thing} has been rebuilt`],
+				turns: [b.id],
+			};
 			probe({
 				id: `q-temporal-${i}`,
 				kind: "p11_temporal",
 				query: `Is the ${thing} standing now?`,
 				gold: [`temporal_new_${i}`],
-				timeline: { current: `temporal_new_${i}`, superseded: `temporal_old_${i}` },
+				timeline: {
+					current: `temporal_new_${i}`,
+					superseded: `temporal_old_${i}`,
+				},
 			});
 		});
-	
+
 		// 5. Long-distance callback in Korean (Hangul bigram path).
 		const korean = [
 			["등대 열쇠", "은색 상자"],
@@ -198,21 +247,29 @@ export function loadScenario(base: Transcript, options: { plant?: boolean } = {}
 				text: `Kael: ${obj}는 ${place} 안에 숨겨 두었어. 아무에게도 말하지 마.`,
 			});
 			items[`korean_${i}`] = { needles: [place], turns: [t.id] };
-			probe({ id: `q-korean-${i}`, kind: "p11_korean_callback", query: `${obj}는 어디에 숨겨 두었지?`, gold: [`korean_${i}`] });
+			probe({
+				id: `q-korean-${i}`,
+				kind: "p11_korean_callback",
+				query: `${obj}는 어디에 숨겨 두었지?`,
+				gold: [`korean_${i}`],
+			});
 		});
-	
+
 		return { turns, probes, items };
 	}
-	
-	const planted = planting ? plant() : { turns: [...base.turns], probes: [], items: {} };
-	for (const n of base.notes ?? []) userNotes.push({ id: n.id, text: n.text, at: base.now });
+
+	const planted = planting
+		? plant()
+		: { turns: [...base.turns], probes: [], items: {} };
+	for (const n of base.notes ?? [])
+		userNotes.push({ id: n.id, text: n.text, at: base.now });
 	const turns = planted.turns;
 	const items = { ...base.items, ...planted.items };
 	const probes = [...base.probes, ...planted.probes];
 	const deleted = new Set(base.deletions.flatMap((d) => d.turns));
-	
+
 	// ── RowCat records ───────────────────────────────────────────────────────────────────────────────
-	
+
 	const ROOM = "room-aster-vale";
 	let tick = 0;
 	const toMessage = (t: Turn, content = t.text): ChatMessage =>
@@ -220,17 +277,22 @@ export function loadScenario(base: Transcript, options: { plant?: boolean } = {}
 			id: t.id,
 			roomId: ROOM,
 			role: t.role === "user" || t.role === "player" ? "user" : "assistant",
-			speaker: t.speaker === "Player" ? (base.user_character ?? "Rowan") : t.speaker,
+			speaker:
+				t.speaker === "Player" ? (base.user_character ?? "Rowan") : t.speaker,
 			content,
 			createdAt: t.at,
 			updatedAt: t.at,
 			dirty: 0,
 			serverVersion: 0,
 			// Stable: the same record has the same revision on every read; an edit bumps it.
-			rev: { t: Date.parse(t.at) + (content === t.text ? 0 : 1), c: 0, d: "eval" },
+			rev: {
+				t: Date.parse(t.at) + (content === t.text ? 0 : 1),
+				c: 0,
+				d: "eval",
+			},
 			deletedAt: null,
 		}) as unknown as ChatMessage;
-	
+
 	const toMemory = (id: string, content: string, at: string): ChatMemory =>
 		({
 			id,
@@ -246,7 +308,7 @@ export function loadScenario(base: Transcript, options: { plant?: boolean } = {}
 			rev: { t: Date.parse(at) + tick++, c: 0, d: "eval" },
 			deletedAt: null,
 		}) as unknown as ChatMemory;
-	
+
 	const room: ChatRuntimeRoom = createRoomRecord(
 		{
 			originStoryId: "story-aster-vale",
@@ -256,29 +318,55 @@ export function loadScenario(base: Transcript, options: { plant?: boolean } = {}
 				title: "Aster Vale",
 				adult: false,
 				promptProtected: false,
-				scenario: "A harbor town on a stormy coast. The user plays Rowan, a mapmaker; Mira, Kael, Sable and Oren are companions.",
+				scenario:
+					"A harbor town on a stormy coast. The user plays Rowan, a mapmaker; Mira, Kael, Sable and Oren are companions.",
 			}),
 		},
-		{ id: ROOM, routingSessionId: "eval-aster-vale", now: turns[0]?.at ?? base.now, rev: { t: 1, c: 0, d: "eval" } },
+		{
+			id: ROOM,
+			routingSessionId: "eval-aster-vale",
+			now: turns[0]?.at ?? base.now,
+			rev: { t: 1, c: 0, d: "eval" },
+		},
 	);
-	
+
 	/** Every message ever written, before deletions and edits (what the index first saw). */
 	const original = turns.map((t) => toMessage(t));
 	/** The store at question time: deleted scenes gone, edited lines rewritten. */
-	const live = turns.filter((t) => !deleted.has(t.id)).map((t) => toMessage(t, edits.get(t.id) ?? t.text));
-	
+	const live = turns
+		.filter((t) => !deleted.has(t.id))
+		.map((t) => toMessage(t, edits.get(t.id) ?? t.text));
+
 	/** Memory conditions: M0 the override notes only; M1 also the current world state as user notes. */
 	const notesM0 = userNotes.map((n) => toMemory(n.id, n.text, n.at));
-	const superseded = new Set(base.state.map((s) => s.supersedes).filter(Boolean));
+	const superseded = new Set(
+		base.state.map((s) => s.supersedes).filter(Boolean),
+	);
 	const notesM1 = [
 		...notesM0,
 		...base.state
 			.filter((s) => !superseded.has(s.id))
-			.map((s) => toMemory(`note-${s.id.replace(/_/g, "-")}`, s.text, base.now)),
+			.map((s) =>
+				toMemory(`note-${s.id.replace(/_/g, "-")}`, s.text, base.now),
+			),
 	];
 	return {
-		base, turns, items, probes, deleted, edits, userNotes, ROOM, room,
-		toMessage, toMemory, original, live, notesM0, notesM1, planted,
+		base,
+		turns,
+		items,
+		probes,
+		deleted,
+		edits,
+		userNotes,
+		ROOM,
+		room,
+		toMessage,
+		toMemory,
+		original,
+		live,
+		notesM0,
+		notesM1,
+		planted,
 	};
 }
 
