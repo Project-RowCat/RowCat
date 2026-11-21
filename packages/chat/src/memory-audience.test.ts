@@ -5,7 +5,10 @@ import type {
 	ChatSceneAudience,
 	ChatSeed,
 } from "./index.ts";
-import { memoryAudienceControl } from "./memory-audience.ts";
+import {
+	memoryAudienceControl,
+	unmarkedMemoryCount,
+} from "./memory-audience.ts";
 
 /**
  * Which audience control a memory row draws.
@@ -115,5 +118,42 @@ describe("memoryAudienceControl", () => {
 				cast,
 			),
 		).toEqual({ kind: "share", names: [], narrator: true });
+	});
+});
+
+describe("unmarkedMemoryCount", () => {
+	const shared: ChatSceneAudience = { kind: "room" };
+	const memories = [
+		memory(),
+		memory({ audience: shared }),
+		memory({ audience: minaOnly }),
+		memory({ source: "auto" }),
+	];
+
+	it("counts only unmarked human-written memories, once a scene is narrower than the room", () => {
+		expect(unmarkedMemoryCount(memories, [scene("2026-01-01", minaOnly)])).toBe(
+			1,
+		);
+	});
+
+	it("says nothing where sharing withholds nothing", () => {
+		expect(unmarkedMemoryCount(memories, [])).toBe(0);
+		expect(unmarkedMemoryCount(memories, [scene("2026-01-01", shared)])).toBe(
+			0,
+		);
+		expect(
+			unmarkedMemoryCount(memories, [
+				scene("2026-01-01", minaOnly, "2026-01-02"),
+			]),
+		).toBe(0);
+	});
+
+	it("still counts after the room returns to a shared scene", () => {
+		expect(
+			unmarkedMemoryCount(memories, [
+				scene("2026-01-01", minaOnly),
+				scene("2026-01-03", shared),
+			]),
+		).toBe(1);
 	});
 });

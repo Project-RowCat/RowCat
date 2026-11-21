@@ -65,3 +65,26 @@ export function memoryAudienceControl(
 	if (current.audience.kind === "room") return null;
 	return { kind: "restrict", audience: current.audience };
 }
+
+/**
+ * How many human-written memories in this room nobody has decided an audience for — the number the
+ * memory screen states so the user can mark them (`docs/chat/SCENES.md` §6).
+ *
+ * An unmarked memory is shared (the compatibility policy), which is right for everything written before
+ * scenes existed but is also where a secret written then still reaches a private scene's characters.
+ * The policy stays; what this adds is that the screen says so instead of leaving it silent.
+ *
+ * - **0 unless the room has a live scene narrower than the room.** Only then does "shared" withhold
+ *   less than it could; in a room whose scenes are all `room`, every character already knows
+ *   everything and the sentence would ask the user to decide something that changes nothing.
+ * - **An explicit `{ kind: "room" }` is marked.** The user chose to share it; asking again turns a
+ *   decision into a nag that never clears.
+ * - Automatic memories never count — they never reach a room with scenes (`prompt-scope.ts`).
+ */
+export function unmarkedMemoryCount(
+	memories: readonly Pick<ChatMemory, "source" | "audience">[],
+	scenes: readonly ChatScene[],
+): number {
+	if (!orderScenes(scenes).some((s) => s.audience.kind !== "room")) return 0;
+	return memories.filter((m) => !isAutoMemory(m) && !m.audience).length;
+}

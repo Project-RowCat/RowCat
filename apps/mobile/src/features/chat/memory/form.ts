@@ -50,3 +50,11 @@ export const MEMORY_COUNTER_THRESHOLD = CHAT_MEMORY_CONTENT_MAX_LENGTH - 100;
 
 export const MEMORY_EMPTY_MESSAGE =
 	"Write down what this conversation should keep remembering, and it's passed along whenever a reply is made.";
+
+/**
+ * How many memories nobody has decided an audience for, in a room with a private scene
+ * (`unmarkedMemoryCount` in `@rowcat/chat` decides when; this is only the sentence). The same fact
+ * web's memory window states — unmarked means shared, so an old secret still reaches everyone.
+ */
+export const unmarkedMemoryMessage = (count: number): string =>
+	`${count} ${count === 1 ? "memory has" : "memories have"} no audience yet, so every character knows ${count === 1 ? "it" : "them"}. If one should stay secret, open this panel during a private scene and choose "Only this scene's characters".`;

@@ -12,6 +12,7 @@ import {
 	type MemoryAudienceControl,
 	memoryAudienceControl,
 	promoteMemoryPatch,
+	unmarkedMemoryCount,
 } from "@rowcat/chat";
 import { borderWidth, radiusScale, space } from "@rowcat/design";
 import {
@@ -39,6 +40,7 @@ import {
 	MEMORY_EMPTY_MESSAGE,
 	memorySaveFailureMessage,
 	planMemorySave,
+	unmarkedMemoryMessage,
 } from "./form.ts";
 
 /**
@@ -95,6 +97,14 @@ export function MemoryPanel({
 					characters: characters.value,
 				})
 			: null;
+	/**
+	 * Unmarked memories are shared (the compatibility policy, `docs/chat/SCENES.md` §6), so in a room
+	 * with a private scene the panel says how many. Not before scenes answer (no count appearing late).
+	 */
+	const unmarked =
+		scenes.status === "ready"
+			? unmarkedMemoryCount(memories.value, scenes.value)
+			: 0;
 
 	/** What is being edited: `"new"` adds, an id edits, `null` is the list. */
 	const [editing, setEditing] = useState<"new" | string | null>(null);
@@ -150,6 +160,11 @@ export function MemoryPanel({
 			) : (
 				<View style={memory.root}>
 					{error ? <Notice tone="destructive" message={error} /> : null}
+					{unmarked > 0 ? (
+						<Text variant="caption" tone="muted-foreground">
+							{unmarkedMemoryMessage(unmarked)}
+						</Text>
+					) : null}
 
 					{memories.status === "loading" ? (
 						<Spinner />

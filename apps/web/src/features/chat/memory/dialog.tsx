@@ -9,6 +9,7 @@ import {
 	type MemoryAudienceControl,
 	memoryAudienceControl,
 	promoteMemoryPatch,
+	unmarkedMemoryCount,
 } from "@rowcat/chat";
 import { Button } from "@rowcat/ui-web/components/button";
 import {
@@ -115,6 +116,14 @@ export function MemoryDialog({
 					characters: characters.items,
 				})
 			: null;
+	/**
+	 * Unmarked memories are shared (the compatibility policy, `docs/chat/SCENES.md` §6); in a room with a
+	 * private scene that is where an old secret still reaches everyone, so the window says how many.
+	 * Not before scenes answer: a count that appears a frame later reads as something just changed.
+	 */
+	const unmarked = scenes.loading
+		? 0
+		: unmarkedMemoryCount(items, scenes.items);
 	const [adding, setAdding] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
@@ -275,6 +284,12 @@ export function MemoryDialog({
 							</m.div>
 						)}
 					</AnimatePresence>
+
+					{unmarked > 0 && (
+						<p className="text-sm text-muted-foreground">
+							{t("memory.unmarked", { count: unmarked })}
+						</p>
+					)}
 
 					{full && !adding && (
 						<p className="text-sm text-muted-foreground">

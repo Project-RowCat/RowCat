@@ -203,6 +203,10 @@ export const chat: Messages["chat"] = {
 		knownBy: "아는 인물: {{names}}",
 		knownByUnknown: "알 수 없음",
 		knownByNoOne: "어떤 인물도 모르는 기억",
+		unmarked_one:
+			"아직 아는 인물을 정하지 않은 기억 {{count}}개는 모든 인물이 압니다. 비밀이어야 하는 기억은 비공개 장면에서 이 창을 열어 '지금 장면의 인물만 알기'를 눌러 주세요.",
+		unmarked_other:
+			"아직 아는 인물을 정하지 않은 기억 {{count}}개는 모든 인물이 압니다. 비밀이어야 하는 기억은 비공개 장면에서 이 창을 열어 '지금 장면의 인물만 알기'를 눌러 주세요.",
 		saveFailed: "기억을 저장하지 못했습니다. 다시 시도해 주세요.",
 		deleteFailed: "기억을 삭제하지 못했습니다. 다시 시도해 주세요.",
 		roomGone: "이 대화가 더 이상 없어 기억을 저장할 수 없습니다.",

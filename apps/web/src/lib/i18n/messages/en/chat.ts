@@ -210,6 +210,10 @@ export const chat = {
 		knownBy: "Known by: {{names}}",
 		knownByUnknown: "unknown",
 		knownByNoOne: "No character knows this",
+		unmarked_one:
+			'{{count}} memory has no audience yet, so every character knows it. If it should stay secret, open this window during a private scene and choose "Only this scene\'s characters".',
+		unmarked_other:
+			'{{count}} memories have no audience yet, so every character knows them. If one should stay secret, open this window during a private scene and choose "Only this scene\'s characters".',
 		saveFailed: "Couldn't save the memory. Please try again.",
 		deleteFailed: "Couldn't delete the memory. Please try again.",
 		roomGone:
