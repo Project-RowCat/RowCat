@@ -52,6 +52,10 @@ export async function purgeDeletedViewerLocally({
 		 * server. A static import of db.ts would pull Dexie into the server bundle's static graph.
 		 */
 		const { deleteLocalDbForViewer } = await import("./db.ts");
+		// The derived memory index first (desktop): it is rebuilt from what is deleted next.
+		await (await import("../afterstate/desktop-memory.ts")).deleteDerivedMemory(
+			viewerId,
+		);
 		await deleteLocalDbForViewer(viewerId);
 	} finally {
 		/**

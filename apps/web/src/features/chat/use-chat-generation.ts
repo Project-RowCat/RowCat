@@ -2,6 +2,8 @@ import {
 	type AssistantContinuation,
 	type ChatRoom,
 	type ChatStore,
+	type ConversationMemoryRuntime,
+	conversationMemoryHooks,
 	effectiveChatPersona,
 	type GeneratedAssistantMessage,
 	type GenerationPreference,
@@ -15,6 +17,7 @@ import {
 	type ConversationGenerationState,
 	useConversationGeneration,
 } from "#/features/conversation/use-conversation-generation.ts";
+import { useMemoryRuntime } from "#/lib/afterstate/use-memory-runtime.ts";
 import { useChatScope } from "#/lib/local-chat/scope.ts";
 import { useGenerationScope } from "#/lib/local-generation/scope.ts";
 import { useMemoryMaintenance } from "./memory/use-maintenance.ts";
@@ -73,8 +76,19 @@ export function createChatConversation(input: {
 	 * in here would force every caller, including tests, to wire all five.
 	 */
 	maintain?: (() => void) | undefined;
+	/**
+	 * The memory backend (legacy / afterstate / shadow) and its native port, if this platform has
+	 * one. Absent or legacy: the session has no recall and the request is exactly V2's.
+	 */
+	memory?: ConversationMemoryRuntime | null;
 }): ConversationSession {
 	const { room, store, preferences } = input;
+	const memoryHooks = conversationMemoryHooks(
+		input.memory,
+		store,
+		room.id,
+		input.maintain,
+	);
 	const protectedStoryId = protectedStoryIdOf(room);
 	return {
 		token: input.token,
@@ -107,6 +121,7 @@ export function createChatConversation(input: {
 		 * roster it started with.
 		 */
 		loadCharacters: () => store.listCharacters(room.id),
+		loadScenes: () => store.listScenes(room.id),
 		/**
 		 * Summary is read once, at start, like memory. Background maintenance may update the summary
 		 * while a response streams (which is exactly this slice's job). If the in-flight request picked
@@ -129,7 +144,7 @@ export function createChatConversation(input: {
 		 */
 		loadNarration: async () =>
 			(await store.getRoom(room.id))?.narration ?? null,
-		...(input.maintain ? { maintain: input.maintain } : {}),
+		...memoryHooks,
 		appendUserMessage: async (content: string) => {
 			await store.appendMessage({
 				roomId: room.id,
@@ -179,7 +194,9 @@ export function createChatConversation(input: {
 export function useChatGeneration(
 	room: ChatRoom | null,
 ): ConversationGenerationState {
-	const { store } = useChatScope();
+	const { store, viewerId } = useChatScope();
+	// The local afterstate index (desktop only; null in a browser or in legacy mode).
+	const memory = useMemoryRuntime(viewerId, store);
 	const { store: preferences } = useGenerationScope();
 	/**
 	 * The function that wakes maintenance. It is not an identity axis of the session: ownership is the
@@ -213,9 +230,16 @@ export function useChatGeneration(
 	const session = useMemo(
 		() =>
 			room && store
-				? createChatConversation({ room, store, preferences, maintain, token })
+				? createChatConversation({
+						room,
+						store,
+						preferences,
+						maintain,
+						token,
+						memory,
+					})
 				: null,
-		[room, store, preferences, maintain, token],
+		[room, store, preferences, maintain, token, memory],
 	);
 
 	return useConversationGeneration(session);

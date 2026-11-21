@@ -11,6 +11,7 @@ import {
 	promptPackCapabilityFor,
 	reasoningCapabilityFor,
 	reasoningEffortForRequest,
+	recallRequestFor,
 	resolveAllAges,
 	resolveEffectiveGeneration,
 	resolveGenerationExecution,
@@ -605,6 +606,19 @@ export function useConversationGeneration(
 					const summary = await session.loadSummary();
 
 					/**
+					 * Step ②-c': recalled earlier passages (afterstate backend), a snapshot at the same moment.
+					 *
+					 * The question is built from the snapshots above by one shared function (recallRequestFor),
+					 * so web and mobile ask the same thing. Sessions without the backend have no loadRecall,
+					 * and the request is then exactly V2's. The loader never throws and gives up quickly.
+					 */
+					const recall = session.loadRecall
+						? await session.loadRecall(recallRequestFor(history, memories))
+						: null;
+					/** Scenes (who witnessed what), a snapshot at the same moment; none: no scene marks. */
+					const scenes = (await session.loadScenes?.()) ?? [];
+
+					/**
 					 * Step ②-e: secure this conversation's routing key. Some conversations have none.
 					 *
 					 * Unlike the four values read alongside it, this is an acquisition, not a snapshot. The value
@@ -749,6 +763,15 @@ export function useConversationGeneration(
 						memories,
 						characters,
 						summary,
+						...(recall ? { recall } : {}),
+						...(scenes.length > 0
+							? {
+									scenes: {
+										scenes,
+										cast: characters.map((c) => ({ id: c.id, name: c.name })),
+									},
+								}
+							: {}),
 						allAges,
 						maxOutputTokens: effective.maxOutputTokens,
 						reasoningEffort,

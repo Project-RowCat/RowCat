@@ -2,7 +2,9 @@ import {
 	type AssistantContinuation,
 	type ChatRoom,
 	type ChatStore,
+	type ConversationMemoryRuntime,
 	type ConversationSession,
+	conversationMemoryHooks,
 	effectiveChatPersona,
 	type GeneratedAssistantMessage,
 	type GenerationPreferenceStore,
@@ -70,8 +72,16 @@ export function createChatConversation(input: {
 	 * to wire all three.
 	 */
 	maintain?: (() => void) | undefined;
+	/** The memory backend and its native port (`afterstate-memory` module), if loaded. Same shared wiring as web. */
+	memory?: ConversationMemoryRuntime | null;
 }): ConversationSession {
 	const { room, store, preferences } = input;
+	const memoryHooks = conversationMemoryHooks(
+		input.memory,
+		store,
+		room.id,
+		input.maintain,
+	);
 	const protectedStoryId = protectedStoryIdOf(room);
 	return {
 		// The store instance is in the token because a member id is not enough: after sign-out and return
@@ -99,6 +109,7 @@ export function createChatConversation(input: {
 		loadMemories: () => store.listMemories(room.id),
 		// Characters added in this conversation are frozen at start, like memory.
 		loadCharacters: () => store.listCharacters(room.id),
+		loadScenes: () => store.listScenes(room.id),
 		// Summary is frozen at start, like memory: background maintenance may update it mid-stream, and
 		// picking up the new version would make the request's context depend on timing.
 		loadSummary: async () => (await store.getSummary(room.id))?.summary ?? "",
@@ -112,7 +123,7 @@ export function createChatConversation(input: {
 		// reproduce that, so it is read once at start and frozen.
 		loadNarration: async () =>
 			(await store.getRoom(room.id))?.narration ?? null,
-		...(input.maintain ? { maintain: input.maintain } : {}),
+		...memoryHooks,
 		appendUserMessage: async (content: string) => {
 			await store.appendMessage({
 				roomId: room.id,

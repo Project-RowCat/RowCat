@@ -1,0 +1,10 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "podspecPath": "AfterstateMemory.podspec",
+    "modules": ["AfterstateMemoryModule"]
+  },
+  "android": {
+    "modules": ["com.projectrowcat.afterstatememory.AfterstateMemoryModule"]
+  }
+}

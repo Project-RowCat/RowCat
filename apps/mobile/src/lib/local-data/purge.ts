@@ -1,5 +1,5 @@
 import { providerCredentialEntries } from "../local-provider/record.ts";
-import type { ScopeRef } from "../local-scope.ts";
+import { type ScopeRef, scopeKeyOf } from "../local-scope.ts";
 import type { SecureKeyStorage } from "../local-sync/device-key.ts";
 import { deviceKeyEntry } from "../local-sync/device-key.ts";
 import { viewerDatabaseName, viewerDraftCoverDirName } from "./database.ts";
@@ -31,6 +31,12 @@ export interface LocalPurgeTargets {
 	 * would leak here, and the order could not be verified.
 	 */
 	deleteDraftCovers(dirName: string): void;
+	/**
+	 * Deletes the member's local afterstate index (`lib/afterstate/native-memory.ts`). Optional: a
+	 * build without the engine has none. It is derived from the database deleted below, so it goes
+	 * first: a failure after it still leaves the source to rebuild from, never an index without one.
+	 */
+	deleteDerivedMemory?(scopeKey: string): Promise<void>;
 }
 
 export async function deleteLocalDataForViewer(
@@ -46,6 +52,7 @@ export async function deleteLocalDataForViewer(
 	 * reverse order the worst case is "files gone, row still there", and that row is removed together
 	 * with the database right after.
 	 */
+	await targets.deleteDerivedMemory?.(scopeKeyOf(scope));
 	targets.deleteDraftCovers(viewerDraftCoverDirName(scope));
 	await targets.deleteDatabase(viewerDatabaseName(scope));
 	await targets.secureStorage.remove(deviceKeyEntry(scope));

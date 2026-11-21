@@ -8,6 +8,7 @@ import {
 	useMemo,
 	useState,
 } from "react";
+import { eraseRoomMemory } from "../../../lib/afterstate/native-memory.ts";
 import { useLocalLive } from "../../../lib/local-data/live.ts";
 import {
 	useChatScope,
@@ -95,7 +96,7 @@ export function useRoomManagement(
 		onDeleted?: (room: ManagedRoom) => void;
 	} = {},
 ): RoomManagement {
-	const { store, ownsStore } = useChatScope();
+	const { store, ownsStore, scopeKey } = useChatScope();
 	const { store: preferences } = useGenerationScope();
 	const [target, setTarget] = useState<Target | null>(null);
 	const [deleting, setDeleting] = useState(false);
@@ -159,8 +160,13 @@ export function useRoomManagement(
 
 	/** Stores as of the operation's start, with the ownership predicate. */
 	const scopeOf = useCallback(
-		(owner: ChatStore) => ({ store: owner, preferences, owns: ownsStore }),
-		[preferences, ownsStore],
+		(owner: ChatStore) => ({
+			store: owner,
+			preferences,
+			owns: ownsStore,
+			eraseMemory: (roomId: string) => eraseRoomMemory(scopeKey, roomId),
+		}),
+		[preferences, ownsStore, scopeKey],
 	);
 
 	const confirmDelete = useCallback(

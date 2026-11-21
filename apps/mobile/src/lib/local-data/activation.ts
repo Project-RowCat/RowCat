@@ -1,4 +1,4 @@
-import type { LocalScope } from "../local-scope.ts";
+import { type LocalScope, localScopeKey } from "../local-scope.ts";
 import type { SecureKeyStorage } from "../local-sync/device-key.ts";
 import { openMobileDatabase, viewerDatabaseName } from "./database.ts";
 import type { DraftCoverFiles } from "./draft-cover-store.ts";
@@ -22,6 +22,11 @@ import {
  */
 export interface MobileLocalScope {
 	readonly viewerId: string;
+	/**
+	 * The opened scope's key (`local-scope.ts`): what derived per-scope files (the afterstate index)
+	 * are named by, so they follow the same instance as the database without resolving it again.
+	 */
+	readonly scopeKey: string;
 	readonly db: MobileDatabase;
 	readonly stores: MobileLocalStores;
 	close(): Promise<void>;
@@ -54,6 +59,7 @@ export const openScopeWith =
 		const db = await openMobileDatabase(driver);
 		return {
 			viewerId,
+			scopeKey: localScopeKey(scope),
 			db,
 			stores: createMobileLocalDataStores(
 				db,

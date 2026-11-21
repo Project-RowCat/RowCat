@@ -220,7 +220,7 @@ describe("v2 → v3 migration", () => {
 		await db.open();
 		// Latest version. If the upgrade chain (v1 through the newest version) breaks, it shows up here
 		// first.
-		expect(db.verno).toBe(24);
+		expect(db.verno).toBe(25);
 
 		/**
 		 * The two player-save tables introduced in v19. Being empty is the exact correct state here.
@@ -412,7 +412,7 @@ describe("v2 → v3 migration", () => {
 
 		const db = activateLocalDbScope(alice);
 		await db.open();
-		expect(db.verno).toBe(24);
+		expect(db.verno).toBe(25);
 
 		const state = await readSyncState(db);
 		const room = await db.rooms.get("room-1");
@@ -525,7 +525,7 @@ describe("v22 backfill", () => {
 
 		const db = activateLocalDbScope(viewer);
 		await db.open();
-		expect(db.verno).toBe(24);
+		expect(db.verno).toBe(25);
 
 		const asset = await db.draftRuntimeAssets.get("asset-1");
 		expect(asset?.kind).toBe("image");
@@ -571,7 +571,7 @@ describe("v24 table cleanup", () => {
 
 		const db = activateLocalDbScope(viewer);
 		await db.open();
-		expect(db.verno).toBe(24);
+		expect(db.verno).toBe(25);
 
 		const tables = db.backendDB().objectStoreNames;
 		for (const table of [

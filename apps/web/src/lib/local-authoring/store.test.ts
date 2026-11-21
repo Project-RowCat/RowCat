@@ -554,7 +554,7 @@ describe("v1 → v3 upgrade", () => {
 		 * Removing any intermediate declaration (v1, v2, or v3) breaks the chain, and chats already on
 		 * users' devices are lost at that moment.
 		 */
-		expect(db.verno).toBe(24);
+		expect(db.verno).toBe(25);
 
 		const room = await chat.getRoom("room-1");
 		expect(room).toMatchObject({ id: "room-1", title: "Old conversation" });

@@ -16,6 +16,7 @@ import {
 	planChatGeneration,
 	type ReasoningCapabilityLookup,
 	reasoningEffortForRequest,
+	recallRequestFor,
 	resolveAllAges,
 	resolveEffectiveGeneration,
 	resolveGenerationExecution,
@@ -291,6 +292,16 @@ export async function runGenerationTurn(
 		 */
 		const summary = await session.loadSummary();
 		/**
+		 * Recalled earlier passages (afterstate backend), a snapshot at the same moment, asked through the
+		 * same shared function as web. Without the backend the session has no loader and the request is
+		 * exactly V2's; the loader never throws and gives up quickly.
+		 */
+		const recall = session.loadRecall
+			? await session.loadRecall(recallRequestFor(history, memories))
+			: null;
+		/** Scenes (who witnessed what), a snapshot at the same moment; none: no scene marks. */
+		const scenes = (await session.loadScenes?.()) ?? [];
+		/**
 		 * Secures this conversation's routing-affinity key; some conversations have none (playback
 		 * sessions). Unlike the three above this is acquisition, not a snapshot: the value lives on the
 		 * room record and never changes once set, but a room built under an older version gets one issued
@@ -389,6 +400,15 @@ export async function runGenerationTurn(
 			memories,
 			characters,
 			summary,
+			...(recall ? { recall } : {}),
+			...(scenes.length > 0
+				? {
+						scenes: {
+							scenes,
+							cast: characters.map((c) => ({ id: c.id, name: c.name })),
+						},
+					}
+				: {}),
 			allAges,
 			maxOutputTokens: effective.maxOutputTokens,
 			reasoningEffort,

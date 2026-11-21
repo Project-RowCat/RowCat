@@ -1,3 +1,4 @@
+import { deleteDerivedMemory } from "../afterstate/native-memory.ts";
 import { forgetInstanceSession } from "../auth.ts";
 import { removeDraftCoverDirectory } from "../draft-cover-files.ts";
 import { deleteExpoSqliteDatabase } from "../local-data/expo-driver.ts";
@@ -37,6 +38,7 @@ export async function removeInstanceFromDevice(
 			{ scopeKey },
 			{
 				deleteDatabase: deleteExpoSqliteDatabase,
+				deleteDerivedMemory,
 				deleteDraftCovers: removeDraftCoverDirectory,
 				secureStorage: expoSecureKeyStorage,
 			},

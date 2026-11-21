@@ -14,10 +14,17 @@ import type {
 	ChatPersona,
 	ChatPersonaSnapshot,
 	ChatRoom,
+	ChatScene,
+	ChatSceneAudience,
 	ChatSeed,
 	ChatSummary,
 } from "@rowcat/chat";
-import { readMemorySource, readNarrationSettings } from "@rowcat/chat";
+import {
+	normalizeCharacterAliases,
+	normalizeSceneAudience,
+	readMemorySource,
+	readNarrationSettings,
+} from "@rowcat/chat";
 import type { ChatLorePosition } from "@rowcat/contracts/chat";
 import type { Rev } from "@rowcat/contracts/sync";
 import type { Orientation, StoryVisibility } from "@rowcat/domain";
@@ -101,6 +108,11 @@ export const TABLE_ORDER = [
 	 * the same reason).
 	 */
 	"chat.character",
+	/**
+	 * Scene: a room child appended at the end for the same reason as characters (the web's array and
+	 * the codec list in `@rowcat/chat` place it here too).
+	 */
+	"chat.scene",
 ] as const;
 
 export type SyncType = (typeof TABLE_ORDER)[number];
@@ -491,6 +503,12 @@ const CHARACTER_COLUMNS = [
 	"room_id",
 	"name",
 	"prompt",
+	/**
+	 * Former names (v21), a nullable JSON array. Read back through `normalizeCharacterAliases`, and
+	 * an empty list creates no key: the codec decodes "none" as an absent field, and a local `[]`
+	 * would read as a different record in comparisons.
+	 */
+	"aliases",
 	"created_at",
 	"updated_at",
 ] as const;
@@ -516,6 +534,7 @@ export const chatCharacterTable: RecordTable<ChatCharacter> = {
 		roomId: text(row.room_id),
 		name: text(row.name),
 		prompt: text(row.prompt),
+		...aliasesOf(row.aliases, text(row.name)),
 		createdAt: text(row.created_at),
 		updatedAt: text(row.updated_at),
 		...metaOf(row),
@@ -526,6 +545,91 @@ export const chatCharacterTable: RecordTable<ChatCharacter> = {
 			record.roomId,
 			record.name,
 			record.prompt,
+			record.aliases && record.aliases.length > 0 ? json(record.aliases) : null,
+			record.createdAt,
+			record.updatedAt,
+			...metaValues(record),
+		]),
+};
+
+const aliasesOf = (value: unknown, name: string): { aliases?: string[] } => {
+	const stored = parseJson<unknown>(value, null);
+	const aliases = normalizeCharacterAliases(
+		Array.isArray(stored)
+			? stored.filter((alias): alias is string => typeof alias === "string")
+			: [],
+		name,
+	);
+	return aliases.length > 0 ? { aliases } : {};
+};
+
+/* ── chat.scene ────────────────────────────────────────────────────────────── */
+
+const CHAT_SCENE_COLUMNS = [
+	"room_id",
+	"start_created_at",
+	"start_message_id",
+	"audience",
+	"created_at",
+	"updated_at",
+] as const;
+
+const CHAT_SCENE_UPSERT = upsertSql("chat_scene", CHAT_SCENE_COLUMNS);
+
+/**
+ * A stored audience that no longer parses or breaks the rules reads as `narrator`, the narrowest
+ * audience. It does not throw (that would revert a whole sync page for one row), and it never widens:
+ * reading a broken private scene as `room` would publish it to every character.
+ */
+const audienceOf = (value: unknown): ChatSceneAudience => {
+	const stored = parseJson<unknown>(value, null);
+	if (stored && typeof stored === "object" && "kind" in stored) {
+		const kind = (stored as { kind: unknown }).kind;
+		if (kind === "room" || kind === "narrator") return { kind };
+		const members = (stored as { members?: unknown }).members;
+		if (kind === "participants" && Array.isArray(members)) {
+			const checked = normalizeSceneAudience({
+				kind: "participants",
+				members: members.filter((m): m is string => typeof m === "string"),
+			});
+			if (checked.ok) return checked.audience;
+		}
+	}
+	return { kind: "narrator" };
+};
+
+/**
+ * Who witnessed which part of the conversation: the room's fifth child, the same shape of child as
+ * a character. The audience is one JSON column (see v21 in `migrations.ts`).
+ */
+export const chatSceneTable: RecordTable<ChatScene> = {
+	type: "chat.scene",
+	table: "chat_scene",
+	parent: "room_id",
+	order: null,
+	fromRow: (row) => ({
+		id: text(row.id),
+		roomId: text(row.room_id),
+		startAt: {
+			createdAt: text(row.start_created_at),
+			messageId: text(row.start_message_id),
+		},
+		audience: audienceOf(row.audience),
+		createdAt: text(row.created_at),
+		updatedAt: text(row.updated_at),
+		...metaOf(row),
+	}),
+	upsert: (tx, record) =>
+		tx.run(CHAT_SCENE_UPSERT, [
+			record.id,
+			record.roomId,
+			record.startAt.createdAt,
+			record.startAt.messageId,
+			json(
+				record.audience.kind === "participants"
+					? { kind: "participants", members: record.audience.members }
+					: { kind: record.audience.kind },
+			),
 			record.createdAt,
 			record.updatedAt,
 			...metaValues(record),
@@ -1193,6 +1297,7 @@ const BY_TYPE: Record<SyncType, RecordTable> = {
 	"chat.message": chatMessageTable as RecordTable,
 	"chat.memory": chatMemoryTable as RecordTable,
 	"chat.character": chatCharacterTable as RecordTable,
+	"chat.scene": chatSceneTable as RecordTable,
 	"chat.summary": chatSummaryTable as RecordTable,
 	"authoring.draft": authoringDraftTable as RecordTable,
 	"authoring.lore": authoringLoreTable as RecordTable,

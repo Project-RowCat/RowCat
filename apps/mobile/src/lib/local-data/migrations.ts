@@ -19,7 +19,7 @@ import type { MobileDatabase, SqlRunner } from "./sqlite.ts";
  * other axes. Those three are agreements between devices: bumping them affects other devices. This
  * value stays inside this file.
  */
-export const MOBILE_SCHEMA_VERSION = 20;
+export const MOBILE_SCHEMA_VERSION = 21;
 
 /**
  * v1 sets up conversation, authoring and sync state in one go.
@@ -1024,6 +1024,45 @@ const V20: readonly MigrationStep[] = [
 	)`,
 ];
 
+/**
+ * v21 adds the room's **fifth child**, scenes (who witnessed which part of the conversation,
+ * `scene.ts` in `@rowcat/chat`), and the character's **aliases** (former names kept by a rename).
+ *
+ * The audience is **one JSON blob** (`{ kind }` or `{ kind: "participants", members }`), for the
+ * same reason as `persona`: kind and members are one value, and two columns would allow a
+ * `participants` row without members that nobody could interpret. Members are references (`user`,
+ * `seed:<n>`, `char:<id>`), never names.
+ *
+ * The start position is two columns, like the summary frontier: both are always present, and the
+ * columns keep that in the schema.
+ *
+ * Aliases are a nullable JSON array. `NULL` means "none", the state of every character before this
+ * axis existed. No backfill: filling it would make every character dirty after migration.
+ *
+ * Without either, sync silently drops the axis: a scene marked on the web never arrives here, and a
+ * rename's old name would be lost by this device's next push of the character.
+ */
+const V21: readonly MigrationStep[] = [
+	`CREATE TABLE chat_scene (
+		id TEXT PRIMARY KEY NOT NULL,
+		room_id TEXT NOT NULL,
+		start_created_at TEXT NOT NULL,
+		start_message_id TEXT NOT NULL,
+		audience TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		deleted_at TEXT,
+		dirty INTEGER NOT NULL,
+		server_version INTEGER NOT NULL,
+		rev_t INTEGER NOT NULL,
+		rev_c INTEGER NOT NULL,
+		rev_d TEXT NOT NULL
+	)`,
+	`CREATE INDEX chat_scene_room ON chat_scene (room_id)`,
+	`CREATE INDEX chat_scene_dirty ON chat_scene (dirty, id)`,
+	`ALTER TABLE chat_character ADD COLUMN aliases TEXT`,
+];
+
 /** Migration steps per version. The array position is the target version (1-based). */
 const MIGRATIONS: readonly (readonly MigrationStep[])[] = [
 	V1,
@@ -1046,6 +1085,7 @@ const MIGRATIONS: readonly (readonly MigrationStep[])[] = [
 	V18,
 	V19,
 	V20,
+	V21,
 ];
 
 /**

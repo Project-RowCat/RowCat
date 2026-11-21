@@ -1,11 +1,16 @@
 import type { ChatCharacter } from "./character.ts";
 import type { ChatRuntimeMessage, ChatRuntimeRoom } from "./context.ts";
 import type { AssistantContinuation } from "./continuation.ts";
+import type {
+	ChatRecallSnapshot,
+	RecallRequest,
+} from "./conversation-memory.ts";
 import type { GeneratedAssistantMessage } from "./generation.ts";
 import type { GenerationPreference } from "./generation-preference.ts";
 import type { ChatMemory } from "./memory.ts";
 import type { ChatMessage } from "./model.ts";
 import type { ChatNarrationSettings } from "./narration.ts";
+import type { ChatScene } from "./scene.ts";
 
 /**
  * This module was moved out of `apps/web/src/features/conversation/`, because it now has three
@@ -85,6 +90,16 @@ export interface ConversationSession {
 	 */
 	loadMemories(): Promise<ChatMemory[]>;
 	/**
+	 * Earlier passages of this conversation relevant to the turn, from the local afterstate index
+	 * (`conversation-memory.ts`). Optional: absent in legacy mode, in replay sessions (no room) and
+	 * wherever no native engine is available; the request is then exactly V2's.
+	 *
+	 * Same snapshot rule as memories: read once when the generation starts, never during a stream.
+	 * It resolves `null` rather than throwing and gives up after `CHAT_RECALL_TIMEOUT_MS`, so a slow
+	 * or broken index cannot delay or fail a turn. In shadow mode it measures and returns `null`.
+	 */
+	loadRecall?: (request: RecallRequest) => Promise<ChatRecallSnapshot | null>;
+	/**
 	 * Characters the user has introduced in this conversation. A conversation with none returns an
 	 * empty array.
 	 *
@@ -94,6 +109,13 @@ export interface ConversationSession {
 	 * no room record to hold them.
 	 */
 	loadCharacters(): Promise<ChatCharacter[]>;
+	/**
+	 * Who witnessed which part of this conversation (`scene.ts`). Optional: sessions without a room
+	 * (replay, runtime) have none, and a room without scenes returns an empty array; either way the
+	 * request carries no scene marks and is exactly what it was before scenes existed. Same snapshot
+	 * rule as memories.
+	 */
+	loadScenes?(): Promise<ChatScene[]>;
 	/**
 	 * The summary of history that has fallen outside the history window. Empty string if there is
 	 * none.

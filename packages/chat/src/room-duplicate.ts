@@ -9,10 +9,11 @@ import {
 	isLiveChatRecord,
 	normalizeRoomTitle,
 } from "./model.ts";
+import type { ChatScene, ChatSceneAudience } from "./scene.ts";
 import { type ChatSummary, summaryIdFor } from "./summary.ts";
 
 /**
- * Duplicating a conversation: one room and its four children copied under new identities.
+ * Duplicating a conversation: one room and its five children copied under new identities.
  *
  * The rule lives in the pure package because both stores (Dexie on web, SQLite on mobile) write the
  * same copy. Written per store, one of them eventually forgets a child, and that copy is a
@@ -21,7 +22,7 @@ import { type ChatSummary, summaryIdFor } from "./summary.ts";
  *
  * What a copy is:
  *
- * - **Every child, live ones only.** Messages, memories, added characters and the summary. A
+ * - **Every child, live ones only.** Messages, memories, added characters, scenes and the summary. A
  *   tombstoned record is history the user removed; copying it would bring it back in a room that
  *   never deleted it.
  * - **New identities, never shared.** Every record gets a fresh id, and the summary takes
@@ -40,6 +41,12 @@ import { type ChatSummary, summaryIdFor } from "./summary.ts";
  * - **Every copied record is a new local record** (dirty, never uploaded, its own revision). A copy
  *   syncs as its own conversation; that is the cost of having one.
  *
+ * - **Scenes keep covering the same messages.** A scene's start is moved onto the copied message it
+ *   started at, and a `char:<id>` member onto the copied character's new id. A scene whose start
+ *   message is gone is moved to the first copied message at or after its start (the messages it
+ *   covered); one that then covers nothing is dropped. Dropping a scene that still covered messages
+ *   would hand them the previous scene's audience — usually wider, which would publish a private part.
+ *
  * Not copied: device generation preferences (model, length, reasoning). They are not synced and not
  * in this store; the app's composition layer carries them, as it clears them on deletion.
  */
@@ -50,6 +57,8 @@ export interface ChatRoomDuplicateSource {
 	messages: readonly ChatMessage[];
 	memories: readonly ChatMemory[];
 	characters: readonly ChatCharacter[];
+	/** The room's scenes (`scene.ts`). Tombstones are skipped here. */
+	scenes: readonly ChatScene[];
 	summary: ChatSummary | null;
 }
 
@@ -75,8 +84,84 @@ export interface ChatRoomDuplicate {
 	messages: ChatMessage[];
 	memories: ChatMemory[];
 	characters: ChatCharacter[];
+	scenes: ChatScene[];
 	summary: ChatSummary | null;
 }
+
+type Position = { createdAt: string; id: string };
+
+const comparePosition = (a: Position, b: Position): number =>
+	a.createdAt !== b.createdAt
+		? a.createdAt < b.createdAt
+			? -1
+			: 1
+		: a.id < b.id
+			? -1
+			: a.id > b.id
+				? 1
+				: 0;
+
+/**
+ * The scenes that travel, each with the original message it will start at. A scene starts at the
+ * first live message at or after its start position: the same message when it survives, otherwise
+ * the first message it covered. When several scenes land on one message, only those that started
+ * last in the original survive — the earlier ones covered no surviving message. Scenes with exactly
+ * the same original start all travel (`orderScenes` merges them, as it does in the original).
+ */
+const copyableScenes = (
+	scenes: readonly ChatScene[],
+	liveMessages: readonly ChatMessage[],
+): { scene: ChatScene; startMessage: ChatMessage }[] => {
+	const ordered = [...liveMessages].sort(comparePosition);
+	const startOf = (scene: ChatScene): Position => ({
+		createdAt: scene.startAt.createdAt,
+		id: scene.startAt.messageId,
+	});
+	const landed = new Map<
+		string,
+		{ scene: ChatScene; startMessage: ChatMessage }[]
+	>();
+	for (const scene of scenes.filter(isLiveChatRecord)) {
+		const start = startOf(scene);
+		const startMessage = ordered.find(
+			(message) => comparePosition(message, start) >= 0,
+		);
+		if (!startMessage) continue;
+		const group = landed.get(startMessage.id) ?? [];
+		group.push({ scene, startMessage });
+		landed.set(startMessage.id, group);
+	}
+	const out: { scene: ChatScene; startMessage: ChatMessage }[] = [];
+	for (const group of landed.values()) {
+		const latest = group.reduce((max, entry) =>
+			comparePosition(startOf(entry.scene), startOf(max.scene)) > 0
+				? entry
+				: max,
+		);
+		for (const entry of group)
+			if (comparePosition(startOf(entry.scene), startOf(latest.scene)) === 0)
+				out.push(entry);
+	}
+	return out.sort(
+		(a, b) =>
+			comparePosition(startOf(a.scene), startOf(b.scene)) ||
+			(a.scene.id < b.scene.id ? -1 : a.scene.id > b.scene.id ? 1 : 0),
+	);
+};
+
+/** `char:<old>` → `char:<new>` for copied characters; other refs (and deleted characters') stay. */
+const remapAudience = (
+	audience: ChatSceneAudience,
+	characterIds: ReadonlyMap<string, string>,
+): ChatSceneAudience => {
+	if (audience.kind !== "participants") return { kind: audience.kind };
+	const members = audience.members.map((member) => {
+		if (!member.startsWith("char:")) return member;
+		const next = characterIds.get(member.slice(5));
+		return next ? `char:${next}` : member;
+	});
+	return { kind: "participants", members: [...new Set(members)].sort() };
+};
 
 /**
  * The summary only travels when its frontier still points at a copied message. A frontier whose
@@ -103,6 +188,7 @@ export function chatRoomDuplicateRecordCount(
 		messages.length +
 		source.memories.filter(isLiveChatRecord).length +
 		source.characters.filter(isLiveChatRecord).length +
+		copyableScenes(source.scenes, messages).length +
 		(copyableSummary(
 			source.summary,
 			new Set(messages.map((message) => message.id)),
@@ -158,14 +244,30 @@ export function planRoomDuplicate(
 		...freshChatSyncMeta(rev()),
 	}));
 
+	const characterIds = new Map<string, string>();
 	const characters = source.characters
 		.filter(isLiveChatRecord)
-		.map((character) => ({
-			...character,
-			id: stamp.newId(),
-			roomId,
-			...freshChatSyncMeta(rev()),
-		}));
+		.map((character) => {
+			const id = stamp.newId();
+			characterIds.set(character.id, id);
+			return { ...character, id, roomId, ...freshChatSyncMeta(rev()) };
+		});
+
+	const scenes: ChatScene[] = copyableScenes(
+		source.scenes,
+		source.messages.filter(isLiveChatRecord),
+	).map(({ scene, startMessage }) => ({
+		...scene,
+		id: stamp.newId(),
+		roomId,
+		startAt: {
+			createdAt: startMessage.createdAt,
+			// Present: every live message was copied above.
+			messageId: messageIds.get(startMessage.id) ?? startMessage.id,
+		},
+		audience: remapAudience(scene.audience, characterIds),
+		...freshChatSyncMeta(rev()),
+	}));
 
 	const kept = copyableSummary(source.summary, new Set(messageIds.keys()));
 	const summary: ChatSummary | null = kept
@@ -186,7 +288,7 @@ export function planRoomDuplicate(
 			}
 		: null;
 
-	return { room, messages, memories, characters, summary };
+	return { room, messages, memories, characters, scenes, summary };
 }
 
 /**

@@ -29,6 +29,7 @@ import {
 import { useRouter } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
+import { useMemoryRuntime } from "../../lib/afterstate/use-memory-runtime.ts";
 import { useMobileIdentity } from "../../lib/identity.tsx";
 import {
 	useChatScope,
@@ -107,6 +108,8 @@ export function ChatScreen({ roomId }: { roomId: string }) {
 	// Wakes maintenance. Not part of the session identity: the ownership token is `token` below, so
 	// changing this does not cut an in-flight generation.
 	const maintain = useMemoryMaintenance({ roomId, store, viewerId });
+	// The local afterstate index (null in legacy mode or without the engine): recall + indexing.
+	const memory = useMemoryRuntime(localScope.scope?.scopeKey ?? null, store);
 
 	const room = useChatRoom(store, roomId);
 	const state = resolveChatScreenState({
@@ -134,13 +137,14 @@ export function ChatScreen({ roomId }: { roomId: string }) {
 						token,
 						preferences,
 						maintain,
+						memory,
 					})
 				: null,
 		// The preference store is a dependency too: it goes from `null` to an instance when the scope
 		// opens. Omitted, the adapter built on first render holds `null` forever and a stored room
 		// override is never read in that session, silently. Changing this object's identity is safe
 		// because ownership is `token`, which changes with it.
-		[loaded, store, token, preferences, maintain],
+		[loaded, store, token, preferences, maintain, memory],
 	);
 
 	const generation = useChatGeneration(conversation, viewerId);

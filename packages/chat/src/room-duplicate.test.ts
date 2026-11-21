@@ -16,6 +16,7 @@ import {
 	duplicateRoomTitle,
 	planRoomDuplicate,
 } from "./room-duplicate.ts";
+import { createSceneRecord, resolveMessageAudiences } from "./scene.ts";
 import { createSummaryRecord } from "./summary.ts";
 
 /**
@@ -85,6 +86,28 @@ const source = (): ChatRoomDuplicateSource => {
 			createCharacterRecord(
 				{ roomId: "room-1", name: "사서", prompt: "조용하다" },
 				{ id: "char-1", now: at(5), rev: rev(40) },
+			),
+		],
+		scenes: [
+			createSceneRecord(
+				{
+					roomId: "room-1",
+					startAt: { createdAt: at(2), messageId: "m2" },
+					audience: { kind: "participants", members: ["user", "char:char-1"] },
+				},
+				{ id: "scene-1", now: at(5), rev: rev(45) },
+			),
+			markLocalDelete(
+				createSceneRecord(
+					{
+						roomId: "room-1",
+						startAt: { createdAt: at(1), messageId: "m1" },
+						audience: { kind: "narrator" },
+					},
+					{ id: "scene-gone", now: at(5), rev: rev(46) },
+				),
+				at(9),
+				rev(97),
 			),
 		],
 		summary: createSummaryRecord(
@@ -163,6 +186,7 @@ describe("planRoomDuplicate", () => {
 			...original.messages.map((m) => m.id),
 			...original.memories.map((m) => m.id),
 			...original.characters.map((c) => c.id),
+			...original.scenes.map((s) => s.id),
 			original.summary?.id,
 		]);
 		const after = [
@@ -170,6 +194,7 @@ describe("planRoomDuplicate", () => {
 			...copy.messages.map((m) => m.id),
 			...copy.memories.map((m) => m.id),
 			...copy.characters.map((c) => c.id),
+			...copy.scenes.map((s) => s.id),
 			copy.summary?.id,
 		];
 		for (const id of after) expect(before.has(id), id).toBe(false);
@@ -179,6 +204,7 @@ describe("planRoomDuplicate", () => {
 			...copy.messages.map((m) => m.rev),
 			...copy.memories.map((m) => m.rev),
 			...copy.characters.map((c) => c.rev),
+			...copy.scenes.map((s) => s.rev),
 			copy.summary?.rev,
 		];
 		expect(new Set(revs.map((r) => JSON.stringify(r))).size).toBe(revs.length);
@@ -204,7 +230,79 @@ describe("planRoomDuplicate", () => {
 			frontier: { createdAt: at(3), messageId: "m3" },
 		};
 		expect(plan(original).summary).toBeNull();
-		expect(chatRoomDuplicateRecordCount(original)).toBe(1 + 2 + 1 + 1);
+		expect(chatRoomDuplicateRecordCount(original)).toBe(1 + 2 + 1 + 1 + 1);
+	});
+
+	it("copies live scenes onto the copied start message and remaps character members", () => {
+		const copy = plan(source());
+		const m2 = copy.messages.find((m) => m.content === "m2 내용");
+		const librarian = copy.characters[0];
+		expect(copy.scenes).toHaveLength(1);
+		expect(copy.scenes[0]).toMatchObject({
+			roomId: copy.room.id,
+			startAt: { createdAt: at(2), messageId: m2?.id },
+			audience: {
+				kind: "participants",
+				members: [`char:${librarian?.id}`, "user"].sort(),
+			},
+			deletedAt: null,
+			dirty: 1,
+			serverVersion: 0,
+		});
+		expect(copy.scenes[0]?.id).not.toBe("scene-1");
+	});
+
+	it("keeps every copied message under the audience it had in the original", () => {
+		const original = source();
+		const m4 = createMessageRecord(
+			{ roomId: "room-1", role: "assistant", content: "m4 내용" },
+			{ id: "m4", now: at(4), rev: rev(14) },
+		);
+		original.messages = [...original.messages, m4];
+		original.scenes = [
+			...original.scenes,
+			/* Starts at the deleted m3: moves to m4, the first message it covered. */
+			createSceneRecord(
+				{
+					roomId: "room-1",
+					startAt: { createdAt: at(3), messageId: "m3" },
+					audience: { kind: "narrator" },
+				},
+				{ id: "scene-3", now: at(5), rev: rev(47) },
+			),
+			/* Starts after the last message: covers nothing, so it does not travel. */
+			createSceneRecord(
+				{
+					roomId: "room-1",
+					startAt: { createdAt: at(8), messageId: "m9" },
+					audience: { kind: "room" },
+				},
+				{ id: "scene-9", now: at(5), rev: rev(48) },
+			),
+		];
+		const copy = plan(original);
+		expect(copy.scenes).toHaveLength(2);
+		const before = resolveMessageAudiences(
+			original.messages.filter((m) => m.deletedAt === null),
+			original.scenes,
+		);
+		const after = resolveMessageAudiences(copy.messages, copy.scenes);
+		const kinds = (audiences: typeof before, ids: string[]) =>
+			ids.map((id) => audiences.get(id)?.kind);
+		expect(
+			kinds(
+				after,
+				copy.messages.map((m) => m.id),
+			),
+		).toEqual(kinds(before, ["m1", "m2", "m4"]));
+		expect(
+			kinds(
+				after,
+				copy.messages.map((m) => m.id),
+			),
+		).toEqual(["unknown", "participants", "narrator"]);
+		expect(copy.scenes.map((s) => s.rev).length).toBe(2);
+		expect(chatRoomDuplicateRecordCount(original)).toBe(1 + 3 + 1 + 1 + 2 + 1);
 	});
 
 	it("refuses to reuse a revision when they run short", () => {

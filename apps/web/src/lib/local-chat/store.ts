@@ -1,6 +1,7 @@
 import {
 	type AppendMessageInput,
 	type AssistantContinuation,
+	aliasesAfterRename,
 	applyRoomIntensity,
 	applyRoomNarration,
 	applyRoomPersona,
@@ -20,6 +21,7 @@ import {
 	type ChatPersonaSnapshot,
 	type ChatRoom,
 	ChatRoomMissingError,
+	type ChatScene,
 	type ChatStore,
 	type ChatSummary,
 	type ChatTailMode,
@@ -34,6 +36,7 @@ import {
 	createMessageRecord,
 	createPersonaRecord,
 	createRoomRecord,
+	createSceneRecord,
 	createSummaryRecord,
 	extendAssistantRecord,
 	isAutoMemory,
@@ -44,6 +47,7 @@ import {
 	markLocalUpdate,
 	mergeMemorySource,
 	nextSummaryEpoch,
+	normalizeCharacterAliases,
 	planMaintenanceRewind,
 	planRoomDuplicate,
 	requireCharacterName,
@@ -55,7 +59,10 @@ import {
 	requirePersonaDescription,
 	requirePersonaName,
 	requireRoomTitle,
+	requireSceneAudience,
 	rewindChangesAnything,
+	type SetSceneInput,
+	sameAudience,
 	selectChatTail,
 	sortCharacters,
 	sortMemories,
@@ -681,6 +688,7 @@ export function createChatStore(db: LocalDb): ChatStore {
 					db.chatMemories,
 					db.chatSummaries,
 					db.chatCharacters,
+					db.chatScenes,
 					db.syncState,
 				],
 				async () => {
@@ -698,6 +706,7 @@ export function createChatStore(db: LocalDb): ChatStore {
 							.where("roomId")
 							.equals(id)
 							.toArray(),
+						scenes: await db.chatScenes.where("roomId").equals(id).toArray(),
 						summary: (await db.chatSummaries.get(summaryIdFor(id))) ?? null,
 					};
 					const copy = planRoomDuplicate(source, {
@@ -710,6 +719,7 @@ export function createChatStore(db: LocalDb): ChatStore {
 					await db.messages.bulkAdd(copy.messages);
 					await db.chatMemories.bulkAdd(copy.memories);
 					await db.chatCharacters.bulkAdd(copy.characters);
+					await db.chatScenes.bulkAdd(copy.scenes);
 					if (copy.summary) await db.chatSummaries.add(copy.summary);
 					return copy.room;
 				},
@@ -726,6 +736,7 @@ export function createChatStore(db: LocalDb): ChatStore {
 					db.chatMemories,
 					db.chatSummaries,
 					db.chatCharacters,
+					db.chatScenes,
 					db.syncState,
 				],
 				async () => {
@@ -795,6 +806,21 @@ export function createChatStore(db: LocalDb): ChatStore {
 						characters
 							.filter(isLiveChatRecord)
 							.map((character) => markCascadeDeleted(character, now)),
+					);
+
+					/**
+					 * Scenes are the room's fifth child, carried along by the same rule. A live scene left behind
+					 * would be re-uploaded by the next sync as the audience of a room that no longer exists. This
+					 * list must match the receiving side's cascade (applyTombstone).
+					 */
+					const scenes = await db.chatScenes
+						.where("roomId")
+						.equals(id)
+						.toArray();
+					await db.chatScenes.bulkPut(
+						scenes
+							.filter(isLiveChatRecord)
+							.map((scene) => markCascadeDeleted(scene, now)),
 					);
 				},
 			);
@@ -987,10 +1013,23 @@ export function createChatStore(db: LocalDb): ChatStore {
 					 * must not move that chat to the top, so this transaction does not include db.rooms.
 					 */
 					if (!current || !isLiveChatRecord(current)) return;
+					/**
+					 * A rename keeps the old name as an alias (memory recall still finds scenes written under it);
+					 * an explicit alias list replaces the stored one first. Stored only when non-empty, the same
+					 * shape the codec decodes, so a round trip does not read as a change.
+					 */
+					const nextName = name ?? current.name;
+					const base = patch.aliases ?? current.aliases;
+					const aliases =
+						name !== undefined
+							? aliasesAfterRename(base, current.name, nextName)
+							: normalizeCharacterAliases(base, nextName);
+					const { aliases: _previous, ...rest } = current;
 					const next: ChatCharacter = {
-						...current,
+						...rest,
 						...(name !== undefined ? { name } : {}),
 						...(prompt !== undefined ? { prompt } : {}),
+						...(aliases.length > 0 ? { aliases } : {}),
 					};
 					await db.chatCharacters.put(
 						markLocalUpdate(next, now, await nextRev(db)),
@@ -1017,6 +1056,72 @@ export function createChatStore(db: LocalDb): ChatStore {
 					);
 				},
 			);
+		},
+
+		/*
+		 * Scene section (`packages/chat/src/scene.ts`). Like characters, marking who witnessed a part of
+		 * the conversation is not conversation activity, so these writes never touch the room's
+		 * `updatedAt` and their transactions do not include db.rooms for writing.
+		 */
+
+		async listScenes(roomId: string): Promise<ChatScene[]> {
+			// A scene of a deleted room counts as absent (the room is checked first, as for characters).
+			if (!(await liveRoom(roomId))) return [];
+			const rows = await db.chatScenes.where("roomId").equals(roomId).toArray();
+			return rows.filter(isLiveChatRecord);
+		},
+
+		async setScene(input: SetSceneInput): Promise<ChatScene | null> {
+			/**
+			 * Validation and normalization run outside the transaction, so `ChatSceneAudienceError`
+			 * survives unwrapped (the same reason as characters).
+			 */
+			const audience = requireSceneAudience(input.audience);
+			const now = nowIso();
+			return db.transaction(
+				"rw",
+				[db.chatScenes, db.rooms, db.syncState],
+				async () => {
+					if (!(await liveRoom(input.roomId))) return null;
+					const current = (
+						await db.chatScenes.where("roomId").equals(input.roomId).toArray()
+					).find(
+						(scene) =>
+							isLiveChatRecord(scene) &&
+							scene.startAt.messageId === input.startAt.messageId &&
+							scene.startAt.createdAt === input.startAt.createdAt,
+					);
+					if (current) {
+						// No change, no revision: re-pushing an identical scene is noise for every device.
+						if (sameAudience(current.audience, audience)) return current;
+						const next = markLocalUpdate(
+							{ ...current, audience },
+							now,
+							await nextRev(db),
+						);
+						await db.chatScenes.put(next);
+						return next;
+					}
+					const scene = createSceneRecord(
+						{ roomId: input.roomId, startAt: input.startAt, audience },
+						{ id: newLocalId(), now, rev: await nextRev(db) },
+					);
+					await db.chatScenes.add(scene);
+					return scene;
+				},
+			);
+		},
+
+		async deleteScene(id: string): Promise<void> {
+			const now = nowIso();
+			await db.transaction("rw", [db.chatScenes, db.syncState], async () => {
+				const current = await db.chatScenes.get(id);
+				// Idempotent, and soft: other devices learn of the deletion only through the tombstone.
+				if (!current || !isLiveChatRecord(current)) return;
+				await db.chatScenes.put(
+					markLocalDelete(current, now, await nextRev(db)),
+				);
+			});
 		},
 
 		async deleteMemory(id: string): Promise<void> {

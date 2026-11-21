@@ -6,6 +6,7 @@ import {
 } from "@rowcat/chat";
 import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { eraseRoomMemory } from "#/lib/afterstate/desktop-memory.ts";
 import { translator } from "#/lib/i18n/current.ts";
 import { useLocalRoom } from "#/lib/local-chat/hooks.ts";
 import { useChatScope } from "#/lib/local-chat/scope.ts";
@@ -94,7 +95,7 @@ export function useRoomManagement(
 		onDeleted?: (room: ManagedRoom) => void;
 	} = {},
 ): RoomManagement {
-	const { store, ownsStore } = useChatScope();
+	const { store, ownsStore, viewerId } = useChatScope();
 	const { store: preferences } = useGenerationScope();
 	const [target, setTarget] = useState<Target | null>(null);
 	const { onDeleted } = options;
@@ -238,6 +239,8 @@ export function useRoomManagement(
 							onDelete={() =>
 								run(async ({ store: chat, preferences: prefs }) => {
 									await chat.deleteRoom(room.id);
+									// The local memory index (desktop) is derived from this room: erase it physically now.
+									await eraseRoomMemory(viewerId, room.id);
 									/**
 									 * Also clears that room's generation overrides. The cleanup belongs in this composition
 									 * layer. It is not inside `deleteRoom`, which is a port in @rowcat/chat that an Expo

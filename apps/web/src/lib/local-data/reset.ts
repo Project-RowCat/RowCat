@@ -41,6 +41,10 @@ export async function resetLocalDataForViewer({
 	 * would pull Dexie into the server bundle. Same reason as purge.ts.
 	 */
 	const { deleteLocalDbForViewer } = await import("./db.ts");
+	// The derived memory index first (desktop): it is rebuilt from what is deleted next.
+	await (await import("../afterstate/desktop-memory.ts")).deleteDerivedMemory(
+		viewerId,
+	);
 	await deleteLocalDbForViewer(viewerId);
 	reload();
 }

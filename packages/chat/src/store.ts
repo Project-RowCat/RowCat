@@ -25,6 +25,7 @@ import type {
 	CreatePersonaInput,
 	UpdatePersonaPatch,
 } from "./persona.ts";
+import type { ChatScene, SetSceneInput } from "./scene.ts";
 import type { ChatSummary } from "./summary.ts";
 import type { ChatTailRewrite } from "./tail-rewrite.ts";
 
@@ -213,6 +214,25 @@ export interface ChatStore extends ChatMemoryStore, ChatPersonaStore {
 	/** Soft-deletes a character. Idempotent, for the same reason as above. */
 	deleteCharacter(id: string): Promise<void>;
 
+	/*
+	 * Scenes are the room's fifth child (`scene.ts`, `docs/chat/SCENES.md`): who witnessed which part
+	 * of the conversation. Cascade-deleted with the room on both sides, like characters.
+	 */
+
+	/** The room's live scenes, in no particular order (`orderScenes` orders them). */
+	listScenes(roomId: string): Promise<ChatScene[]>;
+
+	/**
+	 * Sets the audience from `startAt` on: updates the live scene that starts there, or creates one.
+	 * The audience is re-checked and normalized by storage (`requireSceneAudience`). The room's
+	 * activity time is not bumped (marking who was present is not new conversation). A missing or
+	 * deleted room is a no-op returning null.
+	 */
+	setScene(input: SetSceneInput): Promise<ChatScene | null>;
+
+	/** Soft-deletes a scene (the previous scene then continues). Idempotent. */
+	deleteScene(id: string): Promise<void>;
+
 	/**
 	 * Returns the room's routing-friendly key, issuing and persisting one if it does not exist yet.
 	 * The method is named `ensure` rather than `set` on purpose: callers do not choose the value (the
@@ -240,7 +260,7 @@ export interface ChatStore extends ChatMemoryStore, ChatPersonaStore {
 	duplicateRoom(id: string, title: string): Promise<ChatRoom | null>;
 
 	/**
-	 * Soft-deletes a room together with its messages, memories, summary and characters, all in one
+	 * Soft-deletes a room together with its messages, memories, summary, characters and scenes, all in one
 	 * transaction. Forgetting any child leaves an orphaned character on this device that the next
 	 * outbound sync would upload again, bringing back data from a deleted room. The receiving side's
 	 * cascade (`applyTombstone`) must cover the same four children; fixing only one side would show up

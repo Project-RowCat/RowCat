@@ -1,3 +1,4 @@
+import { CHAT_SYNC_CONCURRENT_MERGE_TYPES } from "@rowcat/chat";
 import type {
 	ApplyPullResult,
 	CollectOutboundOptions,
@@ -388,7 +389,12 @@ async function applyPullPage(
 			 */
 			hlc = absorbHlc(hlc, entry.rev, wallMs);
 
-			const decision = decideInbound(local, { deleted: false, rev: entry.rev });
+			const decision = decideInbound(local, {
+				deleted: false,
+				rev: entry.rev,
+				version: entry.version,
+				mergeConcurrent: CHAT_SYNC_CONCURRENT_MERGE_TYPES.has(entry.type),
+			});
 
 			if (decision.action === "create") {
 				await table.upsert(tx, {
@@ -562,7 +568,7 @@ async function applyTombstone(
 }
 
 /**
- * A room has **four** children: messages, memories, characters and summary. They are deleted
+ * A room has **five** children: messages, memories, characters, scenes and summary. They are deleted
  * together with the same timestamp and rule. Missing one leaves orphan records alive only on this
  * device; the next outbound collection picks them up and **re-uploads the content of an
  * already-deleted room.**
@@ -571,7 +577,7 @@ async function applyTombstone(
  * function is extracted because writing the four in two places means one copy gets fixed when a
  * child type is added.
  *
- * **The sending side (`deleteRoom`) must cascade all four too.** Fixing only one side reveals the
+ * **The sending side (`deleteRoom`) must cascade all five too.** Fixing only one side reveals the
  * mismatch only after a round trip between two devices.
  */
 async function cascadeRoomChildren(
@@ -583,6 +589,7 @@ async function cascadeRoomChildren(
 		"chat_message",
 		"chat_memory",
 		"chat_character",
+		"chat_scene",
 		"chat_summary",
 	])
 		await tx.run(

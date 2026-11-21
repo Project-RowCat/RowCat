@@ -85,6 +85,16 @@ pnpm --filter @rowcat/desktop package   # 이 OS용 설치 파일 → apps/deskt
 설치 파일은 **그 OS에서** 만든다 — 조립할 때 이 OS의 네이티브 바이너리(sharp, Postgres)만 들어간다.
 `package` 뒤에 버전(`2026.10.31`)을 주면 설치 파일이 그 번호를 단다. 없으면 `package.json`의 자리표시자 `0.0.0`이다.
 
+대화 기억 색인(afterstate)을 실제 창에서 끝까지 확인하는 여정은 따로 돈다(`e2e/afterstate-window.e2e.ts`, macOS).
+조립한 앱을 Playwright로 열고(앱 폴더는 임시 폴더로 옮긴다 — 개발용 「RowCat Dev」를 건드리지 않는다), 합성 계정과 이
+컴퓨터의 가짜 OpenAI 호환 서버(요청 본문을 모두 기록한다)로 회상·수정·방 삭제·재시작·legacy 전환·엔진 강제 종료·엔진
+없음·가짜 엔진을 지난다. 실제 공급자는 부르지 않는다.
+
+```bash
+AFTERSTATE_BRIDGE_BIN=<afterstate>/target/release/afterstate-bridge pnpm --filter @rowcat/desktop stage
+AFTERSTATE_BRIDGE_BIN=… E2E_EVIDENCE_DIR=<증거 폴더> pnpm --filter @rowcat/desktop exec tsx e2e/afterstate-window.e2e.ts
+```
+
 ## 릴리스 — Windows 설치 파일 (`.github/workflows/desktop-release.yml`)
 
 ```bash

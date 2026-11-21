@@ -1,3 +1,4 @@
+import { CHAT_SYNC_CONCURRENT_MERGE_TYPES } from "@rowcat/chat";
 import type {
 	ApplyPullResult,
 	CollectOutboundOptions,
@@ -95,6 +96,11 @@ export const SYNC_STORE_TABLE_ORDER = [
 	 * the same reason.
 	 */
 	"chat.character",
+	/**
+	 * Scene: a room child (`scene.ts` in `@rowcat/chat`), appended at the end for the same reason as
+	 * characters. The codec list in `@rowcat/chat` puts it in the same place.
+	 */
+	"chat.scene",
 ] as const;
 
 const TABLE_ORDER = SYNC_STORE_TABLE_ORDER;
@@ -117,6 +123,8 @@ const tableOf = (
 			return db.chatMemories as unknown as Table<StoredRecord, string>;
 		case "chat.character":
 			return db.chatCharacters as unknown as Table<StoredRecord, string>;
+		case "chat.scene":
+			return db.chatScenes as unknown as Table<StoredRecord, string>;
 		case "chat.summary":
 			return db.chatSummaries as unknown as Table<StoredRecord, string>;
 		case "authoring.draft":
@@ -431,6 +439,7 @@ async function applyPullPage(
 			db.messages,
 			db.chatMemories,
 			db.chatCharacters,
+			db.chatScenes,
 			db.chatSummaries,
 			db.storyDrafts,
 			db.draftLoreEntries,
@@ -541,6 +550,8 @@ async function applyPullPage(
 				const decision = decideInbound(local, {
 					deleted: false,
 					rev: entry.rev,
+					version: entry.version,
+					mergeConcurrent: CHAT_SYNC_CONCURRENT_MERGE_TYPES.has(entry.type),
 				});
 
 				if (decision.action === "create") {
@@ -668,7 +679,7 @@ async function applyTombstone(
 }
 
 /**
- * A room has four kinds of children: messages, memories, characters, and summaries. They are
+ * A room has five kinds of children: messages, memories, characters, scenes, and summaries. They are
  * deleted together with the same timestamp and the same rule. Missing one would leave an orphan
  * record that exists only on this device. The next outbound collection would then push it,
  * re-uploading content of an already-deleted room.
@@ -692,6 +703,7 @@ async function cascadeRoomChildren(
 	await cascadeDelete(db.messages, roomId, deletedAt);
 	await cascadeDelete(db.chatMemories, roomId, deletedAt);
 	await cascadeDelete(db.chatCharacters, roomId, deletedAt);
+	await cascadeDelete(db.chatScenes, roomId, deletedAt);
 	await cascadeDelete(db.chatSummaries, roomId, deletedAt);
 	/**
 	 * Personas are deliberately absent here; their absence is the rule. The library is an account

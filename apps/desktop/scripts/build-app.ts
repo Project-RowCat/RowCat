@@ -122,6 +122,24 @@ cpSync(join(repo, "apps/api/drizzle"), join(api, "drizzle"), { recursive: true }
 cpSync(join(repo, "apps/web/.output"), join(resources, "web"), { recursive: true });
 cpSync(join(repo, "apps/admin/dist"), join(resources, "console"), { recursive: true });
 
+/**
+ * The conversation-memory engine (`src/afterstate-host.ts`): the `afterstate-bridge` executable, a
+ * release build from the afterstate repository (`AFTERSTATE_BRIDGE_BIN`, default a sibling
+ * checkout's `target/release`). Optional: without it the app runs memory V2 only, and says so here.
+ */
+{
+	const exe = process.platform === "win32" ? "afterstate-bridge.exe" : "afterstate-bridge";
+	const bridge =
+		process.env.AFTERSTATE_BRIDGE_BIN ??
+		join(repo, "..", "..", "rust", "afterstate", "target", "release", exe);
+	if (existsSync(bridge)) {
+		mkdirSync(join(resources, "afterstate"), { recursive: true });
+		cpSync(bridge, join(resources, "afterstate", exe));
+	} else {
+		console.warn(`afterstate engine not found at ${bridge}: memory runs on V2 only`);
+	}
+}
+
 // The main process and the one runtime dependency it leaves external.
 run("pnpm", ["exec", "tsdown"], desktop);
 // The same allowlist as the API: this folder can hold a developer's `.desktop-data` database.
@@ -297,7 +315,9 @@ const config: Configuration = {
 			context.electronPlatformName === "darwin"
 				? join(context.appOutDir, `${APP_NAME}.app`, "Contents", "Resources")
 				: join(context.appOutDir, "resources");
-		for (const name of ["api", "web", "console"])
+		for (const name of ["api", "web", "console", "afterstate"].filter((n) =>
+			existsSync(join(resources, n)),
+		))
 			cpSync(join(resources, name), join(target, name), {
 				recursive: true,
 				verbatimSymlinks: true,

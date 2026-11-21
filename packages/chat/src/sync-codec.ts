@@ -5,6 +5,7 @@ import {
 	CHAT_CHARACTER_NAME_MAX_LENGTH,
 	CHAT_CHARACTER_PROMPT_MAX_LENGTH,
 	type ChatCharacter,
+	normalizeCharacterAliases,
 } from "./character.ts";
 import { applyRoomIntensity } from "./intensity.ts";
 import {
@@ -26,6 +27,13 @@ import {
 	normalizePersonaDescription,
 	normalizePersonaName,
 } from "./persona.ts";
+import {
+	type ChatScene,
+	mergeSceneAudience,
+	narrowerAudience,
+	normalizeSceneAudience,
+	sameAudience,
+} from "./scene.ts";
 import { type ChatSummary, clampSummary } from "./summary.ts";
 import { applyRoomUserNote } from "./user-note.ts";
 
@@ -56,6 +64,7 @@ export const CHAT_MERGE_NOTE = {
 	roomImmutableDivergence: "chat_room_immutable_divergence",
 	/** An incomplete copy tried to beat a complete one, and the complete-first rule blocked it. */
 	messageIncompleteRejected: "chat_message_incomplete_rejected",
+	sceneRestrictiveKept: "chat_scene_restrictive_kept",
 } as const;
 
 /** Merges `updatedAt` with max, treating both devices' activity as a union. */
@@ -696,6 +705,8 @@ const CharacterData = z.object({
 	roomId: z.string(),
 	name: z.string(),
 	prompt: z.string(),
+	/** Optional, schema still at 1 (an old client drops it; recall then loses the old name only). */
+	aliases: z.array(z.string()).optional(),
 	createdAt: z.string(),
 	updatedAt: z.string(),
 });
@@ -715,6 +726,9 @@ export const chatCharacterSyncCodec = {
 			roomId: record.roomId,
 			name: record.name,
 			prompt: record.prompt,
+			...(record.aliases && record.aliases.length > 0
+				? { aliases: [...record.aliases] }
+				: {}),
 			createdAt: record.createdAt,
 			updatedAt: record.updatedAt,
 		};
@@ -729,9 +743,12 @@ export const chatCharacterSyncCodec = {
 		 * nor placed in a prompt.
 		 */
 		if (!name) return null;
+		const { aliases, ...data } = parsed.data;
+		const kept = normalizeCharacterAliases(aliases, name);
 		return {
 			id: input.id,
-			...parsed.data,
+			...data,
+			...(kept.length > 0 ? { aliases: kept } : {}),
 			name: clampCharacterField(name, CHAT_CHARACTER_NAME_MAX_LENGTH),
 			prompt: clampCharacterField(
 				parsed.data.prompt.trim(),
@@ -961,6 +978,133 @@ export const chatPersonaSyncCodec = {
 	revOf: (record: ChatPersona): Rev => record.rev,
 };
 
+/* ─────────────────────────────────────────────────────────────────────────────
+ * chat.scene
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Scene payload, the room's fifth child (`scene.ts`, `docs/chat/SCENES.md`). Added as a kind, not a
+ * version: an old client skips it and never rewrites it, which is the point (a field on the message
+ * would be dropped by an old client's next edit of that message). Members are references, never
+ * names, and normalized on read so two devices hold one spelling. A record whose audience breaks the
+ * rules is rejected rather than widened: dropping a private scene's members would publish it.
+ */
+const SceneData = z.object({
+	roomId: z.string(),
+	startAt: z.object({ createdAt: z.string(), messageId: z.string() }).strict(),
+	audience: z.discriminatedUnion("kind", [
+		z.object({ kind: z.literal("room") }).strict(),
+		z.object({ kind: z.literal("narrator") }).strict(),
+		z
+			.object({ kind: z.literal("participants"), members: z.array(z.string()) })
+			.strict(),
+	]),
+	createdAt: z.string(),
+	updatedAt: z.string(),
+});
+
+/**
+ * Kinds whose codec resolves concurrent edits itself, so an older but unseen inbound copy reaches
+ * `merge` while a local edit is unsent (`decideInbound`'s `mergeConcurrent`).
+ */
+export const CHAT_SYNC_CONCURRENT_MERGE_TYPES: ReadonlySet<string> = new Set([
+	"chat.scene",
+]);
+
+export const chatSceneSyncCodec = {
+	type: "chat.scene",
+	schemaVersion: CHAT_SYNC_SCHEMA_VERSION,
+
+	encode(record: ChatScene): unknown {
+		return {
+			roomId: record.roomId,
+			startAt: {
+				createdAt: record.startAt.createdAt,
+				messageId: record.startAt.messageId,
+			},
+			audience:
+				record.audience.kind === "participants"
+					? { kind: "participants", members: [...record.audience.members] }
+					: { kind: record.audience.kind },
+			createdAt: record.createdAt,
+			updatedAt: record.updatedAt,
+		};
+	},
+
+	decode(input: DecodeInput): ChatScene | null {
+		const parsed = SceneData.safeParse(input.data);
+		if (!parsed.success) return null;
+		const audience = normalizeSceneAudience(parsed.data.audience);
+		if (!audience.ok) return null;
+		return {
+			id: input.id,
+			...parsed.data,
+			audience: audience.audience,
+			deletedAt: input.deletedAt,
+			rev: input.rev,
+			...INBOUND_META,
+		};
+	},
+
+	/**
+	 * HLC last-writer-wins, except that a concurrent change cannot widen a scene. When this device holds
+	 * an unsent narrowing (`dirty`) and the remote copy is wider, the local audience stays and the
+	 * revision is raised, so the peer takes it on its next pull. Equal revisions with different
+	 * audiences (the peer's view of that raise, or two devices on one clock tick) settle on the
+	 * narrower audience on both sides (`mergeSceneAudience`). A later, non-concurrent widening still
+	 * wins by HLC: the user can reopen a scene on purpose.
+	 */
+	merge(
+		local: ChatScene,
+		remote: ChatScene,
+		context: MergeCtx,
+	): Merged<ChatScene> {
+		const order = compareRev(remote.rev, local.rev);
+		const differ = !sameAudience(local.audience, remote.audience);
+		/*
+		 * An unsent local edit (`dirty`) is concurrent with whatever arrives now — older or newer by
+		 * the clock (the sync stores route older-but-unseen copies here for this kind,
+		 * `CHAT_SYNC_CONCURRENT_MERGE_TYPES`). Both settle on the narrower audience; the local copy
+		 * keeps the result, at a revision no lower than either, and pushes it.
+		 */
+		if (differ && local.dirty === 1) {
+			const audience = mergeSceneAudience(local.audience, remote.audience);
+			if (
+				!sameAudience(audience, remote.audience) ||
+				narrowerAudience(remote.audience, local.audience)
+			)
+				context.note(CHAT_MERGE_NOTE.sceneRestrictiveKept);
+			return {
+				record: { ...local, audience, rev: mergedRev(local.rev, remote.rev) },
+				remoteWins: false,
+			};
+		}
+		if (differ && order === 0) {
+			const audience = mergeSceneAudience(local.audience, remote.audience);
+			const remoteWins = sameAudience(audience, remote.audience);
+			return {
+				record: remoteWins
+					? {
+							...remote,
+							dirty: local.dirty,
+							serverVersion: local.serverVersion,
+						}
+					: { ...local, audience },
+				remoteWins,
+			};
+		}
+		const remoteWins = order >= 0;
+		return {
+			record: remoteWins
+				? { ...remote, dirty: local.dirty, serverVersion: local.serverVersion }
+				: local,
+			remoteWins,
+		};
+	},
+
+	revOf: (record: ChatScene): Rev => record.rev,
+};
+
 /**
  * The list is ordered parents first and is also the outbound collection order. Memories follow
  * messages only by convention, since the children do not reference each other. New types are
@@ -983,4 +1127,6 @@ export const chatSyncCodecs = [
 	 * end (`sync-codec.test.ts` asserts this).
 	 */
 	chatCharacterSyncCodec,
+	/** Scenes: a room child, appended for the same reason as characters. */
+	chatSceneSyncCodec,
 ];

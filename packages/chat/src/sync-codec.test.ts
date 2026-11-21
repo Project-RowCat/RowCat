@@ -1037,6 +1037,7 @@ describe("codec list", () => {
 			"chat.summary",
 			"chat.persona",
 			"chat.character",
+			"chat.scene",
 		]);
 	});
 });
