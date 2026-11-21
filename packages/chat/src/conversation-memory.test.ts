@@ -149,7 +149,9 @@ describe("mapping", () => {
 			author: { role: "user", name: "로완" },
 		});
 		expect(messageItem(a)?.author).toEqual({ role: "character", name: "카이" });
-		expect(messageItem(u)?.revision).toBe(`${u.rev.t}.0.dev-a`);
+		// The person's turns opt into facts; the prefix re-reads records indexed before facts existed.
+		expect(messageItem(u)?.revision).toBe(`f1~${u.rev.t}.0.dev-a`);
+		expect(messageItem(u)?.facts).toBe(true);
 		expect(messageItem({ ...u, id: "bad id/with slash" })).toBeNull();
 		expect(isBridgeId("0f8fad5b-d9cb-469f-a165-70867728950e")).toBe(true);
 		expect(isBridgeId("ABCDEFGHJKMNPQRSTVWXYZ0123")).toBe(true);
@@ -351,6 +353,7 @@ describe("one engine: no modes, no V2, honest status", () => {
 			await expect(hooks.loadLongTermMemory(request)).resolves.toEqual({
 				recall: null,
 				consolidated: null,
+				facts: null,
 				status: "unavailable",
 			});
 			expect(memoryStatusFor(runtime, "r1")).toBe("unavailable");
@@ -400,6 +403,7 @@ describe("one engine: no modes, no V2, honest status", () => {
 		await expect(load(request)).resolves.toEqual({
 			recall: null,
 			consolidated: null,
+			facts: null,
 			status: "degraded",
 		});
 		expect(events.map((e) => e.kind)).toEqual(["recall-failed"]);

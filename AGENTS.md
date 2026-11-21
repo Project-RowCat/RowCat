@@ -778,6 +778,10 @@ turn start → loadLongTermMemory(recallRequestFor(...)) → recall passages + e
   erased span (`planHistoryRewind`) so the afterstate migration never imports deleted conversation. Human
   memories survive any rewrite. The V2 summary is imported into the index as attributed model-written evidence,
   recalled **only in rooms without scenes**.
+- **Facts** (afterstate-cognitive, rules only): the person's turns and memories are indexed with `facts: true`;
+  `factsForTurn` reads the perspective's facts and re-checks them; an `earlier`/`conflict` fact is shown only
+  beside an admitted `current`/second `conflict` of the same subject and predicate, so a perspective never learns
+  that something changed out of its sight. Character lines never become facts.
 - **Protected rooms** get episodes through the existing wire field `summary` (name kept for the contract) and no
   recall.
 - **No progress indicator and no "consolidate now" button.** The memory screen states `memoryStatusFor`

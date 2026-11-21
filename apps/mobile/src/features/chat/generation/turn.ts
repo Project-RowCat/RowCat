@@ -8,6 +8,7 @@ import {
 	type ConversationSession,
 	commitUserTurn,
 	consolidatedText,
+	factsText,
 	type GenerationPreferenceStore,
 	type GenerationProvider,
 	type GenerationTarget,
@@ -306,6 +307,7 @@ export async function runGenerationTurn(
 		const consolidated = longTerm?.consolidated
 			? consolidatedText(longTerm.consolidated)
 			: "";
+		const facts = longTerm?.facts ? factsText(longTerm.facts) : "";
 		/**
 		 * Secures this conversation's routing-affinity key; some conversations have none (playback
 		 * sessions). Unlike the three above this is acquisition, not a snapshot: the value lives on the
@@ -405,6 +407,7 @@ export async function runGenerationTurn(
 			memories,
 			characters,
 			...(consolidated ? { consolidated } : {}),
+			...(facts ? { facts } : {}),
 			...(recall ? { recall } : {}),
 			...(scenes.length > 0
 				? {

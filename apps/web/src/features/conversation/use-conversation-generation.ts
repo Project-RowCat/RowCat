@@ -6,6 +6,7 @@ import {
 	canStartGeneration,
 	chatConversationTools,
 	consolidatedText,
+	factsText,
 	isManagedTarget,
 	narrationInjection,
 	planChatGeneration,
@@ -620,6 +621,7 @@ export function useConversationGeneration(
 					const consolidated = longTerm?.consolidated
 						? consolidatedText(longTerm.consolidated)
 						: "";
+					const facts = longTerm?.facts ? factsText(longTerm.facts) : "";
 
 					/**
 					 * Step ②-e: secure this conversation's routing key. Some conversations have none.
@@ -766,6 +768,7 @@ export function useConversationGeneration(
 						memories,
 						characters,
 						...(consolidated ? { consolidated } : {}),
+						...(facts ? { facts } : {}),
 						...(recall ? { recall } : {}),
 						...(scenes.length > 0
 							? {

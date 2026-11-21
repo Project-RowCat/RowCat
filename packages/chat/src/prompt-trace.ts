@@ -35,6 +35,7 @@ export const CHAT_PROMPT_BLOCK_IDS = [
 	"lore-system-bottom",
 	"lore-before-history",
 	"consolidated",
+	"facts",
 	"memory",
 	"user-note",
 	"intensity",
@@ -74,6 +75,7 @@ export const CHAT_PROMPT_BLOCK_SOURCE: Record<
 	"lore-system-bottom": "creator",
 	"lore-before-history": "creator",
 	consolidated: "viewer",
+	facts: "viewer",
 	memory: "viewer",
 	"user-note": "viewer",
 	/**
@@ -106,6 +108,7 @@ export const CHAT_PROMPT_BLOCK_LABEL: Record<ChatPromptBlockId, string> = {
 	"lore-system-bottom": "Lore (bottom)",
 	"lore-before-history": "Lore (before generation)",
 	consolidated: "Earlier episodes",
+	facts: "Stated facts",
 	memory: "Memory",
 	"user-note": "User note",
 	intensity: "Intensity",

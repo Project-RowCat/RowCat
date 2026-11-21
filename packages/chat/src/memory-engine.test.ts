@@ -6,7 +6,11 @@ import {
 	type StdioAfterstate,
 	spawnAfterstate,
 } from "./afterstate-stdio.test.helper.ts";
-import { buildChatGenerationRequest, consolidatedText } from "./context.ts";
+import {
+	buildChatGenerationRequest,
+	consolidatedText,
+	factsText,
+} from "./context.ts";
 import {
 	type ChatConsolidatedSnapshot,
 	type ConversationMemorySource,
@@ -14,6 +18,8 @@ import {
 	consolidatedForTurn,
 	conversationMemoryHooks,
 	createLongTermLoader,
+	FACTS_REVISION_PREFIX,
+	factsForTurn,
 	memoryStatusFor,
 	recallForTurn,
 	recallRequestFor,
@@ -522,6 +528,7 @@ describe("without an engine", () => {
 		expect(snapshot).toEqual({
 			recall: null,
 			consolidated: null,
+			facts: null,
 			status: "unavailable",
 		});
 		// The store was never asked for the summary: nothing reads it on the turn path.
@@ -677,6 +684,173 @@ describe.skipIf(!hasAfterstateBridge())(
 				expect(
 					JSON.stringify(await ask("What is Rowan's sister called?")),
 				).toContain("Ilse");
+			} finally {
+				await engine.close();
+			}
+		});
+	},
+);
+
+describe.skipIf(!hasAfterstateBridge())(
+	"facts the person stated (afterstate-cognitive, rules only)",
+	() => {
+		const said = (id: string, n: number, text: string) =>
+			message(id, n, "user", text);
+		const reply = (id: string, n: number, text: string) =>
+			message(id, n, "assistant", text);
+
+		it("tracks a changed fact over time and keeps each perspective inside its scenes", async () => {
+			const engine = await spawnAfterstate();
+			try {
+				const messages = [
+					said("f1", 1, "I live in Berlin. I like green tea."),
+					reply("f2", 2, "Mira nods: Berlin suits you."),
+					said("f3", 3, "I live in Lisbon now."),
+					reply("f4", 4, "Mira smiles."),
+					said("f5", 5, "I like black coffee too."),
+				];
+				// Everyone saw f1–f2; only Rowan and Mira saw f3–f4; everyone again from f5.
+				const scenes = [
+					scene("t-pub", "f1", 1, { kind: "room" }),
+					scene("t-mira", "f3", 3, P("user", "char:mira")),
+					scene("t-all", "f5", 5, { kind: "room" }),
+				];
+				const src = source(
+					() => messages,
+					() => scenes,
+				);
+				await index(engine, src);
+				const asked = (sc: ChatScene[]) =>
+					factsForTurn(engine, {
+						roomId: ROOM,
+						messages,
+						memories: [],
+						scenes: sc,
+					});
+
+				// Mira present: Lisbon now, Berlin earlier.
+				const mira = await asked([
+					...scenes,
+					scene("t-m2", "f5", 5, P("user", "char:mira")),
+				]);
+				const miraText = factsText(mira);
+				expect(miraText).toContain("Lisbon");
+				expect(miraText).toMatch(/\(예전\) .*Berlin/);
+
+				// Kael present: he never saw the move. He must not learn it — not as a fact, and not as
+				// "Berlin (earlier)", which would reveal that something changed out of his sight.
+				const kael = await asked([
+					...scenes,
+					scene("t-k2", "f5", 5, P("user", "char:kael")),
+				]);
+				const kaelText = factsText(kael);
+				expect(kaelText).not.toContain("Lisbon");
+				expect(kaelText).not.toContain("(예전)");
+				expect(kaelText).toContain("green tea");
+
+				// The assembled request carries the block for Mira, and nothing of the move for Kael.
+				const req = buildChatGenerationRequest({
+					room,
+					messages,
+					allAges: true,
+					facts: kaelText,
+					scenes: { scenes, cast },
+				});
+				expect(JSON.stringify(req)).toContain("이용자가 밝힌 사실");
+			} finally {
+				await engine.close();
+			}
+		});
+
+		it("an edit retires the fact it stated, even before the index catches up", async () => {
+			const engine = await spawnAfterstate();
+			try {
+				let messages = [said("g1", 1, "I live in Berlin.")];
+				const src = source(
+					() => messages,
+					() => [],
+				);
+				await index(engine, src);
+				const now = () =>
+					factsForTurn(engine, {
+						roomId: ROOM,
+						messages,
+						memories: [],
+						scenes: [],
+					});
+				expect(factsText(await now())).toContain("Berlin");
+				// Edited on the device; the index has not seen it yet: the device check drops it.
+				messages = [message("g1", 1, "user", "I live in Porto.", 1)];
+				expect(factsText(await now())).not.toContain("Berlin");
+				// Once indexed, the new statement is the fact.
+				await index(engine, src);
+				const after = factsText(await now());
+				expect(after).toContain("Porto");
+				expect(after).not.toContain("Berlin");
+			} finally {
+				await engine.close();
+			}
+		});
+
+		it("character lines never become the person's facts", async () => {
+			const engine = await spawnAfterstate();
+			try {
+				const messages = [reply("h1", 1, "I live in Atlantis.")];
+				await index(
+					engine,
+					source(
+						() => messages,
+						() => [],
+					),
+				);
+				const facts = await factsForTurn(engine, {
+					roomId: ROOM,
+					messages,
+					memories: [],
+					scenes: [],
+				});
+				expect(facts.facts).toEqual([]);
+			} finally {
+				await engine.close();
+			}
+		});
+
+		it("records indexed before facts existed are re-read once, then settle", async () => {
+			const engine = await spawnAfterstate();
+			try {
+				const messages = [said("k1", 1, "I live in Berlin.")];
+				// An index built by an older build: the same record, without the facts opt-in.
+				await engine.call("ingest", {
+					items: [
+						{
+							conversation: ROOM,
+							record: "message",
+							id: "k1",
+							revision: `${messages[0]?.rev.t}.0.a`,
+							text: "I live in Berlin.",
+							author: { role: "user", name: "Rowan" },
+						},
+					],
+				});
+				const src = source(
+					() => messages,
+					() => [],
+				);
+				const first = await reconcileConversation(engine, src, ROOM);
+				expect(first.messages.stale).toBe(1);
+				const second = await reconcileConversation(engine, src, ROOM);
+				expect(second.messages.ingested).toBe(0);
+				expect(
+					factsText(
+						await factsForTurn(engine, {
+							roomId: ROOM,
+							messages,
+							memories: [],
+							scenes: [],
+						}),
+					),
+				).toContain("Berlin");
+				expect(FACTS_REVISION_PREFIX).toBe("f1~");
 			} finally {
 				await engine.close();
 			}

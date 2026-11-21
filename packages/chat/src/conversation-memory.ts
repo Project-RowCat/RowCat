@@ -50,6 +50,7 @@ import type { ChatSummary } from "./summary.ts";
  */
 
 export type AfterstateOp =
+	| "facts"
 	| "status"
 	| "ingest"
 	| "recall"
@@ -93,7 +94,19 @@ export interface BridgeItem {
 	target?: { layer: "story" | "notes" | "ooc" };
 	/** Absent: unknown (the bridge never reads absent as "everyone"). */
 	audience?: BridgeAudience;
+	/**
+	 * Keep structured facts from this record (afterstate-cognitive's rule extractor, no model). Set
+	 * for what the person says — their story turns and the memories they wrote — never for character
+	 * lines or model-written records.
+	 */
+	facts?: boolean;
 }
+
+/**
+ * Prefixed to the revision of every item that opts into facts. Records indexed before facts existed
+ * compare stale once and are re-read with `facts: true`; nothing else changes.
+ */
+export const FACTS_REVISION_PREFIX = "f1~";
 
 /** The bridge accepts these ids; anything else is reported, never rewritten. */
 export const isBridgeId = (id: string): boolean =>
@@ -129,9 +142,11 @@ export function messageItem(
 		conversation: message.roomId,
 		record: "message",
 		id: message.id,
-		revision: known
-			? `${revisionOf(message)}~${audienceKey(known)}`.slice(0, 128)
-			: revisionOf(message),
+		revision: `${message.role === "user" ? FACTS_REVISION_PREFIX : ""}${
+			known
+				? `${revisionOf(message)}~${audienceKey(known)}`
+				: revisionOf(message)
+		}`.slice(0, 128),
 		...(known
 			? {
 					audience:
@@ -146,6 +161,7 @@ export function messageItem(
 			...(speaker ? { name: speaker } : {}),
 		},
 		at_ms: millis(message.createdAt),
+		...(message.role === "user" ? { facts: true } : {}),
 	};
 }
 
@@ -160,10 +176,13 @@ export function noteItem(memory: ChatMemory): BridgeItem | null {
 		conversation: memory.roomId,
 		record: "note",
 		id: memory.id,
-		revision: revisionOf(memory),
+		revision: isAutoMemory(memory)
+			? revisionOf(memory)
+			: `${FACTS_REVISION_PREFIX}${revisionOf(memory)}`,
 		text: memory.content,
 		author: { role: isAutoMemory(memory) ? "model" : "user" },
 		at_ms: millis(memory.createdAt),
+		...(isAutoMemory(memory) ? {} : { facts: true }),
 		labels: [
 			isAutoMemory(memory) ? "origin:auto" : "origin:user",
 			...(memory.pinned ? ["pinned"] : []),
@@ -1157,6 +1176,164 @@ export async function consolidatedForTurn(
 	return { episodes: selectConsolidatedForContext(episodes) };
 }
 
+// ── Facts (afterstate-cognitive, deterministic) ──────────────────────────────────────────────────
+
+/** At most this many facts reach a turn. */
+export const CHAT_FACTS_MAX = 12;
+/** And at most this many characters of statements. */
+export const CHAT_FACTS_CHAR_BUDGET = 900;
+
+/** Where a fact stands, as the engine's belief model says. */
+export type ChatFactStatus = "current" | "earlier" | "conflict";
+
+export interface ChatFact {
+	statement: string;
+	subject: string;
+	predicate: string | null;
+	status: ChatFactStatus;
+	/** When it stopped holding (earlier facts), ISO time. */
+	until: string | null;
+	sources: string[];
+}
+
+export interface ChatFactsSnapshot {
+	facts: ChatFact[];
+}
+
+interface BridgeFact {
+	statement: string;
+	subject: string;
+	predicate?: string;
+	object?: string;
+	value?: unknown;
+	status: "current" | "conflict" | "candidate" | "earlier";
+	valid_to_ms?: number;
+	sources: string[];
+	layer: "story" | "notes";
+}
+
+export interface FactsTurnInput {
+	roomId: string;
+	/** Live messages of the room (the validation snapshot). */
+	messages: readonly ChatMessage[];
+	/** Live memories of the room. */
+	memories: readonly ChatMemory[];
+	scenes?: readonly ChatScene[];
+}
+
+/**
+ * Structured facts the person stated — in their own story turns and in the memories they wrote —
+ * that this turn's perspective may know. The engine extracts them with rules (no model) and tracks
+ * time: a later statement closes an earlier one (`earlier`), competing ones stay open (`conflict`).
+ *
+ * The device re-checks every fact, because the index may lag the store:
+ * - at least one source must be a live record this perspective admits (a message under the current
+ *   scenes; a memory under the memory block's own rule, `memoryAdmitted`), and its wording must still
+ *   carry the fact's object or value (an edit not yet re-indexed drops the fact);
+ * - an `earlier` fact is shown only beside an admitted `current` fact for the same subject and
+ *   predicate, and a `conflict` only beside another admitted one: otherwise the closing or competing
+ *   statement is one this perspective may not see, and showing the old value as "earlier" would
+ *   reveal that something changed out of its sight;
+ * - `candidate` (not believed) facts never reach a prompt.
+ */
+export async function factsForTurn(
+	port: AfterstatePort,
+	input: FactsTurnInput,
+): Promise<ChatFactsSnapshot> {
+	if (!isBridgeId(input.roomId)) return { facts: [] };
+	const scenes = (input.scenes ?? []).filter((s) => s.deletedAt === null);
+	const perspective = recallPerspective(scenes);
+	const admission = admissionContext(scenes);
+	const audiences = resolveMessageAudiences(input.messages, scenes);
+	const messages = new Map(input.messages.map((m) => [m.id, m]));
+	const memories = new Map(input.memories.map((m) => [m.id, m]));
+	const response = await port.call<{ facts: BridgeFact[] }>("facts", {
+		conversation: input.roomId,
+		perspective: bridgePerspective(perspective),
+		limit: 64,
+	});
+	const anchor = (f: BridgeFact): string | null => {
+		if (typeof f.object === "string" && f.object.trim()) return f.object;
+		if (typeof f.value === "string" && f.value.trim()) return f.value;
+		return null;
+	};
+	const admittedSource = (f: BridgeFact): boolean => {
+		const needle = anchor(f);
+		return f.sources.some((id) => {
+			const message = messages.get(id);
+			if (message) {
+				if (message.role !== "user") return false;
+				if (
+					!perspectiveAdmits(
+						perspective,
+						audiences.get(id) ?? { kind: "unknown" },
+					)
+				)
+					return false;
+				return needle === null || containsLoose(message.content, needle);
+			}
+			const memory = memories.get(id);
+			if (memory) {
+				if (isAutoMemory(memory) || !memoryAdmitted(memory, admission))
+					return false;
+				return needle === null || containsLoose(memory.content, needle);
+			}
+			return false;
+		});
+	};
+	const admitted = (response.facts ?? []).filter(
+		(f) => f.status !== "candidate" && admittedSource(f),
+	);
+	const groupOf = (f: BridgeFact) => `${f.subject}\u0000${f.predicate ?? ""}`;
+	const groups = new Map<string, BridgeFact[]>();
+	for (const f of admitted) {
+		const key = groupOf(f);
+		groups.set(key, [...(groups.get(key) ?? []), f]);
+	}
+	const facts: ChatFact[] = [];
+	let chars = 0;
+	const order: Record<BridgeFact["status"], number> = {
+		current: 0,
+		conflict: 1,
+		earlier: 2,
+		candidate: 3,
+	};
+	for (const f of [...admitted].sort(
+		(a, b) => order[a.status] - order[b.status],
+	)) {
+		const group = groups.get(groupOf(f)) ?? [];
+		if (f.status === "earlier" && !group.some((g) => g.status === "current"))
+			continue;
+		if (
+			f.status === "conflict" &&
+			group.filter((g) => g.status === "conflict").length < 2
+		)
+			continue;
+		const statement = f.statement.trim();
+		if (!statement || facts.length >= CHAT_FACTS_MAX) continue;
+		if (chars + statement.length > CHAT_FACTS_CHAR_BUDGET) continue;
+		chars += statement.length;
+		facts.push({
+			statement,
+			subject: f.subject,
+			predicate: f.predicate ?? null,
+			status: f.status as ChatFactStatus,
+			until:
+				f.status === "earlier" && f.valid_to_ms
+					? new Date(f.valid_to_ms).toISOString()
+					: null,
+			sources: [...f.sources],
+		});
+	}
+	return { facts };
+}
+
+/** Case- and space-insensitive containment (the extractor may trim punctuation or case). */
+function containsLoose(text: string, needle: string): boolean {
+	const fold = (x: string) => normalize(x).toLowerCase();
+	return fold(text).includes(fold(needle));
+}
+
 // ── Runtime wiring (shared by web, desktop and mobile) ────────────────────────────────────────────
 
 /**
@@ -1216,6 +1393,8 @@ export interface RecallRequest {
 export interface ChatLongTermSnapshot {
 	recall: ChatRecallSnapshot | null;
 	consolidated: ChatConsolidatedSnapshot | null;
+	/** Structured facts the person stated (absent from older engines: `null`). */
+	facts: ChatFactsSnapshot | null;
 	status: ChatMemoryStatus;
 }
 
@@ -1312,6 +1491,7 @@ export function createLongTermLoader(
 		return async () => ({
 			recall: null,
 			consolidated: null,
+			facts: null,
 			status: "unavailable",
 		});
 	const now = runtime.now ?? (() => Date.now());
@@ -1353,13 +1533,27 @@ export function createLongTermLoader(
 					windowLength: request.windowLength,
 					scenes: scope.scenes,
 				}).catch((): ChatConsolidatedSnapshot => ({ episodes: [] })),
+				// Facts, likewise: an engine without the op leaves the turn with the rest.
+				options.protectedRoom
+					? Promise.resolve<ChatFactsSnapshot | null>(null)
+					: factsForTurn(port, {
+							roomId,
+							messages,
+							memories: request.memories,
+							scenes: scope.scenes,
+						}).catch((): ChatFactsSnapshot | null => null),
 			]);
 			const result = await withTimeout(work, CHAT_RECALL_TIMEOUT_MS);
 			if (result === "timeout") {
 				observe({ kind: "recall-timeout", ms: now() - started });
-				return { recall: null, consolidated: null, status: "degraded" };
+				return {
+					recall: null,
+					consolidated: null,
+					facts: null,
+					status: "degraded",
+				};
 			}
-			const [recall, consolidated] = result;
+			const [recall, consolidated, facts] = result;
 			observe({
 				kind: "recall",
 				ms: now() - started,
@@ -1377,11 +1571,17 @@ export function createLongTermLoader(
 			return {
 				recall,
 				consolidated,
+				facts,
 				status: indexing ? "indexing" : "ready",
 			};
 		} catch {
 			observe({ kind: "recall-failed", ms: now() - started });
-			return { recall: null, consolidated: null, status: "degraded" };
+			return {
+				recall: null,
+				consolidated: null,
+				facts: null,
+				status: "degraded",
+			};
 		}
 	};
 }
