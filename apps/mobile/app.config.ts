@@ -170,7 +170,7 @@ if (
  * This literal is all this file holds; the publish tool, registration, selection and tests read the
  * value from the evaluated config, so there is no copy.
  */
-const RUNTIME_VERSION = "rowcat-native-9";
+const RUNTIME_VERSION = "rowcat-native-10";
 
 /**
  * OTA channel: which update stream this binary receives. The build profile decides it
