@@ -5,6 +5,7 @@ Pod::Spec.new do |s|
   s.description    = 'Links the afterstate-ffi static library (XCFramework, device + simulator) and exposes its JSON bridge to JS, off the main thread.'
   s.license        = 'AGPL-3.0-only'
   s.author         = 'RowCat'
+  s.homepage       = 'https://rowcat.invalid' # placeholder: CocoaPods requires the attribute
   s.platforms      = { :ios => '16.4' }
   s.swift_version  = '5.9'
   s.source         = { git: '' }

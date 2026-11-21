@@ -5,6 +5,7 @@ Pod::Spec.new do |s|
   s.description    = 'iOS has no transport: all this pod does on iOS is place the harness HTML and QuickJS WASM in the app bundle and report that directory.'
   s.license        = 'AGPL-3.0-only'
   s.author         = 'RowCat'
+  s.homepage       = 'https://rowcat.invalid' # placeholder: CocoaPods requires the attribute
   s.platforms      = { :ios => '16.4' }
   s.swift_version  = '5.9'
   s.source         = { git: '' }
