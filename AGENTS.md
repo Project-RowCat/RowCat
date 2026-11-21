@@ -75,7 +75,7 @@ the `packageManager` field in the root `package.json` (`pnpm@10.34.5`) — do no
 | `docs/creator-runtime/` | Every runtime decision record — `patch-protocol` · `web-renderer` · `native-vm-host` · `vm-poc` · `story-state` · `persistence` · `input-generation` · `publication` · `player` · `remote-assets` · `managed-assets` · `managed-audio` · `scroll-and-focus` · `motion` · `templates` · `ai-authoring` · `public-beta` |
 | `docs/public/runtime` | **The public docs creators read.** A different audience from the folder above; do not copy that content here |
 | `docs/sync/ARCHITECTURE.md` | Encrypted sync · pairing · draft conflict recovery |
-| `docs/chat/` | `MEMORY.md` (memory, auto-maintenance) · `PERSONA.md` (user personas) · `NARRATION.md` (the narration pack port) · `CHARACTERS.md` (characters added to a room) · `USER-NOTE.md` (the user's own instruction for a conversation) · `INTENSITY.md` (expression intensity — inside what the rating allows) · `REPLY-SUGGESTION.md` (what I might say next) · `TOOLS.md` (tool calling) · `PROMPT-PROTECTION.md` (guards off the wire; protected works assembled by the server) |
+| `docs/chat/` | `MEMORY.md` (memory, afterstate long-term memory) · `SCENES.md` (who witnessed what) · `PERSONA.md` (user personas) · `NARRATION.md` (the narration pack port) · `CHARACTERS.md` (characters added to a room) · `USER-NOTE.md` (the user's own instruction for a conversation) · `INTENSITY.md` (expression intensity — inside what the rating allows) · `REPLY-SUGGESTION.md` (what I might say next) · `TOOLS.md` (tool calling) · `PROMPT-PROTECTION.md` (guards off the wire; protected works assembled by the server) |
 | `docs/design/` | Design system boundaries · `FAILURE-FEEDBACK.md` · `VISUAL-PARITY.md` |
 | `docs/motion/ARCHITECTURE.md` | The motion language and the two apps' intended differences |
 | `docs/settings/ARCHITECTURE.md` | Settings, preferences, prompt caching |
@@ -733,65 +733,55 @@ Memory is **per room**. Full rules in `docs/chat/MEMORY.md`.
   **priority, not absolute protection**. **Generation freezes memory the moment it starts.** The memory block
   sits after creator content and before the safety tail guard — that order is the substance of the prompt
   injection boundary.
-- **Memories have a source, and that axis is the permission** (`source: "user" | "auto"`). Auto-maintenance
-  only **reads** `"user"` memories, the direction opens one way (`promoteMemoryPatch`), and
-  `mergeMemorySource` enforces that monotonicity structurally. **Do not guess the source from the content.**
-  Memory is **not global.**
+- **Memories have a source, and that axis is the permission** (`source: "user" | "auto"`). `"auto"` rows are
+  **Memory V2's historical records** — nothing creates them any more; they never enter the memory block. The
+  direction opens one way (`promoteMemoryPatch`), and `mergeMemorySource` enforces that monotonicity
+  structurally. **Do not guess the source from the content.** Memory is **not global.**
+- **A human memory with no `audience` is unresolved, not public** (`memoryAdmission`): in a room with any scene
+  narrower than the room it is withheld — from the memory block and from recall — until the person classifies
+  it (`memoryVisibility`, `memoryVisibilityOptions`, `unresolvedMemoryCount`). Classifying writes `audience`
+  only, never content.
 
-### Auto-maintenance — rolling summary and fact extraction
+### Long-term memory — afterstate, the only engine
 
-**Not a second memory product** (`docs/chat/MEMORY.md` §9–§15).
+**Memory V2 (model-written rolling summary + extracted auto memories) was removed in Phase 13.** Long-term memory
+is the on-device afterstate engine, through one adapter (`packages/chat/src/conversation-memory.ts`;
+`docs/chat/MEMORY.md` §9–§14). There is **no backend selector, no fallback, no shadow mode** — do not add one.
 
 ```text
-response saved → maintain?.() → room gate → batch selection → utility call → parse and validate
-  → re-check ownership → **one transactional commit** (summary + frontier + memories) → existing sync
+response saved → maintain?.() → reconcile (index messages/notes/V2 records, audience-tagged)
+  → consolidate (deterministic extractive episode digests, one per same-audience run) — no model call
+turn start → loadLongTermMemory(recallRequestFor(...)) → recall passages + earlier episodes, ≤ 400 ms
+  → scopePromptInput → buildChatGenerationRequest
 ```
 
-- **All the rules live in `@rowcat/chat`** (`memory-maintenance.ts`, `maintenance-prompt.ts`,
-  `maintenance-runner.ts`). What remains in the app is one piece of port wiring, and mobile's static scan
-  enforces that — if an app re-writes `slice(0, 40)` or a constant, the same conversation gets summarized
-  differently in the two apps.
-- **The trigger lives on the conversation port** (`ConversationSession.maintain`). If screens called it,
-  a screen that forgot would mean **summaries are never produced in that app at all**, and that absence
-  raises no error. The playback session (story test) **does not have** that function.
-- **`maintain` returns `void` and does not throw** — give it an awaitable value and someone eventually adds
-  `await`, and that one word inserts a paid call between the assistant's response and the next input.
-- **The frontier cannot pass the recent verbatim window** (`CHAT_MAINTENANCE_RECENT_KEEP` =
-  `CHAT_HISTORY_LIMIT` = 40). That equality buys two things: the same event never rides in both verbatim and
-  summary, and ordinary edits, regenerations and delete-from-here **do not cause a rewind.**
-- **The verbatim window starts at the frontier, not at "the last 40"** (`chatHistoryWindow`): at least 40, at
-  most `CHAT_HISTORY_WINDOW_MAX` (60), and `CHAT_MAINTENANCE_TRIGGER` is derived from that cap. A fixed last-40
-  window left up to nineteen messages outside both the transcript and the summary, and it dropped one message a
-  turn, so the history prefix never matched the prompt cache. Both apps' room sessions and both playtests load
-  through that one function — do not slice history in an app. **Past the cap the window steps, it does not
-  slide**: a room whose summary lags or fails (silently — maintenance swallows every failure) jumps its start
-  twenty messages from the frontier and holds it for ten turns. Keeping "the newest 60" instead brought the
-  per-turn full history rewrite back (seen 2026-11-03: reads stuck at the system block, ~100k written a turn).
-  The step needs the count after the frontier, so room sessions read through `loadChatHistoryWindow`, which
-  reads the whole room only when the newest 61 all follow the frontier.
-- **A rewind treats summary and memory differently** — a summary is prose and cannot be subtracted, so it is
-  **discarded whole**; memories carry `originAt` so only those from the vanished span are deleted.
-  **Human-written memories survive any rewrite.**
-- **Only summary merges have a different rule — epoch first, then HLC** (`ChatSummary.epoch`). With a plain
-  last-writer-wins, a late advance from a device that does not know about the rewind wins and **the summary
-  of a deleted conversation comes back.**
-- **A summary's identity is derived from the room id** (`summaryIdFor`). Random and both devices' summaries
-  survive; the room id verbatim and the server's primary key `(owner, id)` makes it fight the room record
-  for the same row.
-- **The model only proposes operations; a pure function decides** (`planMemoryMaintenance`). If the response
-  leaves the schema **nothing commits** (not even the frontier). **There is one commit**
-  (`applyMemoryMaintenance`) — split, a room whose frontier advanced alone records that span as processed
-  **while never processing it again.**
-- **Do not lean on `AbortController`** — the decision reads state, not a signal (ownership before starting,
-  ownership after the response, and the condition at commit time; all three).
-- **Managed stays managed and BYO stays BYO** (`resolveUtilityTarget`, the same function conversation turns
-  use). **Do not put story settings or safety guards on the maintenance request** (with them, the utility
-  model starts acting). The rating axis is always all-ages.
-- **No progress indicator, no failure copy, and no "extract memories now" button.** **There is no screen that
-  draws the summary** (build one and you immediately have to answer "can I edit it").
-- **No embeddings and no vector search** — duplicates are handled by a deterministic normalized comparison
-  (`memoryDedupeKey`) and by the extraction request receiving the existing memory list. A wrong merge
-  ("received the key" ≡ "gave the key") is far more expensive than leaving a duplicate.
+- **One wiring for both apps:** `conversationMemoryHooks(runtime, store, roomId, {protectedRoom})`. Web gets
+  `runtime` from `useMemoryRuntime` (desktop window's `window.rowcatAfterstate`), mobile from
+  `openMemoryRuntime` (native module). `null` runtime = this device has no engine: the loader answers
+  `unavailable` with nothing, `maintain` is absent, and **nothing else stands in**. Never read the stored V2
+  summary on the turn path.
+- **The retired switches stay retired**: web `localStorage` `rowcat.memoryBackend` is removed on load, mobile
+  `EXPO_PUBLIC_MEMORY_BACKEND` is not read. `apps/mobile/src/lib/boundaries.test.ts` fails if a product file
+  names a removed V2 symbol or the switch.
+- **`maintain` returns `void` and does not throw**; it is single-flight per room. The playback session (story
+  test) has neither `maintain` nor `loadLongTermMemory`.
+- **Every evidence kind is re-validated on the device before it reaches a prompt** — live record, current
+  scenes, `memoryAdmitted` for notes (a note withheld from the block must not come back through recall), digest
+  sources all live and admitted and excerpts still in the live text. The index may lag; the device decides.
+- **Episodes never mix audiences** (the bridge cuts runs at audience changes) and carry their sources; erasing
+  or editing a source retires the episode in the same engine transaction.
+- **The history window steps on the message count only** (`chatHistoryWindow`: ≤ 60 → all, then 40–59 starting
+  on a multiple of 20). It never depends on a summary frontier. Room sessions read through
+  `loadChatHistoryWindow` (`count()` + one bounded `recent(60)` read); do not slice history in an app.
+- **V2's records are historical user data**: decoders, sync merge (summary: epoch first, then HLC), tombstones
+  and room-deletion cascade stay. A history rewrite retires the V2 summary/auto memories that described the
+  erased span (`planHistoryRewind`) so the afterstate migration never imports deleted conversation. Human
+  memories survive any rewrite. The V2 summary is imported into the index as attributed model-written evidence,
+  recalled **only in rooms without scenes**.
+- **Protected rooms** get episodes through the existing wire field `summary` (name kept for the contract) and no
+  recall.
+- **No progress indicator and no "consolidate now" button.** The memory screen states `memoryStatusFor`
+  (`unavailable` / `indexing`; `ready` is quiet).
 
 ### Conversation bodies — markdown and name substitution
 
@@ -1202,7 +1192,7 @@ conversation. Full rules in `docs/chat/REPLY-SUGGESTION.md`.
 rules      packages/chat/reply-suggestion.ts          count · window · availability · turn identity
 文面·관문  reply-suggestion-prompt.ts                 the request text and a strict schema
 lifecycle  reply-suggestion-runner.ts                 ordering and ownership. **there is no commit**
-transport  features/chat/utility-generation.ts        the same door auto-maintenance goes through
+transport  features/chat/utility-generation.ts        the one auxiliary-request door
 screen     features/chat/suggestion/                  the panel above the composer
 ```
 
@@ -1220,18 +1210,18 @@ screen     features/chat/suggestion/                  the panel above the compos
   A managed suggestion therefore passes the **same** gates a turn does (the managed-generation allowlist and
   both rate-limit windows — `### Managed generation access` under `## Settings and preferences`) and counts
   against them like one.
-- **The model is the utility target** (`resolveUtilityTarget`, the same function maintenance uses) —
-  managed is that kind's managed model (`MANAGED_UTILITY_MODELS` — a summary runs on the default's flash tier,
-  because it carries a whole history window and never reads the prompt cache; a suggestion keeps the default's
-  voice), BYO is **the model this device chose for suggestions, else the model that room already uses**. The choice is a device setting per kind (`GenerationPreferenceStore.getUtility`,
-  `summary` and `suggestion` separately, `/settings/ai` in both apps), personal-key models only, and a managed
-  room ignores it. **We still invent nothing** — which model is cheap at a provider is not a fact we know, so
+- **The model is the utility target** (`resolveUtilityTarget`) — managed is that kind's managed model
+  (`MANAGED_UTILITY_MODELS`; a suggestion keeps the default's voice), BYO is **the model this device chose for
+  suggestions, else the model that room already uses**. The choice is a device setting per kind
+  (`GenerationPreferenceStore.getUtility`; `suggestion` is the only kind since memory calls no model — a stored
+  `summary` row from an older build is kept and never read; `/settings/ai` in both apps), personal-key models only,
+  and a managed room ignores it. **We still invent nothing** — which model is cheap at a provider is not a fact we know, so
   the person picks it from the catalogue. **A choice that cannot run is not substituted**: execution resolution
-  blocks it like any BYO target (maintenance waits, a suggestion names the cause), because falling back to the
+  blocks it like any BYO target (a suggestion names the cause), because falling back to the
   room's model moves the cost onto the model the person chose to avoid. Both requests run at the target's
   lowest reasoning (off where offered, `utilityReasoningEffort`), set at the one utility door.
-- **⚠️ The rating follows the room, and that is where it splits from maintenance.** Maintenance is always
-  all-ages because its answer is **stored and re-sent on every request**. A suggestion has none of that:
+- **⚠️ The rating follows the room.** (The removed V2 maintenance request was always all-ages because its answer
+  was **stored and re-sent on every request**.) A suggestion has none of that:
   it is not stored, it disappears unless picked, and once picked it is **the user's own utterance** they
   can edit. Forcing all-ages instead makes the feature not work in exactly the conversations people are
   having. The decision goes through the conversation turn's own function (`resolveAllAges`) and the
@@ -1239,12 +1229,11 @@ screen     features/chat/suggestion/                  the panel above the compos
 - **The request carries two blocks and nothing else** — my role, and the recent window. Seed prompt, lore,
   memory, summary, characters and the narration pack are all absent: those make this call as expensive as
   a roleplay turn and make the model **start playing the story** instead of proposing my lines
-  (`maintenance-prompt.ts` split from `context.ts` for the same reason). The window is **12**, far shorter
+  (the removed V2 maintenance prompt was split from `context.ts` for the same reason). The window is **12**, far shorter
   than the turn's 40 — this request answers "what do I say to that" and nothing else. **The opening stands
   only when no message has been stored yet**, which is exactly the screen of someone who just pressed
   `대화 시작`.
-- **Tracking blocks and `[img:trigger]` are stripped from the transcript** — a deliberate divergence from
-  the maintenance prompt. This request's window and output are short, so three of those tables would be
+- **Tracking blocks and `[img:trigger]` are stripped from the transcript.** This request's window and output are short, so three of those tables would be
   most of it while saying nothing about what to say next. The body/tracking split is this repository's
   existing notion of 「본문」 (`resolveGenerationOutcome` measures the same way).
 - **The button does not stand while the composer has text**, and that one axis makes the whole collision
@@ -1260,10 +1249,9 @@ screen     features/chat/suggestion/                  the panel above the compos
 - **The suggestions belong to the turn** (`replySuggestionTurnKey`). Without it, sending one and getting a
   reply leaves **a turn-old proposal** standing when the composer empties again — a sentence that raises
   no error and looks plausible.
-- **The failure is spoken, and that is the other split from maintenance.** This is a press, so it says what
-  went wrong — through the app's **existing** failure table (no connection or not on the managed allowlist
-  → AI settings, otherwise retry). The runner therefore carries the original error while maintenance's
-  does not.
+- **The failure is spoken.** This is a press, so it says what went wrong — through the app's **existing**
+  failure table (no connection or not on the managed allowlist → AI settings, otherwise retry). The runner
+  therefore carries the original error.
 - **Do not build a global default, a count setting, an auto-suggest toggle, or a path that sends on pick.**
   Auto-suggesting spends a generation on every turn including for people who never use it — on managed that
   is the operator's key and the member's rate-limit window, on BYO it is the member's own key; a count
@@ -2051,8 +2039,8 @@ refusal      403 chat_managed_not_allowed       → the client sends the person 
   key — and `다시 생성` does not stand (`canRetryGeneration`; pressing again gets the same 403). The sentence says what
   is true: this server's default AI is open to allowed accounts, and a personal key works.
 - **BYO is untouched** (that path never reaches our server). Utility calls that ride the managed door
-  (auto-maintenance, reply suggestions) are refused the same way — maintenance silently, because `maintain` never
-  throws; a suggestion speaks, because it was a press.
+  (reply suggestions) are refused the same way, and a suggestion speaks, because it was a press. (Long-term memory
+  calls no model, so nothing silent rides that door any more.)
 - **The toggle lives on the member detail in the operations console and is admin-only**
   (`POST /v2/admin/members/:id/managed-generation`, `{ allowed, reason }`; `client.admin.setManagedGeneration` ·
   `adminSetManagedGenerationMutationOptions`). The row write and its audit row
@@ -5693,7 +5681,7 @@ index.ts         checkRateLimit · reserveRateLimit                            t
 an interaction surface that remains   inline        a form · an open dialog · a row · a section
 an operation that is gone             error toast   a menu item · a button you were leaving · an icon-only action
 a query that fetches the screen       page error    QueryState · per-section error boxes
-something the user did not start      nothing       auto-sync · prefetch · periodic refresh · auto-maintenance
+something the user did not start      nothing       auto-sync · prefetch · periodic refresh · memory indexing
 ```
 
 - **Do not end with `catch {}`.** With no feedback on a failure of something the user pressed, what remains on screen is
@@ -6376,13 +6364,12 @@ some axis cannot be answered, this is not a new conversation kind but a differen
 `useConversationGeneration`. `token` must be **an object whose identity does not change while that conversation
 continues.**
 
-**Changing an auto-maintenance rule**: first find which file in `@rowcat/chat` holds that rule. **If it becomes fixing an
-app, you found the wrong place.** Be especially careful changing constants —
-`CHAT_MAINTENANCE_RECENT_KEEP` **must equal** `CHAT_HISTORY_LIMIT`, `CHAT_MAINTENANCE_TRIGGER` is **derived from**
-`CHAT_HISTORY_WINDOW_MAX` (change the cap, not the trigger), and raising `CHAT_AUTO_MEMORY_MAX_PER_ROOM` to the
-per-room ceiling lets one long conversation fill that room's slots so **the user can no longer write new memories.**
-Adding a new operation kind moves four things in one commit: the vocabulary → the schema and the instructions →
-`planMemoryMaintenance`'s validation → **both store implementations.**
+**Changing a long-term memory rule**: first find which file in `@rowcat/chat` holds it (`conversation-memory.ts`,
+`history-window.ts`, `prompt-scope.ts`, `memory-audience.ts`, `scene-controls.ts`). **If it becomes fixing an app, you
+found the wrong place.** A change to what the bridge does (indexing, consolidation, digests) belongs in the afterstate
+repository (`crates/afterstate-ffi`), documented in its `docs/ffi.md`, and is exercised here by
+`packages/chat/src/memory-engine.test.ts` against the real bridge. Never reintroduce a second engine, a fallback or
+a selector.
 
 **Adding a new sync record type**: add a codec to the domain's `sync-codec.ts` → register it in the
 `local-sync/registry.ts` array (the order *is* the parent→child push order) → one row in `local-sync/store.ts`'s
