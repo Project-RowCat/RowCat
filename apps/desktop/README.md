@@ -166,6 +166,8 @@ git tag desktop-2026-10-31 && git push origin desktop-2026-10-31
   확인이다. Linux(`AppImage`)는 설정만 있다.
 - **크기.** API의 운영 의존성에 아무도 import하지 않는 `next`(약 290MB)와 `drizzle-kit`이 실려 있었다 —
   `better-auth`의 선택 peer였다. 루트 `.pnpmfile.cjs`가 그 선언을 지운다(근거는 AGENTS.md의 react-email 항목).
+  모바일 스택(`expo`·`react-native`, 약 380MB)과 react-email의 미리보기 CLI도 같은 길로 빠졌다 — 이 설치
+  파일은 그 전에도 가지치기(`pruneServerDependencies`)로 대부분 걸러 냈으므로, 줄어든 것은 주로 스테이징 시간이다.
   남은 큰 것은 Electron 자체, Postgres(ICU 데이터만 Windows 30MB·macOS 63MB), `sharp`의 libvips, 그리고
   `typescript-compiler-api`(런타임 컴파일)이다. Windows Postgres의 wxWidgets DLL(약 13MB)은 쓰지 않는 것으로
   보이지만 Windows에서 확인하기 전에는 빼지 않는다. **설치 시간이 실제로 얼마나 줄었는지는 아직 Windows에서

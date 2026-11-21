@@ -1519,6 +1519,11 @@ The rationale is in `apps/api/src/services/mail/templates.tsx`, `lib/mail-config
   590 MB to 275 MB with `next` alone. Remove a name there only in the commit that imports the subpath that
   needs it (`better-auth/next-js`, `/tanstack-start`, `/test-utils`), which nothing here does. Every image's
   manifest stage copies that file: the lockfile records its checksum, so a frozen install without it fails.
+  The same hook cuts the **mobile stack** out of the API (~380 MB: `expo`, `react-native`, hermes, metro):
+  `drizzle-orm`'s `expo-sqlite` peer and `@better-auth/expo`'s `expo-*` peers had linked `apps/mobile`'s copies
+  into the API's production install. The second is safe only because mobile lists each of those packages
+  itself (Metro resolves them from `apps/mobile/node_modules`); `apps/mobile/src/lib/auth-client-peers.test.ts`
+  pins that pairing. With both, the API's deployed `node_modules` is about 130 MB.
 - **The two passkey notices contain no links.** Putting an action link in a security alert makes that mail a
   template for phishing — what the user should do is reach the account screen through the path they always use.
 - **Code does not choose the vendor.** Transport is SMTP (`services/mail/smtp.ts` is the only file where a

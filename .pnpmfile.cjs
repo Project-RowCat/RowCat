@@ -13,13 +13,33 @@
  * still satisfied from the importer's own `devDependencies` (the API has `drizzle-kit` and `vitest`).
  * Deleting the declaration is the one thing that removes the edge.
  *
- * Importing one of those subpaths means deleting its name here in the same commit. Do not add
- * `@better-auth/expo`'s `expo-*` peers: the mobile app's client plugin really imports them, and this
- * hook rewrites the manifest for every importer at once. The desktop build drops what the API never
- * loads on its own (`apps/desktop/scripts/build-app.ts`).
+ * Importing one of those subpaths means deleting its name here in the same commit. The desktop build
+ * also drops what the API never loads on its own (`apps/desktop/scripts/build-app.ts`); the Docker
+ * image has no such step, so this file is what keeps that image small.
+ *
+ * The mobile stack is the same story at a larger scale (~380 MB of `expo`, `react-native`, hermes and
+ * metro in the API's production install). pnpm links an optional peer whenever the graph holds that
+ * package anywhere, and `apps/mobile` holds all of them:
+ *
+ * - `drizzle-orm` → `expo-sqlite`. Only the API uses drizzle, through `pg`; nothing imports
+ *   `drizzle-orm/expo-sqlite`.
+ * - `@better-auth/expo` → `expo-*`. The API imports the package root (the server plugin), which loads
+ *   none of them; only `/client` does, and only `apps/mobile` imports that. Mobile does not need the
+ *   edge either: Metro resolves those imports from `apps/mobile/node_modules`, the same way `/client`'s
+ *   `react-native` import resolves, which was never declared. This hook rewrites the manifest for every
+ *   importer at once, so cutting the edge here also cuts it for mobile. That is safe only while mobile
+ *   lists each of these packages as its own dependency, and `apps/mobile/package.json` must keep them.
  */
 const UNUSED_PEERS = {
 	"better-auth": ["next", "@tanstack/react-start", "drizzle-kit", "vitest"],
+	"drizzle-orm": ["expo-sqlite"],
+	"@better-auth/expo": [
+		"expo-constants",
+		"expo-linking",
+		"expo-network",
+		"expo-secure-store",
+		"expo-web-browser",
+	],
 };
 
 function readPackage(pkg) {
