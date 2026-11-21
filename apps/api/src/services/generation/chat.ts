@@ -413,23 +413,22 @@ function toOpenAiMessages(
  * The system message, with its own cache breakpoint when the model is cached.
  *
  * The top-level automatic breakpoint sits on the last block only. Whenever the history in front of it
- * changes (the window moves at a summary, a room without one slides at its cap, an earlier message is
- * edited or regenerated), that one breakpoint's prefix no longer matches the previous turn, and the
+ * changes (the window steps forward, an earlier message is edited or regenerated), that one breakpoint's prefix no longer matches the previous turn, and the
  * turn rewrote the whole prompt to the cache, the unchanged system prompt included. Marking the end
  * of the system prompt lets that part be read back (2 of Anthropic's 4 breakpoints). This mirrors the BYO adapters'
  * `anthropicSystem`.
  *
  * It is not a breakpoint placed by hand inside the prompt: the system prompt arrives as one opaque
  * string and only its end is marked, so this file still knows nothing about the guards, lore,
- * summary or memory inside. The text is unchanged by a character.
+ * earlier episodes or memory inside. The text is unchanged by a character.
  *
  * The breakpoint lives for an hour (`ttl: "1h"`), not the default five minutes. A cache entry's
  * lifetime counts from the start of the request, generation included, and a person reading a long
  * reply and writing the next line often takes longer than that; every such turn wrote the whole
  * system prompt again. A one-hour write costs 2x input instead of 1.25x and a read refreshes the
  * timer for free, so one avoided miss pays for it. The automatic breakpoint carries the same hour:
- * the history window starts at the summary frontier (`chatHistoryWindow`) and stays put for about ten
- * turns, so the cached history is worth keeping across a pause too, and each turn only writes its own
+ * the history window steps on the message count (`chatHistoryWindow`) and its start stays put for
+ * about twenty messages, so the cached history is worth keeping across a pause too, and each turn only writes its own
  * new messages at the higher rate. A longer TTL must come before a shorter one; equal TTLs satisfy
  * that, but this marker must never be shorter than the automatic one (that order is a 400).
  * OpenRouter honors the one-hour TTL on explicit breakpoints for every Claude provider on the

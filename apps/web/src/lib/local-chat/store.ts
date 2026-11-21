@@ -12,7 +12,6 @@ import {
 	type ChatCharacter,
 	ChatCharacterLimitError,
 	type ChatIntensity,
-	type ChatMaintenancePlan,
 	type ChatMemory,
 	ChatMemoryLimitError,
 	type ChatMessage,
@@ -37,11 +36,8 @@ import {
 	createPersonaRecord,
 	createRoomRecord,
 	createSceneRecord,
-	createSummaryRecord,
 	extendAssistantRecord,
-	isAutoMemory,
 	isLiveChatRecord,
-	maintenanceStillApplies,
 	markCascadeDeleted,
 	markLocalDelete,
 	markLocalUpdate,
@@ -49,7 +45,7 @@ import {
 	nextSummaryEpoch,
 	normalizeCharacterAliases,
 	normalizeMemoryAudience,
-	planMaintenanceRewind,
+	planHistoryRewind,
 	planRoomDuplicate,
 	requireCharacterName,
 	requireCharacterPrompt,
@@ -134,9 +130,10 @@ export function createChatStore(db: LocalDb): ChatStore {
 	 * The read starts at the anchor, so only the rows to be deleted are loaded. The selection rule
 	 * stays in selectChatTail. Human-written memories are not touched: they are settings the user
 	 * wrote for the room, and deleting them because an old chat was deleted would silently erase them.
-	 * Automatic maintenance output (summary, auto memories) is derived from history, so
-	 * planMaintenanceRewind runs in the same transaction (rewindMaintenanceInTx). Otherwise a
-	 * generation started in between would include a summary of deleted turns.
+	 * Memory V2's historical records derived from history (its summary, auto memories) are retired by
+	 * planHistoryRewind in the same transaction (rewindHistoryInTx), so the afterstate migration can
+	 * never import a description of deleted turns. The afterstate index needs no such step: its
+	 * passages and consolidated episodes are erased with their source records.
 	 */
 	async function rewriteTail(
 		anchorId: string,
@@ -215,7 +212,7 @@ export function createChatStore(db: LocalDb): ChatStore {
 				 * 'everything from here on is gone', because the tail is always a contiguous range.
 				 */
 				const cutoff = tail[0]?.createdAt;
-				if (cutoff) await rewindMaintenanceInTx(anchor.roomId, cutoff, now);
+				if (cutoff) await rewindHistoryInTx(anchor.roomId, cutoff, now);
 
 				return { applied: true, removed: tail.length };
 			},
@@ -223,13 +220,12 @@ export function createChatStore(db: LocalDb): ChatStore {
 	}
 
 	/**
-	 * Rewinds maintenance state when history is cut, inside an already open transaction. All rules
-	 * live in the pure function (planMaintenanceRewind); this only writes its decisions into records.
-	 * If nothing needs to change, nothing is written. Ordinary edits and regenerations happen in the
-	 * recent raw range and usually end here. Issuing a useless revision would turn the summary record
-	 * into a push candidate on every edit.
+	 * Retires V2's historical records when history is cut, inside an already open transaction. All
+	 * rules live in the pure function (planHistoryRewind); this only writes its decisions into records.
+	 * If nothing needs to change, nothing is written (a useless revision would make the summary record
+	 * a push candidate on every edit).
 	 */
-	async function rewindMaintenanceInTx(
+	async function rewindHistoryInTx(
 		roomId: string,
 		cutoffCreatedAt: string,
 		now: string,
@@ -240,7 +236,7 @@ export function createChatStore(db: LocalDb): ChatStore {
 			await db.chatMemories.where("roomId").equals(roomId).toArray()
 		).filter(isLiveChatRecord);
 
-		const rewind = planMaintenanceRewind({
+		const rewind = planHistoryRewind({
 			summary,
 			memories,
 			cutoffCreatedAt,
@@ -253,23 +249,17 @@ export function createChatStore(db: LocalDb): ChatStore {
 		);
 		let issued = 0;
 
-		if (rewind.resetSummary) {
+		if (rewind.resetSummary && summary) {
 			/**
 			 * The summary is discarded but its record is kept. Deleting the row would leave no way to tell
 			 * other devices (a tombstone is needed), and there would be no place for the generation counter
 			 * to increase. That integer is what lets a merge prefer the rewind over the old state (see
 			 * ChatSummary.epoch).
 			 */
-			const base =
-				summary ??
-				createSummaryRecord(
-					{ roomId, summary: "", frontier: null },
-					{ now, rev: revs[issued] },
-				);
 			await db.chatSummaries.put(
 				markLocalUpdate(
 					{
-						...base,
+						...summary,
 						summary: "",
 						frontier: null,
 						epoch: nextSummaryEpoch(summary),
@@ -393,15 +383,28 @@ export function createChatStore(db: LocalDb): ChatStore {
 			/*
 			 * Walks the same composite index forward, once. The cursor is already ascending, so nothing
 			 * needs reversing or sorting in memory. This is the only query without a `limit`, so its cost
-			 * scales with room size. That is accepted because only search, background maintenance and a
-			 * room past the history cap whose summary is not keeping up (`loadChatHistoryWindow`) pay it.
-			 * Every other history read uses page queries.
+			 * scales with room size. That is accepted because only search and the afterstate index's
+			 * reconcile pay it; a conversation turn never does (`loadChatHistoryWindow` reads a count and
+			 * one bounded page).
 			 */
 			const rows = await db.messages
 				.where("[roomId+createdAt+id]")
 				.between([roomId], [roomId, MAX_COMPONENT], true, false)
 				.toArray();
 			return rows.filter(isLiveChatRecord);
+		},
+
+		async countMessages(roomId: string): Promise<number> {
+			if (!(await liveRoom(roomId))) return 0;
+			/*
+			 * Counts on the same composite index without materializing message bodies into the turn.
+			 * Tombstones stay in the table, so the count filters them like every other read.
+			 */
+			return db.messages
+				.where("[roomId+createdAt+id]")
+				.between([roomId], [roomId, MAX_COMPONENT], true, false)
+				.filter(isLiveChatRecord)
+				.count();
 		},
 
 		async appendMessage(input: AppendMessageInput): Promise<ChatMessage> {
@@ -708,7 +711,6 @@ export function createChatStore(db: LocalDb): ChatStore {
 							.equals(id)
 							.toArray(),
 						scenes: await db.chatScenes.where("roomId").equals(id).toArray(),
-						summary: (await db.chatSummaries.get(summaryIdFor(id))) ?? null,
 					};
 					const copy = planRoomDuplicate(source, {
 						title: checked,
@@ -721,7 +723,6 @@ export function createChatStore(db: LocalDb): ChatStore {
 					await db.chatMemories.bulkAdd(copy.memories);
 					await db.chatCharacters.bulkAdd(copy.characters);
 					await db.chatScenes.bulkAdd(copy.scenes);
-					if (copy.summary) await db.chatSummaries.add(copy.summary);
 					return copy.room;
 				},
 			);
@@ -1166,11 +1167,10 @@ export function createChatStore(db: LocalDb): ChatStore {
 					);
 					/**
 					 * A single-message delete also goes through the rewind. This operation does not touch the
-					 * tail, but the summary may already have read the message being deleted. The summary would
-					 * then narrate an utterance that no longer exists, and that fact is silent if only this path
-					 * skips it.
+					 * tail, but V2's historical summary may describe the message being deleted; the afterstate
+					 * migration would then import an utterance that no longer exists.
 					 */
-					await rewindMaintenanceInTx(current.roomId, current.createdAt, now);
+					await rewindHistoryInTx(current.roomId, current.createdAt, now);
 					/**
 					 * Deleting a message also advances the room's activity time, following the same rule as add
 					 * and update.
@@ -1221,121 +1221,15 @@ export function createChatStore(db: LocalDb): ChatStore {
 		deleteFromMessage: (id: string): Promise<ChatTailRewrite> =>
 			rewriteTail(id, "from", null),
 
+		/**
+		 * V2's historical summary, read only as the afterstate migration's input (`summaryItem`). Nothing
+		 * writes or advances it any more except the history rewind, which retires it.
+		 */
 		async getSummary(roomId: string): Promise<ChatSummary | null> {
 			/** Nothing from a deleted room is visible, the same rule as the other queries. */
 			if (!(await liveRoom(roomId))) return null;
 			const stored = await db.chatSummaries.get(summaryIdFor(roomId));
 			return stored && isLiveChatRecord(stored) ? stored : null;
-		},
-
-		async applyMemoryMaintenance(
-			plan: ChatMaintenancePlan & { roomId: string },
-		): Promise<boolean> {
-			const now = nowIso();
-			return db.transaction(
-				"rw",
-				[db.rooms, db.chatMemories, db.chatSummaries, db.syncState],
-				async () => {
-					/** Maintenance does not revive a deleted room. */
-					const room = await liveRoom(plan.roomId);
-					if (!room) return false;
-
-					const stored = await db.chatSummaries.get(summaryIdFor(plan.roomId));
-					const summary = stored && isLiveChatRecord(stored) ? stored : null;
-
-					/**
-					 * Optimistic concurrency, inside the transaction. Checking outside and writing inside leaves a
-					 * window, and history rewrites or another device's pull can slip into it. The plan was built
-					 * from a snapshot seconds ago. If the generation or frontier has moved, the plan's values
-					 * refer to a conversation that no longer exists.
-					 */
-					if (!maintenanceStillApplies(plan, summary)) return false;
-
-					const live = (
-						await db.chatMemories.where("roomId").equals(plan.roomId).toArray()
-					).filter(isLiveChatRecord);
-					const byId = new Map(live.map((memory) => [memory.id, memory]));
-
-					/**
-					 * Revisions are issued all at once. Re-reading the clock per operation would record one
-					 * maintenance run as spanning several milliseconds, and sharing one value would leave merges
-					 * unable to order them. One extra revision is needed for the summary row.
-					 */
-					const revs = await nextRevs(db, plan.operations.length + 1);
-					let issued = 0;
-
-					for (const operation of plan.operations) {
-						if (operation.type === "add") {
-							await db.chatMemories.add(
-								createMemoryRecord(
-									{
-										roomId: plan.roomId,
-										content: operation.content,
-										source: "auto",
-										originAt: plan.through.createdAt,
-									},
-									{ id: newLocalId(), now, rev: revs[issued++] },
-								),
-							);
-							continue;
-						}
-
-						const target = byId.get(operation.memoryId);
-						/**
-						 * The store does not trust the plan. The pure plan already filters out manual memories
-						 * (planMemoryMaintenance), but the user may have edited an auto memory and promoted it in the
-						 * meantime (promoteMemoryPatch). Then this operation would delete or overwrite a sentence a
-						 * person just wrote. If the target is gone or has become manual, only that operation is
-						 * skipped. Rolling back the whole plan would discard the batch's progress, and the same range
-						 * would be reprocessed forever.
-						 */
-						if (!target || !isAutoMemory(target)) {
-							issued++;
-							continue;
-						}
-
-						await db.chatMemories.put(
-							operation.type === "remove"
-								? markLocalDelete(target, now, revs[issued++])
-								: markLocalUpdate(
-										{
-											...target,
-											content: operation.content,
-											originAt: plan.through.createdAt,
-										},
-										now,
-										revs[issued++],
-									),
-						);
-					}
-
-					const base =
-						summary ??
-						createSummaryRecord(
-							{ roomId: plan.roomId, summary: "", frontier: null },
-							{ now, rev: revs[issued] },
-						);
-					await db.chatSummaries.put(
-						markLocalUpdate(
-							{
-								...base,
-								summary: plan.summary,
-								frontier: plan.through,
-							},
-							now,
-							revs[issued++],
-						),
-					);
-
-					/**
-					 * Does not advance the room's activity time. The same judgment as memory edits, with a
-					 * stronger reason: maintenance is not something the user did. Advancing it would let a
-					 * background task move the conversation to the top, and the user would see a chat they did not
-					 * touch as recent.
-					 */
-					return true;
-				},
-			);
 		},
 
 		/*

@@ -20,7 +20,6 @@ import {
 import { useMemoryRuntime } from "#/lib/afterstate/use-memory-runtime.ts";
 import { useChatScope } from "#/lib/local-chat/scope.ts";
 import { useGenerationScope } from "#/lib/local-generation/scope.ts";
-import { useMemoryMaintenance } from "./memory/use-maintenance.ts";
 
 /**
  * An adapter that plugs one local room into the conversation runtime. Ordering, failure handling
@@ -34,7 +33,8 @@ import { useMemoryMaintenance } from "./memory/use-maintenance.ts";
  * - User message save: store.appendMessage(...), which also advances the room's activity time in
  *   the same transaction.
  * - History: loadChatHistoryWindow over the store's reads; the store's order is the next turn's history.
- * - Memory: store.listMemories, the room-level memory.
+ * - Memory: store.listMemories, the room-level memory the person wrote; long-term memory is the
+ *   afterstate index on this device (conversationMemoryHooks), the only engine there is.
  * - Preference override for this layer: preferences.getRoom(room). It is a device-local
  *   preference, not a room record.
  * - Execution identity: store instance plus role. `Alice → guest → Alice` and persona swaps
@@ -70,27 +70,17 @@ export function createChatConversation(input: {
 	 */
 	preferences: GenerationPreferenceStore | null;
 	/**
-	 * Wakes automatic memory maintenance after a confirmed response is saved (useMemoryMaintenance).
-	 * The adapter does not hold the runner directly, because this function is pure assembly.
-	 * Maintenance needs the viewer, provider connection, credentials and query client; pulling those
-	 * in here would force every caller, including tests, to wire all five.
-	 */
-	maintain?: (() => void) | undefined;
-	/**
-	 * The memory backend (legacy / afterstate / shadow) and its native port, if this platform has
-	 * one. Absent or legacy: the session has no recall and the request is exactly V2's.
+	 * The afterstate engine on this device, if this platform has one. Absent (a plain browser, or the
+	 * engine failed to open): chat still works on the recent window and the memories the person
+	 * wrote, and the session reports long-term memory as `unavailable` — nothing else stands in.
 	 */
 	memory?: ConversationMemoryRuntime | null;
 }): ConversationSession {
 	const { room, store, preferences } = input;
 	const protectedStoryId = protectedStoryIdOf(room);
-	const memoryHooks = conversationMemoryHooks(
-		input.memory,
-		store,
-		room.id,
-		input.maintain,
-		{ protectedRoom: !!protectedStoryId },
-	);
+	const memoryHooks = conversationMemoryHooks(input.memory, store, room.id, {
+		protectedRoom: !!protectedStoryId,
+	});
 	return {
 		token: input.token,
 		runtime: room,
@@ -102,18 +92,14 @@ export function createChatConversation(input: {
 		loadPreference: async (): Promise<GenerationPreference | null> =>
 			(await preferences?.getRoom(room.id)) ?? null,
 		/**
-		 * The window starts at the summary frontier (`chatHistoryWindow`), so the summary is read here as
-		 * well as in `loadSummary`. The two reads are separate; if maintenance commits between them, this
-		 * turn's window starts at the older frontier and overlaps the new summary once. That is the safe
-		 * direction: an event seen twice, never one seen by neither. How many messages to read is the
-		 * shared loader's rule (`loadChatHistoryWindow`), the same one mobile uses.
+		 * The window steps on the room's message count (`chatHistoryWindow`), never on any summary: one
+		 * count and one bounded read of the newest messages, whatever the room's length. How many to read
+		 * is the shared loader's rule (`loadChatHistoryWindow`), the same one mobile uses.
 		 */
 		loadHistory: () =>
 			loadChatHistoryWindow({
 				recent: (limit) => store.listRecentMessages(room.id, { limit }),
-				all: () => store.listAllMessages(room.id),
-				frontier: async () =>
-					(await store.getSummary(room.id))?.frontier ?? null,
+				count: () => store.countMessages(room.id),
 			}),
 		loadMemories: () => store.listMemories(room.id),
 		/**
@@ -123,12 +109,6 @@ export function createChatConversation(input: {
 		 */
 		loadCharacters: () => store.listCharacters(room.id),
 		loadScenes: () => store.listScenes(room.id),
-		/**
-		 * Summary is read once, at start, like memory. Background maintenance may update the summary
-		 * while a response streams (which is exactly this slice's job). If the in-flight request picked
-		 * up the new version, the summary it was sent with would depend on timing.
-		 */
-		loadSummary: async () => (await store.getSummary(room.id))?.summary ?? "",
 		/**
 		 * The routing-friendly key is obtained, not merely read. room.routingSessionId is not passed
 		 * directly: rooms created before this field existed do not have it, so the needed step is to
@@ -196,14 +176,9 @@ export function useChatGeneration(
 	room: ChatRoom | null,
 ): ConversationGenerationState {
 	const { store, viewerId } = useChatScope();
-	// The local afterstate index (desktop only; null in a browser or in legacy mode).
+	// The local afterstate engine (desktop; null in a plain browser, where memory is unavailable).
 	const memory = useMemoryRuntime(viewerId, store);
 	const { store: preferences } = useGenerationScope();
-	/**
-	 * The function that wakes maintenance. It is not an identity axis of the session: ownership is the
-	 * `token` below, and changing this value does not kill an in-flight generation.
-	 */
-	const maintain = useMemoryMaintenance(room);
 
 	/**
 	 * The execution identity: store and effective role together, a new object only when those two
@@ -235,12 +210,11 @@ export function useChatGeneration(
 						room,
 						store,
 						preferences,
-						maintain,
 						token,
 						memory,
 					})
 				: null,
-		[room, store, preferences, maintain, token, memory],
+		[room, store, preferences, token, memory],
 	);
 
 	return useConversationGeneration(session);

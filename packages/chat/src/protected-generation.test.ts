@@ -63,7 +63,7 @@ const assembly = (
 			{ id: "m1", now: NOW, rev: REV },
 		),
 	],
-	summary: "지난 이야기",
+	consolidated: "- [기록 2026-01-01]\n  - 지난 이야기",
 	allAges: false,
 	maxOutputTokens: 1024,
 	reasoningEffort: "low",

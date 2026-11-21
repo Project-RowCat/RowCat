@@ -1017,6 +1017,11 @@ export const StoryChatGenerationRequest = z
 		/** Input not yet saved. It is normally absent. */
 		userInput: z.string().max(CHAT_MAX_MESSAGE_CHARS).optional(),
 		memories: z.array(StoryChatAssemblyMemory).max(500).default([]),
+		/**
+		 * Long-term context: the device's authorized earlier episodes from its afterstate index, already
+		 * rendered (`consolidatedText` in `@rowcat/chat`). The name predates afterstate (it once carried
+		 * memory V2's summary) and stays so older servers keep accepting the request.
+		 */
 		summary: z.string().max(8_000).optional(),
 		/**
 		 * This conversation's overrides, with the same fields as the room record. When absent, the

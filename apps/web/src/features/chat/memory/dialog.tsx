@@ -4,12 +4,19 @@ import {
 	type ChatMemory,
 	ChatMemoryLimitError,
 	ChatRoomMissingError,
+	type ChatSceneAudience,
 	type ChatStore,
 	isAutoMemory,
-	type MemoryAudienceControl,
-	memoryAudienceControl,
+	type MemoryVisibility,
+	type MemoryVisibilityOption,
+	memoryStatusFor,
+	memoryVisibility,
+	memoryVisibilityOptions,
 	promoteMemoryPatch,
-	unmarkedMemoryCount,
+	requireSceneAudience,
+	type SceneCastMember,
+	sceneCast,
+	unresolvedMemoryCount,
 } from "@rowcat/chat";
 import { Button } from "@rowcat/ui-web/components/button";
 import {
@@ -19,8 +26,15 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@rowcat/ui-web/components/dialog";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@rowcat/ui-web/components/dropdown-menu";
 import { Textarea } from "@rowcat/ui-web/components/textarea";
 import {
+	CircleAlert,
 	EyeOff,
 	Pencil,
 	Pin,
@@ -34,6 +48,7 @@ import { AnimatePresence, LayoutGroup } from "motion/react";
 import * as m from "motion/react-m";
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useMemoryRuntime } from "#/lib/afterstate/use-memory-runtime.ts";
 import { shouldCloseDialog } from "#/lib/dialog/dismiss.ts";
 import {
 	useLocalCharacters,
@@ -47,6 +62,7 @@ import { AnimatedIconSwap } from "#/lib/motion/animated-icon-swap.tsx";
 import { useExitGuard } from "#/lib/motion/exit-guard.ts";
 import { rowEnter, rowExit } from "#/lib/motion/list-motion.ts";
 import type { ManagedRoom } from "../room/management.tsx";
+import { AudiencePicker } from "../scene/audience-picker.tsx";
 import {
 	groupMemories,
 	MEMORY_COUNTER_THRESHOLD,
@@ -71,10 +87,9 @@ import {
  *
  * **There is no button to have AI create memories — yet AI-created memories exist.**
  *
- * Those are different things. Automatic maintenance is a background job that runs by itself as the
- * conversation grows (`use-memory-maintenance.ts`), and there is no trigger for the user to press.
- * A button would be a paid "generate now" action, and it would bring progress indicators, failure
- * copy and duplicate-run protection with it. That screen would be a product this slice never built.
+ * Those are Memory V2's historical records (V2 is removed; nothing creates them any more). Long-term
+ * memory is afterstate's, indexed and consolidated on this device after each saved reply, with no
+ * trigger for the user to press and no model call (`conversation-memory.ts`).
  *
  * Instead the list **says where each memory came from.** An automatic memory is a sentence the user
  * never wrote, and without a mark, someone who cannot recall when they wrote something starts
@@ -88,7 +103,14 @@ import {
  */
 
 /** What is open on this row right now — one at a time. */
-type RowMode = "idle" | "editing" | "confirming-delete";
+type RowMode = "idle" | "editing" | "confirming-delete" | "choosing-audience";
+
+/** Who may know one memory, and what the person can change it to (`memory-audience.ts`). */
+interface RowAudience {
+	visibility: MemoryVisibility;
+	options: MemoryVisibilityOption[];
+	cast: readonly SceneCastMember[];
+}
 
 export function MemoryDialog({
 	room,
@@ -99,31 +121,42 @@ export function MemoryDialog({
 	onClose: () => void;
 }) {
 	const { t } = useTranslation(["chat", "common"]);
-	const { store, ownsStore } = useChatScope();
+	const { store, ownsStore, viewerId } = useChatScope();
 	const { items, loading } = useLocalMemories(room.id);
 	/**
-	 * Scenes and the cast decide the audience control on each row (`audience.ts`). Until all three have
-	 * answered no row draws one: drawing `share` before the cast arrives would name nobody, and drawing
-	 * nothing then something reads as a control appearing on its own.
+	 * Whether long-term memory works here, stated once (`memoryStatusFor`). `ready` stays quiet: a
+	 * line saying "everything is fine" is a line nobody reads twice.
+	 */
+	const memoryStatus = memoryStatusFor(
+		useMemoryRuntime(viewerId, store),
+		room.id,
+	);
+	/**
+	 * Scenes and the cast decide each row's visibility and its choices (`memory-audience.ts`). Until all
+	 * three have answered no row draws them: a choice naming nobody before the cast arrives, or a state
+	 * appearing a frame late, reads as something that just changed.
 	 */
 	const roomState = useLocalRoom(room.id);
 	const characters = useLocalCharacters(room.id);
 	const scenes = useLocalScenes(room.id);
-	const audienceFor = (memory: ChatMemory): MemoryAudienceControl | null =>
-		roomState.status === "ready" && !characters.loading && !scenes.loading
-			? memoryAudienceControl(memory, scenes.items, {
-					room: roomState.room,
-					characters: characters.items,
-				})
-			: null;
+	const audienceFor = (memory: ChatMemory): RowAudience | null => {
+		if (roomState.status !== "ready" || characters.loading || scenes.loading)
+			return null;
+		const cast = { room: roomState.room, characters: characters.items };
+		return {
+			visibility: memoryVisibility(memory, scenes.items, cast),
+			options: memoryVisibilityOptions(memory, scenes.items, cast),
+			cast: sceneCast(cast.room, cast.characters),
+		};
+	};
 	/**
-	 * Unmarked memories are shared (the compatibility policy, `docs/chat/SCENES.md` §6); in a room with a
-	 * private scene that is where an old secret still reaches everyone, so the window says how many.
-	 * Not before scenes answer: a count that appears a frame later reads as something just changed.
+	 * A memory with no audience is unresolved, and in a room with a scene narrower than the room it is
+	 * withheld from every reply until classified (`docs/chat/SCENES.md` §6). The window says how many;
+	 * the rows say which. Not before scenes answer, for the same reason as above.
 	 */
-	const unmarked = scenes.loading
+	const unresolved = scenes.loading
 		? 0
-		: unmarkedMemoryCount(items, scenes.items);
+		: unresolvedMemoryCount(items, scenes.items);
 	const [adding, setAdding] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
@@ -285,9 +318,13 @@ export function MemoryDialog({
 						)}
 					</AnimatePresence>
 
-					{unmarked > 0 && (
-						<p className="text-sm text-muted-foreground">
-							{t("memory.unmarked", { count: unmarked })}
+					{unresolved > 0 && (
+						<p className="flex items-start gap-1.5 text-sm font-medium">
+							<CircleAlert
+								aria-hidden="true"
+								className="mt-0.5 size-4 shrink-0"
+							/>
+							{t("memory.needsClassification", { count: unresolved })}
 						</p>
 					)}
 
@@ -377,6 +414,17 @@ export function MemoryDialog({
 					<p className="text-sm text-muted-foreground">
 						{t("dialog.savedMemoriesAreSentAlong")}
 					</p>
+					{/*
+					 * No backend is named: there is one engine or none. `degraded` is a per-turn fact the
+					 * screen cannot know before a turn ran, so like `ready` it draws nothing here.
+					 */}
+					{memoryStatus === "unavailable" || memoryStatus === "indexing" ? (
+						<p className="text-sm text-muted-foreground">
+							{memoryStatus === "unavailable"
+								? t("memory.status.unavailable")
+								: t("memory.status.indexing")}
+						</p>
+					) : null}
 				</div>
 			</DialogContent>
 		</Dialog>
@@ -427,8 +475,8 @@ function MemoryRow({
 	run,
 }: {
 	memory: ChatMemory;
-	/** Who may know this memory, in a room with scenes; `null` draws nothing new (`audience.ts`). */
-	audience: MemoryAudienceControl | null;
+	/** Who may know this memory, in a room with scenes; `null` draws nothing yet (`memory-audience.ts`). */
+	audience: RowAudience | null;
 	pending: boolean;
 	run: (
 		perform: (store: ChatStore) => Promise<void>,
@@ -561,19 +609,14 @@ function MemoryRow({
 							</p>
 						) : null}
 						{/*
-						 * Who may know a restricted memory, in words: the restriction is otherwise invisible, and a
-						 * character answering as if it never heard of something would read as a malfunction.
+						 * Who may know this memory, in words: a restriction is otherwise invisible, and a character
+						 * answering as if it never heard of something would read as a malfunction. An unresolved
+						 * memory that is being withheld says so in the foreground colour, with a glyph, so it is
+						 * found without reading every row (the list keeps the store's order: re-sorting here would
+						 * split the screen order from the prompt order).
 						 */}
-						{audience?.kind === "share" ? (
-							<p className="mt-1.5 flex items-center gap-1 text-muted-foreground text-xs">
-								<EyeOff aria-hidden="true" className="size-3 shrink-0" />
-								{audience.narrator
-									? t("memory.knownByNoOne")
-									: t("memory.knownBy", {
-											names:
-												audience.names.join(", ") || t("memory.knownByUnknown"),
-										})}
-							</p>
+						{audience ? (
+							<VisibilityLine visibility={audience.visibility} />
 						) : null}
 						{/*
 						 * The delete confirmation **replaces the action group inside this row.** It is one state in the same place, so
@@ -581,7 +624,44 @@ function MemoryRow({
 						 * question being asked reads from its position.
 						 */}
 						<AnimatePresence initial={false} mode="wait">
-							{mode === "confirming-delete" ? (
+							{mode === "choosing-audience" && audience ? (
+								<m.div
+									key="choose"
+									className="mt-3"
+									initial={rowEnter.initial}
+									animate={rowEnter.animate}
+									exit={rowExit}
+									transition={rowEnter.transition}
+								>
+									{/*
+									 * The picker writes the audience only; the memory's text is never touched in this flow.
+									 * The shared validator runs before the write (`requireSceneAudience`), the same one
+									 * storage runs again.
+									 */}
+									<AudiencePicker
+										cast={audience.cast}
+										initial={
+											memory.audience?.kind === "participants"
+												? memory.audience
+												: { kind: "participants", members: [] }
+										}
+										label={t("memory.chooseLabel")}
+										submitLabel={t("common:actions.save")}
+										pending={pending}
+										onCancel={() => setMode("idle")}
+										onSubmit={async (picked) => {
+											const ok = await run(
+												(store) =>
+													store.updateMemory(memory.id, {
+														audience: requireSceneAudience(picked),
+													}),
+												memorySaveFailureMessage(),
+											);
+											if (ok) setMode("idle");
+										}}
+									/>
+								</m.div>
+							) : mode === "confirming-delete" ? (
 								<m.div
 									key="confirm"
 									className="mt-3 flex flex-wrap items-center gap-2"
@@ -625,43 +705,61 @@ function MemoryRow({
 									transition={rowEnter.transition}
 								>
 									{/*
-									 * One text action, at the start of the row so the three icon actions keep their seats. Its
-									 * name carries the memory's head for the same reason the icon buttons' names do. A failure
-									 * is drawn inline by the window like every other write here (`run`).
+									 * One menu at the start of the row so the three icon actions keep their seats: the choices
+									 * `memoryVisibilityOptions` returns, in its order (a choice equal to the current value is
+									 * not offered). Its name carries the memory's head for the same reason the icon buttons'
+									 * names do. A failure is drawn inline by the window like every other write here (`run`).
 									 */}
-									{audience ? (
-										<Button
-											variant="ghost"
-											size="sm"
-											className="mr-auto h-9 px-2 text-muted-foreground sm:h-8"
-											aria-label={
-												audience.kind === "restrict"
-													? t("memory.restrictToSceneFor", { label })
-													: t("memory.shareWithEveryoneFor", { label })
-											}
-											disabled={pending}
-											onClick={() =>
-												void run(
-													(store) =>
-														store.updateMemory(memory.id, {
-															audience:
-																audience.kind === "restrict"
-																	? audience.audience
-																	: { kind: "room" },
-														}),
-													memorySaveFailureMessage(),
-												)
-											}
-										>
-											{audience.kind === "restrict" ? (
-												<EyeOff aria-hidden="true" />
-											) : (
+									{audience && audience.options.length > 0 ? (
+										<DropdownMenu>
+											<DropdownMenuTrigger
+												render={
+													<Button
+														variant="ghost"
+														size="sm"
+														className="mr-auto h-9 px-2 text-muted-foreground sm:h-8"
+														aria-label={t("memory.whoKnowsFor", { label })}
+														disabled={pending}
+													/>
+												}
+											>
 												<Users aria-hidden="true" />
-											)}
-											{audience.kind === "restrict"
-												? t("memory.restrictToScene")
-												: t("memory.shareWithEveryone")}
-										</Button>
+												{t("memory.whoKnows")}
+											</DropdownMenuTrigger>
+											<DropdownMenuContent align="start" className="min-w-48">
+												{audience.options.map((option) => (
+													<DropdownMenuItem
+														key={option.kind}
+														onClick={() => {
+															if (option.kind === "choose") {
+																setMode("choosing-audience");
+																return;
+															}
+															const next: ChatSceneAudience = option.audience;
+															void run(
+																(store) =>
+																	store.updateMemory(memory.id, {
+																		audience: next,
+																	}),
+																memorySaveFailureMessage(),
+															);
+														}}
+													>
+														{option.kind === "share"
+															? t("memory.option.share")
+															: option.kind === "current-scene"
+																? t("memory.option.currentScene", {
+																		names:
+																			option.names.join(", ") ||
+																			t("scene.unknownNames"),
+																	})
+																: option.kind === "choose"
+																	? t("memory.option.choose")
+																	: t("memory.option.narrator")}
+													</DropdownMenuItem>
+												))}
+											</DropdownMenuContent>
+										</DropdownMenu>
 									) : null}
 									{/*
 									 * Not icon-only. When a list of memories has pin buttons the same width as the rest, a screen
@@ -730,6 +828,39 @@ function MemoryRow({
 				)}
 			</AnimatePresence>
 		</m.li>
+	);
+}
+
+/** One line stating who may know a memory; nothing where scenes do not apply. */
+function VisibilityLine({ visibility }: { visibility: MemoryVisibility }) {
+	const { t } = useTranslation(["chat", "common"]);
+	if (visibility.state === "not-applicable") return null;
+	if (visibility.state === "unresolved" && visibility.blocking)
+		return (
+			<p className="mt-1.5 flex items-center gap-1 text-xs font-medium">
+				<CircleAlert aria-hidden="true" className="size-3 shrink-0" />
+				{t("memory.visibility.unresolvedBlocking")}
+			</p>
+		);
+	return (
+		<p className="mt-1.5 flex items-center gap-1 text-muted-foreground text-xs">
+			{visibility.state === "shared" ? (
+				<Users aria-hidden="true" className="size-3 shrink-0" />
+			) : (
+				<EyeOff aria-hidden="true" className="size-3 shrink-0" />
+			)}
+			{visibility.state === "unresolved"
+				? t("memory.visibility.unresolved")
+				: visibility.state === "shared"
+					? t("memory.visibility.shared")
+					: visibility.state === "narrator"
+						? t("memory.visibility.narrator")
+						: visibility.names.length > 0
+							? t("memory.visibility.restricted", {
+									names: visibility.names.join(", "),
+								})
+							: t("memory.visibility.restrictedNobody")}
+		</p>
 	);
 }
 

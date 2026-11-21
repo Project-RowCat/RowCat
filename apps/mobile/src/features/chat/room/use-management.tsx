@@ -1,4 +1,10 @@
-import type { ChatRoom, ChatStore, RoomSettingsRowId } from "@rowcat/chat";
+import {
+	type ChatRoom,
+	type ChatStore,
+	type ConversationMemoryRuntime,
+	memoryStatusFor,
+	type RoomSettingsRowId,
+} from "@rowcat/chat";
 import { AlertDialog } from "@rowcat/ui-native";
 import { useRouter } from "expo-router";
 import {
@@ -94,6 +100,12 @@ export function useRoomManagement(
 	options: {
 		/** Runs after deletion; the screen that had the room open leaves here. */
 		onDeleted?: (room: ManagedRoom) => void;
+		/**
+		 * The open room's long-term memory runtime, held by the conversation screen (`null`: no engine).
+		 * Absent where nobody holds it (the conversation list): the memory window then states nothing
+		 * about long-term memory rather than a guess, and does not open a second handle of its own.
+		 */
+		memory?: ConversationMemoryRuntime | null;
 	} = {},
 ): RoomManagement {
 	const { store, ownsStore, scopeKey } = useChatScope();
@@ -103,7 +115,7 @@ export function useRoomManagement(
 	const [deleteError, setDeleteError] = useState<string | null>(null);
 	const [duplicating, setDuplicating] = useState(false);
 	const [duplicateError, setDuplicateError] = useState<string | null>(null);
-	const { onDeleted } = options;
+	const { onDeleted, memory } = options;
 	const router = useRouter();
 
 	/** Closes an open window when the scope's owner changes, so another account's data never shows. */
@@ -318,6 +330,11 @@ export function useRoomManagement(
 								loading: characters.status === "loading",
 							}}
 							store={target.store}
+							status={
+								memory === undefined
+									? undefined
+									: memoryStatusFor(memory, room.id)
+							}
 							onClose={close}
 						/>
 					) : (

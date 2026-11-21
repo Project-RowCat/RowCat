@@ -1,5 +1,5 @@
-import type { ChatMaintenancePlan, ChatSeed } from "@rowcat/chat";
-import { summaryIdFor } from "@rowcat/chat";
+import type { ChatSeed } from "@rowcat/chat";
+import { promoteMemoryPatch, summaryIdFor } from "@rowcat/chat";
 import { CHAT_SEED_VERSION } from "@rowcat/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -8,20 +8,23 @@ import {
 	type Device,
 	FakeSyncServer,
 } from "#/test/sync-devices.ts";
+import { seedV2AutoMemory, seedV2Summary } from "#/test/v2-history.ts";
 
 /**
- * Two-device round trip for automatic maintenance state: summaries and auto-memory.
+ * Two-device round trip for Memory V2's historical records: the summary (`chat.summary`) and
+ * automatic memories.
  *
- * This lives in its own file because the slice must prove it added only one type to the protocol
- * (chat.summary). memory-roundtrip.test.ts guards memory convergence. This file checks two more
- * things:
- * - Whether summary state reaches the same value on both devices, with one identity.
- * - Whether a rewind beats concurrent forward progress, so the summary of a deleted conversation
- *   does not come back.
+ * V2 is removed and nothing writes these records any more, but devices still hold them and an older
+ * client may still push them. They are seeded here as dirty local rows (`#/test/v2-history.ts`), the
+ * way such a client leaves them, so the next sync run pushes them. This file checks:
+ * - the records still decode, propagate and merge into one identity
+ * - a rewind on one device beats the other side's stale record, so the summary of a deleted
+ *   conversation does not come back
+ * - room deletion takes them along, and an unknown type does not block the cursor
  *
- * The second is this file's reason to exist. With plain HLC last-writer-wins, the later forward
- * write would win and the summary of an event the user deleted would revive. That state never heals
- * on its own.
+ * The rewind case is this file's reason to exist. With plain HLC last-writer-wins, the stale record
+ * written later would win and the summary of an event the user deleted would revive. That state never
+ * heals on its own.
  */
 
 const seed = (title: string): ChatSeed => ({
@@ -67,28 +70,18 @@ const FRONTIER = {
 	messageId: "m-60",
 };
 
-const plan = (
-	roomId: string,
-	overrides: Partial<ChatMaintenancePlan> = {},
-): ChatMaintenancePlan & { roomId: string } => ({
-	roomId,
-	summary: "The story so far.",
-	through: FRONTIER,
-	operations: [],
-	expect: { epoch: 0, frontier: null },
-	...overrides,
-});
-
 describe("summary propagation", () => {
-	it("A's summary and frontier arrive at B as is", async () => {
+	it("A's stored summary and frontier arrive at B as is", async () => {
 		const server = new FakeSyncServer();
 		const a = spawn(server, "a");
 		const b = spawn(server, "b");
 		const roomId = await sharedRoom(a, b);
 
-		await a.chat.applyMemoryMaintenance(
-			plan(roomId, { summary: "The two met at the harbor." }),
-		);
+		await seedV2Summary(a.db, {
+			roomId,
+			summary: "The two met at the harbor.",
+			frontier: FRONTIER,
+		});
 		await converge(a, b);
 
 		const received = await b.chat.getSummary(roomId);
@@ -98,22 +91,26 @@ describe("summary propagation", () => {
 	});
 
 	/**
-	 * With random ids, the summaries each device created would be two different identities, and both
+	 * With random ids, the summaries each device held would be two different identities, and both
 	 * would survive. Nothing could say which one is the room's summary. With a shared id, the case
 	 * ends as one ordinary merge.
 	 */
-	it("summaries made separately on two devices merge into one", async () => {
+	it("summaries held separately on two devices merge into one", async () => {
 		const server = new FakeSyncServer();
 		const a = spawn(server, "a");
 		const b = spawn(server, "b");
 		const roomId = await sharedRoom(a, b);
 
-		await a.chat.applyMemoryMaintenance(
-			plan(roomId, { summary: "A's summary" }),
-		);
-		await b.chat.applyMemoryMaintenance(
-			plan(roomId, { summary: "B's summary" }),
-		);
+		await seedV2Summary(a.db, {
+			roomId,
+			summary: "A's summary",
+			frontier: FRONTIER,
+		});
+		await seedV2Summary(b.db, {
+			roomId,
+			summary: "B's summary",
+			frontier: FRONTIER,
+		});
 		await converge(a, b);
 		await converge(a, b);
 
@@ -124,22 +121,20 @@ describe("summary propagation", () => {
 		expect(await b.db.chatSummaries.count()).toBe(1);
 	});
 
-	it("the later advance wins; within an epoch it is a plain last writer", async () => {
+	it("within an epoch it is a plain last writer", async () => {
 		const server = new FakeSyncServer();
 		const a = spawn(server, "a");
 		const b = spawn(server, "b");
 		const roomId = await sharedRoom(a, b);
 
-		await a.chat.applyMemoryMaintenance(plan(roomId, { summary: "S1" }));
+		await seedV2Summary(a.db, { roomId, summary: "S1", frontier: FRONTIER });
 		await converge(a, b);
 
-		await b.chat.applyMemoryMaintenance(
-			plan(roomId, {
-				summary: "S2",
-				expect: { epoch: 0, frontier: FRONTIER },
-				through: { createdAt: "2026-08-25T02:00:00.000Z", messageId: "m-80" },
-			}),
-		);
+		await seedV2Summary(b.db, {
+			roomId,
+			summary: "S2",
+			frontier: { createdAt: "2026-08-25T02:00:00.000Z", messageId: "m-80" },
+		});
 		await converge(a, b);
 
 		expect((await a.chat.getSummary(roomId))?.summary).toBe("S2");
@@ -155,11 +150,11 @@ describe("auto memory propagation", () => {
 		const roomId = await sharedRoom(a, b);
 
 		await a.chat.createMemory({ roomId, content: "Memory a person wrote" });
-		await a.chat.applyMemoryMaintenance(
-			plan(roomId, {
-				operations: [{ type: "add", content: "Automatically extracted fact" }],
-			}),
-		);
+		await seedV2AutoMemory(a.db, {
+			roomId,
+			content: "Automatically extracted fact",
+			originAt: FRONTIER.createdAt,
+		});
 		await converge(a, b);
 
 		const received = await b.chat.listMemories(roomId);
@@ -176,74 +171,37 @@ describe("auto memory propagation", () => {
 		expect(manual?.originAt).toBeNull();
 	});
 
-	it("a replacement propagates keeping its identity", async () => {
+	/**
+	 * The one change a person can still make to an auto memory: editing it makes it theirs. The other
+	 * device must see the same identity, now human-written, so its own rewinds leave it alone.
+	 */
+	it("a person's promotion propagates keeping its identity", async () => {
 		const server = new FakeSyncServer();
 		const a = spawn(server, "a");
 		const b = spawn(server, "b");
 		const roomId = await sharedRoom(a, b);
 
-		await a.chat.applyMemoryMaintenance(
-			plan(roomId, {
-				operations: [{ type: "add", content: "Kai has the key." }],
-			}),
-		);
+		const auto = await seedV2AutoMemory(a.db, {
+			roomId,
+			content: "Kai has the key.",
+			originAt: FRONTIER.createdAt,
+		});
 		await converge(a, b);
-		const [before] = await b.chat.listMemories(roomId);
 
-		await a.chat.applyMemoryMaintenance(
-			plan(roomId, {
-				expect: { epoch: 0, frontier: FRONTIER },
-				through: { createdAt: "2026-08-25T02:00:00.000Z", messageId: "m-80" },
-				operations: [
-					{
-						type: "replace",
-						memoryId: before.id,
-						content: "Kai gave the key to Yuna.",
-					},
-				],
-			}),
+		await a.chat.updateMemory(
+			auto.id,
+			promoteMemoryPatch("Kai gave the key to Yuna."),
 		);
 		await converge(a, b);
 
 		const after = await b.chat.listMemories(roomId);
 		expect(after).toHaveLength(1);
-		expect(after[0].id).toBe(before.id);
+		expect(after[0].id).toBe(auto.id);
 		expect(after[0].content).toBe("Kai gave the key to Yuna.");
+		expect(after[0].source).toBe("user");
 	});
 
-	it("a removal propagates as a tombstone", async () => {
-		const server = new FakeSyncServer();
-		const a = spawn(server, "a");
-		const b = spawn(server, "b");
-		const roomId = await sharedRoom(a, b);
-
-		await a.chat.applyMemoryMaintenance(
-			plan(roomId, { operations: [{ type: "add", content: "Passing fact" }] }),
-		);
-		await converge(a, b);
-		const [created] = await b.chat.listMemories(roomId);
-
-		await a.chat.applyMemoryMaintenance(
-			plan(roomId, {
-				expect: { epoch: 0, frontier: FRONTIER },
-				operations: [{ type: "remove", memoryId: created.id }],
-			}),
-		);
-		await converge(a, b);
-
-		expect(await b.chat.listMemories(roomId)).toEqual([]);
-	});
-});
-
-describe("rewind precedence", () => {
-	/**
-	 * The subtlest merge rule in this slice: generation first.
-	 *
-	 * A deleted the past, dropping the summary and bumping the generation. B, not knowing this,
-	 * advanced the old summary by one step. Looking only at HLC, B's later write would win, and the
-	 * summary of a deleted conversation would come back.
-	 */
-	it("one side's rewind beats the other side's concurrent advance", async () => {
+	it("a rewind's removal propagates as a tombstone; manual memories stay", async () => {
 		const server = new FakeSyncServer();
 		const a = spawn(server, "a");
 		const b = spawn(server, "b");
@@ -254,30 +212,63 @@ describe("rewind precedence", () => {
 			role: "user",
 			content: "Utterance to delete later",
 		});
-		await a.chat.applyMemoryMaintenance(
-			plan(roomId, {
-				summary: "Summary containing an event to be erased",
-				through: { createdAt: message.createdAt, messageId: message.id },
-			}),
-		);
+		await a.chat.createMemory({ roomId, content: "Memory a person wrote" });
+		const auto = await seedV2AutoMemory(a.db, {
+			roomId,
+			content: "Fact from the deleted span",
+			originAt: message.createdAt,
+		});
+		await converge(a, b);
+		expect(await b.chat.listMemories(roomId)).toHaveLength(2);
+
+		await a.chat.deleteFromMessage(message.id);
+		await converge(a, b);
+
+		expect(
+			(await b.chat.listMemories(roomId)).map((memory) => memory.content),
+		).toEqual(["Memory a person wrote"]);
+		expect((await b.db.chatMemories.get(auto.id))?.deletedAt).not.toBeNull();
+	});
+});
+
+describe("rewind precedence", () => {
+	/**
+	 * The subtlest merge rule for these records: epoch first.
+	 *
+	 * A deleted the past, retiring the summary and raising its epoch. B, not knowing this, rewrote the
+	 * old summary later (an older V2 client still running there). Looking only at HLC, B's later write
+	 * would win, and the summary of a deleted conversation would come back.
+	 */
+	it("one side's rewind beats the other side's later stale record", async () => {
+		const server = new FakeSyncServer();
+		const a = spawn(server, "a");
+		const b = spawn(server, "b");
+		const roomId = await sharedRoom(a, b);
+
+		const message = await a.chat.appendMessage({
+			roomId,
+			role: "user",
+			content: "Utterance to delete later",
+		});
+		await seedV2Summary(a.db, {
+			roomId,
+			summary: "Summary containing an event to be erased",
+			frontier: { createdAt: message.createdAt, messageId: message.id },
+		});
 		await converge(a, b);
 		expect((await b.chat.getSummary(roomId))?.summary).toBe(
 			"Summary containing an event to be erased",
 		);
 
-		// A deletes that span. The summary is dropped and the generation is bumped.
+		// A deletes that span. The summary is retired and the epoch is raised.
 		await a.chat.deleteFromMessage(message.id);
-		// B, unaware of that, advances the summary even later.
-		await b.chat.applyMemoryMaintenance(
-			plan(roomId, {
-				summary: "Summary still telling that event",
-				expect: {
-					epoch: 0,
-					frontier: { createdAt: message.createdAt, messageId: message.id },
-				},
-				through: { createdAt: "2026-08-25T09:00:00.000Z", messageId: "m-99" },
-			}),
-		);
+		// B, unaware of that, writes the old-epoch summary even later.
+		await seedV2Summary(b.db, {
+			roomId,
+			summary: "Summary still telling that event",
+			frontier: { createdAt: "2026-08-25T09:00:00.000Z", messageId: "m-99" },
+		});
+		expect((await b.chat.getSummary(roomId))?.epoch).toBe(0);
 
 		await converge(a, b);
 		await converge(a, b);
@@ -291,12 +282,10 @@ describe("rewind precedence", () => {
 	});
 
 	/**
-	 * And there is no deadlock. If 'the empty summary wins' were the rule, a device holding a stale
-	 * rewind would revert every later advance forever, and the room's summary would never progress
-	 * again. The generation only increases, so forward progress after a rewind wins normally within
-	 * the same generation.
+	 * Nothing advances summaries any more, so a retired summary stays retired: later turns and syncs on
+	 * either device write no new summary text and no new epoch.
 	 */
-	it("summaries advance again after a rewind", async () => {
+	it("nothing re-advances a retired summary", async () => {
 		const server = new FakeSyncServer();
 		const a = spawn(server, "a");
 		const b = spawn(server, "b");
@@ -307,41 +296,52 @@ describe("rewind precedence", () => {
 			role: "user",
 			content: "Utterance to delete",
 		});
-		await a.chat.applyMemoryMaintenance(
-			plan(roomId, {
-				through: { createdAt: message.createdAt, messageId: message.id },
-			}),
-		);
+		await seedV2Summary(a.db, {
+			roomId,
+			summary: "The story so far.",
+			frontier: { createdAt: message.createdAt, messageId: message.id },
+		});
 		await a.chat.deleteFromMessage(message.id);
 		await converge(a, b);
 
-		await b.chat.applyMemoryMaintenance(
-			plan(roomId, {
-				summary: "Summary rebuilt after the rewind",
-				expect: { epoch: 1, frontier: null },
-			}),
-		);
+		await b.chat.appendMessage({ roomId, role: "user", content: "Later turn" });
+		await a.chat.appendMessage({
+			roomId,
+			role: "assistant",
+			content: "Later reply",
+		});
 		await converge(a, b);
 		await converge(a, b);
 
-		for (const device of [a, b])
-			expect((await device.chat.getSummary(roomId))?.summary).toBe(
-				"Summary rebuilt after the rewind",
-			);
+		for (const device of [a, b]) {
+			const summary = await device.chat.getSummary(roomId);
+			expect(summary?.summary).toBe("");
+			expect(summary?.frontier).toBeNull();
+			expect(summary?.epoch).toBe(1);
+			expect(await device.db.chatSummaries.count()).toBe(1);
+		}
 	});
 });
 
 describe("room deletion", () => {
-	it("one room tombstone takes the summary with it", async () => {
+	it("one room tombstone takes the summary and memories with it", async () => {
 		const server = new FakeSyncServer();
 		const a = spawn(server, "a");
 		const b = spawn(server, "b");
 		const roomId = await sharedRoom(a, b);
 
-		await a.chat.applyMemoryMaintenance(
-			plan(roomId, { operations: [{ type: "add", content: "Auto fact" }] }),
-		);
+		await seedV2Summary(a.db, {
+			roomId,
+			summary: "The story so far.",
+			frontier: FRONTIER,
+		});
+		await seedV2AutoMemory(a.db, {
+			roomId,
+			content: "Auto fact",
+			originAt: FRONTIER.createdAt,
+		});
 		await converge(a, b);
+		expect(await b.chat.getSummary(roomId)).not.toBeNull();
 
 		await a.chat.deleteRoom(roomId);
 		await converge(a, b);
@@ -361,22 +361,20 @@ describe("room deletion", () => {
 
 describe("compatibility", () => {
 	/**
-	 * This slice's compatibility claim itself. The server has no type vocabulary. An old client that
-	 * does not know chat.summary ignores the record and advances only its cursor. That is why neither
-	 * SYNC_PROTOCOL_VERSION nor the envelope version is bumped.
+	 * The server has no type vocabulary. A client that does not know a type ignores the record and
+	 * advances only its cursor; that is also how an older client treats records it no longer knows.
 	 */
 	it("an unknown type does not block the cursor", async () => {
 		const server = new FakeSyncServer();
 		const a = spawn(server, "a");
 		const b = spawn(server, "b");
 		const roomId = await sharedRoom(a, b);
-		await a.chat.applyMemoryMaintenance(plan(roomId, { summary: "S1" }));
+		await seedV2Summary(a.db, { roomId, summary: "S1", frontier: FRONTIER });
 		await converge(a, b);
 
 		/**
-		 * Imitates an old client. A record with no codec for it is ignored as unknown_type, and the
-		 * cursor still advances. That is why adding a type to the protocol does not break compatibility.
-		 * The advancement after it checks that the summary rests on this rule.
+		 * A record with no codec for it is ignored as unknown_type, and the cursor still advances. The
+		 * summary update after it checks that later records still arrive.
 		 */
 		server.seed({
 			id: "future-record",
@@ -387,13 +385,11 @@ describe("compatibility", () => {
 			deleted: false,
 		});
 
-		await a.chat.applyMemoryMaintenance(
-			plan(roomId, {
-				summary: "S2",
-				expect: { epoch: 0, frontier: FRONTIER },
-				through: { createdAt: "2026-08-25T02:00:00.000Z", messageId: "m-80" },
-			}),
-		);
+		await seedV2Summary(a.db, {
+			roomId,
+			summary: "S2",
+			frontier: { createdAt: "2026-08-25T02:00:00.000Z", messageId: "m-80" },
+		});
 		await converge(a, b);
 
 		expect((await b.chat.getSummary(roomId))?.summary).toBe("S2");

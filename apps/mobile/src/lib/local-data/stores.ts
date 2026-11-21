@@ -349,6 +349,8 @@ const CHAT_READS: ReadonlySet<keyof ChatStore & string> = new Set([
 	"getRoom",
 	"listRooms",
 	"listRecentMessages",
+	/** The history window counts the room on every turn; missed here, each turn would signal a write. */
+	"countMessages",
 	"listAllMessages",
 	"listMemories",
 	/**

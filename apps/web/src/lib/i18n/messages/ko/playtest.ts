@@ -76,7 +76,7 @@ export const playtest: Messages["playtest"] = {
 			"play-guide": "진행 지침",
 			"lore-system-bottom": "로어 (하단)",
 			"lore-before-history": "로어 (생성 직전)",
-			summary: "요약",
+			consolidated: "지난 이야기",
 			memory: "기억",
 			"user-note": "유저 노트",
 			intensity: "표현 수위",

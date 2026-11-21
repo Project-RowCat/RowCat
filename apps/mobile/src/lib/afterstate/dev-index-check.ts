@@ -3,7 +3,6 @@ import {
 	hasNativeAfterstate,
 	openNativeAfterstate,
 } from "../../../modules/afterstate-memory/index.ts";
-import { requestedMemoryBackend } from "./native-memory.ts";
 
 /**
  * Dev diagnostics only (`/dev-tools`): whether the member's afterstate index agrees with the local
@@ -23,7 +22,6 @@ export async function runAfterstateIndexCheck(
 	store: ChatStore | null,
 ): Promise<IndexCheckRow[]> {
 	const rows: IndexCheckRow[] = [
-		{ label: "mode", value: requestedMemoryBackend() },
 		{ label: "engine", value: hasNativeAfterstate() ? "loaded" : "absent" },
 	];
 	if (!scopeKey || !store || !hasNativeAfterstate()) return rows;

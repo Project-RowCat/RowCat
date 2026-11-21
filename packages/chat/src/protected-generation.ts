@@ -126,7 +126,12 @@ export function storyChatAssemblyRequest(
 				updatedAt,
 			}),
 		),
-		...(input.summary !== undefined ? { summary: input.summary } : {}),
+		/**
+		 * The wire field is still called `summary` (the contract predates afterstate, and older servers
+		 * read it), but what it carries is afterstate's authorized earlier episodes, rendered
+		 * (`consolidatedText`). Nothing in this codebase sends a memory V2 summary any more.
+		 */
+		...(input.consolidated?.trim() ? { summary: input.consolidated } : {}),
 		room: {
 			...(room.persona !== undefined ? { persona: room.persona } : {}),
 			...(room.userNote !== undefined ? { userNote: room.userNote } : {}),
@@ -183,7 +188,8 @@ export function storyAssemblyInput(input: {
 			? { userInput: request.userInput }
 			: {}),
 		memories: request.memories,
-		...(request.summary !== undefined ? { summary: request.summary } : {}),
+		/** The long-term-context field (see `storyChatAssemblyRequest`): rendered as earlier episodes. */
+		...(request.summary !== undefined ? { consolidated: request.summary } : {}),
 		allAges: input.allAges,
 		...(request.maxOutputTokens !== undefined
 			? { maxOutputTokens: request.maxOutputTokens }

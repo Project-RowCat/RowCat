@@ -2,6 +2,7 @@ import { StoryChatSeedDto } from "@rowcat/contracts/chat";
 import Dexie from "dexie";
 import { afterEach, describe, expect, it } from "vitest";
 import { createChatStore } from "#/lib/local-chat/store.ts";
+import { seedV2AutoMemory } from "#/test/v2-history.ts";
 import { activateLocalDbScope, resetLocalDbScope } from "./db.ts";
 
 /**
@@ -173,21 +174,26 @@ describe("v12 → v13 migration", () => {
 		const db = activateLocalDbScope(viewer);
 		const store = createChatStore(db);
 		expect(await db.chatSummaries.count()).toBe(0);
-		/** A missing summary is the exact state here: maintenance has not run yet. */
+		/** A missing summary is the exact state here: this device holds no V2 history. */
 		expect(await store.getSummary("room-1")).toBeNull();
 	});
 
-	it("auto memories made after migration stay auto", async () => {
+	/**
+	 * The backfill only fills a missing source; it never rewrites one. An automatic memory that arrives
+	 * after the migration (V2 wrote them before it was removed, and a sync pull still delivers them)
+	 * keeps `auto`, next to the person-written memory that stays `user`.
+	 */
+	it("auto memories arriving after migration stay auto", async () => {
 		const viewer = nextViewer("alice");
 		await seedLegacy(viewer);
 
-		const store = createChatStore(activateLocalDbScope(viewer));
-		await store.applyMemoryMaintenance({
+		const db = activateLocalDbScope(viewer);
+		const store = createChatStore(db);
+		await seedV2AutoMemory(db, {
 			roomId: "room-1",
-			summary: "Summary after migration",
-			through: { createdAt: "2026-02-01T00:00:00.000Z", messageId: "m-1" },
-			operations: [{ type: "add", content: "Automatically extracted fact" }],
-			expect: { epoch: 0, frontier: null },
+			content: "Automatically extracted fact",
+			originAt: "2026-02-01T00:00:00.000Z",
+			pulled: true,
 		});
 
 		const memories = await store.listMemories("room-1");

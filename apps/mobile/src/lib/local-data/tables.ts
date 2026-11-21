@@ -687,9 +687,10 @@ export const chatSummaryTable: RecordTable<ChatSummary> = {
 		 * The two frontier columns are read **together**: a row with only one of them is not a frontier.
 		 *
 		 * That state is not produced by the normal path (writes always set both), but it is possible with
-		 * a corrupted row or a database edited by hand. Passing a half value through would make batch
-		 * selection run against coordinates that point nowhere. Folding it to absent makes the room
-		 * process again from the start, which errs on the safe side.
+		 * a corrupted row or a database edited by hand. Folding it to absent errs on the safe side: the
+		 * history rewind treats a summary with text but no frontier as covering unknown history and
+		 * retires it on any rewrite (`planHistoryRewind`).
+		 * (A historical Memory V2 record: decoded and synced, never advanced.)
 		 */
 		const createdAt = nullableText(row.frontier_created_at);
 		const messageId = nullableText(row.frontier_message_id);

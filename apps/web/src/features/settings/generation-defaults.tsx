@@ -131,7 +131,6 @@ function GenerationDefaults({
 	const { t: tGeneration } = useTranslation("generation");
 	const { store } = useGenerationScope();
 	const { global, inherited, loading } = useGlobalGenerationState();
-	const summaryTarget = useUtilityGenerationTarget("summary");
 	const suggestionTarget = useUtilityGenerationTarget("suggestion");
 	const [error, setError] = useState<string | null>(null);
 	const reconcileReasoning = useReasoningReconcile();
@@ -290,24 +289,11 @@ function GenerationDefaults({
 			/>
 
 			{/*
-			 * Auxiliary-request models: personal-key models only, since the choice applies only to rooms on
+			 * Auxiliary-request model (reply suggestions; memory calls no model): personal-key models only, since the choice applies only to rooms on
 			 * a personal key (`resolveUtilityTarget`). `inherited` is `null` because what they fall back to
 			 * is each room's own model, which no single name on this screen describes. A choice whose
 			 * provider was disconnected stays as it is and says so; it is never swapped for another model.
 			 */}
-			<SettingsRowFrame>
-				<ModelTargetField
-					title={tGeneration("utility.summaryLabel")}
-					description={tGeneration("utility.summaryDescription")}
-					value={summaryTarget.value}
-					inherited={null}
-					byoOnly
-					loading={summaryTarget.loading}
-					disabled={!store}
-					onChange={(next) => void applyUtility("summary", next)}
-					renderRecovery={renderRecovery}
-				/>
-			</SettingsRowFrame>
 			<SettingsRowFrame>
 				<ModelTargetField
 					title={tGeneration("utility.suggestionLabel")}

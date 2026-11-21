@@ -7,6 +7,7 @@ import {
 	type ConversationDebugSink,
 	type ConversationSession,
 	commitUserTurn,
+	consolidatedText,
 	type GenerationPreferenceStore,
 	type GenerationProvider,
 	type GenerationTarget,
@@ -286,29 +287,25 @@ export async function runGenerationTurn(
 		 */
 		const characters = await session.loadCharacters();
 		/**
-		 * The summary is a snapshot at the same moment too. Background maintenance may update it while
-		 * the response streams, and picking up the new one mid-request would make which context a request
-		 * used depend on another task's timing.
-		 */
-		const summary = await session.loadSummary();
-		/**
-		 * Recalled earlier passages (afterstate backend), a snapshot at the same moment, asked through the
-		 * same shared function as web. Without the backend the session has no loader and the request is
-		 * exactly V2's; the loader never throws and gives up quickly.
-		 */
-		/**
-		 * Scenes (who witnessed what), a snapshot at the same moment. Read before recall so the recall
-		 * question knows which memories the knowledge boundary will carry (`prompt-scope.ts`).
+		 * Scenes (who witnessed what), a snapshot at the same moment. Read before long-term memory so the
+		 * recall question knows which memories the knowledge boundary will carry (`prompt-scope.ts`).
 		 */
 		const scenes = (await session.loadScenes?.()) ?? [];
-		const recall = session.loadRecall
-			? await session.loadRecall(
-					recallRequestFor(history, memories, undefined, {
-						scenes,
-						memoryOwner: session.memoryOwner,
-					}),
+		/**
+		 * Long-term memory, a snapshot at the same moment: afterstate's recalled passages and
+		 * consolidated earlier episodes for this turn's perspective, asked through the same shared
+		 * function as web. The loader never throws and gives up quickly; without an engine it answers
+		 * `unavailable` with nothing, and no other engine stands in.
+		 */
+		const longTerm = session.loadLongTermMemory
+			? await session.loadLongTermMemory(
+					recallRequestFor(history, memories, undefined, { scenes }),
 				)
 			: null;
+		const recall = longTerm?.recall ?? null;
+		const consolidated = longTerm?.consolidated
+			? consolidatedText(longTerm.consolidated)
+			: "";
 		/**
 		 * Secures this conversation's routing-affinity key; some conversations have none (playback
 		 * sessions). Unlike the three above this is acquisition, not a snapshot: the value lives on the
@@ -407,15 +404,8 @@ export async function runGenerationTurn(
 			messages: history,
 			memories,
 			characters,
-			summary,
+			...(consolidated ? { consolidated } : {}),
 			...(recall ? { recall } : {}),
-			/*
-			 * Afterstate-owned memory leaves V2's summary and auto memories out (`prompt-scope.ts`). V2
-			 * ownership creates no key, so those requests are what they were.
-			 */
-			...(session.memoryOwner === "afterstate"
-				? { memoryOwner: "afterstate" as const }
-				: {}),
 			...(scenes.length > 0
 				? {
 						scenes: {
@@ -623,7 +613,8 @@ export async function runGenerationTurn(
 				turnId: id,
 				data: { messageId: input.continueMessageId ?? null },
 			}));
-			// Continued text is conversation growth too, the same trigger as an ordinary save.
+			// Continued text is conversation growth too: the same trigger as an ordinary save (index it,
+			// consolidate what left the window).
 			try {
 				session.maintain?.();
 			} catch {
@@ -670,11 +661,11 @@ export async function runGenerationTurn(
 				data: { messageId: messageId ?? null },
 			}));
 			/**
-			 * Wake auto-maintenance after the save, without awaiting. Here because that is exactly when the
-			 * message count changes (the trigger), and waking before the save would pick a batch over a
-			 * history missing the response just made. Failure is unrelated to this turn: the port is
-			 * supposed not to throw (`ConversationSession.maintain`), but an escaped exception would turn an
-			 * already successful turn into a failure.
+			 * Wake memory maintenance after the save, without awaiting: the afterstate index takes in the
+			 * response just saved, then consolidates what left the window (local, deterministic, no model
+			 * call). Waking before the save would index a history missing it. Failure is unrelated to this
+			 * turn: the port is supposed not to throw (`ConversationSession.maintain`), but an escaped
+			 * exception would turn an already successful turn into a failure.
 			 */
 			try {
 				session.maintain?.();

@@ -46,7 +46,7 @@ export type ChatSceneAudience =
 	/** No character saw it (narration of a hidden event). */
 	| { kind: "narrator" };
 
-/** Where a scene starts: the first message it covers (the same position key as the summary frontier). */
+/** Where a scene starts: the first message it covers (a stored message position: time, then id). */
 export interface ChatSceneStart {
 	createdAt: string;
 	messageId: string;

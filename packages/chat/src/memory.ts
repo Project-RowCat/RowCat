@@ -11,8 +11,9 @@ import { type ChatSceneAudience, requireSceneAudience } from "./scene.ts";
  * Edits, deletes and sync merges would overwrite the whole room, and two devices each adding a
  * memory would lose one of them.
  *
- * `source` was added in V2, when auto-maintenance (`memory-maintenance.ts`) began producing
- * entries. The vocabulary is `user` and `auto` only; predeclaring values such as `ai`, `summary` or
+ * `source` was added in memory V2, when its automatic maintenance (since removed; long-term memory
+ * is afterstate's, `conversation-memory.ts`) began producing entries. Existing `auto` records stay:
+ * they are the user's data to read, edit (which promotes them) or delete. The vocabulary is `user` and `auto` only; predeclaring values such as `ai`, `summary` or
  * `extracted` would have fixed producers that do not exist.
  *
  * Both kinds share the record, storage, sync, budget and delete lifecycle. They differ only in who
@@ -25,8 +26,9 @@ import { type ChatSceneAudience, requireSceneAudience } from "./scene.ts";
 
 /**
  * Who wrote the memory. This decides who may edit it:
- * - `user`: a person wrote it. Auto-maintenance reads it but never edits or deletes it.
- * - `auto`: extracted from the conversation. Auto-maintenance may replace or remove it.
+ * - `user`: a person wrote it. Nothing automatic edits or deletes it.
+ * - `auto`: extracted from the conversation by memory V2 (historical). A history rewrite that erases
+ *   the stretch it came from deletes it (`planHistoryRewind`); nothing creates new ones.
  *
  * This is the most important product rule in this slice. A sentence the user wrote is their data.
  * If the model rewrote it as a 'more accurate' phrasing, the user would find text in their list
@@ -91,7 +93,7 @@ export interface ChatMemory extends ChatSyncMeta, ChatSoftDelete {
 	 * This exists for history rewrite. If the user deletes past messages, facts extracted from that
 	 * span are no longer things that happened in this conversation, and keeping them makes the model
 	 * keep referring to events the user removed. To choose what to remove, the origin of each memory
-	 * must be known, and one timestamp is the cheapest answer (`planMaintenanceRewind`).
+	 * must be known, and one timestamp is the cheapest answer (`planHistoryRewind`).
 	 *
 	 * Message ids are not stored, because they are the values that get deleted. A rewind is a range
 	 * check ('after this time'), and the anchoring message would disappear at that very moment.
@@ -195,8 +197,8 @@ export const CHAT_AUTO_MEMORY_CONTENT_MAX_LENGTH = 200;
  *
  * 60 is about three times the budget at the 200-character limit, so the budget starts truncating
  * well before this cap is reached. What this value does is keep storage from growing without bound.
- * When it is reached, maintenance either drops the new candidate or replaces a stale auto memory.
- * Human-written memories never give up their slot (`planMemoryMaintenance`).
+ * Nothing adds automatic memories any more (memory V2 is gone); the cap remains for records that
+ * arrive by sync from older clients. Human-written memories never give up their slot.
  */
 export const CHAT_AUTO_MEMORY_MAX_PER_ROOM = 60;
 
@@ -258,7 +260,7 @@ export function checkAutoMemoryContent(input: string): ChatMemoryContentCheck {
  * 'Kai  is left-handed' from becoming two memories. It deliberately does not catch other sentences
  * with the same meaning (for example, 'Kai mainly uses the left hand'). That judgment belongs to
  * embeddings, and this slice has none. Instead, the extraction request receives the existing list
- * and is told not to return facts already expressed (`maintenance-prompt.ts`). Because the model's
+ * and is told not to return facts already expressed (V2's maintenance prompt, removed). Because the model's
  * answer is still not trusted, this deterministic comparison runs once more after it.
  *
  * No stemming and no particle removal. Those rules are locale-specific, and this package
@@ -334,7 +336,7 @@ export interface CreateMemoryInput {
 	 * Omitted means **a human-written memory**.
 	 *
 	 * The default is the safe direction. The add form does not pass this value; only automatic
-	 * maintenance sets `auto` explicitly. If a new caller forgets it, the memory simply is not
+	 * maintenance set `auto` explicitly (V2, removed). If a new caller forgets it, the memory simply is not
 	 * eligible for automatic cleanup. If the default were `auto`, a memory a person wrote could be
 	 * silently removed.
 	 */
@@ -349,9 +351,7 @@ export interface CreateMemoryInput {
  *
  * `source` is here for one operation: promotion (`promoteMemoryPatch`). Storage applies this patch
  * as written, so the field itself can express auto-to-user. The reverse direction (user-to-auto) is
- * blocked not by the type but by callers: automatic maintenance never calls this operation and goes
- * through `applyMemoryMaintenance` instead. Inside that, the pure plan already filters out
- * operations that target human-written memories (`planMemoryMaintenance`).
+ * blocked by `mergeMemorySource`, which storage applies to every patch.
  */
 export type UpdateMemoryPatch = Partial<
 	Pick<ChatMemory, "content" | "pinned" | "source">

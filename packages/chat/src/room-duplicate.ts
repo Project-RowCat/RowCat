@@ -10,33 +10,31 @@ import {
 	normalizeRoomTitle,
 } from "./model.ts";
 import type { ChatScene, ChatSceneAudience } from "./scene.ts";
-import { type ChatSummary, summaryIdFor } from "./summary.ts";
 
 /**
- * Duplicating a conversation: one room and its five children copied under new identities.
+ * Duplicating a conversation: one room and its four children copied under new identities.
  *
  * The rule lives in the pure package because both stores (Dexie on web, SQLite on mobile) write the
  * same copy. Written per store, one of them eventually forgets a child, and that copy is a
  * conversation that answers differently from its original with nothing on screen to say why: the
- * model has lost the memories, the added cast or the summary the original still carries.
+ * model has lost the memories or the added cast the original still carries.
  *
  * What a copy is:
  *
- * - **Every child, live ones only.** Messages, memories, added characters, scenes and the summary. A
- *   tombstoned record is history the user removed; copying it would bring it back in a room that
- *   never deleted it.
- * - **New identities, never shared.** Every record gets a fresh id, and the summary takes
- *   `summaryIdFor(newRoomId)`. Sharing any id would make the two rooms fight over one row in the
- *   server's `(owner, id)` key.
+ * - **Every child, live ones only.** Messages, memories, added characters and scenes. A tombstoned
+ *   record is history the user removed; copying it would bring it back in a room that never deleted
+ *   it. Memory V2's historical summary is **not** copied: nothing creates V2 records any more, and the
+ *   copy's long-term memory is rebuilt by its own afterstate index from the copied messages.
+ * - **New identities, never shared.** Every record gets a fresh id. Sharing any id would make the two
+ *   rooms fight over one row in the server's `(owner, id)` key.
  * - **A new routing key.** It is a per-room value (`routingSessionId`); a copy that kept the
  *   original's would tell upstream the two conversations are one.
  * - **The room's own settings travel** (persona override, narration, intensity, user note), as do
  *   the immutable acquisition fields (seed, origin story, rating, prompt protection). The copy is the
  *   same conversation from the same work, so those values are true of it too.
- * - **Message and memory times are kept verbatim.** Ordering is `[roomId+createdAt+id]`, the summary
- *   frontier is a coordinate on that axis, and an auto memory's `originAt` points into it. Restamping
- *   them would leave the frontier pointing between messages and the next rewind deleting the wrong
- *   memories. The room alone is stamped now, so the copy sorts to the top of the list as the thing
+ * - **Message and memory times are kept verbatim.** Ordering is `[roomId+createdAt+id]`, and an
+ *   auto memory's `originAt` points into it. Restamping them would make the next rewind delete the
+ *   wrong memories. The room alone is stamped now, so the copy sorts to the top of the list as the thing
  *   just made.
  * - **Every copied record is a new local record** (dirty, never uploaded, its own revision). A copy
  *   syncs as its own conversation; that is the cost of having one.
@@ -59,7 +57,6 @@ export interface ChatRoomDuplicateSource {
 	characters: readonly ChatCharacter[];
 	/** The room's scenes (`scene.ts`). Tombstones are skipped here. */
 	scenes: readonly ChatScene[];
-	summary: ChatSummary | null;
 }
 
 export interface ChatRoomDuplicateStamp {
@@ -85,7 +82,6 @@ export interface ChatRoomDuplicate {
 	memories: ChatMemory[];
 	characters: ChatCharacter[];
 	scenes: ChatScene[];
-	summary: ChatSummary | null;
 }
 
 type Position = { createdAt: string; id: string };
@@ -163,21 +159,6 @@ const remapAudience = (
 	return { kind: "participants", members: [...new Set(members)].sort() };
 };
 
-/**
- * The summary only travels when its frontier still points at a copied message. A frontier whose
- * message is gone cannot be remapped, and a guessed frontier would claim a range as summarized that
- * the copy's maintenance then never revisits. Dropping it costs one recomputation.
- */
-const copyableSummary = (
-	summary: ChatSummary | null,
-	liveMessageIds: ReadonlySet<string>,
-): ChatSummary | null => {
-	if (!summary || !isLiveChatRecord(summary)) return null;
-	if (summary.frontier && !liveMessageIds.has(summary.frontier.messageId))
-		return null;
-	return summary;
-};
-
 /** How many revisions `planRoomDuplicate` consumes for this source: the room plus each live child. */
 export function chatRoomDuplicateRecordCount(
 	source: ChatRoomDuplicateSource,
@@ -188,13 +169,7 @@ export function chatRoomDuplicateRecordCount(
 		messages.length +
 		source.memories.filter(isLiveChatRecord).length +
 		source.characters.filter(isLiveChatRecord).length +
-		copyableScenes(source.scenes, messages).length +
-		(copyableSummary(
-			source.summary,
-			new Set(messages.map((message) => message.id)),
-		)
-			? 1
-			: 0)
+		copyableScenes(source.scenes, messages).length
 	);
 }
 
@@ -269,26 +244,7 @@ export function planRoomDuplicate(
 		...freshChatSyncMeta(rev()),
 	}));
 
-	const kept = copyableSummary(source.summary, new Set(messageIds.keys()));
-	const summary: ChatSummary | null = kept
-		? {
-				...kept,
-				id: summaryIdFor(roomId),
-				roomId,
-				frontier: kept.frontier
-					? {
-							createdAt: kept.frontier.createdAt,
-							// Present: `copyableSummary` kept only frontiers on a copied message.
-							messageId:
-								messageIds.get(kept.frontier.messageId) ??
-								kept.frontier.messageId,
-						}
-					: null,
-				...freshChatSyncMeta(rev()),
-			}
-		: null;
-
-	return { room, messages, memories, characters, scenes, summary };
+	return { room, messages, memories, characters, scenes };
 }
 
 /**

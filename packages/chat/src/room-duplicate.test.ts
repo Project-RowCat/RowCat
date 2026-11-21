@@ -17,7 +17,6 @@ import {
 	planRoomDuplicate,
 } from "./room-duplicate.ts";
 import { createSceneRecord, resolveMessageAudiences } from "./scene.ts";
-import { createSummaryRecord } from "./summary.ts";
 
 /**
  * A copy that loses a child is a conversation that answers differently from its original with no
@@ -110,15 +109,6 @@ const source = (): ChatRoomDuplicateSource => {
 				rev(97),
 			),
 		],
-		summary: createSummaryRecord(
-			{
-				roomId: "room-1",
-				summary: "도서관에 들어갔다",
-				frontier: { createdAt: at(2), messageId: "m2" },
-				epoch: 2,
-			},
-			{ now: at(6), rev: rev(50) },
-		),
 	};
 };
 
@@ -187,7 +177,6 @@ describe("planRoomDuplicate", () => {
 			...original.memories.map((m) => m.id),
 			...original.characters.map((c) => c.id),
 			...original.scenes.map((s) => s.id),
-			original.summary?.id,
 		]);
 		const after = [
 			copy.room.id,
@@ -195,7 +184,6 @@ describe("planRoomDuplicate", () => {
 			...copy.memories.map((m) => m.id),
 			...copy.characters.map((c) => c.id),
 			...copy.scenes.map((s) => s.id),
-			copy.summary?.id,
 		];
 		for (const id of after) expect(before.has(id), id).toBe(false);
 
@@ -205,32 +193,14 @@ describe("planRoomDuplicate", () => {
 			...copy.memories.map((m) => m.rev),
 			...copy.characters.map((c) => c.rev),
 			...copy.scenes.map((s) => s.rev),
-			copy.summary?.rev,
 		];
 		expect(new Set(revs.map((r) => JSON.stringify(r))).size).toBe(revs.length);
 		expect(revs.length).toBe(chatRoomDuplicateRecordCount(original));
 	});
 
-	it("moves the summary frontier onto the copied message", () => {
+	it("never copies memory V2's historical summary (no new V2 records)", () => {
 		const copy = plan(source());
-		const m2 = copy.messages.find((m) => m.content === "m2 내용");
-		expect(copy.summary).toMatchObject({
-			id: `chat-summary:${copy.room.id}`,
-			roomId: copy.room.id,
-			summary: "도서관에 들어갔다",
-			frontier: { createdAt: at(2), messageId: m2?.id },
-		});
-	});
-
-	it("drops a summary whose frontier message is gone rather than guessing", () => {
-		const original = source();
-		if (!original.summary) throw new Error("fixture has a summary");
-		original.summary = {
-			...original.summary,
-			frontier: { createdAt: at(3), messageId: "m3" },
-		};
-		expect(plan(original).summary).toBeNull();
-		expect(chatRoomDuplicateRecordCount(original)).toBe(1 + 2 + 1 + 1 + 1);
+		expect("summary" in copy).toBe(false);
 	});
 
 	it("copies live scenes onto the copied start message and remaps character members", () => {
@@ -302,7 +272,7 @@ describe("planRoomDuplicate", () => {
 			),
 		).toEqual(["unknown", "participants", "narrator"]);
 		expect(copy.scenes.map((s) => s.rev).length).toBe(2);
-		expect(chatRoomDuplicateRecordCount(original)).toBe(1 + 3 + 1 + 1 + 2 + 1);
+		expect(chatRoomDuplicateRecordCount(original)).toBe(1 + 3 + 1 + 1 + 2);
 	});
 
 	it("refuses to reuse a revision when they run short", () => {

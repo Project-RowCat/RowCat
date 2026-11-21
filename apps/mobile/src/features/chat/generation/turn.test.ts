@@ -853,28 +853,30 @@ describe("Generation settings", () => {
 });
 
 /* ══════════════════════════════════════════════════════════════════════════
- * Trigger of auto-maintenance: after the save, without waiting
+ * Trigger of memory maintenance (afterstate indexing + consolidation): after the save, no wait
  * ══════════════════════════════════════════════════════════════════════════ */
 
 describe("waking automatic maintenance", () => {
 	/** One session observing maintenance; records the call point as the stored message count. */
 	const withMaintain = () => {
 		const calls: number[] = [];
-		const observed = createChatConversation({
-			room,
-			store: chat,
-			token: chat,
-			preferences: null,
+		const observed: ConversationSession = {
+			...createChatConversation({
+				room,
+				store: chat,
+				token: chat,
+				preferences: null,
+			}),
 			maintain: () => {
 				calls.push(Date.now());
 			},
-		});
+		};
 		return { calls, session: observed };
 	};
 
 	/**
-	 * Waking before the save lets maintenance pick its batch from a history that lacks the response
-	 * just produced, and that response stays out of the summary until the next maintenance.
+	 * Waking before the save would index a history that lacks the response just produced, and that
+	 * response would stay out of long-term memory until the next run.
 	 */
 	it("wakes after the confirmed reply is saved", async () => {
 		/**
@@ -906,7 +908,7 @@ describe("waking automatic maintenance", () => {
 
 	/**
 	 * If the response was not saved the conversation grew by nothing, so there is no reason to wake
-	 * maintenance, and waking it would end that paid call without summarizing anything new.
+	 * maintenance.
 	 */
 	it("doesn't wake when there is no reply to save", async () => {
 		const { calls, session: observed } = withMaintain();
@@ -930,15 +932,17 @@ describe("waking automatic maintenance", () => {
 	 * did.
 	 */
 	it("the turn succeeds even when maintenance throws", async () => {
-		const observed = createChatConversation({
-			room,
-			store: chat,
-			token: chat,
-			preferences: null,
+		const observed: ConversationSession = {
+			...createChatConversation({
+				room,
+				store: chat,
+				token: chat,
+				preferences: null,
+			}),
 			maintain: () => {
 				throw new Error("the maintenance wiring broke");
 			},
-		});
+		};
 
 		const result = await run({ session: observed });
 		expect(result.end).toBe("completed");

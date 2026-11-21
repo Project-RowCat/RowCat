@@ -253,8 +253,8 @@ const continuationModeFor = (model: string): AnthropicContinuationMode =>
  * reply and writing the next line often takes longer than that; every such turn wrote the whole
  * system prompt again. A one-hour write costs 2x input instead of 1.25x and a read refreshes the
  * timer for free, so one avoided miss pays for it. The automatic breakpoint carries the same hour:
- * the history window starts at the summary frontier (`chatHistoryWindow`) and stays put for about ten
- * turns, so the cached history is worth keeping across a pause too, and each turn only writes its own
+ * the history window steps on the message count (`chatHistoryWindow`) and its start stays put for
+ * about twenty messages, so the cached history is worth keeping across a pause too, and each turn only writes its own
  * new messages at the higher rate. A longer TTL must come before a shorter one; equal TTLs satisfy
  * that, but this marker must never be shorter than the automatic one (that order is a 400).
  *

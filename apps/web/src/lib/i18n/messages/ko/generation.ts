@@ -44,9 +44,6 @@ export const generation: Messages["generation"] = {
 	inherit: "기본 설정 사용 ({{value}})",
 	utility: {
 		followsConversation: "대화 모델과 같음",
-		summaryLabel: "요약 모델",
-		summaryDescription:
-			"긴 대화의 요약을 약 10턴마다 씁니다. 개인 API 키로 하는 대화에만 적용되며, 대화 내용은 이 모델의 제공자에게 보내집니다.",
 		suggestionLabel: "답변 추천 모델",
 		suggestionDescription:
 			"답변 추천을 누르면 보여 줄 문장을 씁니다. 개인 API 키로 하는 대화에만 적용되며, 대화 내용은 이 모델의 제공자에게 보내집니다.",

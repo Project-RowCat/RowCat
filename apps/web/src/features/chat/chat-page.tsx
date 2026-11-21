@@ -42,6 +42,7 @@ import { MessageActionBar } from "./messages/action-bar.tsx";
 import { MessageList } from "./messages/list.tsx";
 import { useMessageActions } from "./messages/use-actions.tsx";
 import { AddCharacterDialog } from "./room-settings/add-character-dialog.tsx";
+import { SceneChip } from "./scene/chip.tsx";
 import { ChatSearchDialog } from "./search/dialog.tsx";
 import { useChatSearch } from "./search/use-search.ts";
 import { ReplySuggestionPanel } from "./suggestion/panel.tsx";
@@ -487,6 +488,22 @@ export function ChatPage() {
 				 * frame for `useExitGuard()` to protect.
 				 */}
 				<ChatColumn>
+					{/*
+					 * Who is present now, and the door to the scene controls. It sits above every notice in this
+					 * stack and stays put: the notices below come and go with each turn, while the scene is the
+					 * standing condition of what is about to be said. Drawn only once the room has arrived — its
+					 * cast is the room's (`SceneChip`).
+					 */}
+					{room && (
+						<div className="mb-1 flex min-w-0">
+							<SceneChip
+								room={room}
+								characters={characters}
+								messages={messages}
+								generating={generation.generating}
+							/>
+						</div>
+					)}
 					{/*
 					 * Notice that the response was cut, and continue generation. It sits in the same place as the failure
 					 * notice (directly above the input) but **is not an error**: what was received is saved, and what is

@@ -6,13 +6,12 @@ import type {
 	ChatSeed,
 } from "./index.ts";
 import {
-	memoryAudienceControl,
-	unmarkedMemoryCount,
+	memoryVisibility,
+	memoryVisibilityOptions,
+	unresolvedMemoryCount,
 } from "./memory-audience.ts";
 
-/**
- * Which audience control a memory row draws.
- */
+/** Visibility of human-written memories in rooms with scenes, and the classification choices. */
 
 const scene = (
 	at: string,
@@ -37,7 +36,7 @@ const cast = {
 		} as unknown as ChatSeed,
 		persona: { name: "나", description: "" },
 	},
-	characters: [{ id: "c1", name: "서윤" }],
+	characters: [{ id: "c1", name: "서윤", deletedAt: null }],
 };
 
 const memory = (
@@ -49,111 +48,126 @@ const minaOnly: ChatSceneAudience = {
 	members: ["seed:0", "user"],
 };
 
-describe("memoryAudienceControl", () => {
-	it("draws nothing in a room without a live scene", () => {
-		expect(memoryAudienceControl(memory(), [], cast)).toBeNull();
+describe("memoryVisibility", () => {
+	it("is not applicable without a live scene, or for an automatic memory", () => {
+		expect(memoryVisibility(memory(), [], cast)).toEqual({
+			state: "not-applicable",
+		});
 		expect(
-			memoryAudienceControl(
+			memoryVisibility(
 				memory(),
 				[scene("2026-01-01", minaOnly, "2026-01-02")],
 				cast,
 			),
-		).toBeNull();
-	});
-
-	it("draws nothing on an automatic memory", () => {
+		).toEqual({ state: "not-applicable" });
 		expect(
-			memoryAudienceControl(
+			memoryVisibility(
 				memory({ source: "auto" }),
 				[scene("2026-01-01", minaOnly)],
 				cast,
 			),
-		).toBeNull();
+		).toEqual({ state: "not-applicable" });
 	});
 
-	it("offers the current scene's audience to a shared memory", () => {
-		const scenes = [
-			scene("2026-01-01", { kind: "narrator" }),
-			scene("2026-01-02", minaOnly),
-		];
-		const expected = { kind: "restrict", audience: minaOnly };
-		expect(memoryAudienceControl(memory(), scenes, cast)).toEqual(expected);
-		// An explicit `room` is shared too.
+	it("absent is unresolved — blocking only where a scene is narrower than the room", () => {
 		expect(
-			memoryAudienceControl(
-				memory({ audience: { kind: "room" } }),
+			memoryVisibility(memory(), [scene("2026-01-01", { kind: "room" })], cast),
+		).toEqual({ state: "unresolved", blocking: false });
+		expect(
+			memoryVisibility(memory(), [scene("2026-01-01", minaOnly)], cast),
+		).toEqual({ state: "unresolved", blocking: true });
+	});
+
+	it("reads explicit audiences with display names", () => {
+		const scenes = [scene("2026-01-01", minaOnly)];
+		expect(
+			memoryVisibility(memory({ audience: { kind: "room" } }), scenes, cast),
+		).toEqual({
+			state: "shared",
+		});
+		expect(
+			memoryVisibility(
+				memory({ audience: { kind: "narrator" } }),
 				scenes,
 				cast,
 			),
-		).toEqual(expected);
-	});
-
-	it("offers nothing to a shared memory when the current scene is the whole room", () => {
+		).toEqual({ state: "narrator" });
 		expect(
-			memoryAudienceControl(
-				memory(),
-				[scene("2026-01-01", { kind: "room" })],
-				cast,
-			),
-		).toBeNull();
-	});
-
-	it("names who may know a restricted memory, through the room's cast", () => {
-		expect(
-			memoryAudienceControl(
+			memoryVisibility(
 				memory({
-					audience: {
-						kind: "participants",
-						members: ["char:c1", "seed:1", "user"],
-					},
+					audience: { kind: "participants", members: ["char:c1", "user"] },
 				}),
-				[scene("2026-01-01", { kind: "room" })],
+				scenes,
 				cast,
 			),
-		).toEqual({ kind: "share", names: ["서윤", "준", "나"], narrator: false });
-		expect(
-			memoryAudienceControl(
-				memory({ audience: { kind: "narrator" } }),
-				[scene("2026-01-01", minaOnly)],
-				cast,
-			),
-		).toEqual({ kind: "share", names: [], narrator: true });
+		).toEqual({ state: "restricted", names: ["서윤", "나"] });
 	});
 });
 
-describe("unmarkedMemoryCount", () => {
-	const shared: ChatSceneAudience = { kind: "room" };
+describe("memoryVisibilityOptions", () => {
+	it("offers share, the current scene, choose and narrator for an unresolved memory", () => {
+		const options = memoryVisibilityOptions(
+			memory(),
+			[scene("2026-01-01", minaOnly)],
+			cast,
+		);
+		expect(options.map((o) => o.kind)).toEqual([
+			"share",
+			"current-scene",
+			"choose",
+			"narrator",
+		]);
+		const current = options.find((o) => o.kind === "current-scene");
+		expect(current).toMatchObject({
+			audience: minaOnly,
+			names: ["미나", "나"],
+		});
+	});
+
+	it("never offers the value a memory already has", () => {
+		const scenes = [scene("2026-01-01", minaOnly)];
+		expect(
+			memoryVisibilityOptions(
+				memory({ audience: { kind: "room" } }),
+				scenes,
+				cast,
+			).map((o) => o.kind),
+		).not.toContain("share");
+		expect(
+			memoryVisibilityOptions(memory({ audience: minaOnly }), scenes, cast).map(
+				(o) => o.kind,
+			),
+		).not.toContain("current-scene");
+	});
+
+	it("offers nothing where visibility does not apply", () => {
+		expect(memoryVisibilityOptions(memory(), [], cast)).toEqual([]);
+		expect(
+			memoryVisibilityOptions(
+				memory({ source: "auto" }),
+				[scene("2026-01-01", minaOnly)],
+				cast,
+			),
+		).toEqual([]);
+	});
+});
+
+describe("unresolvedMemoryCount", () => {
 	const memories = [
 		memory(),
-		memory({ audience: shared }),
+		memory(),
+		memory({ audience: { kind: "room" } }),
 		memory({ audience: minaOnly }),
 		memory({ source: "auto" }),
 	];
 
-	it("counts only unmarked human-written memories, once a scene is narrower than the room", () => {
-		expect(unmarkedMemoryCount(memories, [scene("2026-01-01", minaOnly)])).toBe(
-			1,
-		);
-	});
-
-	it("says nothing where sharing withholds nothing", () => {
-		expect(unmarkedMemoryCount(memories, [])).toBe(0);
-		expect(unmarkedMemoryCount(memories, [scene("2026-01-01", shared)])).toBe(
-			0,
-		);
+	it("counts human-written memories with no audience, only where a scene is narrower", () => {
 		expect(
-			unmarkedMemoryCount(memories, [
-				scene("2026-01-01", minaOnly, "2026-01-02"),
-			]),
+			unresolvedMemoryCount(memories, [scene("2026-01-01", minaOnly)]),
+		).toBe(2);
+		expect(
+			unresolvedMemoryCount(memories, [scene("2026-01-01", { kind: "room" })]),
 		).toBe(0);
-	});
-
-	it("still counts after the room returns to a shared scene", () => {
-		expect(
-			unmarkedMemoryCount(memories, [
-				scene("2026-01-01", minaOnly),
-				scene("2026-01-03", shared),
-			]),
-		).toBe(1);
+		expect(unresolvedMemoryCount(memories, [])).toBe(0);
 	});
 });

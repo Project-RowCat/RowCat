@@ -2,7 +2,7 @@ import type { ChatCharacter } from "./character.ts";
 import type { ChatRuntimeMessage, ChatRuntimeRoom } from "./context.ts";
 import type { AssistantContinuation } from "./continuation.ts";
 import type {
-	ChatRecallSnapshot,
+	ChatLongTermSnapshot,
 	RecallRequest,
 } from "./conversation-memory.ts";
 import type { GeneratedAssistantMessage } from "./generation.ts";
@@ -10,7 +10,6 @@ import type { GenerationPreference } from "./generation-preference.ts";
 import type { ChatMemory } from "./memory.ts";
 import type { ChatMessage } from "./model.ts";
 import type { ChatNarrationSettings } from "./narration.ts";
-import type { ChatMemoryOwner } from "./prompt-scope.ts";
 import type { ChatScene } from "./scene.ts";
 
 /**
@@ -91,21 +90,19 @@ export interface ConversationSession {
 	 */
 	loadMemories(): Promise<ChatMemory[]>;
 	/**
-	 * Earlier passages of this conversation relevant to the turn, from the local afterstate index
-	 * (`conversation-memory.ts`). Optional: absent in legacy mode, in replay sessions (no room) and
-	 * wherever no native engine is available; the request is then exactly V2's.
+	 * This conversation's long-term memory for the turn, from the device's afterstate index
+	 * (`conversation-memory.ts`): recalled passages and earlier episodes, both authorized for the
+	 * present characters, plus the memory status the screen may state. Optional: replay sessions (no
+	 * room) have none. A room on a device without the engine still has it — it answers `unavailable`
+	 * at once, so the status is reported rather than guessed.
 	 *
-	 * Same snapshot rule as memories: read once when the generation starts, never during a stream.
-	 * It resolves `null` rather than throwing and gives up after `CHAT_RECALL_TIMEOUT_MS`, so a slow
-	 * or broken index cannot delay or fail a turn. In shadow mode it measures and returns `null`.
+	 * Same snapshot rule as memories: read once when the generation starts, never during a stream. It
+	 * never throws and gives up after `CHAT_RECALL_TIMEOUT_MS`, so a slow or broken index cannot delay
+	 * or fail a turn; the turn then goes out with its recent history only.
 	 */
-	loadRecall?: (request: RecallRequest) => Promise<ChatRecallSnapshot | null>;
-	/**
-	 * Who maintains this conversation's long-term memory (`conversationMemoryHooks`). The generation
-	 * passes it into the request so the knowledge boundary leaves V2's summary and auto memories out
-	 * when afterstate owns memory (`prompt-scope.ts`). Absent means `v2`.
-	 */
-	memoryOwner?: ChatMemoryOwner;
+	loadLongTermMemory?: (
+		request: RecallRequest,
+	) => Promise<ChatLongTermSnapshot>;
 	/**
 	 * Characters the user has introduced in this conversation. A conversation with none returns an
 	 * empty array.
@@ -123,18 +120,6 @@ export interface ConversationSession {
 	 * rule as memories.
 	 */
 	loadScenes?(): Promise<ChatScene[]>;
-	/**
-	 * The summary of history that has fallen outside the history window. Empty string if there is
-	 * none.
-	 *
-	 * It is the same kind of snapshot as memories and sits in the same place. It is read once at
-	 * start, so background maintenance that updates the summary during a stream does not change this
-	 * request.
-	 *
-	 * Replay sessions always return an empty string. A work test has no past to summarize and no room
-	 * record to store a summary in. A room-level summary created there would belong to no room.
-	 */
-	loadSummary(): Promise<string>;
 	/**
 	 * Secures this conversation's routing-friendly key. Optional, since some conversations have none.
 	 *
@@ -167,21 +152,16 @@ export interface ConversationSession {
 	 */
 	loadNarration?: () => Promise<ChatNarrationSettings | null>;
 	/**
-	 * Wakes automatic maintenance after the confirmed response has been saved. Optional, since some
-	 * conversations do not have it.
+	 * Wakes long-term memory maintenance (afterstate indexing and consolidation) after the confirmed
+	 * response has been saved. Optional: absent where there is no engine and in replay sessions.
 	 *
-	 * Whether maintenance is needed depends on how many messages have accumulated, and that count
-	 * changes exactly here. If the screen called it instead, web and mobile would each wire it
-	 * separately, and a miss in one app would mean summaries are never built there. Nothing would
+	 * The count of messages changes exactly here. If the screen called it instead, web and mobile would
+	 * each wire it separately, and a miss in one app would mean that app never indexes. Nothing would
 	 * report the absence.
 	 *
-	 * It returns `void` on purpose, so it is never awaited. Maintenance is a paid model call. Awaiting
-	 * it would keep the user from sending the next message for seconds after reading the answer. A
-	 * returned Promise invites someone to add `await` later, and that one keyword would change the
-	 * rhythm of the conversation.
-	 *
-	 * It must not throw. An exception escaping here would fail a turn that already succeeded, and the
-	 * user would see the answer alongside an error message.
+	 * It returns `void` on purpose, so it is never awaited: maintenance runs in the background and must
+	 * not stand between the answer and the next message. It must not throw: an exception here would
+	 * fail a turn that already succeeded.
 	 */
 	maintain?: () => void;
 	/**

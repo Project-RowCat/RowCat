@@ -2,8 +2,6 @@ import {
 	type AfterstatePort,
 	type ConversationMemoryRuntime,
 	eraseConversation,
-	type MemoryBackendMode,
-	parseMemoryBackendMode,
 } from "@rowcat/chat";
 import {
 	hasNativeAfterstate,
@@ -12,18 +10,15 @@ import {
 } from "../../../modules/afterstate-memory/index.ts";
 
 /**
- * The memory backend on mobile.
+ * Long-term memory on mobile is afterstate, and only afterstate.
  *
- * - **Mode** is a build setting (`EXPO_PUBLIC_MEMORY_BACKEND`: `legacy` | `afterstate` | `shadow`,
- *   default `legacy`). There is no user-facing switch yet: a staged rollout turns it on per build,
- *   and rollback is shipping `legacy` (no record is touched either way; the index is only derived).
  * - **Store**: one per member scope, opened when the member's local scope opens and closed with it,
  *   deleted with the member's local data (`deleteDerivedMemory`, called from the purge).
- * - Without the native module (a build that did not vendor the engine), everything is `legacy`.
+ * - **No engine** (a build that did not vendor the native module, or an open failure): there is no
+ *   runtime, chat works on the recent window and the memories the person wrote, and the memory
+ *   screen says long-term memory is unavailable. No other engine stands in and no build setting
+ *   selects one (the retired `EXPO_PUBLIC_MEMORY_BACKEND` is not read).
  */
-export const requestedMemoryBackend = (): MemoryBackendMode =>
-	parseMemoryBackendMode(process.env.EXPO_PUBLIC_MEMORY_BACKEND);
-
 export interface OpenMemoryRuntime {
 	runtime: ConversationMemoryRuntime;
 	close(): Promise<void>;
@@ -63,20 +58,25 @@ async function release(scopeKey: string): Promise<void> {
 	await (await entry.store)?.close();
 }
 
-/** Opens the member's index, or `null` (legacy mode, no engine, open failure). Never throws. */
+const ports = new WeakMap<NativeAfterstate, AfterstatePort>();
+
+/** Opens the member's index, or `null` (no engine, open failure). Never throws. */
 export async function openMemoryRuntime(
 	scopeKey: string,
-	mode: MemoryBackendMode = requestedMemoryBackend(),
 ): Promise<OpenMemoryRuntime | null> {
-	if (mode === "legacy" || !hasNativeAfterstate()) return null;
+	if (!hasNativeAfterstate()) return null;
 	const opened = await acquire(scopeKey);
 	if (!opened) return null;
-	const port: AfterstatePort = {
-		call: (op, params) => opened.call(op, params),
-	};
+	// One port per native handle: the adapter keys per-room state (single-flight maintenance, the
+	// indexing status) by the port's identity, so every opener of this member must share it.
+	let port = ports.get(opened);
+	if (!port) {
+		port = { call: (op, params) => opened.call(op, params) };
+		ports.set(opened, port);
+	}
 	let closed = false;
 	return {
-		runtime: { mode, port },
+		runtime: { port },
 		close: async () => {
 			if (closed) return;
 			closed = true;

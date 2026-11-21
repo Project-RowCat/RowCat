@@ -23,7 +23,7 @@ import {
  * save user utterance   append to memory state          does not pass through a store
  * history               the memory array, same cap      must be the same window as a real conversation
  * memories              empty array                     no record to hold them
- * summary               empty string                    likewise (so there is no `maintain`)
+ * long-term memory      none                            likewise (no `loadLongTermMemory`, no `maintain`)
  * override here        playtest preference in memory   not written to device or room preferences
  * runtime identity     the playtest session object     reset and reload create a new object
  * ```
@@ -85,12 +85,12 @@ export function createPlaytestConversation({
 		// build its layer.
 		loadPreference: async () => read().preference,
 		/**
-		 * History, through the same window as a real conversation. A test has no summary, so the frontier
-		 * is null: the window a real room has before its first summary. A different rule here would give
-		 * long tests and long conversations different context, and this screen could then not reproduce
+		 * History, through the same window as a real conversation (stepped on the message count). A
+		 * different rule here would give long tests and long conversations different context, and this
+		 * screen could then not reproduce
 		 * playback after publishing.
 		 */
-		loadHistory: async () => chatHistoryWindow(read().messages, null),
+		loadHistory: async () => chatHistoryWindow(read().messages),
 		/**
 		 * No memories in a test. An empty array means the assembler builds no memory block at all, so the
 		 * prompt is byte-identical to a real room without memories.
@@ -102,14 +102,10 @@ export function createPlaytestConversation({
 		 */
 		loadCharacters: async () => [],
 		/**
-		 * No summary either, for the same reason, and therefore no `maintain`.
-		 *
-		 * A playtest session has no record to hold a summary. A per-room summary would create a record
-		 * that belongs to no room, and running auto-maintenance would make a paid call whose result is
-		 * stored nowhere, so every test run costs money. The absence is expressed in this object without
-		 * a conditional (`maintain` is optional).
+		 * No long-term memory either, for the same reason, and therefore no `maintain`: indexing a
+		 * session that is about to be discarded would leave derived records that belong to no room. The
+		 * absence is expressed without a conditional (`loadLongTermMemory` and `maintain` are optional).
 		 */
-		loadSummary: async () => "",
 		appendUserMessage: async (content: string) => {
 			write((current) => appendPlaytestUserMessage(current, content, stamp()));
 		},

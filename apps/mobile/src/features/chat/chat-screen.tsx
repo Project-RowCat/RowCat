@@ -1,4 +1,8 @@
-import type { ChatMessage, ConversationDisplayMessage } from "@rowcat/chat";
+import type {
+	ChatMessage,
+	ConversationDisplayMessage,
+	ConversationMemoryRuntime,
+} from "@rowcat/chat";
 import {
 	canSuggestReply,
 	chatPlaceholderNames,
@@ -46,13 +50,13 @@ import { type ChatScreenState, resolveChatScreenState } from "./chat-state.ts";
 import { Composer, type ComposerHandle } from "./composer.tsx";
 import { generationRecovery } from "./generation/error.ts";
 import { useChatGeneration } from "./generation/use-generation.ts";
-import { useMemoryMaintenance } from "./memory/use-maintenance.ts";
 import { MessageActionBar } from "./messages/action-bar.tsx";
 import { MessageList, toDisplayMessage } from "./messages/list.tsx";
 import { useMessageActions } from "./messages/use-actions.tsx";
 import { useRoomManagement } from "./room/use-management.tsx";
 import { useChatRoom } from "./room/use-room.ts";
 import { ROOM_SETTINGS_TRIGGER_LABEL } from "./room-settings/view.ts";
+import { SceneBar } from "./scene/bar.tsx";
 import { ReplySuggestionPanel } from "./suggestion/panel.tsx";
 import { useReplySuggestion } from "./suggestion/use-reply-suggestion.ts";
 
@@ -105,10 +109,8 @@ export function ChatScreen({ roomId }: { roomId: string }) {
 	// so which settings a request used never depends on render timing.
 	const { store: preferences } = useGenerationScope();
 
-	// Wakes maintenance. Not part of the session identity: the ownership token is `token` below, so
-	// changing this does not cut an in-flight generation.
-	const maintain = useMemoryMaintenance({ roomId, store, viewerId });
-	// The local afterstate index (null in legacy mode or without the engine): recall + indexing.
+	// The local afterstate engine (null without the native module or when it fails to open, where
+	// long-term memory is reported unavailable): recall, episodes, indexing.
 	const memory = useMemoryRuntime(localScope.scope?.scopeKey ?? null, store);
 
 	const room = useChatRoom(store, roomId);
@@ -136,7 +138,6 @@ export function ChatScreen({ roomId }: { roomId: string }) {
 						store,
 						token,
 						preferences,
-						maintain,
 						memory,
 					})
 				: null,
@@ -144,7 +145,7 @@ export function ChatScreen({ roomId }: { roomId: string }) {
 		// opens. Omitted, the adapter built on first render holds `null` forever and a stored room
 		// override is never read in that session, silently. Changing this object's identity is safe
 		// because ownership is `token`, which changes with it.
-		[loaded, store, token, preferences, maintain, memory],
+		[loaded, store, token, preferences, memory],
 	);
 
 	const generation = useChatGeneration(conversation, viewerId);
@@ -179,6 +180,7 @@ export function ChatScreen({ roomId }: { roomId: string }) {
 			room={state.room}
 			view={room}
 			generation={generation}
+			memory={memory}
 			onLeave={() => router.replace("/chats")}
 			onBack={() => router.back()}
 		/>
@@ -194,12 +196,15 @@ function LoadedChat({
 	room,
 	view,
 	generation,
+	memory,
 	onLeave,
 	onBack,
 }: {
 	room: NonNullable<ReturnType<typeof useChatRoom>["lookup"]["room"]>;
 	view: ReturnType<typeof useChatRoom>;
 	generation: ReturnType<typeof useChatGeneration>;
+	/** The room's long-term memory runtime (`null`: no engine); the memory window states its status. */
+	memory: ConversationMemoryRuntime | null;
 	/** The room is gone; return to this screen's product parent (the conversation list). */
 	onLeave: () => void;
 	onBack: () => void;
@@ -216,6 +221,7 @@ function LoadedChat({
 		// list (it was discovery while this app had no list), matching web: someone who deletes a room
 		// usually opens another conversation next, not a story.
 		onDeleted: onLeave,
+		memory,
 	});
 
 	const messageActions = useMessageActions({
@@ -460,6 +466,22 @@ function LoadedChat({
 					onRevealed={() => setRevealId(null)}
 					onScrollGesture={handleScrollGesture}
 				/>
+
+				{/**
+				 * Who is present now, and the door to the scene controls (`SceneBar`). It stands above the
+				 * notices below and stays put: they come and go with each turn, while the scene is the
+				 * standing condition of what is about to be said. Not in the header, which keeps its two
+				 * actions.
+				 */}
+				{store ? (
+					<SceneBar
+						room={room}
+						store={store}
+						characters={characters}
+						messages={view.messages}
+						generating={generation.generating}
+					/>
+				) : null}
 
 				{/**
 				 * The failure stands right above the composer. As a bubble in the list it would read as

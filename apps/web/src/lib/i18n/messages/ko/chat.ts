@@ -196,20 +196,97 @@ export const chat: Messages["chat"] = {
 		pin: "{{label}} 기억 고정",
 		edit: "{{label}} 기억 수정",
 		delete: "{{label}} 기억 삭제",
-		restrictToScene: "지금 장면의 인물만 알기",
-		restrictToSceneFor: "{{label}} 기억을 지금 장면의 인물만 알기",
-		shareWithEveryone: "모든 인물에게 공유",
-		shareWithEveryoneFor: "{{label}} 기억을 모든 인물에게 공유",
-		knownBy: "아는 인물: {{names}}",
-		knownByUnknown: "알 수 없음",
-		knownByNoOne: "어떤 인물도 모르는 기억",
-		unmarked_one:
-			"아직 아는 인물을 정하지 않은 기억 {{count}}개는 모든 인물이 압니다. 비밀이어야 하는 기억은 비공개 장면에서 이 창을 열어 '지금 장면의 인물만 알기'를 눌러 주세요.",
-		unmarked_other:
-			"아직 아는 인물을 정하지 않은 기억 {{count}}개는 모든 인물이 압니다. 비밀이어야 하는 기억은 비공개 장면에서 이 창을 열어 '지금 장면의 인물만 알기'를 눌러 주세요.",
+		needsClassification_one:
+			"분류가 필요한 기억이 {{count}}개 있습니다. 누가 알지 정하기 전까지는 이 대화에 쓰이지 않습니다.",
+		needsClassification_other:
+			"분류가 필요한 기억이 {{count}}개 있습니다. 누가 알지 정하기 전까지는 이 대화에 쓰이지 않습니다.",
+		visibility: {
+			unresolvedBlocking: "분류 필요 · 정하기 전까지 쓰이지 않음",
+			unresolved: "아직 분류하지 않음",
+			shared: "모든 인물이 아는 기억",
+			restricted: "아는 인물: {{names}}",
+			restrictedNobody: "아는 인물: 지금은 이 대화에 없는 인물",
+			narrator: "어떤 인물도 모르는 기억",
+		},
+		whoKnows: "아는 인물",
+		whoKnowsFor: "{{label}} 기억을 아는 인물 정하기",
+		option: {
+			share: "모든 인물",
+			currentScene: "지금 장면의 인물만: {{names}}",
+			choose: "인물 고르기…",
+			narrator: "어떤 인물도 모름",
+		},
+		chooseLabel: "이 기억을 아는 인물",
+		status: {
+			unavailable:
+				"이 기기에서는 장기 기억을 쓸 수 없습니다. 최근 대화와 직접 쓴 기억만 쓰입니다.",
+			indexing: "장기 기억이 아직 이 대화를 따라잡는 중입니다.",
+		},
 		saveFailed: "기억을 저장하지 못했습니다. 다시 시도해 주세요.",
 		deleteFailed: "기억을 삭제하지 못했습니다. 다시 시도해 주세요.",
 		roomGone: "이 대화가 더 이상 없어 기억을 저장할 수 없습니다.",
+	},
+	scene: {
+		chip: {
+			none: "장면",
+			everyone: "모두 있음",
+			narrator: "있는 인물 없음",
+			participants: "{{names}}",
+		},
+		chipLabel: "장면: {{state}}",
+		title: "장면",
+		description:
+			"그 자리에 누가 있는지에 따라 어떤 인물이 무엇을 알 수 있는지가 정해집니다. 바꾸면 다음 메시지부터 적용됩니다.",
+		now: {
+			none: "아직 장면이 없습니다. 모든 인물이 이 대화의 내용을 전부 압니다.",
+			everyone: "모든 인물이 함께 있습니다.",
+			narrator: "그 자리에 있는 인물이 없습니다.",
+			participants: "지금 있는 인물: {{names}}",
+		},
+		unknownNames: "지금은 이 대화에 없는 인물",
+		start: "장면 시작",
+		change: "있는 인물 바꾸기",
+		end: "장면 끝내기",
+		endHint: "다음 메시지부터 다시 모든 인물이 함께 있습니다.",
+		waitForReply: "답변이 끝난 뒤에 장면을 바꿀 수 있습니다.",
+		pickLabel: "누가 그 자리에 있나요?",
+		pickEmpty: "한 명 이상 골라 주세요.",
+		pickTooMany: "{{max}}명까지 함께 있을 수 있습니다.",
+		kind: {
+			everyone: "모두",
+			participants: "고른 인물만",
+			narrator: "인물 없음",
+		},
+		you: "{{name}} (나)",
+		apply: "적용",
+		history: {
+			question:
+				"이 대화에는 이미 메시지가 있습니다. 이 장면 전에 오간 내용을 인물들이 어떻게 다룰까요?",
+			shared: "공유",
+			sharedEffect: "모든 인물이 계속 압니다.",
+			private: "비공개",
+			privateEffect: "어떤 인물도 떠올리지 못합니다. 화면에는 그대로 남습니다.",
+			review: "나중에 정하기",
+			reviewEffect: "정하기 전까지는 비공개로 다룹니다.",
+			unclassified_one:
+				"분류하지 않은 이전 메시지가 {{count}}개 있습니다. 정하기 전까지 어떤 인물도 떠올리지 못합니다.",
+			unclassified_other:
+				"분류하지 않은 이전 메시지가 {{count}}개 있습니다. 정하기 전까지 어떤 인물도 떠올리지 못합니다.",
+		},
+		list: {
+			title: "이 대화의 장면",
+			noMessages: "아직 메시지 없음",
+			everyone: "모두",
+			narrator: "인물 없음",
+			correct: "고치기",
+			correctFor: "{{excerpt}}부터 있던 인물 고치기",
+			correctNote: "이미 오간 내용을 누가 목격했는지가 바뀝니다.",
+			delete: "삭제",
+			deleteFor: "{{excerpt}}부터 시작한 장면 삭제",
+			deleteWarning:
+				"이 장면의 메시지는 바로 앞 장면에 속하게 되어, 그 장면에 있던 인물이 알게 됩니다. 앞 장면이 없으면 분류하지 않은 이전 기록이 됩니다.",
+		},
+		failed: "장면을 저장하지 못했습니다. 다시 시도해 주세요.",
 	},
 	rename: {
 		rejection: {

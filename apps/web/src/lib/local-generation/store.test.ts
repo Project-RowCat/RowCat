@@ -4,6 +4,7 @@ import {
 	GLOBAL_PREFERENCE_KEY,
 	resolveEffectiveGeneration,
 	roomPreferenceKey,
+	UTILITY_PREFERENCE_KEY_PREFIX,
 } from "@rowcat/chat";
 import { StoryChatSeedDto } from "@rowcat/contracts/chat";
 import { afterEach, describe, expect, it } from "vitest";
@@ -15,6 +16,7 @@ import {
 } from "#/lib/local-data/db.ts";
 import { syncCodecRegistry } from "#/lib/local-sync/registry.ts";
 import { createDexieSyncStore } from "#/lib/local-sync/store.ts";
+import { toStoredGenerationPreference } from "./record.ts";
 import { createGenerationPreferenceStore } from "./store.ts";
 
 /**
@@ -680,23 +682,50 @@ describe("auxiliary-request models", () => {
 		model: "claude-haiku-4-5",
 	} as const;
 
-	it("is the room's own model until chosen, and each kind keeps its own value", async () => {
+	it("is the room's own model until chosen, then round-trips", async () => {
 		const store = open(nextViewer("alice"));
-		expect(await store.getUtility("summary")).toBeNull();
-		await store.setUtility("summary", haiku);
-		expect(await store.getUtility("summary")).toEqual(haiku);
 		expect(await store.getUtility("suggestion")).toBeNull();
+		await store.setUtility("suggestion", haiku);
+		expect(await store.getUtility("suggestion")).toEqual(haiku);
 	});
 
-	/** A separate key: choosing a summary model must not touch the global or any room preference. */
+	/** A separate key: choosing a suggestion model must not touch the global or any room preference. */
 	it("does not touch the generation preferences", async () => {
 		const store = open(nextViewer("alice"));
-		await store.setUtility("summary", haiku);
+		await store.setUtility("suggestion", haiku);
 		expect(await store.getGlobal()).toEqual({
 			responseLength: null,
 			target: null,
 			reasoningEffort: null,
 		});
+	});
+
+	/**
+	 * Memory V2's summary model choice is gone, but a device that stored one keeps the row
+	 * (`utility:summary`). Nothing reads it, and it must not leak into the remaining kind or the
+	 * generation preferences.
+	 */
+	it("a legacy summary-model row does not break reads", async () => {
+		const alice = nextViewer("alice");
+		const db = activateLocalDbScope(alice);
+		await db.generationPreferences.put(
+			toStoredGenerationPreference(`${UTILITY_PREFERENCE_KEY_PREFIX}summary`, {
+				...EMPTY_GENERATION_PREFERENCE,
+				target: haiku,
+			}),
+		);
+		const store = createGenerationPreferenceStore(db);
+
+		expect(await store.getUtility("suggestion")).toBeNull();
+		expect(await store.getGlobal()).toEqual(EMPTY_GENERATION_PREFERENCE);
+		await store.setUtility("suggestion", haiku);
+		expect(await store.getUtility("suggestion")).toEqual(haiku);
+		/** Left exactly as stored: removing a device's own row is not this store's call. */
+		expect(
+			await db.generationPreferences.get(
+				`${UTILITY_PREFERENCE_KEY_PREFIX}summary`,
+			),
+		).toMatchObject({ target: haiku });
 	});
 
 	/** `null` deletes the row, the same "not chosen is not stored" rule as the other keys. */

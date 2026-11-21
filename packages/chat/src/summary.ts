@@ -1,92 +1,61 @@
-import type { ChatSoftDelete, ChatStamp, ChatSyncMeta } from "./model.ts";
-import { freshChatSyncMeta } from "./model.ts";
+import { type ChatMemory, isAutoMemory } from "./memory.ts";
+import type { ChatSoftDelete, ChatSyncMeta } from "./model.ts";
 
 /**
- * Summary state: what a conversation leaves behind once its messages are pushed out of the history
- * window.
- * - Kept as a fourth record type: messages leave the prompt when CHAT_HISTORY_LIMIT advances, and
- *   memories are for facts meant to persist. As memories, each event would add an entry. As room
- *   fields, every summary update would overwrite the whole room and conflict with device activity.
- * - Identity is derived from the room id (`summaryIdFor`), so each room has exactly one summary.
- *   A random id would let two devices create two summaries that sync cannot merge.
- * - The id is prefixed rather than equal to the room id. The server key is (owner, id) without
- *   the type (apps/api/src/db/tables/sync.ts), so an equal id would collide. Other ids are UUIDs or
- *   base32 and cannot contain ':'.
- * - Not stored: rendered markdown or HTML, summary history, token counts, model name, or cost. A
- *   model change would otherwise make every stored summary stale.
+ * Memory V2's rolling summary — a **historical record**, not a feature.
+ *
+ * V2 kept one model-written summary per room (`chat.summary`, E2EE-synced). V2 is gone: nothing in
+ * this codebase writes, advances or sends a summary to a model any more, and the generation request
+ * never carries one (`docs/chat/MEMORY.md` §2). What remains is what existing data needs:
+ *
+ * - the **record type and its decoder** (`sync-codec.ts`), because devices still hold these records
+ *   and older clients may still sync them; a record this device cannot decode would be skipped with
+ *   the cursor advanced, and its tombstone would never apply;
+ * - the **identity** (`summaryIdFor`), so a summary still maps to its room (room deletion cascades,
+ *   duplication leaves it behind);
+ * - the **history-rewind rule** (`planHistoryRewind`), so editing or deleting past messages still
+ *   retires a summary that described them — otherwise the migration below could import a summary of
+ *   conversation the user removed;
+ * - the **migration input**: the afterstate index may import a stored summary as attributed,
+ *   model-written evidence, only for rooms with no scenes (`conversation-memory.ts` `summaryItem`).
+ *
+ * Not here any more: frontier progress, the summary block, the maintenance cadence.
  */
 
-/**
- * The frontier uses the same coordinate as the repository's ordering, `[roomId+createdAt+id]`. An
- * array index or a count is not used, because it is not stable. A history rewrite that removes a
- * middle message, or sync that inserts earlier messages, changes which message sits at position 20.
- * A recorded position would then point at nothing while claiming to be processed.
- */
+/** Where the summary stopped: the last message it covered (stored coordinate, not a count). */
 export interface ChatSummaryFrontier {
-	/** Processed up to and including this timestamp. */
 	createdAt: string;
-	/** Second axis for messages that share a timestamp, in the same order as the repository sort. */
 	messageId: string;
 }
 
 /**
- * Maps a room id to that room's summary identity. Both devices must compute the same value. The
- * prefix keeps this id out of the room record's space in the server's `(owner, id)` key, since
- * other record ids (UUIDs or base32) cannot contain ':'.
- *
- * Do not change the prefix. Summaries are already stored under it on devices and the server, and a
- * different prefix would orphan every existing summary.
+ * The summary's id, derived from the room id. The server's key is `(owner, id)` without the type,
+ * so the room id itself cannot be reused (both records would fight over one row).
  */
 export const summaryIdFor = (roomId: string): string =>
 	`chat-summary:${roomId}`;
 
 export interface ChatSummary extends ChatSyncMeta, ChatSoftDelete {
-	/** Always `summaryIdFor(roomId)`, never a random id. See the module header for why. */
+	/** Always `summaryIdFor(roomId)`. */
 	id: string;
 	roomId: string;
-	/**
-	 * Plain text produced by the model. Empty means there is not yet enough progress to summarize.
-	 */
 	summary: string;
-	/**
-	 * `null` means nothing has been processed yet (a new or rewound room).
-	 *
-	 * The summary and frontier share one record so the update is atomic. If split, the summary could
-	 * advance while the frontier stayed behind, reprocessing the same range forever or skipping an
-	 * unsummarized range as if it were processed.
-	 */
 	frontier: ChatSummaryFrontier | null;
 	/**
-	 * Invalidation generation: an integer that makes a rewind win in merge. Without it, HLC alone
-	 * would let a stale summary advance resurrect a summary of history the user deleted, and that
-	 * state would never heal. Rewinds always raise this value (`planMaintenanceRewind`), so they beat
-	 * any concurrent advance; the reverse case costs one recomputation. Empty-summary- wins is not
-	 * used, because a stale rewind record would then reverse every later advance forever.
+	 * Raised by every history rewind. The sync merge compares it before the clock, so a rewind on one
+	 * device beats an older summary advanced on another (`chatSummarySyncCodec`).
 	 */
 	epoch: number;
-	/** ISO 8601. */
 	createdAt: string;
 	updatedAt: string;
 }
 
-/**
- * Length cap, counted in code points (characters), not UTF-16 units. The value goes into every
- * request in full, so the cap is the prompt cost. 2,000 characters is half the memory budget.
- *
- * Over-long summaries are clamped rather than rejected. Dropping a summary would erase the batch's
- * progress and reprocess the same range forever, while a truncated summary is still true about the
- * conversation.
- */
+/** The longest summary V2 ever wrote; the decoder folds anything longer to this. */
 export const CHAT_SUMMARY_MAX_LENGTH = 2_000;
 
-/** Trims surrounding whitespace. That is all normalization does, the same rule as memories. */
 export const normalizeSummary = (input: string): string => input.trim();
 
-/**
- * Folds the input to the cap, counting code points. `slice` would cut UTF-16 code units and could
- * split a surrogate pair, leaving a broken character that feeds the next summary request, which
- * some providers reject outright.
- */
+/** Trims and clamps to `CHAT_SUMMARY_MAX_LENGTH` code points (the decoder's rule). */
 export function clampSummary(input: string): string {
 	const normalized = normalizeSummary(input);
 	const points = [...normalized];
@@ -94,12 +63,7 @@ export function clampSummary(input: string): string {
 	return points.slice(0, CHAT_SUMMARY_MAX_LENGTH).join("").trim();
 }
 
-/**
- * The message total order must match the repository's sort. If the two diverge, the frontier points
- * at a different position than storage believes. Already-processed messages are then summarized
- * again (duplicate memories), or unprocessed messages are skipped and never summarized. The second
- * failure is silent.
- */
+/** Total order on stored message positions: time, then id. */
 export function compareMessagePosition(
 	a: { createdAt: string; id: string },
 	b: { createdAt: string; id: string },
@@ -109,42 +73,65 @@ export function compareMessagePosition(
 	return a.id < b.id ? -1 : 1;
 }
 
-export const isAfterFrontier = (
-	message: { createdAt: string; id: string },
-	frontier: ChatSummaryFrontier | null,
-): boolean =>
-	frontier === null ||
-	compareMessagePosition(message, {
-		createdAt: frontier.createdAt,
-		id: frontier.messageId,
-	}) > 0;
+// ── History rewind (historical records only) ─────────────────────────────────────────────────────
 
-export interface CreateSummaryInput {
-	roomId: string;
-	summary: string;
-	frontier: ChatSummaryFrontier | null;
-	/** Omitted means 0, that is, the room has never been rewound. */
-	epoch?: number;
+export interface PlanHistoryRewindInput {
+	summary: ChatSummary | null;
+	memories: readonly ChatMemory[];
+	/** `createdAt` of the first message the rewrite erases or changes. */
+	cutoffCreatedAt: string;
+}
+
+export interface ChatHistoryRewind {
+	/** The stored summary covered erased history: retire it (tombstone, epoch raised). */
+	resetSummary: boolean;
+	/** Automatic memories extracted from the erased stretch (or of unknown origin): delete them. */
+	staleMemoryIds: string[];
 }
 
 /**
- * Builds the record without saving it. `stamp.id` is ignored on purpose: identity comes from the
- * room id, and this factory enforces that. If callers could pass a fresh UUID, some would, and the
- * room would end up with two summaries.
+ * What a history rewrite (edit, delete, delete-from-here) retires among V2's historical records.
+ *
+ * - The summary is a paragraph and cannot be partly undone, so a summary whose frontier reaches the
+ *   erased stretch is retired whole. On equal times it errs toward retiring (an erased event must not
+ *   stay described). A summary with text but no frontier (a damaged row) covers unknown history and
+ *   is retired by any rewrite; an empty one has nothing to retire.
+ * - Automatic memories carry the end time of the stretch they came from (`originAt`); those at or
+ *   after the cutoff, or with no origin, are deleted.
+ * - **Human-written memories are never touched.** They are the person's data, not a derivative of the
+ *   conversation.
+ *
+ * Storage runs this inside the rewrite's own transaction, so no reader sees the messages gone and
+ * their description still present. The afterstate index needs no such rule: its derived passages
+ * and consolidated episodes are erased with their source records.
  */
-export function createSummaryRecord(
-	input: CreateSummaryInput,
-	stamp: Omit<ChatStamp, "id">,
-): ChatSummary {
-	return {
-		id: summaryIdFor(input.roomId),
-		roomId: input.roomId,
-		summary: clampSummary(input.summary),
-		frontier: input.frontier,
-		epoch: input.epoch ?? 0,
-		createdAt: stamp.now,
-		updatedAt: stamp.now,
-		deletedAt: null,
-		...freshChatSyncMeta(stamp.rev),
-	};
+export function planHistoryRewind(
+	input: PlanHistoryRewindInput,
+): ChatHistoryRewind {
+	const { summary, memories, cutoffCreatedAt } = input;
+	const resetSummary =
+		summary !== null &&
+		summary.deletedAt === null &&
+		(summary.frontier === null
+			? summary.summary.trim() !== ""
+			: summary.frontier.createdAt >= cutoffCreatedAt);
+	const staleMemoryIds = memories
+		.filter(
+			(memory) =>
+				isAutoMemory(memory) &&
+				(memory.originAt === null || memory.originAt >= cutoffCreatedAt),
+		)
+		.map((memory) => memory.id);
+	return { resetSummary, staleMemoryIds };
 }
+
+/** Whether the rewind changes anything (storage issues no empty revision). */
+export const rewindChangesAnything = (rewind: ChatHistoryRewind): boolean =>
+	rewind.resetSummary || rewind.staleMemoryIds.length > 0;
+
+/**
+ * The epoch a retired summary is written with. Always raised: it is what lets the retirement win the
+ * merge against a device that advanced the old summary concurrently.
+ */
+export const nextSummaryEpoch = (summary: ChatSummary | null): number =>
+	(summary?.epoch ?? 0) + 1;

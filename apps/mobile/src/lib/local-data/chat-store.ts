@@ -12,7 +12,6 @@ import {
 	type ChatCharacter,
 	ChatCharacterLimitError,
 	type ChatIntensity,
-	type ChatMaintenancePlan,
 	type ChatMemory,
 	ChatMemoryLimitError,
 	type ChatMessage,
@@ -37,18 +36,15 @@ import {
 	createPersonaRecord,
 	createRoomRecord,
 	createSceneRecord,
-	createSummaryRecord,
 	extendAssistantRecord,
-	isAutoMemory,
 	isLiveChatRecord,
-	maintenanceStillApplies,
 	markLocalDelete,
 	markLocalUpdate,
 	mergeMemorySource,
 	nextSummaryEpoch,
 	normalizeCharacterAliases,
 	normalizeMemoryAudience,
-	planMaintenanceRewind,
+	planHistoryRewind,
 	planRoomDuplicate,
 	requireCharacterName,
 	requireCharacterPrompt,
@@ -221,16 +217,19 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 			 * is gone", since the tail is always one contiguous span.
 			 */
 			const cutoff = tail[0]?.createdAt;
-			if (cutoff) await rewindMaintenanceInTx(tx, anchor.roomId, cutoff, now);
+			if (cutoff) await rewindHistoryInTx(tx, anchor.roomId, cutoff, now);
 
 			return { applied: true, removed: tail.length };
 		});
 	};
 
 	/**
-	 * Rewinds maintenance state after history was cut, inside an already-open transaction.
+	 * Retires Memory V2's historical records (its summary, auto memories) that described history
+	 * which was just cut, inside an already-open transaction, so the afterstate migration can never
+	 * import a description of deleted turns. The afterstate index itself needs no such step: its
+	 * passages and consolidated episodes are erased with their source records.
 	 *
-	 * The rules live in the pure `planMaintenanceRewind`; this function only writes its decision to
+	 * The rules live in the pure `planHistoryRewind`; this function only writes its decision to
 	 * records. The web function of the same name does the same job and only the SQL differs. Two
 	 * copies of the rule would let one edit delete different things on two devices.
 	 *
@@ -238,7 +237,7 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 	 * recent verbatim window and usually end here. Issuing a useless revision on this path would turn
 	 * a single edit into a push of the summary record.
 	 */
-	const rewindMaintenanceInTx = async (
+	const rewindHistoryInTx = async (
 		tx: SqlRunner,
 		roomId: string,
 		cutoffCreatedAt: string,
@@ -256,7 +255,7 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 			)
 		).map(chatMemoryTable.fromRow);
 
-		const rewind = planMaintenanceRewind({
+		const rewind = planHistoryRewind({
 			summary,
 			memories,
 			cutoffCreatedAt,
@@ -269,24 +268,18 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 		);
 		let issued = 0;
 
-		if (rewind.resetSummary) {
+		if (rewind.resetSummary && summary) {
 			/**
 			 * The summary is discarded but its record is kept. Deleting the row would leave no way to tell
 			 * other devices (a tombstone is needed), and it would remove the slot where the epoch goes up.
 			 * That integer is the only thing that lets the merge prefer the rewind (see
 			 * `ChatSummary.epoch`).
 			 */
-			const base =
-				summary ??
-				createSummaryRecord(
-					{ roomId, summary: "", frontier: null },
-					{ now, rev: revs[issued] },
-				);
 			await chatSummaryTable.upsert(
 				tx,
 				markLocalUpdate(
 					{
-						...base,
+						...summary,
 						summary: "",
 						frontier: null,
 						epoch: nextSummaryEpoch(summary),
@@ -397,6 +390,16 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 				[roomId],
 			);
 			return liveRows(rows, chatMessageTable.fromRow);
+		},
+
+		/** Live messages in the room: the history window steps on this (`loadChatHistoryWindow`). */
+		async countMessages(roomId: string): Promise<number> {
+			if (!(await liveRoom(db, roomId))) return 0;
+			const row = await db.first<{ n: number }>(
+				"SELECT COUNT(*) AS n FROM chat_message WHERE room_id = ? AND deleted_at IS NULL",
+				[roomId],
+			);
+			return Number(row?.n ?? 0);
 		},
 
 		/**
@@ -661,10 +664,6 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 							id,
 						])
 					).map(fromRow);
-				const summaryRow = await tx.first<SqlRow>(
-					"SELECT * FROM chat_summary WHERE id = ?",
-					[summaryIdFor(id)],
-				);
 				const source = {
 					room,
 					messages: await children("chat_message", chatMessageTable.fromRow),
@@ -674,7 +673,6 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 						chatCharacterTable.fromRow,
 					),
 					scenes: await children("chat_scene", chatSceneTable.fromRow),
-					summary: summaryRow ? chatSummaryTable.fromRow(summaryRow) : null,
 				};
 				const copy = planRoomDuplicate(source, {
 					title: checked,
@@ -690,7 +688,6 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 				for (const character of copy.characters)
 					await chatCharacterTable.upsert(tx, character);
 				for (const scene of copy.scenes) await chatSceneTable.upsert(tx, scene);
-				if (copy.summary) await chatSummaryTable.upsert(tx, copy.summary);
 				return copy.room;
 			});
 		},
@@ -760,11 +757,10 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 				await touchRoomInTx(tx, current.roomId, now);
 				/**
 				 * Single-message deletion also goes through the rewind. This operation does not touch the tail,
-				 * but **the summary may already have read the message.** The summary would then describe an
-				 * utterance that no longer exists, and that fact would be silent if only this path skipped the
-				 * rewind.
+				 * but **V2's historical summary may describe the message**; the afterstate migration would then
+				 * import an utterance that no longer exists.
 				 */
-				await rewindMaintenanceInTx(tx, current.roomId, current.createdAt, now);
+				await rewindHistoryInTx(tx, current.roomId, current.createdAt, now);
 			});
 		},
 
@@ -1040,7 +1036,9 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 			});
 		},
 
-		/* ── Auto-maintenance ───────────────────────────────────────────────────── */
+		/* ── Memory V2's historical summary ───────────────────────────────────────
+		 * Read only as the afterstate migration's input (`summaryItem`). Nothing writes or advances it
+		 * any more except the history rewind above, which retires it. */
 
 		async getSummary(roomId: string): Promise<ChatSummary | null> {
 			/** Nothing from a deleted room is visible. Same rule as other reads. */
@@ -1050,122 +1048,6 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 				[summaryIdFor(roomId)],
 			);
 			return row ? chatSummaryTable.fromRow(row) : null;
-		},
-
-		applyMemoryMaintenance(
-			plan: ChatMaintenancePlan & { roomId: string },
-		): Promise<boolean> {
-			const now = nowIso();
-			return db.transaction(async (tx) => {
-				/** Maintenance does not revive a deleted room. */
-				const room = await liveRoom(tx, plan.roomId);
-				if (!room) return false;
-
-				const summaryRow = await tx.first<SqlRow>(
-					"SELECT * FROM chat_summary WHERE id = ? AND deleted_at IS NULL",
-					[summaryIdFor(plan.roomId)],
-				);
-				const summary = summaryRow
-					? chatSummaryTable.fromRow(summaryRow)
-					: null;
-
-				/**
-				 * **Optimistic concurrency. The check is inside the transaction.**
-				 *
-				 * Checking outside and writing inside leaves a window, and history rewrites and other devices'
-				 * pulls can enter through it. The plan was built on a snapshot from seconds ago, so if the
-				 * generation or frontier moved, the value is built on **a conversation that no longer exists**,
-				 * and so it is stale.
-				 */
-				if (!maintenanceStillApplies(plan, summary)) return false;
-
-				const live = (
-					await tx.all<SqlRow>(
-						"SELECT * FROM chat_memory WHERE room_id = ? AND deleted_at IS NULL",
-						[plan.roomId],
-					)
-				).map(chatMemoryTable.fromRow);
-				const byId = new Map(live.map((memory) => [memory.id, memory]));
-
-				/**
-				 * Revisions are issued **all at once.** Re-reading the wall clock per operation would record
-				 * one maintenance run as spanning several milliseconds, and sharing one value would leave the
-				 * merge unable to tell their order. The summary line needs one more.
-				 */
-				const revs = await nextRevs(tx, plan.operations.length + 1);
-				let issued = 0;
-
-				for (const operation of plan.operations) {
-					if (operation.type === "add") {
-						await chatMemoryTable.upsert(
-							tx,
-							createMemoryRecord(
-								{
-									roomId: plan.roomId,
-									content: operation.content,
-									source: "auto",
-									originAt: plan.through.createdAt,
-								},
-								{ id: newLocalId(), now, rev: revs[issued++] },
-							),
-						);
-						continue;
-					}
-
-					const target = byId.get(operation.memoryId);
-					/**
-					 * **The store does not trust the plan.**
-					 *
-					 * The pure plan already filtered out manual memories (`planMemoryMaintenance`), but the user
-					 * may have promoted an auto memory in the meantime (`promoteMemoryPatch`). Then this operation
-					 * would delete or overwrite a sentence a person just wrote. If the target is gone or has
-					 * become manual, skip only this operation. Rolling back the whole plan would erase the batch's
-					 * progress, and the same span would be reprocessed forever.
-					 */
-					if (!target || !isAutoMemory(target)) {
-						issued++;
-						continue;
-					}
-
-					await chatMemoryTable.upsert(
-						tx,
-						operation.type === "remove"
-							? markLocalDelete(target, now, revs[issued++])
-							: markLocalUpdate(
-									{
-										...target,
-										content: operation.content,
-										originAt: plan.through.createdAt,
-									},
-									now,
-									revs[issued++],
-								),
-					);
-				}
-
-				const base =
-					summary ??
-					createSummaryRecord(
-						{ roomId: plan.roomId, summary: "", frontier: null },
-						{ now, rev: revs[issued] },
-					);
-				await chatSummaryTable.upsert(
-					tx,
-					markLocalUpdate(
-						{ ...base, summary: plan.summary, frontier: plan.through },
-						now,
-						revs[issued++],
-					),
-				);
-
-				/**
-				 * **Does not bump the room's activity time.** Same judgment as memory edits, with a stronger
-				 * reason: maintenance is not something the user did. Bumping it would lift a conversation to
-				 * the top of the list because of a background job, and the user would see a conversation marked
-				 * recent that they never touched. This is the reason the timestamp stays put.
-				 */
-				return true;
-			});
 		},
 
 		async deleteMemory(id: string): Promise<void> {

@@ -1,12 +1,8 @@
 import type { ChatCharacter } from "./character.ts";
 import { selectMemoriesForContext } from "./context.ts";
-import type { ChatMemory } from "./memory.ts";
+import { type ChatMemory, isAutoMemory } from "./memory.ts";
 import type { ChatMessage } from "./model.ts";
-import {
-	type ChatMemoryOwner,
-	memoryAdmitted,
-	promptPerspective,
-} from "./prompt-scope.ts";
+import { admissionContext, memoryAdmitted } from "./prompt-scope.ts";
 import {
 	audienceKey,
 	type ChatPerspective,
@@ -16,65 +12,50 @@ import {
 	recallPerspective,
 	resolveMessageAudiences,
 } from "./scene.ts";
+import type { ChatSummary } from "./summary.ts";
 
 /**
- * Conversation memory backends: one contract for every app and every provider.
+ * Long-term memory: **afterstate is the only engine** (`docs/chat/MEMORY.md`).
  *
- * RowCat's records stay the source of truth. `legacy` is memory V2 as it was (pinned/recent memories
- * within budget, the rolling summary, the history window). `afterstate` adds a **local derived
- * index** (the afterstate engine, embedded natively on the device) that finds earlier passages of
- * this conversation which have scrolled out of the history window and quotes the relevant ones into
- * the turn. `shadow` runs the afterstate recall beside V2 and records how it did, without changing
- * the request.
+ * RowCat keeps the authoritative records — messages, the memories people write, scenes, characters —
+ * and their E2EE sync. Everything automatic about remembering is afterstate's, embedded on the
+ * device (a native module on mobile, a stdio child process on desktop):
  *
- * - **Nothing here is a second source of truth.** The index is rebuilt from the store's live
- *   records (`reconcileConversation`). It never synchronizes, never writes a ChatMemory, never edits
- *   a summary. Sync, conflict resolution, tombstones and the E2EE envelope are untouched: each
- *   device indexes what it decrypted.
- * - **Recall is checked against the store before use.** The index can lag (a deletion that arrived
- *   by sync a moment ago, an edit not reconciled yet). Every recalled passage must still be
- *   contained in a live record of the snapshot this turn read, or it is dropped. A deleted or
- *   rewritten message cannot come back through the index.
- * - **Failure is silence.** No port, a closed store, an index still building, a slow call: the turn
- *   goes out as V2 would have sent it. A recall never fails a turn and never delays it by more than
- *   `CHAT_RECALL_TIMEOUT_MS`.
- * - **The transport is the app's.** `AfterstatePort` is the only door; web/desktop/mobile supply it
- *   (a stdio host on desktop, a native module on mobile) or supply none. This package has no
- *   platform imports (`boundaries.test.ts`).
+ * ```text
+ * RowCat records ──reconcile──▶ afterstate index (passages, by id + revision)
+ *                 ──consolidate▶ episodes (one per run of one audience; derived, cites its sources)
+ *                                 │
+ * turn ──recall + digests (perspective inside the search)──▶ re-checked against the live store
+ *                                 ──▶ the request: recalled passages (last user turn) and
+ *                                     earlier episodes (system prompt)
+ * ```
+ *
+ * - **One owner, one pipeline.** There is no backend choice and no fallback. Memory V2 (model-written
+ *   rolling summary and extracted memories) was removed; nothing here or in the apps can run it.
+ * - **Nothing here is a second source of truth.** The index is derived from the store's live records
+ *   (`reconcileConversation`), never synchronized, rebuilt per device, and can be deleted at any time.
+ *   No model is called: consolidation is extractive (afterstate Dreaming's deterministic digest).
+ * - **Authorization happens twice.** The bridge filters by the turn's perspective inside the search
+ *   (forbidden passages never use up the limit); this adapter then checks every passage — and every
+ *   source of every episode — against the store's own scenes and live text again, so a lagging index
+ *   can never reintroduce a deleted, edited or newly restricted record.
+ * - **Unavailable is reported, never replaced.** Without an engine (a plain browser, a native module
+ *   that failed to load, a store that did not open) the conversation runs on its recent history alone,
+ *   and `ChatMemoryStatus` says so. A slow or failing call drops long-term memory for that turn only.
+ * - **Historical records are evidence, not memory.** V2's automatic memories and its last summary are
+ *   indexed as model-written, attributed evidence, recalled only where their unknown audience is
+ *   admissible (rooms without scenes). They never enter the memory block or the system prompt.
+ * - **The transport is the app's.** `AfterstatePort` is the only door; this package has no platform
+ *   imports (`boundaries.test.ts`).
  */
-
-export type MemoryBackendMode = "legacy" | "afterstate" | "shadow";
-
-export const MEMORY_BACKEND_MODES: readonly MemoryBackendMode[] = [
-	"legacy",
-	"afterstate",
-	"shadow",
-];
-
-/** Unknown or absent values are `legacy`: an unreadable setting must not switch the backend. */
-export function parseMemoryBackendMode(value: unknown): MemoryBackendMode {
-	return MEMORY_BACKEND_MODES.includes(value as MemoryBackendMode)
-		? (value as MemoryBackendMode)
-		: "legacy";
-}
-
-/**
- * The mode that actually runs. `afterstate` and `shadow` need a port; without one (the web build,
- * a native module that failed to load, a store that did not open) the conversation is `legacy`.
- * That fallback is the rollback path too: switching back never touches a record.
- */
-export function effectiveMemoryBackend(
-	requested: MemoryBackendMode,
-	port: AfterstatePort | null | undefined,
-): MemoryBackendMode {
-	return port ? requested : "legacy";
-}
 
 export type AfterstateOp =
 	| "status"
 	| "ingest"
 	| "recall"
 	| "reconcile"
+	| "consolidate"
+	| "digests"
 	| "erase"
 	| "sweep"
 	| "verify"
@@ -102,13 +83,14 @@ export type BridgeAudience =
 
 export interface BridgeItem {
 	conversation: string;
-	record: "message" | "note";
+	record: "message" | "note" | "summary";
 	id: string;
 	revision: string;
 	text: string;
 	author: { role: BridgeRole; name?: string };
 	at_ms?: number;
 	labels?: string[];
+	target?: { layer: "story" | "notes" | "ooc" };
 	/** Absent: unknown (the bridge never reads absent as "everyone"). */
 	audience?: BridgeAudience;
 }
@@ -130,9 +112,6 @@ const millis = (iso: string): number | undefined => {
  * A message as the index sees it. The user's lines are user statements (their explicit `(OOC: …)`
  * asides are routed out of the story by the engine); the assistant's lines are **utterances** of
  * the speaker — said in the story, not established as true, never facts about the user.
- *
- * Incomplete (cut-off) and empty messages are indexed as they are stored; deleted ones never reach
- * here (the store does not return them).
  */
 export function messageItem(
 	message: ChatMessage,
@@ -171,8 +150,9 @@ export function messageItem(
 }
 
 /**
- * A memory as the index sees it: the user's exact words for `user`, the model's for `auto`
- * (`model`, never `user`). Kept whole, never rewritten; the record stays authoritative.
+ * A memory as the index sees it: the user's exact words for a human-written memory; a memory V2
+ * extracted is model-written (`model`, never `user`) and labelled `origin:auto`. Kept whole, never
+ * rewritten; the record stays authoritative.
  */
 export function noteItem(memory: ChatMemory): BridgeItem | null {
 	if (!isBridgeId(memory.id) || !isBridgeId(memory.roomId)) return null;
@@ -182,12 +162,36 @@ export function noteItem(memory: ChatMemory): BridgeItem | null {
 		id: memory.id,
 		revision: revisionOf(memory),
 		text: memory.content,
-		author: { role: memory.source === "auto" ? "model" : "user" },
+		author: { role: isAutoMemory(memory) ? "model" : "user" },
 		at_ms: millis(memory.createdAt),
 		labels: [
-			memory.source === "auto" ? "origin:auto" : "origin:user",
+			isAutoMemory(memory) ? "origin:auto" : "origin:user",
 			...(memory.pinned ? ["pinned"] : []),
 		],
+	};
+}
+
+/**
+ * Memory V2's stored summary as **migration input**: model-written (`model`), attributed
+ * (`origin:v2-summary`), in the story layer with **no audience** — unknown. The bridge admits unknown
+ * passages only to a perspective that includes unknown history, which RowCat sends only for rooms
+ * without scenes; the adapter checks that again. So a summary built over a room before anyone marked
+ * a private scene can never reach a character's turn once scenes exist. A retired (empty) summary is
+ * not indexed, and its earlier passages are erased by the next reconcile.
+ */
+export function summaryItem(summary: ChatSummary): BridgeItem | null {
+	if (!isBridgeId(summary.id) || !isBridgeId(summary.roomId)) return null;
+	if (summary.deletedAt !== null || summary.summary.trim() === "") return null;
+	return {
+		conversation: summary.roomId,
+		record: "summary",
+		id: summary.id,
+		revision: `${revisionOf(summary)}~e${summary.epoch}`.slice(0, 128),
+		text: summary.summary,
+		author: { role: "model" },
+		at_ms: millis(summary.frontier?.createdAt ?? summary.updatedAt),
+		labels: ["origin:v2-summary"],
+		target: { layer: "story" },
 	};
 }
 
@@ -201,6 +205,8 @@ export interface ConversationMemorySource {
 	listScenes?(roomId: string): Promise<ChatScene[]>;
 	/** Characters added to the room (their aliases feed recall). */
 	listCharacters?(roomId: string): Promise<ChatCharacter[]>;
+	/** Memory V2's historical summary (migration input). Absent: none is imported. */
+	getSummary?(roomId: string): Promise<ChatSummary | null>;
 }
 
 interface ReconcileResponse {
@@ -231,6 +237,7 @@ export interface ReconcileKindReport {
 export interface ReconcileReport {
 	messages: ReconcileKindReport;
 	notes: ReconcileKindReport;
+	summaries: ReconcileKindReport;
 	/** False when `maxItems` stopped ingestion early; the next run continues (it is idempotent). */
 	complete: boolean;
 	dryRun: boolean;
@@ -246,6 +253,10 @@ export const CHAT_INDEX_MAX_ITEMS_PER_RUN = 2_000;
  * what is missing or changed. Idempotent and resumable: an interrupted run leaves a consistent
  * index (each record is written atomically) and the next run picks up where it stopped. `dryRun`
  * reports without writing (migration preview).
+ *
+ * This is also the **migration**: on first run it indexes the room's whole history, its memories
+ * (human-written and V2's automatic ones, attributed) and V2's last summary — once, by id and
+ * revision, so a repeated or interrupted run never duplicates anything.
  */
 export async function reconcileConversation(
 	port: AfterstatePort,
@@ -257,7 +268,7 @@ export async function reconcileConversation(
 	let budget = options.maxItems ?? CHAT_INDEX_MAX_ITEMS_PER_RUN;
 	let complete = true;
 	const run = async <R extends { id: string }>(
-		record: "message" | "note",
+		record: "message" | "note" | "summary",
 		records: R[],
 		toItem: (r: R) => BridgeItem | null,
 	): Promise<ReconcileKindReport> => {
@@ -266,7 +277,7 @@ export async function reconcileConversation(
 		for (const r of records) {
 			const item = toItem(r);
 			if (!item || item.text.trim() === "") {
-				if (!item) rejected++;
+				if (!item && !isBridgeId(r.id)) rejected++;
 				continue;
 			}
 			items.set(item.id, item);
@@ -311,22 +322,94 @@ export async function reconcileConversation(
 			rejected,
 		};
 	};
-	const [messages, memories, scenes] = await Promise.all([
+	const [messages, memories, scenes, summary] = await Promise.all([
 		source.listAllMessages(roomId),
 		source.listMemories(roomId),
 		source.listScenes ? source.listScenes(roomId) : Promise.resolve([]),
+		source.getSummary ? source.getSummary(roomId) : Promise.resolve(null),
 	]);
 	const audiences = resolveMessageAudiences(messages, scenes);
 	const messageReport = await run("message", messages, (m) =>
 		messageItem(m, audiences.get(m.id)),
 	);
 	const noteReport = await run("note", memories, noteItem);
+	const summaryReport = await run(
+		"summary",
+		summary ? [summary] : [],
+		summaryItem,
+	);
 	return {
 		messages: messageReport,
 		notes: noteReport,
+		summaries: summaryReport,
 		complete,
 		dryRun,
 	};
+}
+
+interface ConsolidateResponse {
+	episodes: number;
+	current: number;
+	written: number;
+	retracted: number;
+	pending: boolean;
+	fenced?: boolean;
+}
+
+export interface ConsolidateReport {
+	episodes: number;
+	written: number;
+	retracted: number;
+	/** False when the per-run bound stopped it; the next run continues (idempotent). */
+	complete: boolean;
+}
+
+/** Records per episode: about twelve exchanges, one screenful of story. */
+export const CHAT_EPISODE_RECORDS = 24;
+/** Episode writes per `consolidate` call, and calls per background run. */
+export const CHAT_CONSOLIDATE_WRITES_PER_CALL = 16;
+export const CHAT_CONSOLIDATE_CALLS_PER_RUN = 4;
+
+/**
+ * Consolidates the room's indexed story into **episodes**: maximal runs of messages that share one
+ * audience, cut every `CHAT_EPISODE_RECORDS` records, each condensed by afterstate Dreaming's
+ * deterministic digest (extractive, no model call) into one derived record that cites its sources.
+ *
+ * - A run never mixes audiences, so a private scene cannot become shared by being condensed; the
+ *   episode carries its sources' audience and the same admission rule applies to it.
+ * - Erasing or editing any source erases or invalidates the episode inside the engine; the next run
+ *   rebuilds it from what is live. Bounded per call and per run; resumable.
+ */
+export async function consolidateConversation(
+	port: AfterstatePort,
+	roomId: string,
+	options: { calls?: number; signal?: AbortSignal } = {},
+): Promise<ConsolidateReport> {
+	if (!isBridgeId(roomId))
+		return { episodes: 0, written: 0, retracted: 0, complete: true };
+	const calls = options.calls ?? CHAT_CONSOLIDATE_CALLS_PER_RUN;
+	const report: ConsolidateReport = {
+		episodes: 0,
+		written: 0,
+		retracted: 0,
+		complete: false,
+	};
+	for (let i = 0; i < calls; i++) {
+		if (options.signal?.aborted) return report;
+		const r = await port.call<ConsolidateResponse>("consolidate", {
+			conversation: roomId,
+			max_records: CHAT_EPISODE_RECORDS,
+			max_writes: CHAT_CONSOLIDATE_WRITES_PER_CALL,
+		});
+		report.episodes = r.episodes;
+		report.written += r.written;
+		report.retracted += r.retracted;
+		if (r.fenced || !r.pending) {
+			report.complete = true;
+			return report;
+		}
+	}
+	return report;
 }
 
 /** Erases a room's index (room deletion on this device). Physical erasure, every layer. */
@@ -356,11 +439,7 @@ export async function sweepConversations(
 	return { orphaned: r.orphaned, erasedPassages: r.erased_passages };
 }
 
-/**
- * `sweepConversations` against the store's own room list: the call the apps make once the store and
- * the index are both open. The room list is read here, in the package, so no screen-side code reads
- * it outside the room-list hook.
- */
+/** `sweepConversations` against the store's own room list. */
 export async function sweepDeletedRooms(
 	port: AfterstatePort,
 	store: { listRooms(): Promise<readonly { id: string }[]> },
@@ -375,46 +454,51 @@ export async function sweepDeletedRooms(
 // ── Recall ─────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * Characters the recalled block may take. It is not taken from the memory budget: memory is the
- * user's record and keeps its 4,000 characters. 1,600 is about four short passages, roughly the size
- * of one long message, so a turn never grows by more than one message's worth.
+ * Characters the recalled block may take. 1,600 is about four short passages, roughly the size of
+ * one long message, so a turn never grows by more than one message's worth.
  */
 export const CHAT_RECALL_CONTEXT_CHAR_BUDGET = 1_600;
 /** Passages at most, whatever their length. */
 export const CHAT_RECALL_MAX_PASSAGES = 6;
-/** A recall slower than this is abandoned and the turn goes out without it. */
+/** Long-term memory slower than this is abandoned and the turn goes out without it. */
 export const CHAT_RECALL_TIMEOUT_MS = 400;
 
 export type ChatRecallLayer = "story" | "ooc" | "notes" | "character";
 
 export interface ChatRecalledPassage {
-	/** Record id (message or memory); not shown to the model. */
+	/** Record id (message, memory, episode or historical summary); not shown to the model. */
 	id: string;
 	layer: ChatRecallLayer;
+	/**
+	 * What the passage is: a message, a memory, a consolidated episode (`digest`), or V2's historical
+	 * summary (`summary`). Absent reads as `message` for story/ooc and `note` for notes.
+	 */
+	kind?: "message" | "note" | "digest" | "summary";
 	text: string;
 	/** Who said it, for messages; null for notes. */
 	speaker: string | null;
 	role: "user" | "character" | "model" | "narrator" | "system";
-	/** ISO time the record was written. */
+	/** ISO time the record was written (an episode: its latest source). */
 	at: string | null;
 	/** Who witnessed it (messages; notes are `room`). Unknown only in rooms without scenes. */
 	audience?: ResolvedAudience["kind"];
 	/**
-	 * A later record of this conversation says something about the same terms (a later message, a
-	 * user memory written after it): this passage may be out of date. Not a verdict — the model reads
-	 * it as "earlier" and the later record wins (`recallBlock`).
+	 * A later record of this conversation says something about the same terms: this passage may be
+	 * out of date. Not a verdict — the model reads it as "earlier" and the later record wins.
 	 */
 	superseded?: boolean;
+	/** A memory V2 extracted (historical, model-written). Shown as such. */
+	automatic?: boolean;
 }
 
-/** A turn's recalled passages, frozen when the generation starts (like memories and summary). */
+/** A turn's recalled passages, frozen when the generation starts (like memories). */
 export interface ChatRecallSnapshot {
 	passages: readonly ChatRecalledPassage[];
 }
 
 interface BridgeEvidence {
 	layer: ChatRecallLayer;
-	record: "message" | "note" | "summary";
+	record: "message" | "note" | "summary" | "digest";
 	id: string;
 	passage: number;
 	text: string;
@@ -423,6 +507,7 @@ interface BridgeEvidence {
 	score: number;
 	audience?: ResolvedAudience["kind"];
 	matched?: string[];
+	sources?: string[];
 }
 
 /** The perspective as the bridge takes it. */
@@ -445,7 +530,7 @@ export function recallAliases(
 		.slice(0, 32);
 }
 
-const HANGUL = /[\uac00-\ud7a3]/;
+const HANGUL = /[가-힣]/;
 
 /** Whether `text` contains the engine's term `term` (a lowercase word, or a Hangul bigram). */
 export function containsTerm(text: string, term: string): boolean {
@@ -489,6 +574,52 @@ export function passageStillLive(passage: string, content: string): boolean {
 		.every((line) => live.includes(line));
 }
 
+/**
+ * The verbatim excerpts of an episode digest (afterstate Dreaming's deterministic digest: a header,
+ * a keyword line, then `- ` excerpt lines, each a source turn cut at a word boundary and marked `…`).
+ * The header and keywords are not shown to the model: dates there are record dates and keywords are
+ * index terms.
+ */
+export function digestExcerpts(text: string): string[] {
+	return text
+		.split("\n")
+		.map((l) => l.trim())
+		.filter((l) => l.startsWith("- "))
+		.map((l) => l.slice(2).trim())
+		.filter(Boolean);
+}
+
+/**
+ * Whether every excerpt of an episode still occurs in its sources' live text. An excerpt is a prefix
+ * of a source turn (cut and marked `…`), so its part before the mark must be found. An episode with no
+ * excerpt, or one whose wording no longer exists, is dropped.
+ */
+export function digestStillLive(
+	text: string,
+	sources: readonly Pick<ChatMessage, "content" | "speaker">[],
+): boolean {
+	const excerpts = digestExcerpts(text);
+	if (excerpts.length === 0) return false;
+	const live = normalize(sources.map((s) => s.content).join("\n"));
+	const speakers = new Set(
+		sources.map((s) => s.speaker.trim()).filter(Boolean),
+	);
+	return excerpts.every((e) => {
+		let body = normalize(e.replace(/[…]+$/u, "").replace(/\.\.\.$/, ""));
+		if (!body) return true;
+		// The engine labels an excerpt with its turn's speaker (`Rowan: …`), as the index stores it.
+		const colon = body.indexOf(": ");
+		if (colon > 0 && speakers.has(body.slice(0, colon).trim()))
+			body = body.slice(colon + 2);
+		// A digest may join a turn's lines; compare line by line, like passages.
+		return body
+			.split(/\s{2,}| \/ /)
+			.map(normalize)
+			.filter(Boolean)
+			.every((line) => live.includes(line));
+	});
+}
+
 /** User turns shorter than this many words get the end of the reply they answer added. */
 export const CHAT_RECALL_SHORT_TURN_WORDS = 4;
 
@@ -496,10 +627,6 @@ export const CHAT_RECALL_SHORT_TURN_WORDS = 4;
  * The query for this turn: the user's latest words. A short turn ("응, 어디 뒀더라", "what about
  * him?") points at the reply it answers, so for those the end of that reply is added. Bounded so a
  * pasted wall of text does not become a slow query.
- *
- * Not the reply tail on every turn: in the Phase 11 A/B (afterstate `docs/benchmarks/phase11`) the
- * tail's words matched the recent scene everywhere and outranked the passage the question was about
- * (gold in context 0.12 with it, 0.76 without, held-out probes).
  */
 export function recallQuery(
 	history: readonly Pick<ChatMessage, "role" | "content">[],
@@ -551,40 +678,44 @@ export interface RecallTurnInput {
 	windowLength: number;
 	/** This turn's memory snapshot; notes already in the memory block are not repeated. */
 	memories: readonly (Pick<ChatMemory, "id" | "content"> &
-		Partial<Pick<ChatMemory, "createdAt" | "source">>)[];
+		Partial<Pick<ChatMemory, "createdAt" | "source" | "audience">>)[];
 	/** Ids of memories the memory block will carry. */
 	memoryIdsInContext: ReadonlySet<string>;
 	/** The room's scenes (none: every message is unknown audience, read as shared history). */
 	scenes?: readonly ChatScene[];
 	/** Alias groups (`recallAliases`). */
 	aliases?: readonly (readonly string[])[];
-	/**
-	 * Marking (and, for questions about the present, dropping) passages a later record overtook
-	 * (`markSuperseded`). On by default; `false` reproduces the Phase 11 behaviour for comparisons.
-	 */
+	/** V2's historical summary (validation snapshot for a recalled summary passage). */
+	summary?: Pick<ChatSummary, "id" | "summary" | "deletedAt"> | null;
+	/** Marking (and, for present-tense questions, dropping) passages a later record overtook. */
 	supersession?: boolean;
 	/** Phase 11 behaviour for comparisons: send no perspective (no audience filtering at all). */
 	unscoped?: boolean;
-	/**
-	 * Messages that follow each of the best story hits, carried with it (`CHAT_RECALL_CONTINUATION`);
-	 * 0 turns it off (Phase 11 behaviour).
-	 */
+	/** Messages that follow each of the best story hits, carried with it; 0 turns it off. */
 	continuation?: number;
+	/** Search consolidated episodes too (default true). */
+	digests?: boolean;
 }
 
 /**
- * How many following messages the best story hits bring along. A question names the scene ("the
- * council at the Gilded Anchor") but the answer is said in the next lines, which share none of its
- * words (Phase 12 failure analysis of multi-scene probes: the scene-setting line was found, the
- * decisions after it never were). Only the two best hits do, only messages of the same scene
- * (same audience) and only outside the history window.
+ * How many following messages the best story hits bring along. A question names the scene but the
+ * answer is said in the next lines, which share none of its words. Only the two best hits do, only
+ * messages of the same scene (same audience) and only outside the history window.
  */
 export const CHAT_RECALL_CONTINUATION = 2;
 const CONTINUATION_ANCHORS = 2;
 
+/** The admission check for one stored message under the turn's perspective. */
+const admitsMessage = (
+	input: Pick<RecallTurnInput, "unscoped">,
+	perspective: ChatPerspective,
+	audience: ResolvedAudience,
+): boolean =>
+	input.unscoped === true || perspectiveAdmits(perspective, audience);
+
 /**
  * One turn's recall against the index, validated against the store snapshot. Throws on transport
- * failure (callers wrap it, see `createRecallLoader`).
+ * failure (callers wrap it, see `createLongTermLoader`).
  */
 export async function recallForTurn(
 	port: AfterstatePort,
@@ -597,14 +728,21 @@ export async function recallForTurn(
 		.map((m) => m.id)
 		.filter(isBridgeId)
 		.slice(-500);
+	const windowSet = new Set(windowIds);
 	const notes = new Map(input.memories.map((m) => [m.id, m]));
-	const scenes = input.scenes ?? [];
+	const scenes = (input.scenes ?? []).filter((s) => s.deletedAt === null);
 	const perspective = recallPerspective(scenes);
+	const admission = admissionContext(scenes);
 	const audiences = resolveMessageAudiences(input.messages, scenes);
 	const response = await port.call<{ evidence: BridgeEvidence[] }>("recall", {
 		conversation: input.roomId,
 		query: input.query.slice(0, 4_000),
-		visible: { story: true, ooc: true, notes: true },
+		visible: {
+			story: true,
+			ooc: true,
+			notes: true,
+			...(input.digests === false ? {} : { digests: true }),
+		},
 		limit: 16,
 		exclude: windowIds,
 		...(input.unscoped ? {} : { perspective: bridgePerspective(perspective) }),
@@ -622,18 +760,15 @@ export async function recallForTurn(
 			/*
 			 * Checked again here, from the store's own scenes: the index filtered by the audience it was
 			 * given when the message was indexed, and a scene changed since (on this device or by sync)
-			 * may not be reconciled yet. Story passages only; the OOC layer is the user's literal words.
+			 * may not be reconciled yet. Every layer, out-of-character asides included: an aside written
+			 * during a private scene may name its secret.
 			 */
 			const audience = audiences.get(e.id) ?? { kind: "unknown" as const };
-			if (
-				!input.unscoped &&
-				e.layer !== "ooc" &&
-				!perspectiveAdmits(perspective, audience)
-			)
-				continue;
+			if (!admitsMessage(input, perspective, audience)) continue;
 			passages.push({
 				id: e.id,
 				layer: e.layer,
+				kind: "message",
 				text: e.text,
 				speaker: e.author.name ?? null,
 				role: e.author.role,
@@ -641,18 +776,68 @@ export async function recallForTurn(
 				audience: audience.kind,
 			});
 			termsOf.push(e.matched ?? []);
-		} else if (e.record === "note") {
-			/*
-			 * In a room with scenes, a model-written memory (V2 maintenance) has no audience: it may
-			 * restate a private scene. The memory block may still carry it (V2's own choice, unchanged);
-			 * recall does not add one the block left out.
-			 */
+		} else if (e.record === "digest") {
+			const sources = (e.sources ?? []).map((id) => live.get(id));
 			if (
-				!input.unscoped &&
-				scenes.length > 0 &&
-				notes.get(e.id)?.source === "auto"
+				sources.length === 0 ||
+				sources.some((s) => s === undefined) ||
+				sources.every((s) => s && windowSet.has(s.id))
 			)
 				continue;
+			const present = sources as ChatMessage[];
+			const admitted = present.every((s) =>
+				admitsMessage(
+					input,
+					perspective,
+					audiences.get(s.id) ?? { kind: "unknown" },
+				),
+			);
+			if (!admitted || !digestStillLive(e.text, present)) continue;
+			const excerpts = digestExcerpts(e.text);
+			const last = present[present.length - 1];
+			passages.push({
+				id: `digest:${e.id}`,
+				layer: "story",
+				kind: "digest",
+				text: excerpts.join("\n"),
+				speaker: null,
+				role: "narrator",
+				at: last?.createdAt ?? null,
+				audience: audiences.get(present[0]?.id ?? "")?.kind ?? "unknown",
+			});
+			termsOf.push(e.matched ?? []);
+		} else if (e.record === "summary") {
+			/*
+			 * V2's historical summary: only where unknown history is admissible (no scenes), only while the
+			 * stored summary still says it.
+			 */
+			const stored = input.summary;
+			if (
+				!input.unscoped &&
+				(scenes.length > 0 || perspective.unknown !== "include")
+			)
+				continue;
+			if (
+				!stored ||
+				stored.deletedAt !== null ||
+				stored.id !== e.id ||
+				!passageStillLive(e.text, stored.summary)
+			)
+				continue;
+			passages.push({
+				id: `summary:${e.id}#${e.passage}`,
+				layer: "story",
+				kind: "summary",
+				// Model-written by Memory V2: attributed as such wherever it is quoted.
+				automatic: true,
+				text: e.text,
+				speaker: null,
+				role: "model",
+				at: e.at_ms ? new Date(e.at_ms).toISOString() : null,
+				audience: "unknown",
+			});
+			termsOf.push(e.matched ?? []);
+		} else if (e.record === "note") {
 			const note = notes.get(e.id);
 			if (
 				!note ||
@@ -660,14 +845,29 @@ export async function recallForTurn(
 				normalize(note.content) !== normalize(e.text)
 			)
 				continue;
+			if (note.source === "auto") {
+				/*
+				 * A memory V2 extracted: model-written, built over the whole room, no record of who saw what.
+				 * Quoted (attributed) only where unknown history is admissible.
+				 */
+				if (!input.unscoped && scenes.length > 0) continue;
+			} else if (
+				!input.unscoped &&
+				!memoryAdmitted({ source: "user", audience: note.audience }, admission)
+			) {
+				/** The memory block withholds it for this perspective; recall must not quote it back. */
+				continue;
+			}
 			passages.push({
 				id: e.id,
 				layer: "notes",
+				kind: "note",
 				text: e.text,
 				speaker: null,
 				role: e.author.role,
 				at: note.createdAt ?? null,
 				audience: "room",
+				...(note.source === "auto" ? { automatic: true } : {}),
 			});
 			termsOf.push([]);
 		}
@@ -718,7 +918,12 @@ function addContinuation(
 	passages.forEach((p, i) => {
 		out.push(p);
 		terms.push(termsOf[i] ?? []);
-		if (anchors >= CONTINUATION_ANCHORS || p.layer !== "story") return;
+		if (
+			anchors >= CONTINUATION_ANCHORS ||
+			p.layer !== "story" ||
+			(p.kind ?? "message") !== "message"
+		)
+			return;
 		anchors++;
 		const at = position.get(p.id);
 		if (at === undefined) return;
@@ -734,13 +939,14 @@ function addContinuation(
 			const aKey =
 				a.kind === "participants" ? `p:${a.members.join(",")}` : a.kind;
 			if (aKey !== key) break;
-			if (!input.unscoped && !perspectiveAdmits(perspective, a)) break;
+			if (!admitsMessage(input, perspective, a)) break;
 			const text = m.content.trim().slice(0, 480);
 			if (!text) continue;
 			present.add(m.id);
 			out.push({
 				id: m.id,
 				layer: "story",
+				kind: "message",
 				text,
 				speaker: m.role === "user" ? m.speaker.trim() || null : null,
 				role: m.role === "user" ? "user" : "character",
@@ -755,13 +961,13 @@ function addContinuation(
 
 /**
  * Marks passages that a later record of the conversation may have overtaken: a later message (a
- * recalled one, or one in the history window) or a user memory written after it contains every
- * content term the passage matched (at least two). Deterministic and cheap; it does not decide what
- * is true. It never marks a user-authored memory (the user's record is authoritative).
+ * recalled one, or one in the history window) or a human-written memory written after it contains
+ * every content term the passage matched (at least two). Deterministic and cheap; it does not decide
+ * what is true. It never marks a human-written memory (the user's record is authoritative), and a
+ * model-written record (V2's memories and summary) is not authority enough to overtake anything.
  *
  * A term that is (part of) a character's name is also covered by any other name of that character
- * (`aliases`), so "이안 has the map" is overtaken by a later "새벽 has the map" after a rename. A name
- * two groups share expands nothing, as in the bridge.
+ * (`aliases`). A name two groups share expands nothing, as in the bridge.
  */
 export function markSuperseded(
 	items: readonly { passage: ChatRecalledPassage; terms: readonly string[] }[],
@@ -776,6 +982,8 @@ export function markSuperseded(
 	const has = (text: string, t: string) =>
 		containsTerm(text, t) ||
 		(namesFor(t)?.some((n) => text.toLowerCase().includes(n)) ?? false);
+	const authoritative = (p: ChatRecalledPassage) =>
+		p.layer !== "notes" && p.kind !== "summary" && p.kind !== "digest";
 	return items.map(({ passage, terms }) => {
 		if (passage.layer === "notes" || terms.length < 2 || !passage.at)
 			return passage;
@@ -790,7 +998,7 @@ export function markSuperseded(
 			items.some(
 				(o) =>
 					o.passage.id !== passage.id &&
-					o.passage.layer !== "notes" &&
+					authoritative(o.passage) &&
 					(o.passage.at ?? "") > at &&
 					covers(o.passage.text),
 			) ||
@@ -823,30 +1031,176 @@ function aliasNames(
 	};
 }
 
+// ── Consolidated episodes (the long-range context) ───────────────────────────────────────────────
+
+/**
+ * Characters the earlier-episodes block may take in the system prompt: the size V2's summary was
+ * allowed (`CHAT_SUMMARY_MAX_LENGTH`), so replacing it does not grow the request.
+ */
+export const CHAT_CONSOLIDATED_CHAR_BUDGET = 2_000;
+/** Episodes at most. */
+export const CHAT_CONSOLIDATED_MAX_EPISODES = 8;
+
+export interface ChatConsolidatedEpisode {
+	/** The episode's key in the index; not shown to the model. */
+	id: string;
+	/** Verbatim excerpts of its source turns. */
+	excerpts: readonly string[];
+	/** ISO times of its first and last source. */
+	from: string | null;
+	to: string | null;
+	/** Source message ids (for tests and the debugger; not shown to the model). */
+	sources: readonly string[];
+}
+
+/** The episodes before the window, frozen when the generation starts. */
+export interface ChatConsolidatedSnapshot {
+	episodes: readonly ChatConsolidatedEpisode[];
+}
+
+interface BridgeDigest {
+	id: string;
+	text: string;
+	sources: string[];
+	from_ms?: number | null;
+	to_ms?: number | null;
+	audience?: ResolvedAudience["kind"];
+}
+
+/**
+ * Picks episodes for the budget — newest first, skipping one that does not fit — then orders them by
+ * time. Depends only on the stored episodes and the window, so between two window steps the selection
+ * (and the cached system prompt) does not change.
+ */
+export function selectConsolidatedForContext(
+	episodes: readonly ChatConsolidatedEpisode[],
+	budget = CHAT_CONSOLIDATED_CHAR_BUDGET,
+): ChatConsolidatedEpisode[] {
+	const newestFirst = [...episodes].sort(
+		(a, b) =>
+			(b.to ?? "").localeCompare(a.to ?? "") || a.id.localeCompare(b.id),
+	);
+	const chosen: ChatConsolidatedEpisode[] = [];
+	let used = 0;
+	for (const e of newestFirst) {
+		if (chosen.length >= CHAT_CONSOLIDATED_MAX_EPISODES) break;
+		const size = e.excerpts.reduce((n, x) => n + x.length + 4, 24);
+		if (used + size > budget) continue;
+		chosen.push(e);
+		used += size;
+	}
+	return chosen.sort(
+		(a, b) =>
+			(a.from ?? "").localeCompare(b.from ?? "") || a.id.localeCompare(b.id),
+	);
+}
+
+export interface ConsolidatedTurnInput {
+	roomId: string;
+	/** Live messages of the room, oldest first (the validation snapshot). */
+	messages: readonly ChatMessage[];
+	/** Length of the history window this turn sends. */
+	windowLength: number;
+	scenes?: readonly ChatScene[];
+}
+
+/**
+ * The earlier episodes this turn may draw on: those with at least one source before the history
+ * window, admitted by the perspective inside the bridge and again here — every source live, every
+ * source admitted under the store's current scenes, every excerpt still in the live text.
+ */
+export async function consolidatedForTurn(
+	port: AfterstatePort,
+	input: ConsolidatedTurnInput,
+): Promise<ChatConsolidatedSnapshot> {
+	if (!isBridgeId(input.roomId)) return { episodes: [] };
+	const live = new Map(input.messages.map((m) => [m.id, m]));
+	const windowIds = input.messages
+		.slice(Math.max(0, input.messages.length - input.windowLength))
+		.map((m) => m.id)
+		.filter(isBridgeId)
+		.slice(-500);
+	const windowSet = new Set(windowIds);
+	const scenes = (input.scenes ?? []).filter((s) => s.deletedAt === null);
+	const perspective = recallPerspective(scenes);
+	const audiences = resolveMessageAudiences(input.messages, scenes);
+	const response = await port.call<{ digests: BridgeDigest[] }>("digests", {
+		conversation: input.roomId,
+		perspective: bridgePerspective(perspective),
+		exclude: windowIds,
+		limit: 32,
+	});
+	const episodes: ChatConsolidatedEpisode[] = [];
+	for (const d of response.digests ?? []) {
+		const sources = d.sources.map((id) => live.get(id));
+		if (sources.length === 0 || sources.some((s) => s === undefined)) continue;
+		const present = sources as ChatMessage[];
+		if (present.every((s) => windowSet.has(s.id))) continue;
+		if (
+			!present.every((s) =>
+				perspectiveAdmits(
+					perspective,
+					audiences.get(s.id) ?? { kind: "unknown" },
+				),
+			)
+		)
+			continue;
+		if (!digestStillLive(d.text, present)) continue;
+		episodes.push({
+			id: d.id,
+			excerpts: digestExcerpts(d.text),
+			from: present[0]?.createdAt ?? null,
+			to: present[present.length - 1]?.createdAt ?? null,
+			sources: present.map((s) => s.id),
+		});
+	}
+	return { episodes: selectConsolidatedForContext(episodes) };
+}
+
 // ── Runtime wiring (shared by web, desktop and mobile) ────────────────────────────────────────────
 
-/** Counters only: no text, no ids. Shadow and diagnostics read these. */
-export interface MemoryBackendEvent {
+/**
+ * Whether this conversation has long-term memory right now — the value the screens state.
+ *
+ * - `ready`: the engine is open and the last call worked.
+ * - `indexing`: the engine is open and still catching up on this room's history (a long room's first
+ *   open); recall covers what is indexed so far.
+ * - `degraded`: the engine is open but the last call failed or timed out; the turn went out with its
+ *   recent history only.
+ * - `unavailable`: there is no engine on this device (a plain browser, a module that failed to load).
+ *   Only the recent conversation and the memories people wrote are used.
+ */
+export type ChatMemoryStatus =
+	| "ready"
+	| "indexing"
+	| "degraded"
+	| "unavailable";
+
+/** Counters only: no text, no ids. Diagnostics read these. */
+export interface MemoryEngineEvent {
 	kind:
 		| "recall"
 		| "recall-failed"
 		| "recall-timeout"
 		| "index"
-		| "index-failed";
-	mode: MemoryBackendMode;
+		| "index-failed"
+		| "consolidate"
+		| "consolidate-failed";
 	ms: number;
 	passages?: number;
+	episodes?: number;
 	chars?: number;
 	dropped?: number;
 	ingested?: number;
 	erased?: number;
+	written?: number;
 }
 
 export interface ConversationMemoryRuntime {
-	mode: MemoryBackendMode;
+	/** The engine, or null where this platform has none. */
 	port: AfterstatePort | null;
 	/** Observability hook; must not throw and must not keep content. */
-	observe?: (event: MemoryBackendEvent) => void;
+	observe?: (event: MemoryEngineEvent) => void;
 	/** Clock for measurements (tests inject one). */
 	now?: () => number;
 }
@@ -858,42 +1212,44 @@ export interface RecallRequest {
 	memoryIdsInContext: ReadonlySet<string>;
 }
 
-/** The scenes and alias groups a recall needs, read from the source when it can provide them. */
+/** What a turn takes from long-term memory, frozen when the generation starts. */
+export interface ChatLongTermSnapshot {
+	recall: ChatRecallSnapshot | null;
+	consolidated: ChatConsolidatedSnapshot | null;
+	status: ChatMemoryStatus;
+}
+
+/** The scenes, alias groups and historical summary a turn needs, read when the source provides them. */
 async function recallScope(
 	source: ConversationMemorySource,
 	roomId: string,
-): Promise<{ scenes: ChatScene[]; aliases: string[][] }> {
-	const [scenes, characters] = await Promise.all([
+): Promise<{
+	scenes: ChatScene[];
+	aliases: string[][];
+	summary: ChatSummary | null;
+}> {
+	const [scenes, characters, summary] = await Promise.all([
 		source.listScenes ? source.listScenes(roomId) : Promise.resolve([]),
 		source.listCharacters ? source.listCharacters(roomId) : Promise.resolve([]),
+		source.getSummary ? source.getSummary(roomId) : Promise.resolve(null),
 	]);
-	return { scenes, aliases: recallAliases(characters) };
+	return { scenes, aliases: recallAliases(characters), summary };
 }
 
 /**
- * The recall request for a turn, from the snapshots the generation already took: the history
- * window it will send (its length, and its last turns as the query) and the memories (which of them
- * the memory block will carry, by the same selection function, so a note is never quoted twice).
- * Web and mobile call this one function, so they ask the same question.
+ * The recall request for a turn, from the snapshots the generation already took: the history window
+ * it will send (its length, and its last turns as the query) and the memories (which of them the
+ * memory block will carry, by the same admission and selection functions, so a note is never quoted
+ * twice and a withheld one is never quoted at all). Web and mobile call this one function.
  */
 export function recallRequestFor(
 	history: readonly Pick<ChatMessage, "role" | "content">[],
 	memories: readonly ChatMemory[],
 	userInput?: string,
-	/**
-	 * The scenes and memory owner the request will be scoped with (`prompt-scope.ts`), so "in the
-	 * memory block" means what the block will actually carry: a memory the boundary withholds is not
-	 * in context, and recall may still quote it where the perspective admits it.
-	 */
-	scope?: { scenes?: readonly ChatScene[]; memoryOwner?: ChatMemoryOwner },
+	scope?: { scenes?: readonly ChatScene[] },
 ): RecallRequest {
-	const perspective = promptPerspective(
-		scope?.scenes ? { scenes: scope.scenes } : null,
-	);
-	const owner = scope?.memoryOwner ?? "v2";
-	const inBlock = memories.filter((m) =>
-		memoryAdmitted(m, { perspective, owner }),
-	);
+	const context = admissionContext(scope?.scenes);
+	const inBlock = memories.filter((m) => memoryAdmitted(m, context));
 	return {
 		query: recallQuery(history, userInput),
 		windowLength: history.length,
@@ -919,22 +1275,47 @@ const withTimeout = <T>(work: Promise<T>, ms: number): Promise<T | "timeout"> =>
 		);
 	});
 
+/** Per port: each room's indexing state, so the loader can say `indexing` honestly. */
+const indexState = new WeakMap<
+	AfterstatePort,
+	Map<string, { complete: boolean }>
+>();
+
+const roomsOf = <V>(
+	table: WeakMap<AfterstatePort, Map<string, V>>,
+	port: AfterstatePort,
+): Map<string, V> => {
+	let rooms = table.get(port);
+	if (!rooms) {
+		rooms = new Map();
+		table.set(port, rooms);
+	}
+	return rooms;
+};
+
 /**
- * The conversation's `loadRecall`, or undefined in legacy mode (the session then simply has none,
- * and assembly is byte-identical to V2). Never throws. In shadow mode it measures and returns null.
+ * The conversation's long-term memory for a turn. Never throws and never waits longer than
+ * `CHAT_RECALL_TIMEOUT_MS`. Without a port it answers `unavailable` at once.
+ *
+ * `protectedRoom`: the server assembles that room's prompt, so recall (which rides in the last user
+ * turn of a device-assembled request) does not apply; the consolidated episodes still do — they travel
+ * in the request's long-term-context field (`storyChatAssemblyRequest`).
  */
-export function createRecallLoader(
-	runtime: ConversationMemoryRuntime,
+export function createLongTermLoader(
+	runtime: ConversationMemoryRuntime | null | undefined,
 	source: ConversationMemorySource,
 	roomId: string,
-):
-	| ((request: RecallRequest) => Promise<ChatRecallSnapshot | null>)
-	| undefined {
-	const mode = effectiveMemoryBackend(runtime.mode, runtime.port);
-	const port = runtime.port;
-	if (mode === "legacy" || !port) return undefined;
+	options: { protectedRoom?: boolean } = {},
+): (request: RecallRequest) => Promise<ChatLongTermSnapshot> {
+	const port = runtime?.port ?? null;
+	if (!runtime || !port)
+		return async () => ({
+			recall: null,
+			consolidated: null,
+			status: "unavailable",
+		});
 	const now = runtime.now ?? (() => Date.now());
-	const observe = (event: MemoryBackendEvent) => {
+	const observe = (event: MemoryEngineEvent) => {
 		try {
 			runtime.observe?.(event);
 		} catch {
@@ -948,34 +1329,59 @@ export function createRecallLoader(
 				source.listAllMessages(roomId),
 				recallScope(source, roomId),
 			]);
-			const result = await withTimeout(
-				recallForTurn(port, {
+			const work = Promise.all([
+				options.protectedRoom
+					? Promise.resolve<ChatRecallSnapshot | null>(null)
+					: recallForTurn(port, {
+							roomId,
+							query: request.query,
+							messages,
+							windowLength: request.windowLength,
+							memories: request.memories,
+							memoryIdsInContext: request.memoryIdsInContext,
+							scenes: scope.scenes,
+							aliases: scope.aliases,
+							summary: scope.summary,
+						}),
+				/*
+				 * Episodes are an addition to recall, not a condition of it: a bridge that cannot answer
+				 * them (an older engine build) leaves the turn with recall alone.
+				 */
+				consolidatedForTurn(port, {
 					roomId,
-					query: request.query,
 					messages,
 					windowLength: request.windowLength,
-					memories: request.memories,
-					memoryIdsInContext: request.memoryIdsInContext,
 					scenes: scope.scenes,
-					aliases: scope.aliases,
-				}),
-				CHAT_RECALL_TIMEOUT_MS,
-			);
+				}).catch((): ChatConsolidatedSnapshot => ({ episodes: [] })),
+			]);
+			const result = await withTimeout(work, CHAT_RECALL_TIMEOUT_MS);
 			if (result === "timeout") {
-				observe({ kind: "recall-timeout", mode, ms: now() - started });
-				return null;
+				observe({ kind: "recall-timeout", ms: now() - started });
+				return { recall: null, consolidated: null, status: "degraded" };
 			}
+			const [recall, consolidated] = result;
 			observe({
 				kind: "recall",
-				mode,
 				ms: now() - started,
-				passages: result.passages.length,
-				chars: result.passages.reduce((n, p) => n + p.text.length, 0),
+				passages: recall?.passages.length ?? 0,
+				episodes: consolidated.episodes.length,
+				chars:
+					(recall?.passages.reduce((n, p) => n + p.text.length, 0) ?? 0) +
+					consolidated.episodes.reduce(
+						(n, e) => n + e.excerpts.join("").length,
+						0,
+					),
 			});
-			return mode === "afterstate" ? result : null;
+			const indexing =
+				roomsOf(indexState, port).get(roomId)?.complete === false;
+			return {
+				recall,
+				consolidated,
+				status: indexing ? "indexing" : "ready",
+			};
 		} catch {
-			observe({ kind: "recall-failed", mode, ms: now() - started });
-			return null;
+			observe({ kind: "recall-failed", ms: now() - started });
+			return { recall: null, consolidated: null, status: "degraded" };
 		}
 	};
 }
@@ -983,44 +1389,68 @@ export function createRecallLoader(
 const inflight = new WeakMap<AfterstatePort, Map<string, Promise<void>>>();
 
 /**
- * The conversation's background indexer: `void`, never throws, one run per room at a time (a call
- * while one runs is folded into it — the running one reads the store at its start, so a second run
- * is queued once). Woken where V2 maintenance is woken (after the assistant reply is saved), and
- * when a room opens.
+ * The conversation's background maintenance: index the room (reconcile), then consolidate it. `void`,
+ * never throws, one run per room at a time (a call while one runs is folded into it — the running one
+ * reads the store at its start, so a second run is queued once). Woken after the assistant reply is
+ * saved, and when a room opens. Without a port there is nothing to maintain and it is absent.
+ *
+ * This is the **only** automatic memory pipeline: no model is called, nothing is synchronized, and no
+ * other scheduler processes the same conversation.
  */
-export function createIndexer(
-	runtime: ConversationMemoryRuntime,
+export function createMaintainer(
+	runtime: ConversationMemoryRuntime | null | undefined,
 	source: ConversationMemorySource,
 	roomId: string,
 ): (() => void) | undefined {
-	const mode = effectiveMemoryBackend(runtime.mode, runtime.port);
-	const port = runtime.port;
-	if (mode === "legacy" || !port) return undefined;
+	const port = runtime?.port ?? null;
+	if (!runtime || !port) return undefined;
 	const now = runtime.now ?? (() => Date.now());
-	let rooms = inflight.get(port);
-	if (!rooms) {
-		rooms = new Map();
-		inflight.set(port, rooms);
-	}
-	const table = rooms;
+	const table = roomsOf(inflight, port);
+	const states = roomsOf(indexState, port);
+	const observe = (event: MemoryEngineEvent) => {
+		try {
+			runtime.observe?.(event);
+		} catch {
+			// ignore
+		}
+	};
 	let queued = false;
 	const runOnce = async (): Promise<void> => {
 		const started = now();
+		let complete = false;
 		try {
 			const report = await reconcileConversation(port, source, roomId);
-			runtime.observe?.({
+			complete = report.complete;
+			observe({
 				kind: "index",
-				mode,
 				ms: now() - started,
-				ingested: report.messages.ingested + report.notes.ingested,
-				erased: report.messages.erasedPassages + report.notes.erasedPassages,
+				ingested:
+					report.messages.ingested +
+					report.notes.ingested +
+					report.summaries.ingested,
+				erased:
+					report.messages.erasedPassages +
+					report.notes.erasedPassages +
+					report.summaries.erasedPassages,
 			});
 		} catch {
-			try {
-				runtime.observe?.({ kind: "index-failed", mode, ms: now() - started });
-			} catch {
-				// ignore
-			}
+			observe({ kind: "index-failed", ms: now() - started });
+			return;
+		}
+		const consolidating = now();
+		try {
+			const c = await consolidateConversation(port, roomId);
+			complete = complete && c.complete;
+			observe({
+				kind: "consolidate",
+				ms: now() - consolidating,
+				episodes: c.episodes,
+				written: c.written,
+			});
+		} catch {
+			observe({ kind: "consolidate-failed", ms: now() - consolidating });
+		} finally {
+			states.set(roomId, { complete });
 		}
 	};
 	return () => {
@@ -1048,59 +1478,37 @@ export function createIndexer(
 }
 
 /**
- * Who maintains a conversation's long-term memory — one owner, never two. `afterstate` only when the
- * afterstate backend actually runs (a port is present) and the room is assembled on this device: a
- * prompt-protected room is assembled by the server, where no recall reaches it, so V2 keeps its
- * summary there. `shadow` measures afterstate without changing anything, so V2 still owns memory.
+ * The status a screen states before any turn ran: `unavailable` without an engine, otherwise
+ * `indexing` until the room's first maintenance run completed, then `ready`.
  */
-export function memoryOwnerFor(
+export function memoryStatusFor(
 	runtime: ConversationMemoryRuntime | null | undefined,
-	options: { protectedRoom?: boolean } = {},
-): ChatMemoryOwner {
-	if (!runtime || options.protectedRoom) return "v2";
-	return effectiveMemoryBackend(runtime.mode, runtime.port) === "afterstate"
-		? "afterstate"
-		: "v2";
+	roomId: string,
+): ChatMemoryStatus {
+	const port = runtime?.port ?? null;
+	if (!port) return "unavailable";
+	const state = indexState.get(port)?.get(roomId);
+	return state?.complete === false || state === undefined
+		? "indexing"
+		: "ready";
 }
 
 /**
- * What a local room's session gets from the memory backend, composed once for both apps: the
- * recall loader (absent in legacy mode), the memory owner, and `maintain`.
- *
- * **One automatic pipeline.** Under V2 ownership `maintain` wakes V2 maintenance (summary and
- * extracted memories) and, in shadow mode, the indexer beside it. Under afterstate ownership it runs
- * the indexer **only**: V2's paid maintenance is not woken, so no model call and no second cursor
- * processes the same messages. V2's existing summary and auto memories stay in storage untouched —
- * they are synced, authoritative records and the rollback path (switch the mode back and V2 resumes
- * from its own frontier) — and the request leaves them out (`prompt-scope.ts`).
+ * What a room's session gets from long-term memory, composed once for both apps: the loader (always
+ * present — it answers `unavailable` without an engine) and `maintain` (absent without an engine).
  */
 export function conversationMemoryHooks(
 	runtime: ConversationMemoryRuntime | null | undefined,
 	source: ConversationMemorySource,
 	roomId: string,
-	maintain?: () => void,
 	options: { protectedRoom?: boolean } = {},
 ): {
-	loadRecall?: (request: RecallRequest) => Promise<ChatRecallSnapshot | null>;
+	loadLongTermMemory: (request: RecallRequest) => Promise<ChatLongTermSnapshot>;
 	maintain?: () => void;
-	memoryOwner: ChatMemoryOwner;
 } {
-	const memoryOwner = memoryOwnerFor(runtime, options);
-	const loadRecall = runtime
-		? createRecallLoader(runtime, source, roomId)
-		: undefined;
-	const index = runtime ? createIndexer(runtime, source, roomId) : undefined;
-	const v2 = memoryOwner === "v2" ? maintain : undefined;
-	const both =
-		v2 && index
-			? () => {
-					v2();
-					index();
-				}
-			: (v2 ?? index);
+	const maintain = createMaintainer(runtime, source, roomId);
 	return {
-		...(loadRecall ? { loadRecall } : {}),
-		...(both ? { maintain: both } : {}),
-		memoryOwner,
+		loadLongTermMemory: createLongTermLoader(runtime, source, roomId, options),
+		...(maintain ? { maintain } : {}),
 	};
 }

@@ -202,22 +202,99 @@ export const chat = {
 		pin: "Pin memory {{label}}",
 		edit: "Edit memory {{label}}",
 		delete: "Delete memory {{label}}",
-		restrictToScene: "Only this scene's characters",
-		restrictToSceneFor:
-			"Let only this scene's characters know memory {{label}}",
-		shareWithEveryone: "Share with every character",
-		shareWithEveryoneFor: "Share memory {{label}} with every character",
-		knownBy: "Known by: {{names}}",
-		knownByUnknown: "unknown",
-		knownByNoOne: "No character knows this",
-		unmarked_one:
-			'{{count}} memory has no audience yet, so every character knows it. If it should stay secret, open this window during a private scene and choose "Only this scene\'s characters".',
-		unmarked_other:
-			'{{count}} memories have no audience yet, so every character knows them. If one should stay secret, open this window during a private scene and choose "Only this scene\'s characters".',
+		needsClassification_one:
+			"{{count}} memory needs classifying. Until you choose who knows it, it isn't used in this conversation.",
+		needsClassification_other:
+			"{{count}} memories need classifying. Until you choose who knows them, they aren't used in this conversation.",
+		visibility: {
+			unresolvedBlocking: "Needs classifying · not used until you choose",
+			unresolved: "Not classified yet",
+			shared: "Every character knows this",
+			restricted: "Known by: {{names}}",
+			restrictedNobody: "Known by: characters no longer in this conversation",
+			narrator: "No character knows this",
+		},
+		whoKnows: "Who knows this",
+		whoKnowsFor: "Choose who knows memory {{label}}",
+		option: {
+			share: "Every character",
+			currentScene: "Only this scene: {{names}}",
+			choose: "Choose characters…",
+			narrator: "No character",
+		},
+		chooseLabel: "Characters who know this memory",
+		status: {
+			unavailable:
+				"Long-term memory isn't available on this device. Only the recent conversation and the memories you wrote are used.",
+			indexing: "Long-term memory is still catching up on this conversation.",
+		},
 		saveFailed: "Couldn't save the memory. Please try again.",
 		deleteFailed: "Couldn't delete the memory. Please try again.",
 		roomGone:
 			"This conversation no longer exists, so the memory can't be saved.",
+	},
+	scene: {
+		chip: {
+			none: "Scene",
+			everyone: "Everyone present",
+			narrator: "No character present",
+			participants: "{{names}}",
+		},
+		chipLabel: "Scene: {{state}}",
+		title: "Scene",
+		description:
+			"Who is present decides which characters can know what is said. A change applies from the next message.",
+		now: {
+			none: "No scene yet. Every character knows everything said here.",
+			everyone: "Everyone is present.",
+			narrator: "No character is present.",
+			participants: "Present: {{names}}",
+		},
+		unknownNames: "characters no longer in this conversation",
+		start: "Start a scene",
+		change: "Change who's here",
+		end: "End scene",
+		endHint: "Everyone is present again from the next message.",
+		waitForReply: "Wait for the reply to finish before changing the scene.",
+		pickLabel: "Who's present?",
+		pickEmpty: "Pick at least one.",
+		pickTooMany: "Up to {{max}} can be present.",
+		kind: {
+			everyone: "Everyone",
+			participants: "Only these",
+			narrator: "No character",
+		},
+		you: "{{name}} (you)",
+		apply: "Apply",
+		history: {
+			question:
+				"This conversation already has messages. How should characters treat what was said before this scene?",
+			shared: "Shared",
+			sharedEffect: "Every character keeps knowing it.",
+			private: "Private",
+			privateEffect: "No character can recall it. It stays on screen.",
+			review: "Decide later",
+			reviewEffect: "Treated as private until you decide.",
+			unclassified_one:
+				"{{count}} earlier message is unclassified. Until you decide, no character can recall it.",
+			unclassified_other:
+				"{{count}} earlier messages are unclassified. Until you decide, no character can recall them.",
+		},
+		list: {
+			title: "Scenes in this conversation",
+			noMessages: "No messages yet",
+			everyone: "Everyone",
+			narrator: "No character",
+			correct: "Correct",
+			correctFor: "Correct who was present from {{excerpt}}",
+			correctNote:
+				"This changes who witnessed what was already said in this scene.",
+			delete: "Delete",
+			deleteFor: "Delete the scene from {{excerpt}}",
+			deleteWarning:
+				"Its messages will belong to the scene before it, so whoever was present there will know them. With no scene before it, they become unclassified earlier history.",
+		},
+		failed: "Couldn't save the scene. Please try again.",
 	},
 	rename: {
 		rejection: {

@@ -185,11 +185,11 @@ describe("auxiliary requests take the same path as conversations", () => {
 	 *
 	 * ```text
 	 * response generation   Anthropic direct    ← what the user chose
-	 * maintenance           RowCat managed      ← what nobody chose
+	 * reply suggestion      RowCat managed      ← what nobody chose
 	 * ```
 	 *
-	 * Then **the entire conversation history** goes to the server (the span being summarized is the
-	 * request itself), and the billing target changes too. Nothing looks different to the user.
+	 * Then **the recent conversation** goes to the server (it is the request itself), and the billing
+	 * target changes too. Nothing looks different to the user.
 	 */
 	it("connections, credentials and transport are the same wiring as conversation turns", () => {
 		const utility = fileAt("features/chat/utility-generation.ts");
@@ -220,18 +220,12 @@ describe("auxiliary requests take the same path as conversations", () => {
 	/**
 	 * **There is one wiring for utility requests.** This is where the check was strengthened.
 	 *
-	 * For a while the file this check looked at was `use-maintenance.ts` alone. When reply suggestions
-	 * arrived, the same wiring was about to be duplicated, and the check would have had to chase a
-	 * growing file list. A growing list also makes adding one more utility request feel routine. The
-	 * wiring is now folded into `utility-generation.ts`, so what this test verifies is only that the
-	 * consumers did not build their own paths.
+	 * The wiring is folded into `utility-generation.ts`, so what this test verifies is only that the
+	 * consumers did not build their own paths. (Memory maintenance was the other consumer; it is gone
+	 * with Memory V2, and afterstate calls no model.)
 	 */
 	it("auxiliary request consumers don't each build a transport", () => {
-		const consumers = [
-			"features/chat/memory/use-maintenance.ts",
-			"features/chat/suggestion/use-reply-suggestion.ts",
-		];
-		expect(consumers.length).toBeGreaterThan(1);
+		const consumers = ["features/chat/suggestion/use-reply-suggestion.ts"];
 
 		for (const path of consumers) {
 			const text = fileAt(path);

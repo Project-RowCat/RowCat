@@ -20,7 +20,8 @@ import {
  * ```text
  * save user turn   store.appendMessage(...)      room activity time rises in the same transaction
  * history          loadChatHistoryWindow         the store's order is the next turn's history
- * memory           store.listMemories            per room
+ * memory           store.listMemories            per room, written by the person
+ * long-term memory conversationMemoryHooks       afterstate on this device, the only engine
  * this layer's override  preferences.getRoom(room.id)  device-local, not synced
  * execution identity     store instance + effective persona  differs across `Alice → guest → Alice` and persona swaps
  * ```
@@ -66,24 +67,17 @@ export function createChatConversation(input: {
 	/** Where this room's generation override is read; `null` before the scope opens, when the conversation follows the upper layers. */
 	preferences: GenerationPreferenceStore | null;
 	/**
-	 * Wakes auto-maintenance after a final response is saved (`useMemoryMaintenance`). The adapter
-	 * does not hold the runner because this function is pure assembly; maintenance needs the viewer,
-	 * query client and preference store, and pulling them in would force every caller (tests included)
-	 * to wire all three.
+	 * The afterstate engine on this device (`afterstate-memory` module), if loaded — the only
+	 * long-term memory there is. Absent: chat works on the recent window and the memories the person
+	 * wrote, and long-term memory reports `unavailable`. Same shared wiring as web.
 	 */
-	maintain?: (() => void) | undefined;
-	/** The memory backend and its native port (`afterstate-memory` module), if loaded. Same shared wiring as web. */
 	memory?: ConversationMemoryRuntime | null;
 }): ConversationSession {
 	const { room, store, preferences } = input;
 	const protectedStoryId = protectedStoryIdOf(room);
-	const memoryHooks = conversationMemoryHooks(
-		input.memory,
-		store,
-		room.id,
-		input.maintain,
-		{ protectedRoom: !!protectedStoryId },
-	);
+	const memoryHooks = conversationMemoryHooks(input.memory, store, room.id, {
+		protectedRoom: !!protectedStoryId,
+	});
 	return {
 		// The store instance is in the token because a member id is not enough: after sign-out and return
 		// the id matches but the connection was closed and reopened, so writes to the old instance hit a
@@ -96,24 +90,18 @@ export function createChatConversation(input: {
 		// A direct read, not a subscription, frozen into the request when generation starts. Going
 		// through render state would make "which settings this request used" depend on render timing.
 		loadPreference: async () => (await preferences?.getRoom(room.id)) ?? null,
-		// The window starts at the summary frontier (`chatHistoryWindow`), so the summary is read here
-		// as well as in `loadSummary`. If maintenance commits between the two reads, this turn's window
-		// overlaps the new summary once: an event seen twice, never one seen by neither. How many
-		// messages to read is the shared loader's rule (`loadChatHistoryWindow`), the same one web uses.
+		// The window steps on the room's message count (`chatHistoryWindow`), never on a summary: one
+		// count and one bounded read of the newest messages. The shared loader's rule
+		// (`loadChatHistoryWindow`), the same one web uses.
 		loadHistory: () =>
 			loadChatHistoryWindow({
 				recent: (limit) => store.listRecentMessages(room.id, { limit }),
-				all: () => store.listAllMessages(room.id),
-				frontier: async () =>
-					(await store.getSummary(room.id))?.frontier ?? null,
+				count: () => store.countMessages(room.id),
 			}),
 		loadMemories: () => store.listMemories(room.id),
 		// Characters added in this conversation are frozen at start, like memory.
 		loadCharacters: () => store.listCharacters(room.id),
 		loadScenes: () => store.listScenes(room.id),
-		// Summary is frozen at start, like memory: background maintenance may update it mid-stream, and
-		// picking up the new version would make the request's context depend on timing.
-		loadSummary: async () => (await store.getSummary(room.id))?.summary ?? "",
 		// The routing-affinity key is ensured, not read (same wiring as web). Rooms created before this
 		// axis have none, and the fix is to issue and store one; unstored, every turn would send a
 		// different key, which is worse than none.

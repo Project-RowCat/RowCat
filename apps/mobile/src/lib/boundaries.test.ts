@@ -679,11 +679,9 @@ describe("the places that know BYO providers are narrow", () => {
 	 * fell back to managed, the request would reach our server, which the person chose not to send.
 	 *
 	 * **The second slot, `utility-generation.ts`, is why this list stays fixed.** It used to hold
-	 * `features/chat/memory/use-maintenance.ts`, and once reply suggestions landed the same wiring was
-	 * about to be duplicated. The list would have reached eight, and a list that long makes the next
-	 * auxiliary request adding one more line look ordinary. Instead the wiring was folded into one
-	 * file. Maintenance and reply suggestions both call that function, and neither knows the
-	 * credential port.
+	 * the old memory maintenance wiring, and once reply suggestions landed the same wiring was about to
+	 * be duplicated. Instead it was folded into one file; reply suggestions (the one auxiliary request
+	 * left — memory calls no model) call that function and do not know the credential port.
 	 */
 	it("seven places know the credential access port", () => {
 		const knowers = product
@@ -848,43 +846,25 @@ describe("the places that know BYO providers are narrow", () => {
 	});
 });
 
-describe("automatic maintenance has only wiring", () => {
+describe("long-term memory is afterstate's alone", () => {
 	/**
-	 * The **rules** for maintenance live once in `@rowcat/chat` (cadence, batching, validation,
-	 * rewind). If the app re-writes any of them, the same conversation summarizes differently on web
-	 * and mobile, and the difference shows up on only one platform. It appears only when you compare
-	 * the two screens side by side.
-	 *
-	 * Specifically, this blocks cutting batches with `slice` or re-typing constants. That line looks
-	 * like an ordinary diff in review, and when it is wrong it appears as "summaries look odd only in
-	 * this app".
+	 * Memory V2 (a model-written rolling summary and automatic memories committed by a maintenance
+	 * runner) is gone, and so is the switch that chose between it and afterstate. Nothing in the app
+	 * may call back into it, read the retired build setting, or let a turn carry the historical
+	 * summary: such a line would quietly bring a second engine back, as a fallback nobody chose.
 	 */
-	it("the app doesn't rewrite batch or cadence rules", () => {
-		for (const file of product) {
-			if (file.path === "features/chat/memory/use-maintenance.ts") {
-				// The wiring calls only the runner and target resolution, not the rule functions.
-				expect(file.text, file.path).not.toMatch(/\bselectMaintenanceBatch\b/);
-				expect(file.text, file.path).not.toMatch(/\bplanMemoryMaintenance\b/);
-				expect(file.text, file.path).not.toMatch(/\bplanMaintenanceRewind\b/);
-			}
-			expect(file.text, file.path).not.toMatch(
-				/CHAT_MAINTENANCE_(TRIGGER|BATCH_MAX|RECENT_KEEP)\s*=/,
-			);
-		}
+	it("no product file reaches the removed engine or its switch", () => {
+		const removed =
+			/\b(applyMemoryMaintenance|runMemoryMaintenance|MemoryMaintenanceScheduler|planMemoryMaintenance|selectMaintenanceBatch|MemoryBackendMode|parseMemoryBackendMode|effectiveMemoryBackend|memoryOwnerFor|ChatMemoryOwner|loadSummary|memoryOwner|EXPO_PUBLIC_MEMORY_BACKEND)\b/;
+		for (const file of product)
+			expect(file.text, file.path).not.toMatch(removed);
 	});
 
-	/**
-	 * The maintenance commit passes through one repository operation (`applyMemoryMaintenance`). If a
-	 * screen assembles memory writes to imitate it, the summary, frontier and memories meet in
-	 * **different transactions**, and a room whose frontier advanced alone records that span as
-	 * processed while never processing it again.
-	 */
-	it("maintenance commits go through one store operation", () => {
-		const callers = product
-			.filter((file) => /\bapplyMemoryMaintenance\b/.test(file.text))
-			.map((file) => file.path)
-			.filter((path) => !path.startsWith("lib/local-data/"));
-		expect(callers).toEqual(["features/chat/memory/use-maintenance.ts"]);
+	it("no auxiliary model request writes summaries", () => {
+		for (const file of product)
+			expect(file.text, file.path).not.toMatch(
+				/useUtilityGeneration(Target)?\(\s*["']summary["']/,
+			);
 	});
 });
 

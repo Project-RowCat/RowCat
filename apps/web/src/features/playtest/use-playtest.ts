@@ -219,12 +219,11 @@ export function usePlaytest(initial: PlaytestState): PlaytestController {
 			 */
 			loadPreference: async () => stateRef.current.preference,
 			/**
-			 * History goes through the same window as a real conversation. A test has no summary, so the
-			 * frontier is null: the same window a real room has before its first summary. A different rule
-			 * here would give long playtests and long conversations different context.
+			 * History goes through the same window as a real conversation (`chatHistoryWindow`, stepped on
+			 * the message count). A different rule here would give long playtests and long conversations
+			 * different context.
 			 */
-			loadHistory: async () =>
-				chatHistoryWindow(stateRef.current.messages, null),
+			loadHistory: async () => chatHistoryWindow(stateRef.current.messages),
 			/**
 			 * Playtests have no memory. An empty array means the assembler builds no memory block at all, so
 			 * the prompt is byte-for-byte the same as a real room that has no memories.
@@ -236,14 +235,11 @@ export function usePlaytest(initial: PlaytestState): PlaytestController {
 			 */
 			loadCharacters: async () => [],
 			/**
-			 * No summary either, for the same reason, and therefore no `maintain`.
-			 *
-			 * A playtest session has no record that could hold a summary. A room-level summary would create
-			 * a record belonging to no room, and automatic maintenance would bill a paid call whose result
-			 * is stored nowhere, so the cost would accumulate across repeated trials. The absence is
-			 * expressed in this adapter without a conditional (`maintain` is optional).
+			 * No long-term memory either, for the same reason, and therefore no `maintain`: a playtest
+			 * session is about to disappear, and indexing it would leave derived records that belong to no
+			 * room. The absence is expressed without a conditional (`loadLongTermMemory` and `maintain` are
+			 * optional).
 			 */
-			loadSummary: async () => "",
 			appendUserMessage: async (content: string) => {
 				update((current) =>
 					appendPlaytestUserMessage(current, content, stamp()),

@@ -515,7 +515,6 @@ describe("the assembled request", () => {
 			messages: history,
 			allAges: true,
 			scenes: { scenes: privateThenJoined, cast },
-			summary: `Mira told Rowan the vault code: ${SECRET}.`,
 			memories: [
 				mem("auto1", `The vault code is ${SECRET}.`, "auto"),
 				mem(
@@ -524,12 +523,15 @@ describe("the assembled request", () => {
 					"user",
 					P("user", "char:mira"),
 				),
-				mem("u-shared", "The harbor closes at dusk.", "user"),
+				mem("u-unresolved", `Rowan wrote down ${SECRET} somewhere.`, "user"),
+				mem("u-shared", "The harbor closes at dusk.", "user", {
+					kind: "room",
+				}),
 			],
 		});
 		const text = everything(req);
 		expect(text).not.toContain(SECRET);
-		// What every present character witnessed, and an unmarked user memory, still arrive.
+		// What every present character witnessed, and an explicitly shared memory, still arrive.
 		expect(text).toContain("Hello Kael");
 		expect(text).toContain("The harbor closes at dusk.");
 		// No warning text is left for the model to reason about.
@@ -612,26 +614,55 @@ describe("the assembled request", () => {
 		expect(req.system).not.toContain("LORE-VAULT-DETAIL");
 	});
 
-	it("afterstate ownership drops V2's summary and auto memories even in a room without scenes", () => {
-		const base = {
+	it("automatic (V2) memories never enter the request, in any room; human-written ones do", () => {
+		const text = everything(
+			buildChatGenerationRequest({
+				room,
+				messages: history,
+				allAges: true,
+				memories: [
+					mem("auto1", "AUTO-FACT", "auto"),
+					mem("u1", "USER-FACT", "user"),
+				],
+			}),
+		);
+		expect(text).not.toContain("AUTO-FACT");
+		expect(text).toContain("USER-FACT");
+	});
+
+	it("an unresolved user memory is used where nothing can be singled out, withheld where a scene is narrower", () => {
+		const memories = [mem("u-unres", "UNRESOLVED-FACT", "user")];
+		const noScenes = buildChatGenerationRequest({
 			room,
 			messages: history,
 			allAges: true,
-			summary: "SUMMARY-TEXT",
-			memories: [
-				mem("auto1", "AUTO-FACT", "auto"),
-				mem("u1", "USER-FACT", "user"),
-			],
-		};
-		const v2 = everything(buildChatGenerationRequest(base));
-		expect(v2).toContain("SUMMARY-TEXT");
-		expect(v2).toContain("AUTO-FACT");
-		const owned = everything(
-			buildChatGenerationRequest({ ...base, memoryOwner: "afterstate" }),
-		);
-		expect(owned).not.toContain("SUMMARY-TEXT");
-		expect(owned).not.toContain("AUTO-FACT");
-		expect(owned).toContain("USER-FACT");
+			memories,
+		});
+		expect(everything(noScenes)).toContain("UNRESOLVED-FACT");
+		const onlyRoomScenes = buildChatGenerationRequest({
+			room,
+			messages: history,
+			allAges: true,
+			scenes: { scenes: [scene("s0", "h1", 50, { kind: "room" })], cast },
+			memories,
+		});
+		expect(everything(onlyRoomScenes)).toContain("UNRESOLVED-FACT");
+		const restricted = buildChatGenerationRequest({
+			room,
+			messages: history,
+			allAges: true,
+			scenes: {
+				scenes: [
+					scene("s0", "h1", 50, { kind: "room" }),
+					...privateThenJoined.slice(1),
+				],
+				cast,
+			},
+			memories,
+		});
+		// Even though everyone present now witnessed the room's history, the memory's intended audience is
+		// unknown and the room singles characters out: withheld until classified.
+		expect(everything(restricted)).not.toContain("UNRESOLVED-FACT");
 	});
 
 	it("the protected path withholds on the device, before anything is sent", () => {
@@ -641,8 +672,10 @@ describe("the assembled request", () => {
 				messages: history,
 				allAges: true,
 				scenes: { scenes: privateThenJoined, cast },
-				summary: `code ${SECRET}`,
-				memories: [mem("auto1", `code ${SECRET}`, "auto")],
+				memories: [
+					mem("auto1", `code ${SECRET}`, "auto"),
+					mem("u1", `noted ${SECRET}`, "user"),
+				],
 			}),
 		);
 		expect(sent).not.toContain(SECRET);
@@ -654,19 +687,17 @@ describe("the assembled request", () => {
 			messages: history,
 			allAges: true,
 			scenes: { scenes: privateThenJoined, cast },
-			summary: "s",
-			memories: [mem("auto1", "a", "auto")],
+			memories: [mem("auto1", "a", "auto"), mem("u1", "b", "user")],
 		};
 		const once = scopePromptInput(input);
 		const twice = scopePromptInput(once.input);
 		expect(twice.input).toEqual(once.input);
 		expect(once.report).toEqual({
 			sceneScoped: true,
-			owner: "v2",
 			withheldMessages: 2,
-			withheldSummary: true,
 			withheldAutoMemories: 1,
 			withheldUserMemories: 0,
+			withheldUnresolvedMemories: 1,
 		});
 	});
 });

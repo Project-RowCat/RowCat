@@ -128,12 +128,6 @@ export const OPENROUTER_UPSTREAM_FIELD = {
  * different provider than the room.
  */
 export const UTILITY_MODEL_FIELDS = {
-	summary: {
-		label: "Summary model",
-		description:
-			"Writes the running summary of a long conversation, about every ten turns. Applies only to conversations on your own API key, and the conversation is sent to this model's provider.",
-		subject: "summaries",
-	},
 	suggestion: {
 		label: "Reply suggestion model",
 		description:

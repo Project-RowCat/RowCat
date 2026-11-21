@@ -1,6 +1,7 @@
 /**
- * Product rules for chat, independent of platform: model, memory, persona, summary,
- * memory-maintenance (+ prompt, runner), reply-suggestion (+ prompt, runner), store (port only:
+ * Product rules for chat, independent of platform: model, memory (+ audience, long-term memory via
+ * afterstate: conversation-memory), scenes (+ controls), persona, summary (historical V2 record
+ * only), reply-suggestion (+ prompt, runner), utility-generation, store (port only:
  * Dexie on web, SQLite on mobile), conversation, guards, context, lore, prompt-trace,
  * protected-seed, protected-generation, debug-trace, debug-view, placeholder, ai-evidence,
  * generation (+ preference, availability, summary, options, reasoning, openai-compatible,
@@ -35,11 +36,8 @@ export * from "./guards.ts";
 export * from "./history-window.ts";
 export * from "./intensity.ts";
 export * from "./lore.ts";
-export * from "./maintenance-prompt.ts";
-export * from "./maintenance-runner.ts";
 export * from "./memory.ts";
 export * from "./memory-audience.ts";
-export * from "./memory-maintenance.ts";
 export * from "./message-actions.ts";
 export * from "./model.ts";
 export * from "./narration.ts";
@@ -62,6 +60,7 @@ export * from "./room-duplicate.ts";
 export * from "./room-library.ts";
 export * from "./room-settings-ia.ts";
 export * from "./scene.ts";
+export * from "./scene-controls.ts";
 export * from "./scene-image.ts";
 export * from "./scroll-advance.ts";
 export * from "./search.ts";
@@ -77,3 +76,4 @@ export * from "./tool-registry.ts";
 export * from "./tracking-block.ts";
 export * from "./usage-view.ts";
 export * from "./user-note.ts";
+export * from "./utility-generation.ts";

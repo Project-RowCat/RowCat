@@ -54,9 +54,8 @@ import {
 
 /**
  * Sends one auxiliary request and reads the full body. A blocked target throws
- * GenerationBlockedError rather than an anonymous error, because there are two consumers and one
- * shows the error on screen. Maintenance swallows errors anyway, so the more detailed error costs
- * it nothing; suggestions have a route to `Go to AI settings` under that name.
+ * GenerationBlockedError rather than an anonymous error, because the consumer shows it on screen:
+ * suggestions have a route to `Go to AI settings` under that name.
  */
 export type RequestUtilityGeneration = (
 	roomId: string,
@@ -65,8 +64,8 @@ export type RequestUtilityGeneration = (
 ) => Promise<string>;
 
 /**
- * `kind` picks which device choice applies (`GenerationPreferenceStore.getUtility`): a summary and
- * a suggestion may run on different models.
+ * `kind` picks which device choice applies (`GenerationPreferenceStore.getUtility`). Reply suggestions
+ * are the only auxiliary request left (memory calls no model).
  */
 export function useUtilityGeneration(
 	kind: UtilityGenerationKind,

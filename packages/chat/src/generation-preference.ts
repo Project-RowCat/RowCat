@@ -7,9 +7,9 @@ import {
 	isRowCatManagedModel,
 	type RowCatManagedModel,
 } from "@rowcat/contracts/chat";
-import type { UtilityGenerationKind } from "./maintenance-runner.ts";
 import { openRouterUpstreamOf, readOpenRouterUpstream } from "./openrouter.ts";
 import type { ReasoningEffort } from "./reasoning.ts";
+import type { UtilityGenerationKind } from "./utility-generation.ts";
 
 /**
  * Generation preferences and their precedence: one vocabulary shared by global and room settings.

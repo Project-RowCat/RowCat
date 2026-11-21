@@ -10,7 +10,6 @@ import type {
 	CreateMemoryInput,
 	UpdateMemoryPatch,
 } from "./memory.ts";
-import type { ChatMaintenancePlan } from "./memory-maintenance.ts";
 import type {
 	AppendMessageInput,
 	ChatMessage,
@@ -81,10 +80,17 @@ export interface ChatStore extends ChatMemoryStore, ChatPersonaStore {
 	 * be an index, which would store a second plaintext copy of the user's messages. Missing or
 	 * deleted rooms return an empty list, not an error.
 	 *
-	 * Two later readers: background maintenance, and the history window of a room past its cap whose
-	 * summary is not keeping up (`loadChatHistoryWindow`), which needs the count after the frontier.
+	 * The other reader is the afterstate indexer (`reconcileConversation`), which compares the room's
+	 * live records with its derived index in the background.
 	 */
 	listAllMessages(roomId: string): Promise<ChatMessage[]>;
+
+	/**
+	 * How many live messages the room has (0 for a missing or deleted room). The history window is a
+	 * rule on this count (`chatHistoryWindow`), so a turn reads the count and one bounded page instead
+	 * of the whole room.
+	 */
+	countMessages(roomId: string): Promise<number>;
 
 	/**
 	 * Appends a message and bumps the room's activity time in the same transaction. Splitting them
@@ -339,7 +345,7 @@ export interface ChatStore extends ChatMemoryStore, ChatPersonaStore {
 }
 
 /**
- * The narrow memory API: six operations for one room.
+ * The narrow memory API: the operations screens and the indexer use for one room.
  *
  * It has its own interface, but `ChatStore` extends it, because deleting a room must remove its
  * messages and memories in one transaction. Splitting the stores would make that atomicity
@@ -394,38 +400,13 @@ export interface ChatMemoryStore {
 	 */
 	deleteMemory(id: string): Promise<void>;
 
-	/*
-	 * The next two methods belong on the memory port for the same reason as the four above:
-	 * transactions. A maintenance commit writes a summary record and several memories together, and
-	 * room deletion must take all three with it. Splitting the port would leave no way to express that
-	 * atomicity at the interface level.
-	 */
-
 	/**
-	 * The room's summary state, or null if maintenance has never run. A missing or deleted room also
-	 * gives null, following the rule of the other reads. The summary is not folded into `getRoom`,
-	 * because `getRoom` is the hottest read (lists, headers, navigation) and the summary is needed
-	 * only when generation starts.
+	 * Memory V2's historical summary for the room, or null (none, or a missing or deleted room). Nothing
+	 * writes a summary any more except history rewrites retiring one (`planHistoryRewind`); this read is
+	 * the afterstate migration's input (`summaryItem`). It stays on the memory port because room deletion
+	 * and history rewrites take it in the same transaction as memories.
 	 */
 	getSummary(roomId: string): Promise<ChatSummary | null>;
-
-	/**
-	 * Commits a validated maintenance plan in one transaction. Returns `true` if it was applied. The
-	 * single transaction is the atomicity of this slice: split up, a crash between saving the summary
-	 * and advancing the frontier would either process a range without recording it or record it
-	 * without processing it, and the same facts would be extracted again. Optimistic concurrency is
-	 * checked inside the transaction (`maintenanceStillApplies`): if history was rewritten or another
-	 * maintenance committed first, the generation or frontier differs, and the method writes nothing
-	 * and returns `false`. Checking outside and writing inside would leave a window where that
-	 * guarantee fails. If one operation's target has disappeared meanwhile, only that operation is
-	 * skipped. If the room was deleted, nothing is written and the result is `false`, so a deleted
-	 * room is not revived. Human-written memories are never changed: the plan already filters them
-	 * (`planMemoryMaintenance`), and the implementation checks `source` once more, so storage does not
-	 * trust the plan.
-	 */
-	applyMemoryMaintenance(
-		plan: ChatMaintenancePlan & { roomId: string },
-	): Promise<boolean>;
 }
 
 /**

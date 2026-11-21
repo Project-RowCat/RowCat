@@ -2,6 +2,7 @@ import {
 	CHAT_MEMORY_CONTENT_MAX_LENGTH,
 	type ChatCharacter,
 	type ChatMemory,
+	type ChatMemoryStatus,
 	type ChatRoom,
 	type ChatScene,
 	type ChatSceneAudience,
@@ -9,10 +10,15 @@ import {
 	chatTextLength,
 	groupMemories,
 	isAutoMemory,
-	type MemoryAudienceControl,
-	memoryAudienceControl,
+	type MemoryVisibility,
+	type MemoryVisibilityOption,
+	memoryVisibility,
+	memoryVisibilityOptions,
 	promoteMemoryPatch,
-	unmarkedMemoryCount,
+	requireSceneAudience,
+	type SceneCastMember,
+	sceneCast,
+	unresolvedMemoryCount,
 } from "@rowcat/chat";
 import { borderWidth, radiusScale, space } from "@rowcat/design";
 import {
@@ -34,14 +40,27 @@ import { useLocalLive } from "../../../lib/local-data/live.ts";
 import { AnimatedCount } from "../../../lib/motion/animated-count.tsx";
 import { AnimatedIconSwap } from "../../../lib/motion/animated-icon-swap.tsx";
 import { MotionRow } from "../../../lib/motion/list-motion.tsx";
+import { AudiencePicker } from "../scene/audience-picker.tsx";
 import {
+	CHOOSE_AUDIENCE_LABEL,
 	MEMORY_COUNTER_THRESHOLD,
 	MEMORY_DELETE_FAILURE_MESSAGE,
 	MEMORY_EMPTY_MESSAGE,
 	memorySaveFailureMessage,
+	memoryStatusMessage,
+	memoryVisibilityOptionAccessibilityLabel,
+	memoryVisibilityOptionLabel,
+	memoryVisibilityText,
+	needsClassificationMessage,
 	planMemorySave,
-	unmarkedMemoryMessage,
 } from "./form.ts";
+
+/** Who may know one memory, and what the person can change it to (`memory-audience.ts`). */
+interface RowAudience {
+	visibility: MemoryVisibility;
+	options: MemoryVisibilityOption[];
+	cast: readonly SceneCastMember[];
+}
 
 /**
  * The room's memory workspace: what this conversation keeps remembering.
@@ -57,14 +76,18 @@ import {
  *   Re-sorting here would split the screen order from the prompt order; only splitting is done, by
  *   `groupMemories`.
  * - Auto-extraction is out of scope, and the empty-state copy does not hint at it.
- * - In a room with scenes, each human-written row carries one audience control (`audience.ts`,
- *   the same three answers as web's memory window).
+ * - In a room with scenes, each human-written row states who may know it and offers the choices
+ *   `memoryVisibilityOptions` returns (`memory-audience.ts`, the same answers as web's memory
+ *   window). Classifying writes the audience only; the text is never touched in that flow.
+ * - Long-term memory's availability is one line (`memoryStatusFor`, computed by the opener, which
+ *   holds the runtime); `ready` is quiet.
  */
 export function MemoryPanel({
 	roomId,
 	room,
 	characters,
 	store,
+	status,
 	onClose,
 }: {
 	roomId: string;
@@ -77,34 +100,44 @@ export function MemoryPanel({
 	 * switch cannot end an operation in another member's database; the parent guards ownership.
 	 */
 	store: ChatStore;
+	/**
+	 * Long-term memory's state for this room, or `undefined` when the opener does not hold the runtime
+	 * (the conversation list); then no line is drawn rather than a guess.
+	 */
+	status?: ChatMemoryStatus;
 	onClose: () => void;
 }) {
 	const load = useMemo(() => () => store.listMemories(roomId), [store, roomId]);
 	const memories = useLocalLive<ChatMemory[]>(load, EMPTY);
 	/**
 	 * Scenes are subscribed only while this window is open. Until they and the cast have answered, no
-	 * row draws an audience control: drawing `share` before the cast arrives would name nobody.
+	 * row draws its visibility or choices: a choice naming nobody before the cast arrives, or a state
+	 * appearing a moment late, reads as something that just changed.
 	 */
 	const loadScenes = useMemo(
 		() => () => store.listScenes(roomId),
 		[store, roomId],
 	);
 	const scenes = useLocalLive<ChatScene[]>(loadScenes, NO_SCENES);
-	const audienceFor = (item: ChatMemory): MemoryAudienceControl | null =>
-		scenes.status === "ready" && !characters.loading
-			? memoryAudienceControl(item, scenes.value, {
-					room,
-					characters: characters.value,
-				})
-			: null;
+	const audienceFor = (item: ChatMemory): RowAudience | null => {
+		if (scenes.status !== "ready" || characters.loading) return null;
+		const cast = { room, characters: characters.value };
+		return {
+			visibility: memoryVisibility(item, scenes.value, cast),
+			options: memoryVisibilityOptions(item, scenes.value, cast),
+			cast: sceneCast(room, characters.value),
+		};
+	};
 	/**
-	 * Unmarked memories are shared (the compatibility policy, `docs/chat/SCENES.md` §6), so in a room
-	 * with a private scene the panel says how many. Not before scenes answer (no count appearing late).
+	 * A memory with no audience is unresolved, and in a room with a scene narrower than the room it is
+	 * withheld from every reply until classified (`docs/chat/SCENES.md` §6). The panel says how many;
+	 * the rows say which. Not before scenes answer (no count appearing late).
 	 */
-	const unmarked =
+	const unresolved =
 		scenes.status === "ready"
-			? unmarkedMemoryCount(memories.value, scenes.value)
+			? unresolvedMemoryCount(memories.value, scenes.value)
 			: 0;
+	const statusLine = status ? memoryStatusMessage(status) : null;
 
 	/** What is being edited: `"new"` adds, an id edits, `null` is the list. */
 	const [editing, setEditing] = useState<"new" | string | null>(null);
@@ -160,10 +193,13 @@ export function MemoryPanel({
 			) : (
 				<View style={memory.root}>
 					{error ? <Notice tone="destructive" message={error} /> : null}
-					{unmarked > 0 ? (
-						<Text variant="caption" tone="muted-foreground">
-							{unmarkedMemoryMessage(unmarked)}
-						</Text>
+					{unresolved > 0 ? (
+						<View style={memory.origin}>
+							<Icon name="warning" size="sm" tone="foreground" />
+							<Text variant="label" style={memory.flexText}>
+								{needsClassificationMessage(unresolved)}
+							</Text>
+						</View>
 					) : null}
 
 					{memories.status === "loading" ? (
@@ -211,6 +247,11 @@ export function MemoryPanel({
 							setEditing("new");
 						}}
 					/>
+					{statusLine ? (
+						<Text variant="caption" tone="muted-foreground">
+							{statusLine}
+						</Text>
+					) : null}
 				</View>
 			)}
 		</Dialog>
@@ -231,7 +272,7 @@ function MemoryList({
 	onDelete,
 }: {
 	memories: readonly ChatMemory[];
-	audienceFor: (memory: ChatMemory) => MemoryAudienceControl | null;
+	audienceFor: (memory: ChatMemory) => RowAudience | null;
 	onSetAudience: (memory: ChatMemory, audience: ChatSceneAudience) => void;
 	onEdit: (memory: ChatMemory) => void;
 	onTogglePin: (memory: ChatMemory) => void;
@@ -301,8 +342,8 @@ function MemoryRow({
 	onDelete,
 }: {
 	memory: ChatMemory;
-	/** `null` draws nothing new: no live scene, or an automatic memory (`audience.ts`). */
-	audience: MemoryAudienceControl | null;
+	/** `null` draws nothing yet: scenes or the cast have not answered (`memory-audience.ts`). */
+	audience: RowAudience | null;
 	onSetAudience: (memory: ChatMemory, audience: ChatSceneAudience) => void;
 	onEdit: (memory: ChatMemory) => void;
 	onTogglePin: (memory: ChatMemory) => void;
@@ -311,6 +352,13 @@ function MemoryRow({
 	const { colors } = useTheme();
 	// One confirmation opened inside the row; no extra layer, so the back target stays unambiguous.
 	const [confirming, setConfirming] = useState(false);
+	// The character picker opens inside the row for the same reason.
+	const [choosing, setChoosing] = useState(false);
+	const visibility = audience
+		? memoryVisibilityText(audience.visibility)
+		: null;
+	const withheld =
+		audience?.visibility.state === "unresolved" && audience.visibility.blocking;
 	const label = excerpt(item.content);
 
 	return (
@@ -330,17 +378,71 @@ function MemoryRow({
 				</View>
 			) : null}
 			{/*
-			 * Who may know a restricted memory, in words: the restriction is otherwise invisible, and a
-			 * character answering as if it never heard of something would read as a malfunction.
+			 * Who may know this memory, in words: a restriction is otherwise invisible, and a character
+			 * answering as if it never heard of something would read as a malfunction. A memory being
+			 * withheld until classified says so with a glyph and the foreground colour, so it is found
+			 * without reading every row (the list keeps the store's order: re-sorting here would split the
+			 * screen order from the prompt order).
 			 */}
-			{audience?.kind === "share" ? (
-				<Text variant="caption" tone="muted-foreground">
-					{audience.narrator
-						? "No character knows this"
-						: `Known by: ${audience.names.join(", ") || "unknown"}`}
-				</Text>
+			{visibility ? (
+				withheld ? (
+					<View style={memory.origin}>
+						<Icon name="warning" size="sm" tone="foreground" />
+						<Text variant="caption" style={memory.flexText}>
+							{visibility}
+						</Text>
+					</View>
+				) : (
+					<Text variant="caption" tone="muted-foreground">
+						{visibility}
+					</Text>
+				)
 			) : null}
-			{confirming ? (
+			{choosing && audience ? (
+				<AudiencePicker
+					cast={audience.cast}
+					initial={
+						item.audience?.kind === "participants"
+							? item.audience
+							: { kind: "participants", members: [] }
+					}
+					label={CHOOSE_AUDIENCE_LABEL}
+					submitLabel="Save"
+					busy={false}
+					onCancel={() => setChoosing(false)}
+					onSubmit={(picked) => {
+						setChoosing(false);
+						// The shared validator runs before the write; storage runs it again.
+						onSetAudience(item, requireSceneAudience(picked));
+					}}
+				/>
+			) : audience && audience.options.length > 0 && !confirming ? (
+				/*
+				 * The choices, always visible (a finger has no hover), in `memoryVisibilityOptions`' order;
+				 * a choice equal to the current value is not offered.
+				 */
+				<View style={memory.options}>
+					{audience.options.map((option) => (
+						<Button
+							key={option.kind}
+							label={memoryVisibilityOptionLabel(option)}
+							accessibilityLabel={memoryVisibilityOptionAccessibilityLabel(
+								option,
+								label,
+							)}
+							variant="outline"
+							size="sm"
+							style={memory.option}
+							onPress={() =>
+								option.kind === "choose"
+									? setChoosing(true)
+									: onSetAudience(item, option.audience)
+							}
+						/>
+					))}
+				</View>
+			) : null}
+			{choosing ? null : confirming ? (
 				<View style={memory.confirm}>
 					<Text
 						accessibilityRole="alert"
@@ -369,36 +471,6 @@ function MemoryRow({
 				</View>
 			) : (
 				<View style={memory.rowActions}>
-					{/*
-					 * One text action at the start of the row, so the three icon actions keep their seats. Its
-					 * name carries the memory's head for the same reason theirs do; a failure lands in the
-					 * window's one notice, like a pin toggle's.
-					 */}
-					{audience ? (
-						<Button
-							label={
-								audience.kind === "restrict"
-									? "Only this scene's characters"
-									: "Share with every character"
-							}
-							accessibilityLabel={
-								audience.kind === "restrict"
-									? `Let only this scene's characters know memory ${label}`
-									: `Share memory ${label} with every character`
-							}
-							variant="ghost"
-							size="sm"
-							style={memory.audienceAction}
-							onPress={() =>
-								onSetAudience(
-									item,
-									audience.kind === "restrict"
-										? audience.audience
-										: { kind: "room" },
-								)
-							}
-						/>
-					) : null}
 					{/* Pin state is not color-only: the glyph changes and `accessibilityState.selected` carries it. */}
 					<RowAction
 						icon={item.pinned ? "unpin" : "pin"}
@@ -587,7 +659,9 @@ const memory = StyleSheet.create({
 		gap: space.sm,
 	},
 	confirmText: { flex: 1 },
-	audienceAction: { flexShrink: 1, marginRight: "auto" },
+	flexText: { flexShrink: 1 },
+	options: { flexDirection: "row", flexWrap: "wrap", gap: space.xs },
+	option: { flexShrink: 1 },
 	action: {
 		alignItems: "center",
 		height: controlHeight.sm,

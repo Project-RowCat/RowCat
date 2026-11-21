@@ -8,7 +8,8 @@
  * Launches the staged Electron app (`harness.ts`), signs up synthetic accounts on its own local
  * stack, connects a local OpenAI-compatible mock as the BYO provider (`mock-openai.ts`, which logs
  * every request body) and drives the conversation screen: recall of a turn that left the history
- * window, a correction, room deletion, restart, legacy ↔ afterstate, a killed engine, a missing
+ * window, a correction, room deletion, restart, the retired backend switch being ignored, a killed
+ * engine, a missing
  * engine and an impostor engine. Nothing leaves this computer and no real provider is called.
  *
  * Not a vitest file: it needs the built servers, the staged app and a window, so it runs on demand.
@@ -207,8 +208,12 @@ async function connectMock(page: Page, web: string, mock: MockProvider): Promise
 	check("mock provider connected (GET /v1/models probe reached the mock)", mock.calls.some((c) => c.path === "/v1/models"));
 }
 
-async function setBackend(page: Page, mode: "legacy" | "afterstate"): Promise<void> {
-	await page.evaluate((m) => localStorage.setItem("rowcat.memoryBackend", m), mode);
+/**
+ * Plants the retired rollout switch (`rowcat.memoryBackend`) the way an older build left it. Since
+ * Phase 13 afterstate is the only engine: the value is never read, and the app removes it.
+ */
+async function plantRetiredSwitch(page: Page, value: string): Promise<void> {
+	await page.evaluate((v) => localStorage.setItem("rowcat.memoryBackend", v), value);
 	await page.reload();
 	await page.waitForLoadState("domcontentloaded");
 }
@@ -356,7 +361,6 @@ async function main(): Promise<void> {
 	seedStory(run);
 	const a = await signUp(page, o.api, "a");
 	await connectMock(page, o.web, mock);
-	await setBackend(page, "afterstate");
 	const listenAppUp = listeners();
 	writeFileSync(join(EVIDENCE, "listeners-app-up-no-engine.txt"), `${listenAppUp.join("\n")}\n`);
 
@@ -476,15 +480,13 @@ async function main(): Promise<void> {
 	check("deleted room's words are gone from the store files", !storeContains(run, "무지개송어"));
 	check("the edit-deleted messages' words are gone from the store files", !storeContains(run, "잡담 7번"));
 
-	// ------------------------------------------------ 5. legacy ↔ afterstate
-	phase = "5-backend-switch";
+	// ------------------------------------------------ 5. the retired backend switch is ignored
+	phase = "5-retired-switch";
 	await page.goto(`${o.web}/chat/${roomA}`);
-	await setBackend(page, "legacy");
-	const legacy = await send(page, mock, "레거시 모드에서 내 고양이 이름이 뭐였는지 기억나니?");
-	check("legacy: request has no recall block", legacy !== null && !hasRecall(legacy.body) && !requestText(legacy.body).includes(RECALL_HEADER));
-	await setBackend(page, "afterstate");
-	const back = await send(page, mock, "다시 afterstate 모드에서 내 고양이 이름이 뭐였는지 기억나니?");
-	check("afterstate again: recall block back with the fact", hasRecall(back?.body) && lastUserText(back?.body ?? {}).includes("보리차"));
+	await plantRetiredSwitch(page, "legacy");
+	const ignored = await send(page, mock, "예전 설정이 남아 있어도 내 고양이 이름이 뭐였는지 기억나니?");
+	check("a stale 'legacy' switch still gets afterstate recall with the fact", hasRecall(ignored?.body) && lastUserText(ignored?.body ?? {}).includes("보리차"));
+	check("the stale switch was removed from storage", (await page.evaluate(() => localStorage.getItem("rowcat.memoryBackend"))) === null);
 
 	// ------------------------------------------------ 6. second member: one engine per member
 	phase = "6-second-member";
@@ -495,7 +497,6 @@ async function main(): Promise<void> {
 	});
 	const b = await signUp(page, o.api, "b");
 	await connectMock(page, o.web, mock);
-	await setBackend(page, "afterstate");
 	const roomB = await startChat(page, o.web);
 	note(`member B ${b.id}, room B ${roomB}`);
 	await send(page, mock, "B의 기록: 우리 집 강아지 이름은 호두과자다.");

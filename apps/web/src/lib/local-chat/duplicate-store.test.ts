@@ -1,9 +1,5 @@
 import type { ChatStore } from "@rowcat/chat";
-import {
-	ChatRoomTitleError,
-	createSummaryRecord,
-	summaryIdFor,
-} from "@rowcat/chat";
+import { ChatRoomTitleError, summaryIdFor } from "@rowcat/chat";
 import { StoryChatSeedDto } from "@rowcat/contracts/chat";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -11,13 +7,14 @@ import {
 	type LocalDb,
 	resetLocalDbScope,
 } from "#/lib/local-data/db.ts";
-import { nextRev } from "#/lib/local-data/hlc.ts";
+import { seedV2Summary } from "#/test/v2-history.ts";
 import { createChatStore } from "./store.ts";
 
 /**
  * Duplicating a room on real IndexedDB. What a copy carries is pinned in `@rowcat/chat`
  * (`room-duplicate.test.ts`); this file pins that the Dexie store reads every child table and writes
- * the copy without touching the original.
+ * the copy without touching the original. Memory V2's historical summary is the one child that is
+ * not copied: it stays with the room whose conversation it described.
  */
 
 let sequence = 0;
@@ -54,21 +51,22 @@ const filled = async (db: LocalDb, store: ChatStore) => {
 	await store.setRoomUserNote(room.id, "Keep it short");
 	await store.createMemory({ roomId: room.id, content: "Has the key" });
 	await store.createCharacter({ roomId: room.id, name: "Librarian" });
-	await db.chatSummaries.put(
-		createSummaryRecord(
-			{
-				roomId: room.id,
-				summary: "They entered.",
-				frontier: { createdAt: first.createdAt, messageId: first.id },
-			},
-			{ now: second.createdAt, rev: await nextRev(db) },
-		),
-	);
+	await store.setScene({
+		roomId: room.id,
+		startAt: { createdAt: first.createdAt, messageId: first.id },
+		audience: { kind: "narrator" },
+	});
+	/** A historical V2 summary, as an install that ran V2 left it. */
+	await seedV2Summary(db, {
+		roomId: room.id,
+		summary: "They entered.",
+		frontier: { createdAt: first.createdAt, messageId: first.id },
+	});
 	return { room, first, second };
 };
 
 describe("duplicating a room", () => {
-	it("copies messages, memories, characters, summary and settings into a new room", async () => {
+	it("copies messages, memories, characters, scenes and settings into a new room", async () => {
 		const db = activateLocalDbScope(nextViewer("alice"));
 		const store = createChatStore(db);
 		const { room } = await filled(db, store);
@@ -92,15 +90,36 @@ describe("duplicating a room", () => {
 			"Librarian",
 		]);
 
+		/* The scene moves onto the copied message it started at. */
 		const copiedFirst = (await store.listRecentMessages(copy.id))[0];
-		expect(await store.getSummary(copy.id)).toMatchObject({
-			id: summaryIdFor(copy.id),
-			summary: "They entered.",
-			frontier: { messageId: copiedFirst?.id },
+		const scenes = await store.listScenes(copy.id);
+		expect(scenes).toHaveLength(1);
+		expect(scenes[0]).toMatchObject({
+			roomId: copy.id,
+			startAt: { messageId: copiedFirst?.id },
+			audience: { kind: "narrator" },
 		});
 
 		/* The copy sorts first: it is the thing just made. */
 		expect((await store.listRooms())[0]?.id).toBe(copy.id);
+	});
+
+	/**
+	 * Nothing creates V2 records any more, and a copy is a new conversation: the historical summary
+	 * describes the original's history, so it stays there and the copy gets none.
+	 */
+	it("does not copy the historical summary; it stays with the original room", async () => {
+		const db = activateLocalDbScope(nextViewer("alice"));
+		const store = createChatStore(db);
+		const { room } = await filled(db, store);
+
+		const copy = await store.duplicateRoom(room.id, "copy");
+		if (!copy) throw new Error("expected a copy");
+
+		expect(await store.getSummary(copy.id)).toBeNull();
+		expect(await db.chatSummaries.get(summaryIdFor(copy.id))).toBeUndefined();
+		expect(await db.chatSummaries.count()).toBe(1);
+		expect((await store.getSummary(room.id))?.summary).toBe("They entered.");
 	});
 
 	it("leaves the original untouched", async () => {
@@ -111,6 +130,8 @@ describe("duplicating a room", () => {
 			room: await db.rooms.get(room.id),
 			messages: await db.messages.where("roomId").equals(room.id).toArray(),
 			memories: await db.chatMemories.where("roomId").equals(room.id).toArray(),
+			scenes: await db.chatScenes.where("roomId").equals(room.id).toArray(),
+			summary: await db.chatSummaries.get(summaryIdFor(room.id)),
 		};
 
 		await store.duplicateRoom(room.id, "copy");
@@ -122,6 +143,12 @@ describe("duplicating a room", () => {
 		expect(
 			await db.chatMemories.where("roomId").equals(room.id).toArray(),
 		).toEqual(before.memories);
+		expect(
+			await db.chatScenes.where("roomId").equals(room.id).toArray(),
+		).toEqual(before.scenes);
+		expect(await db.chatSummaries.get(summaryIdFor(room.id))).toEqual(
+			before.summary,
+		);
 	});
 
 	it("does not carry deleted messages into the copy", async () => {
@@ -155,8 +182,9 @@ describe("duplicating a room", () => {
 			...(await db.messages.where("roomId").equals(id).toArray()),
 			...(await db.chatMemories.where("roomId").equals(id).toArray()),
 			...(await db.chatCharacters.where("roomId").equals(id).toArray()),
-			await db.chatSummaries.get(summaryIdFor(id)),
+			...(await db.chatScenes.where("roomId").equals(id).toArray()),
 		];
+		expect(records).toHaveLength(6);
 		for (const record of records)
 			expect(record).toMatchObject({ dirty: 1, serverVersion: 0 });
 	});

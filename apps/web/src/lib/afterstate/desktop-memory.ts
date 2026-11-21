@@ -1,21 +1,17 @@
-import {
-	type AfterstatePort,
-	eraseConversation,
-	type MemoryBackendMode,
-	parseMemoryBackendMode,
-} from "@rowcat/chat";
+import { type AfterstatePort, eraseConversation } from "@rowcat/chat";
 
 /**
- * The memory backend in the web app.
+ * Long-term memory in the web app is afterstate, and only afterstate.
  *
- * A browser has no afterstate engine (the engine does not build for `wasm32-unknown-unknown`;
- * see the Phase 11 report), so the web build is memory V2 and nothing here changes that. Inside the
- * desktop app the window's preload exposes the engine as `window.rowcatAfterstate`
- * (`apps/desktop/src/preload.cts`); only then can the backend be `afterstate` or `shadow`.
+ * A browser has no afterstate engine (the engine does not build for `wasm32-unknown-unknown`; see
+ * the Phase 11 report). Inside the desktop app the window's preload exposes the engine as
+ * `window.rowcatAfterstate` (`apps/desktop/src/preload.cts`). Without it the conversation still
+ * works on its recent window and the memories the person wrote, and the memory screen says
+ * long-term memory is unavailable on this device. There is no second engine to fall back to and no
+ * switch that selects one.
  *
- * The mode is a per-device setting kept in `localStorage` (`rowcat.memoryBackend`), default
- * `legacy`. It is a staged-rollout switch, not a user feature: switching back to `legacy` is the
- * rollback, and it touches no record (the index is derived; V2's records were never changed).
+ * Earlier builds kept a per-device rollout switch in `localStorage` (`rowcat.memoryBackend`). It is
+ * no longer read; `retireMemoryBackendSetting` removes the stale value once.
  */
 interface DesktopAfterstate {
 	protocol: string;
@@ -24,7 +20,8 @@ interface DesktopAfterstate {
 }
 
 const PROTOCOL = "afterstate-bridge/1";
-export const MEMORY_BACKEND_KEY = "rowcat.memoryBackend";
+/** The retired rollout switch's key. Never read; only removed. */
+export const RETIRED_MEMORY_BACKEND_KEY = "rowcat.memoryBackend";
 
 export function desktopAfterstate(): DesktopAfterstate | null {
 	if (typeof window === "undefined") return null;
@@ -33,24 +30,35 @@ export function desktopAfterstate(): DesktopAfterstate | null {
 	return candidate?.protocol === PROTOCOL ? candidate : null;
 }
 
-export function requestedMemoryBackend(): MemoryBackendMode {
+/** Removes the retired rollout switch from this device's storage. Idempotent; never throws. */
+export function retireMemoryBackendSetting(): void {
 	try {
-		return parseMemoryBackendMode(
-			globalThis.localStorage?.getItem(MEMORY_BACKEND_KEY),
-		);
+		globalThis.localStorage?.removeItem(RETIRED_MEMORY_BACKEND_KEY);
 	} catch {
-		return "legacy";
+		// Storage unavailable (private mode, policy): nothing is read from it either.
 	}
 }
+
+/**
+ * One port object per member for the page's lifetime. The adapter keys per-room state (single-flight
+ * maintenance, the indexing status a memory screen states) by the port's identity, so two callers —
+ * the conversation and the memory dialog — must hold the same object.
+ */
+const ports = new Map<string, AfterstatePort>();
 
 /** The member's port, or null (plain browser, or the desktop build without the engine). */
 export function desktopMemoryPort(memberKey: string): AfterstatePort | null {
 	const desktop = desktopAfterstate();
 	if (!desktop) return null;
-	return {
-		call: async <T>(op: string, params: object) =>
-			(await desktop.call(memberKey, op, params)) as T,
-	};
+	let port = ports.get(memberKey);
+	if (!port) {
+		port = {
+			call: async <T>(op: string, params: object) =>
+				(await desktop.call(memberKey, op, params)) as T,
+		};
+		ports.set(memberKey, port);
+	}
+	return port;
 }
 
 /**

@@ -4,12 +4,16 @@ import {
 	sweepDeletedRooms,
 } from "@rowcat/chat";
 import { useEffect, useMemo } from "react";
-import { desktopMemoryPort, requestedMemoryBackend } from "./desktop-memory.ts";
+import {
+	desktopMemoryPort,
+	retireMemoryBackendSetting,
+} from "./desktop-memory.ts";
 
 const swept = new Set<string>();
 
 /**
- * The member's memory runtime, or null (legacy mode, plain browser). Once per member and page load
+ * The member's afterstate runtime, or null where this device has no engine (a plain browser): long-term
+ * memory is then reported unavailable and nothing replaces it. Once per member and page load
  * it sweeps the index: rooms deleted while it was closed (another device's deletion arriving by
  * sync) are erased before they could be recalled.
  */
@@ -18,10 +22,10 @@ export function useMemoryRuntime(
 	store: ChatStore | null,
 ): ConversationMemoryRuntime | null {
 	const runtime = useMemo(() => {
+		retireMemoryBackendSetting();
 		if (!viewerId) return null;
-		const mode = requestedMemoryBackend();
-		const port = mode === "legacy" ? null : desktopMemoryPort(viewerId);
-		return port ? { mode, port } : null;
+		const port = desktopMemoryPort(viewerId);
+		return port ? { port } : null;
 	}, [viewerId]);
 	useEffect(() => {
 		if (!runtime?.port || !store || !viewerId || swept.has(viewerId)) return;

@@ -151,13 +151,13 @@ describe("what this conversation doesn't have", () => {
 		expect(await open().session.loadMemories()).toEqual([]);
 	});
 
-	it("the summary is empty", async () => {
-		expect(await open().session.loadSummary()).toBe("");
+	it("there's no long-term memory", () => {
+		expect(open().session.loadLongTermMemory).toBeUndefined();
 	});
 
 	/**
-	 * `maintain` is absent. If it existed, the pure turn would call it after the confirmed save, and
-	 * the result of that paid call would be stored nowhere.
+	 * `maintain` is absent. If it existed, the pure turn would call it after the confirmed save and
+	 * index a session that is about to be discarded.
 	 */
 	it("there's no automatic maintenance port", () => {
 		expect(open().session.maintain).toBeUndefined();

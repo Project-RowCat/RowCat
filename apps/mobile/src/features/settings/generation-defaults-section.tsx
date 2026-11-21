@@ -11,6 +11,7 @@ import {
 	RESPONSE_LENGTHS,
 	reconcileReasoningOverride,
 	targetForKey,
+	UTILITY_GENERATION_KINDS,
 } from "@rowcat/chat";
 import type { GenerationModelDto } from "@rowcat/contracts/chat";
 import { space } from "@rowcat/design";
@@ -385,11 +386,11 @@ export function GenerationDefaultsSection() {
 			) : null}
 
 			{/**
-			 * Auxiliary-request models: personal-key models only, since the choice applies only to rooms on a
-			 * personal key (`resolveUtilityTarget`). Each falls back to the room's own model, which no single
-			 * name here describes, so the inherit entry says that instead.
+			 * Auxiliary-request model (reply suggestions; memory calls no model): personal-key models only,
+			 * since the choice applies only to rooms on a personal key (`resolveUtilityTarget`). It falls back
+			 * to the room's own model, which no single name here describes, so the inherit entry says that.
 			 */}
-			{(["summary", "suggestion"] as const).map((kind) => (
+			{UTILITY_GENERATION_KINDS.map((kind) => (
 				<View key={kind}>
 					<Separator />
 					<UtilityModelField

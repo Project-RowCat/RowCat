@@ -33,18 +33,28 @@ const { eraseRoomMemory, openMemoryRuntime } = await import(
 );
 
 beforeEach(() => {
-	// The build's mode (`EXPO_PUBLIC_MEMORY_BACKEND`); a legacy build never opens the index, and the
-	// sweep at the next open erases rooms deleted meanwhile.
-	vi.stubEnv("EXPO_PUBLIC_MEMORY_BACKEND", "afterstate");
+	vi.unstubAllEnvs();
 	calls.length = 0;
 	events.length = 0;
 });
 
 describe("the member's native index", () => {
+	it("opens with no build setting: the retired backend switch is not read", async () => {
+		// A build that still sets the retired switch to the old engine gets afterstate anyway; there is
+		// no value that turns long-term memory into anything else.
+		vi.stubEnv("EXPO_PUBLIC_MEMORY_BACKEND", "legacy");
+		const opened = await openMemoryRuntime("carol");
+		expect(opened?.runtime.port).toBeDefined();
+		expect(Object.keys(opened?.runtime ?? {})).toEqual(["port"]);
+		await opened?.close();
+	});
+
 	it("is opened once and shared; it closes when the last user closes", async () => {
-		const a = await openMemoryRuntime("alice", "afterstate");
-		const b = await openMemoryRuntime("alice", "afterstate");
+		const a = await openMemoryRuntime("alice");
+		const b = await openMemoryRuntime("alice");
 		expect(events.filter((e) => e.startsWith("open"))).toHaveLength(1);
+		// One port object for both openers: per-room state (maintenance, indexing status) is keyed by it.
+		expect(a?.runtime.port).toBe(b?.runtime.port);
 		await a?.close();
 		await a?.close(); // closing twice releases once
 		expect(events.some((e) => e.startsWith("close"))).toBe(false);
@@ -53,7 +63,7 @@ describe("the member's native index", () => {
 	});
 
 	it("erases a deleted room through the screen's open handle", async () => {
-		const screen = await openMemoryRuntime("alice", "afterstate");
+		const screen = await openMemoryRuntime("alice");
 		const opened = events.length;
 		await eraseRoomMemory("alice", "room-1");
 		expect(events.length).toBe(opened); // no second engine

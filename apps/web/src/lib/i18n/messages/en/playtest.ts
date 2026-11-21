@@ -76,7 +76,7 @@ export const playtest = {
 			"play-guide": "Play guide",
 			"lore-system-bottom": "Lore (bottom)",
 			"lore-before-history": "Lore (before generation)",
-			summary: "Summary",
+			consolidated: "Earlier episodes",
 			memory: "Memory",
 			"user-note": "User note",
 			intensity: "Intensity",

@@ -5,6 +5,7 @@ import {
 	type ConversationDebugSink,
 	canStartGeneration,
 	chatConversationTools,
+	consolidatedText,
 	isManagedTarget,
 	narrationInjection,
 	planChatGeneration,
@@ -597,34 +598,28 @@ export function useConversationGeneration(
 					const characters = await session.loadCharacters();
 
 					/**
-					 * Step ②-c: the summary is also a snapshot taken at the same moment.
-					 *
-					 * It is read alongside memory for the same reason. Background maintenance can update the
-					 * summary during a response. If this request picked up the new version, 'which context this
-					 * request went out with' would depend on the timing of another task rather than on the render.
-					 */
-					const summary = await session.loadSummary();
-
-					/**
-					 * Step ②-c': recalled earlier passages (afterstate backend), a snapshot at the same moment.
-					 *
-					 * The question is built from the snapshots above by one shared function (recallRequestFor),
-					 * so web and mobile ask the same thing. Sessions without the backend have no loadRecall,
-					 * and the request is then exactly V2's. The loader never throws and gives up quickly.
-					 */
-					/**
-					 * Scenes (who witnessed what), a snapshot at the same moment. Read before recall so the recall
-					 * question knows which memories the knowledge boundary will carry (`prompt-scope.ts`).
+					 * Scenes (who witnessed what), a snapshot at the same moment. Read before long-term memory so
+					 * the recall question knows which memories the knowledge boundary will carry
+					 * (`prompt-scope.ts`).
 					 */
 					const scenes = (await session.loadScenes?.()) ?? [];
-					const recall = session.loadRecall
-						? await session.loadRecall(
-								recallRequestFor(history, memories, undefined, {
-									scenes,
-									memoryOwner: session.memoryOwner,
-								}),
+					/**
+					 * Step ②-c: long-term memory, a snapshot at the same moment — afterstate's recalled passages
+					 * and consolidated earlier episodes for this turn's perspective. The question is built from
+					 * the snapshots above by one shared function (recallRequestFor), so web and mobile ask the
+					 * same thing. The loader never throws and gives up quickly; where this device has no engine
+					 * it answers `unavailable` with nothing, and the turn goes out on the recent window and the
+					 * memories the person wrote. No other engine stands in.
+					 */
+					const longTerm = session.loadLongTermMemory
+						? await session.loadLongTermMemory(
+								recallRequestFor(history, memories, undefined, { scenes }),
 							)
 						: null;
+					const recall = longTerm?.recall ?? null;
+					const consolidated = longTerm?.consolidated
+						? consolidatedText(longTerm.consolidated)
+						: "";
 
 					/**
 					 * Step ②-e: secure this conversation's routing key. Some conversations have none.
@@ -770,15 +765,8 @@ export function useConversationGeneration(
 						messages: history,
 						memories,
 						characters,
-						summary,
+						...(consolidated ? { consolidated } : {}),
 						...(recall ? { recall } : {}),
-						/*
-						 * Afterstate-owned memory leaves V2's summary and auto memories out (`prompt-scope.ts`). V2
-						 * ownership creates no key, so those requests are what they were.
-						 */
-						...(session.memoryOwner === "afterstate"
-							? { memoryOwner: "afterstate" as const }
-							: {}),
 						...(scenes.length > 0
 							? {
 									scenes: {
@@ -1046,8 +1034,8 @@ export function useConversationGeneration(
 							turnId: id,
 							data: { messageId: continueId },
 						}));
-						// The appended body also means the conversation has grown. That is the same trigger as an
-						// ordinary save.
+						// The appended body also means the conversation has grown: the same trigger as an ordinary
+						// save (index the new text, consolidate what left the window).
 						try {
 							session.maintain?.();
 						} catch {
@@ -1116,13 +1104,12 @@ export function useConversationGeneration(
 							data: { messageId: messageId ?? null },
 						}));
 						/**
-						 * Wake automatic maintenance after the save, and do not wait for it.
+						 * Wake memory maintenance after the save, and do not wait for it: the afterstate index takes
+						 * in the response just saved, then consolidates what has left the window. Local and
+						 * deterministic, no model call.
 						 *
-						 * There are two reasons for this spot. One is timing: whether maintenance is needed depends
-						 * on how many messages have accumulated, and that value changes at exactly this line. The
-						 * other is correctness: waking it before the save would make maintenance choose batches over
-						 * a history that lacks the response just produced, and that response would be left out of the
-						 * summary until the next run.
+						 * Waking it before the save would index a history that lacks the response just produced; it
+						 * would stay out of long-term memory until the next run.
 						 *
 						 * A failure here is unrelated to this turn. The port is designed not to throw
 						 * (ConversationSession.maintain). If that promise breaks as wiring grows, an escaped

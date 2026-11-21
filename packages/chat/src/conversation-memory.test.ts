@@ -18,25 +18,26 @@ import {
 	type ChatRecalledPassage,
 	type ConversationMemorySource,
 	conversationMemoryHooks,
-	createIndexer,
-	createRecallLoader,
-	effectiveMemoryBackend,
+	createLongTermLoader,
+	createMaintainer,
 	eraseConversation,
 	isBridgeId,
-	type MemoryBackendEvent,
+	type MemoryEngineEvent,
+	memoryStatusFor,
 	messageItem,
 	noteItem,
-	parseMemoryBackendMode,
 	passageStillLive,
 	recallForTurn,
 	recallQuery,
 	recallRequestFor,
 	reconcileConversation,
 	selectRecallForContext,
+	summaryItem,
 	sweepConversations,
 } from "./conversation-memory.ts";
 import type { ChatMemory } from "./memory.ts";
 import { type ChatMessage, createRoomRecord } from "./model.ts";
+import { type ChatSummary, summaryIdFor } from "./summary.ts";
 
 let clock = 1_700_000_000_000;
 const rev = () => ({ t: clock++, c: 0, d: "dev-a" });
@@ -137,16 +138,7 @@ const room: ChatRuntimeRoom = createRoomRecord(
 	},
 );
 
-describe("mode and mapping", () => {
-	it("defaults to legacy and falls back without a port", () => {
-		expect(parseMemoryBackendMode(undefined)).toBe("legacy");
-		expect(parseMemoryBackendMode("bogus")).toBe("legacy");
-		expect(parseMemoryBackendMode("shadow")).toBe("shadow");
-		expect(effectiveMemoryBackend("afterstate", null)).toBe("legacy");
-		const port = { call: async () => ({}) } as AfterstatePort;
-		expect(effectiveMemoryBackend("afterstate", port)).toBe("afterstate");
-	});
-
+describe("mapping", () => {
 	it("maps messages to sources by id and revision, assistant lines as character speech", () => {
 		const u = message("r1", "m1", "user", "안녕");
 		const a = message("r1", "m2", "assistant", "나는 이 왕국의 여왕이다.");
@@ -171,9 +163,43 @@ describe("mode and mapping", () => {
 			author: { role: "user" },
 			labels: ["origin:user", "pinned"],
 		});
-		expect(noteItem(memory("r1", "n2", "x", "auto"))?.author.role).toBe(
-			"model",
-		);
+		expect(noteItem(memory("r1", "n2", "x", "auto"))).toMatchObject({
+			author: { role: "model" },
+			labels: ["origin:auto"],
+		});
+	});
+
+	it("imports V2's historical summary as model-written, unknown-audience story evidence", () => {
+		const summary: ChatSummary = {
+			id: summaryIdFor("r1"),
+			roomId: "r1",
+			summary: "두 사람은 등대에서 만났다.",
+			frontier: { createdAt: "2026-01-02T00:00:00.000Z", messageId: "m9" },
+			epoch: 3,
+			createdAt: "2026-01-01T00:00:00.000Z",
+			updatedAt: "2026-01-02T00:00:00.000Z",
+			deletedAt: null,
+			dirty: 0,
+			serverVersion: 1,
+			rev: { t: 5, c: 0, d: "dev-a" },
+		};
+		const item = summaryItem(summary);
+		expect(item).toMatchObject({
+			record: "summary",
+			id: summaryIdFor("r1"),
+			author: { role: "model" },
+			labels: ["origin:v2-summary"],
+			target: { layer: "story" },
+		});
+		// No audience: unknown, which the bridge never reads as "everyone".
+		expect(item && "audience" in item).toBe(false);
+		// The epoch is part of the revision: a retirement re-indexes.
+		expect(item?.revision).toContain("~e3");
+		// Retired (empty) or deleted summaries are not imported.
+		expect(summaryItem({ ...summary, summary: "  " })).toBeNull();
+		expect(
+			summaryItem({ ...summary, deletedAt: "2026-01-03T00:00:00.000Z" }),
+		).toBeNull();
 	});
 });
 
@@ -300,121 +326,122 @@ describe("recall selection and assembly", () => {
 	});
 });
 
-describe("loader and indexer failure behaviour", () => {
+describe("one engine: no modes, no V2, honest status", () => {
 	const rooms = new Rooms();
 	rooms.add(message("r1", "m1", "user", "열쇠"));
 	const request = recallRequestFor([{ role: "user", content: "열쇠" }], []);
+	const idle = {
+		missing: [],
+		stale: [],
+		orphaned: [],
+		erased_passages: 0,
+		current: 0,
+		episodes: 0,
+		written: 0,
+		retracted: 0,
+		pending: false,
+		evidence: [],
+		digests: [],
+	};
 
-	it("legacy has no hooks beyond V2 maintenance", () => {
-		let maintained = 0;
-		const hooks = conversationMemoryHooks(
-			{ mode: "legacy", port: null },
-			rooms,
-			"r1",
-			() => maintained++,
-		);
-		expect(hooks.loadRecall).toBeUndefined();
-		expect(hooks.memoryOwner).toBe("v2");
-		hooks.maintain?.();
-		expect(maintained).toBe(1);
-		expect(conversationMemoryHooks(null, rooms, "r1")).toEqual({
-			memoryOwner: "v2",
-		});
+	it("without an engine: no maintenance at all, and the loader says unavailable", async () => {
+		for (const runtime of [null, undefined, { port: null }]) {
+			const hooks = conversationMemoryHooks(runtime, rooms, "r1");
+			expect(hooks.maintain).toBeUndefined();
+			await expect(hooks.loadLongTermMemory(request)).resolves.toEqual({
+				recall: null,
+				consolidated: null,
+				status: "unavailable",
+			});
+			expect(memoryStatusFor(runtime, "r1")).toBe("unavailable");
+		}
 	});
 
-	it("afterstate owns memory alone: V2 maintenance is not woken, the indexer is", async () => {
-		let maintained = 0;
+	it("with an engine, maintenance is afterstate's index and consolidation, nothing else", async () => {
 		const calls: string[] = [];
 		const port = {
 			call: async (op: string) => {
 				calls.push(op);
-				return op === "reconcile" ? { missing: [], stale: [] } : {};
+				return idle;
 			},
-		} as AfterstatePort;
-		const hooks = conversationMemoryHooks(
-			{ mode: "afterstate", port },
-			rooms,
-			"r1",
-			() => maintained++,
-		);
-		expect(hooks.memoryOwner).toBe("afterstate");
+		} as unknown as AfterstatePort;
+		const hooks = conversationMemoryHooks({ port }, rooms, "r1");
+		expect(memoryStatusFor({ port }, "r1")).toBe("indexing");
 		hooks.maintain?.();
-		await new Promise((r) => setTimeout(r, 0));
-		expect(maintained).toBe(0);
-		expect(calls.length).toBeGreaterThan(0);
+		await new Promise((r) => setTimeout(r, 10));
+		expect(new Set(calls)).toEqual(new Set(["reconcile", "consolidate"]));
+		expect(memoryStatusFor({ port }, "r1")).toBe("ready");
 	});
 
-	it("V2 keeps memory where afterstate cannot reach the prompt or only measures", () => {
-		const port = { call: async () => ({}) } as AfterstatePort;
-		let maintained = 0;
-		// A protected room is assembled by the server; no recall reaches it.
-		const protectedHooks = conversationMemoryHooks(
-			{ mode: "afterstate", port },
+	it("the session contract has no backend selector and no V2 hook", () => {
+		const hooks = conversationMemoryHooks(
+			{ port: { call: async () => idle } as unknown as AfterstatePort },
 			rooms,
 			"r1",
-			() => maintained++,
-			{ protectedRoom: true },
 		);
-		expect(protectedHooks.memoryOwner).toBe("v2");
-		// Shadow measures without changing anything.
-		expect(
-			conversationMemoryHooks({ mode: "shadow", port }, rooms, "r1")
-				.memoryOwner,
-		).toBe("v2");
-		// A requested afterstate with no engine falls back to legacy, and V2 resumes.
-		const fallback = conversationMemoryHooks(
-			{ mode: "afterstate", port: null },
-			rooms,
-			"r1",
-			() => maintained++,
-		);
-		expect(fallback.memoryOwner).toBe("v2");
-		fallback.maintain?.();
-		expect(maintained).toBe(1);
+		expect(Object.keys(hooks).sort()).toEqual([
+			"loadLongTermMemory",
+			"maintain",
+		]);
 	});
 
-	it("a failing port yields null, never a throw", async () => {
-		const events: MemoryBackendEvent[] = [];
+	it("a failing port yields degraded long-term memory, never a throw", async () => {
+		const events: MemoryEngineEvent[] = [];
 		const port: AfterstatePort = {
 			call: async () => {
 				throw new Error("native module gone");
 			},
 		};
-		const load = createRecallLoader(
-			{ mode: "afterstate", port, observe: (e) => events.push(e) },
+		const load = createLongTermLoader(
+			{ port, observe: (e) => events.push(e) },
 			rooms,
 			"r1",
 		);
-		await expect(load?.(request)).resolves.toBeNull();
+		await expect(load(request)).resolves.toEqual({
+			recall: null,
+			consolidated: null,
+			status: "degraded",
+		});
 		expect(events.map((e) => e.kind)).toEqual(["recall-failed"]);
+	});
+
+	it("an engine without episodes still recalls (older bridge build)", async () => {
+		const port: AfterstatePort = {
+			call: async <T>(op: string) => {
+				if (op === "digests") throw new Error("unknown_op");
+				return { evidence: [] } as T;
+			},
+		};
+		const load = createLongTermLoader({ port }, rooms, "r1");
+		await expect(load(request)).resolves.toMatchObject({
+			recall: { passages: [] },
+			consolidated: { episodes: [] },
+		});
 	});
 
 	it("a slow port is abandoned", async () => {
 		const port: AfterstatePort = {
 			call: <T>() =>
 				new Promise<T>((resolve) =>
-					setTimeout(() => resolve({ evidence: [] } as T), 2_000),
+					setTimeout(() => resolve(idle as T), 2_000),
 				),
 		};
-		const events: MemoryBackendEvent[] = [];
-		const load = createRecallLoader(
-			{ mode: "afterstate", port, observe: (e) => events.push(e) },
+		const events: MemoryEngineEvent[] = [];
+		const load = createLongTermLoader(
+			{ port, observe: (e) => events.push(e) },
 			rooms,
 			"r1",
 		);
 		const started = Date.now();
-		await expect(load?.(request)).resolves.toBeNull();
+		await expect(load(request)).resolves.toMatchObject({ status: "degraded" });
 		expect(Date.now() - started).toBeLessThan(1_500);
 		expect(events[0]?.kind).toBe("recall-timeout");
 	});
 
 	it("an observer that throws does not break a turn", async () => {
-		const port: AfterstatePort = {
-			call: async () => ({ evidence: [] }) as never,
-		};
-		const load = createRecallLoader(
+		const port: AfterstatePort = { call: async () => idle as never };
+		const load = createLongTermLoader(
 			{
-				mode: "afterstate",
 				port,
 				observe: () => {
 					throw new Error("boom");
@@ -423,43 +450,54 @@ describe("loader and indexer failure behaviour", () => {
 			rooms,
 			"r1",
 		);
-		await expect(load?.(request)).resolves.toEqual({ passages: [] });
+		await expect(load(request)).resolves.toMatchObject({
+			recall: { passages: [] },
+			consolidated: { episodes: [] },
+		});
 	});
 
-	it("the indexer is single-flight per room and never throws", async () => {
-		let calls = 0;
+	it("a protected room gets episodes but no recall (the server assembles its prompt)", async () => {
+		const ops: string[] = [];
+		const port: AfterstatePort = {
+			call: async <T>(op: string) => {
+				ops.push(op);
+				return idle as T;
+			},
+		};
+		const load = createLongTermLoader({ port }, rooms, "r1", {
+			protectedRoom: true,
+		});
+		await expect(load(request)).resolves.toMatchObject({ recall: null });
+		expect(ops).toEqual(["digests"]);
+	});
+
+	it("maintenance is single-flight per room and never throws", async () => {
+		let reconciles = 0;
 		let release: () => void = () => {};
 		const gate = new Promise<void>((r) => {
 			release = r;
 		});
 		const port: AfterstatePort = {
 			call: async (op) => {
-				calls++;
-				if (op === "reconcile") await gate;
-				return {
-					missing: [],
-					stale: [],
-					orphaned: [],
-					erased_passages: 0,
-					current: 0,
-				} as never;
+				if (op === "reconcile") {
+					reconciles++;
+					await gate;
+				}
+				return idle as never;
 			},
 		};
-		const index = createIndexer({ mode: "afterstate", port }, rooms, "r1");
-		index?.();
-		index?.();
-		index?.();
+		const maintain = createMaintainer({ port }, rooms, "r1");
+		maintain?.();
+		maintain?.();
+		maintain?.();
 		await new Promise((r) => setTimeout(r, 10));
-		expect(calls).toBe(1);
+		expect(reconciles).toBe(1);
 		release();
 		await new Promise((r) => setTimeout(r, 20));
-		// One run, then exactly one queued follow-up (messages + notes reconcile each = 2 calls/run).
-		expect(calls).toBe(4);
-		const failing = createIndexer(
-			{
-				mode: "afterstate",
-				port: { call: async () => Promise.reject(new Error("x")) },
-			},
+		// One run, then exactly one queued follow-up; each reconciles messages, notes and the summary.
+		expect(reconciles).toBe(6);
+		const failing = createMaintainer(
+			{ port: { call: async () => Promise.reject(new Error("x")) } },
 			rooms,
 			"r2",
 		);
@@ -669,30 +707,23 @@ describe.skipIf(!hasAfterstateBridge())(
 			expect(swept.orphaned).toBe(1); // room-e
 		});
 
-		it("the session hooks run the whole path: loader in afterstate mode, nothing in shadow", async () => {
+		it("the session hooks run the whole path and keep only counts", async () => {
 			const rooms = plantedRoom("room-f");
-			const events: MemoryBackendEvent[] = [];
+			const events: MemoryEngineEvent[] = [];
 			const live = conversationMemoryHooks(
-				{ mode: "afterstate", port: engine, observe: (e) => events.push(e) },
+				{ port: engine, observe: (e) => events.push(e) },
 				rooms,
 				"room-f",
 			);
 			live.maintain?.();
-			await new Promise((r) => setTimeout(r, 300));
+			await new Promise((r) => setTimeout(r, 600));
 			const messages = await rooms.listAllMessages("room-f");
 			const request = recallRequestFor(messages.slice(-40), []);
-			const got = await live.loadRecall?.(request);
-			expect(got?.passages[0]?.id).toBe("room-f-plant");
-			const shadow = conversationMemoryHooks(
-				{ mode: "shadow", port: engine, observe: (e) => events.push(e) },
-				rooms,
-				"room-f",
-			);
-			await expect(shadow.loadRecall?.(request)).resolves.toBeNull();
-			const recalls = events.filter((e) => e.kind === "recall");
-			expect(recalls.map((e) => e.mode)).toEqual(["afterstate", "shadow"]);
-			expect(recalls[1]?.passages).toBeGreaterThan(0);
+			const got = await live.loadLongTermMemory(request);
+			expect(got.status).toBe("ready");
+			expect(got.recall?.passages[0]?.id).toBe("room-f-plant");
 			// Observations carry counts only.
+			expect(events.map((e) => e.kind)).toContain("index");
 			expect(JSON.stringify(events)).not.toContain("열쇠");
 		});
 	},
