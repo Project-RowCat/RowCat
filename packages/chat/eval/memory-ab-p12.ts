@@ -42,6 +42,7 @@ import {
 	reconcileConversation,
 } from "../src/conversation-memory.ts";
 import { chatHistoryWindow } from "../src/history-window.ts";
+import { scopePromptInput } from "../src/prompt-scope.ts";
 import type { ChatMemory } from "../src/memory.ts";
 import type { ChatMessage } from "../src/model.ts";
 import {
@@ -375,7 +376,7 @@ async function main() {
 					console.error(spec.arm, "kept", JSON.stringify(recall.passages.map((x) => [x.id, x.superseded, x.text.slice(0, 50)])));
 				}
 			}
-			const request = buildChatGenerationRequest({
+			const assembly = {
 				room,
 				messages: history,
 				memories,
@@ -383,7 +384,11 @@ async function main() {
 				...(spec.v2 && v2.summary?.text ? { summary: v2.summary.text } : {}),
 				...(recall ? { recall } : {}),
 				...(spec.recall === "p12" && spec.notice !== false ? { scenes: { scenes, cast } } : {}),
-			});
+			};
+			const request = buildChatGenerationRequest(assembly);
+			// Phase 13: the summary and memory columns read what the request actually carries after the
+			// knowledge boundary (`prompt-scope.ts`), not what the harness passed in.
+			const scoped = scopePromptInput(assembly).input;
 			if (dumpPath && ["A+V2", "C11+V2", "C12+V2", "C12n+V2"].includes(spec.arm)) {
 				dumped.push({ arm: spec.arm, probe: p.id, context: JSON.stringify(request), tokens: tokens(requestText(request)) });
 			}
@@ -393,8 +398,8 @@ async function main() {
 			const engineText = lastEvidence.map((e) => e.text).join("\n");
 			const unauthRecall = forbiddenAll.filter((i) => has(block, i)).length;
 			const unauthElse = forbiddenAll.filter((i) => has(rest, i)).length;
-			const summaryText = spec.v2 ? (v2.summary?.text ?? "") : "";
-			const memoryText = selectMemoriesForContext(memories).map((m) => m.content).join("\n");
+			const summaryText = scoped.summary ?? "";
+			const memoryText = selectMemoriesForContext(scoped.memories ?? []).map((m) => m.content).join("\n");
 			const hist = (request as { messages: { content: string }[] }).messages.map((m) => m.content.split(p.query).join(" "));
 			const isMarked = (c: string) => /^\(이 장면을 본 인물|^\(어떤 인물도/.test(c);
 			const marked = hist.filter(isMarked).join("\n");
