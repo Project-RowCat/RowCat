@@ -32,7 +32,7 @@ import type { ChatMemory } from "./memory.ts";
  */
 export type ChatContextMemory = Pick<
 	ChatMemory,
-	"id" | "content" | "pinned" | "source" | "updatedAt"
+	"id" | "content" | "pinned" | "source" | "updatedAt" | "audience"
 >;
 
 /** The fields the assembler reads from added characters: name and free-form prompt only. */
@@ -50,6 +50,7 @@ import {
 	resolveChatPlaceholders,
 	resolveSeedPlaceholders,
 } from "./placeholder.ts";
+import { type ChatMemoryOwner, scopePromptInput } from "./prompt-scope.ts";
 import type {
 	ChatPromptBlock,
 	ChatPromptBlockId,
@@ -57,13 +58,7 @@ import type {
 } from "./prompt-trace.ts";
 import { chatSystemPromptText } from "./prompt-trace.ts";
 import type { ReasoningEffort } from "./reasoning.ts";
-import {
-	type ChatScene,
-	perspectiveAdmits,
-	recallPerspective,
-	resolveMessageAudiences,
-	sceneMemberNames,
-} from "./scene.ts";
+import type { ChatScene } from "./scene.ts";
 import { clampSummary } from "./summary.ts";
 import {
 	applyRoomUserNote,
@@ -157,7 +152,7 @@ export type ChatRuntimeMessage = Pick<
 	ChatMessage,
 	"role" | "speaker" | "content"
 > &
-	/** Present on stored messages; scene marks (`scenes`) need them to place a message. */
+	/** Present on stored messages; the knowledge boundary (`prompt-scope.ts`) needs them to place a message in a scene. */
 	Partial<Pick<ChatMessage, "id" | "createdAt">>;
 
 /**
@@ -471,82 +466,6 @@ export function quoteRecalled(text: string): string {
 }
 
 /**
- * Scene marks for rooms that record who witnessed what (`scene.ts`). Window messages witnessed by
- * fewer characters than are present now are prefixed with who saw them, and the last user turn says
- * who is present. Rooms without scenes get nothing (byte-identical to before).
- *
- * Recall already left out what the present characters did not witness; the window cannot (it is the
- * conversation itself, and the narrator plays every character), so it is marked instead. The summary
- * and memories are not scene-aware; the notice says so.
- */
-function withScenes(
-	history: ChatGenerationMessage[],
-	window: readonly ChatRuntimeMessage[],
-	scenes: BuildChatGenerationRequestInput["scenes"],
-	names: {
-		seed: { characters?: readonly { name?: string }[] };
-		userName: string;
-	},
-	continuation: boolean,
-): void {
-	const live = (scenes?.scenes ?? []).filter((s) => s.deletedAt === null);
-	if (live.length === 0) return;
-	const cast = {
-		seed: names.seed,
-		characters: scenes?.cast ?? [],
-		userName: names.userName,
-	};
-	const perspective = recallPerspective(live);
-	const placed = window.filter(
-		(m): m is ChatRuntimeMessage & { id: string; createdAt: string } =>
-			!!m.id && !!m.createdAt,
-	);
-	const audiences = resolveMessageAudiences(placed, live);
-	const marks = new Map<string, string>();
-	for (const m of placed) {
-		const a = audiences.get(m.id);
-		if (
-			!a ||
-			a.kind === "unknown" ||
-			a.kind === "room" ||
-			perspectiveAdmits(perspective, a)
-		)
-			continue;
-		marks.set(
-			m.content.trim(),
-			a.kind === "narrator"
-				? "(어떤 인물도 보지 못한 장면 — 인물들은 이 내용을 모릅니다)"
-				: `(이 장면을 본 인물: ${sceneMemberNames(a.members, cast).join(", ") || "알 수 없음"} — 그 밖의 인물은 모릅니다)`,
-		);
-	}
-	if (marks.size > 0) {
-		for (let i = 0; i < history.length; i++) {
-			const h = history[i];
-			if (!h) continue;
-			for (const [content, mark] of marks) {
-				if (h.content === content || h.content.endsWith(`: ${content}`)) {
-					history[i] = { ...h, content: clampContent(`${mark}\n${h.content}`) };
-					break;
-				}
-			}
-		}
-	}
-	const last = history[history.length - 1];
-	if (continuation || last?.role !== "user") return;
-	const present =
-		perspective.kind === "participants"
-			? sceneMemberNames(perspective.members, cast).join(", ")
-			: perspective.kind === "narrator"
-				? "없음 (인물이 보지 못하는 서술)"
-				: "이야기의 모든 인물";
-	const notice = `[장면 정보] 지금 이 장면에 있는 인물: ${present}. 목격자가 표시된 기록은 표시된 인물만 아는 내용입니다. 그 자리에 없던 인물은 그 내용을 모르는 것처럼 행동하고 말하게 하세요. 요약과 기억에는 비공개 장면의 내용이 섞여 있을 수 있으니, 인물이 직접 보거나 들은 것만 알게 하세요.`;
-	history[history.length - 1] = {
-		...last,
-		content: clampContent(`${notice}\n\n${last.content}`),
-	};
-}
-
-/**
  * Puts the recalled block in front of the last user turn. Why there and not in the system prompt:
  * recall changes every turn, and the system prompt and the history after it are the cached prefix
  * (the frontier-stepped window exists to keep that prefix stable for ten turns at a time). In the
@@ -712,13 +631,20 @@ export interface BuildChatGenerationRequestInput {
 	 */
 	recall?: ChatRecallSnapshot | null;
 	/**
-	 * The room's scenes and the ids/names of its added characters (`scene.ts`). Absent or empty: no
-	 * scene marks, and the request is byte-identical to before scenes existed.
+	 * The room's scenes and the ids/names of its added characters (`scene.ts`). Present with live
+	 * scenes: the request carries only what the present characters witnessed (`prompt-scope.ts`).
+	 * Absent or empty: the request is byte-identical to before scenes existed.
 	 */
 	scenes?: {
 		scenes: readonly ChatScene[];
 		cast: readonly { id: string; name: string }[];
 	} | null;
+	/**
+	 * Who maintains this conversation's long-term memory (`conversationMemoryHooks`). `afterstate`
+	 * leaves memory V2's summary and auto-extracted memories out of the request: afterstate's recall
+	 * replaces them and V2 maintenance no longer runs. Absent means `v2`, the request as before.
+	 */
+	memoryOwner?: ChatMemoryOwner;
 	/** Whether the conversation proceeds all-ages, computed by resolveAllAges. */
 	allAges: boolean;
 	/** Response token cap. When omitted, the contract default applies. */
@@ -1091,9 +1017,16 @@ export function buildChatGenerationRequestTraced(
 	return { request: assembled.request, trace: assembled.trace };
 }
 
-function assembleChatGenerationRequest(
-	input: BuildChatGenerationRequestInput,
-): { request: ChatGenerationRequest; trace: ChatPromptTrace } {
+function assembleChatGenerationRequest(raw: BuildChatGenerationRequestInput): {
+	request: ChatGenerationRequest;
+	trace: ChatPromptTrace;
+} {
+	/**
+	 * The knowledge boundary comes first (`prompt-scope.ts`): everything below — lore scanning
+	 * included, so a private scene's words cannot pull in its lore — sees only what this turn may draw
+	 * on. A room without scenes whose memory V2 owns passes through unchanged.
+	 */
+	const { input, report: scope } = scopePromptInput(raw);
 	const { messages, allAges } = input;
 	/*
 	 * Name substitution happens here, once. Substituting block by block during assembly would require
@@ -1237,13 +1170,6 @@ function assembleChatGenerationRequest(
 		history.push({ role: "user", content: CONTINUE_NUDGE });
 
 	withRecall(history, input.recall, input.continuation === true);
-	withScenes(
-		history,
-		window,
-		input.scenes,
-		{ seed: room.seed, userName: personaName },
-		input.continuation === true,
-	);
 
 	/**
 	 * Lore is selected together with its judgments. Whether to discard or keep the trace is decided by
@@ -1344,6 +1270,7 @@ function assembleChatGenerationRequest(
 			personaName,
 			historyLength: history.length,
 			allAges,
+			scope,
 		},
 	};
 }

@@ -22,6 +22,8 @@ import {
 } from "./conversation-memory.ts";
 import type { ChatMemory } from "./memory.ts";
 import { type ChatMessage, createRoomRecord } from "./model.ts";
+import { scopePromptInput } from "./prompt-scope.ts";
+import { storyChatAssemblyRequest } from "./protected-generation.ts";
 import {
 	type ChatScene,
 	type ChatSceneAudience,
@@ -486,26 +488,186 @@ describe("the assembled request", () => {
 		expect(JSON.stringify(withEmpty)).toBe(JSON.stringify(base));
 	});
 
-	it("marks a window message the present characters did not all witness, and says who is present", () => {
-		const scenes = [
-			scene("s1", "h1", 50, P("user", "char:mira")),
-			scene("s2", "h3", 52, P("user", "char:mira", "char:kael")),
-		];
+	const mem = (
+		id: string,
+		content: string,
+		source: "user" | "auto",
+		audience?: ChatSceneAudience,
+	) => ({
+		id,
+		content,
+		pinned: false,
+		source,
+		updatedAt: at(60),
+		...(audience ? { audience } : {}),
+	});
+	const SECRET = "seven seven four";
+	const privateThenJoined = [
+		scene("s1", "h1", 50, P("user", "char:mira")),
+		scene("s2", "h3", 52, P("user", "char:mira", "char:kael")),
+	];
+	const everything = (req: ReturnType<typeof buildChatGenerationRequest>) =>
+		[req.system, ...req.messages.map((m) => m.content)].join("\n");
+
+	it("leaves out of the whole request what the present characters did not all witness", () => {
 		const req = buildChatGenerationRequest({
 			room,
 			messages: history,
 			allAges: true,
-			scenes: { scenes, cast },
+			scenes: { scenes: privateThenJoined, cast },
+			summary: `Mira told Rowan the vault code: ${SECRET}.`,
+			memories: [
+				mem("auto1", `The vault code is ${SECRET}.`, "auto"),
+				mem(
+					"u-private",
+					`Only Mira knows ${SECRET}.`,
+					"user",
+					P("user", "char:mira"),
+				),
+				mem("u-shared", "The harbor closes at dusk.", "user"),
+			],
 		});
-		const text = req.messages.map((m) => m.content).join("\n---\n");
-		expect(text).toContain("(이 장면을 본 인물: Mira, 유저");
-		expect(text).toContain("[장면 정보] 지금 이 장면에 있는 인물:");
-		expect(text).toMatch(/Kael/);
-		// The secret line itself carries the mark.
-		const secret = req.messages.find((m) =>
-			m.content.includes("seven seven four"),
+		const text = everything(req);
+		expect(text).not.toContain(SECRET);
+		// What every present character witnessed, and an unmarked user memory, still arrive.
+		expect(text).toContain("Hello Kael");
+		expect(text).toContain("The harbor closes at dusk.");
+		// No warning text is left for the model to reason about.
+		expect(text).not.toContain("[장면 정보]");
+		expect(text).not.toContain("이 장면을 본 인물");
+	});
+
+	it("admits a restricted user memory when every present character witnessed its audience", () => {
+		const req = buildChatGenerationRequest({
+			room,
+			messages: history.slice(0, 2),
+			allAges: true,
+			scenes: { scenes: [privateThenJoined[0] as ChatScene], cast },
+			memories: [
+				mem(
+					"u-private",
+					`Only Mira knows ${SECRET}.`,
+					"user",
+					P("user", "char:mira"),
+				),
+			],
+		});
+		expect(everything(req)).toContain(SECRET);
+	});
+
+	it("leaves out history from before the first scene (unknown audience fails closed)", () => {
+		const req = buildChatGenerationRequest({
+			room,
+			messages: history,
+			allAges: true,
+			scenes: {
+				scenes: [scene("s2", "h3", 52, P("user", "char:mira", "char:kael"))],
+				cast,
+			},
+		});
+		expect(everything(req)).not.toContain(SECRET);
+		// A room scene at the first message declares earlier history shared, and it comes back.
+		const declared = buildChatGenerationRequest({
+			room,
+			messages: history,
+			allAges: true,
+			scenes: {
+				scenes: [
+					scene("s0", "h1", 50, { kind: "room" }),
+					scene("s2", "h3", 52, P("user", "char:mira", "char:kael")),
+				],
+				cast,
+			},
+		});
+		expect(everything(declared)).toContain(SECRET);
+	});
+
+	it("a private scene's words cannot pull its lore into a turn that may not know it", () => {
+		const loreRoom = createRoomRecord(
+			{
+				originStoryId: null,
+				seed: StoryChatSeedDto.parse({
+					version: 1,
+					storyId: "s",
+					title: "Vault",
+					adult: false,
+					promptProtected: false,
+					scenario: "A harbor town.",
+					lore: [{ keys: ["vault code"], content: "LORE-VAULT-DETAIL" }],
+				}),
+			},
+			{
+				id: ROOM,
+				routingSessionId: "r",
+				now: at(0),
+				rev: { t: 1, c: 0, d: "a" },
+			},
 		);
-		expect(secret?.content.startsWith("(이 장면을 본 인물")).toBe(true);
+		const req = buildChatGenerationRequest({
+			room: loreRoom,
+			messages: history,
+			allAges: true,
+			scenes: { scenes: privateThenJoined, cast },
+		});
+		expect(req.system).not.toContain("LORE-VAULT-DETAIL");
+	});
+
+	it("afterstate ownership drops V2's summary and auto memories even in a room without scenes", () => {
+		const base = {
+			room,
+			messages: history,
+			allAges: true,
+			summary: "SUMMARY-TEXT",
+			memories: [
+				mem("auto1", "AUTO-FACT", "auto"),
+				mem("u1", "USER-FACT", "user"),
+			],
+		};
+		const v2 = everything(buildChatGenerationRequest(base));
+		expect(v2).toContain("SUMMARY-TEXT");
+		expect(v2).toContain("AUTO-FACT");
+		const owned = everything(
+			buildChatGenerationRequest({ ...base, memoryOwner: "afterstate" }),
+		);
+		expect(owned).not.toContain("SUMMARY-TEXT");
+		expect(owned).not.toContain("AUTO-FACT");
+		expect(owned).toContain("USER-FACT");
+	});
+
+	it("the protected path withholds on the device, before anything is sent", () => {
+		const sent = JSON.stringify(
+			storyChatAssemblyRequest({
+				room,
+				messages: history,
+				allAges: true,
+				scenes: { scenes: privateThenJoined, cast },
+				summary: `code ${SECRET}`,
+				memories: [mem("auto1", `code ${SECRET}`, "auto")],
+			}),
+		);
+		expect(sent).not.toContain(SECRET);
+	});
+
+	it("scoping is idempotent and reports counts, not content", () => {
+		const input = {
+			room,
+			messages: history,
+			allAges: true,
+			scenes: { scenes: privateThenJoined, cast },
+			summary: "s",
+			memories: [mem("auto1", "a", "auto")],
+		};
+		const once = scopePromptInput(input);
+		const twice = scopePromptInput(once.input);
+		expect(twice.input).toEqual(once.input);
+		expect(once.report).toEqual({
+			sceneScoped: true,
+			owner: "v2",
+			withheldMessages: 2,
+			withheldSummary: true,
+			withheldAutoMemories: 1,
+			withheldUserMemories: 0,
+		});
 	});
 });
 

@@ -76,13 +76,14 @@ export function createChatConversation(input: {
 	memory?: ConversationMemoryRuntime | null;
 }): ConversationSession {
 	const { room, store, preferences } = input;
+	const protectedStoryId = protectedStoryIdOf(room);
 	const memoryHooks = conversationMemoryHooks(
 		input.memory,
 		store,
 		room.id,
 		input.maintain,
+		{ protectedRoom: !!protectedStoryId },
 	);
-	const protectedStoryId = protectedStoryIdOf(room);
 	return {
 		// The store instance is in the token because a member id is not enough: after sign-out and return
 		// the id matches but the connection was closed and reopened, so writes to the old instance hit a

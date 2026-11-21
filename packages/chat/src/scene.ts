@@ -6,8 +6,8 @@ import { freshChatSyncMeta } from "./model.ts";
  *
  * A scene starts at one message and lasts until the next scene starts. Its audience says which
  * characters were there. The memory index uses it so a character is never reminded of a scene it
- * did not witness (afterstate recall filters by it inside the search), and the assembler marks
- * window messages witnessed by fewer characters than are present now.
+ * did not witness (afterstate recall filters by it inside the search), and the knowledge boundary
+ * (`prompt-scope.ts`) leaves out of the whole request what the present characters did not all witness.
  *
  * - **Explicit only.** Audience is what the user said, never inferred from text: a character named
  *   in a passage did not necessarily witness it.

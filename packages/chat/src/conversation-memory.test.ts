@@ -314,9 +314,63 @@ describe("loader and indexer failure behaviour", () => {
 			() => maintained++,
 		);
 		expect(hooks.loadRecall).toBeUndefined();
+		expect(hooks.memoryOwner).toBe("v2");
 		hooks.maintain?.();
 		expect(maintained).toBe(1);
-		expect(conversationMemoryHooks(null, rooms, "r1")).toEqual({});
+		expect(conversationMemoryHooks(null, rooms, "r1")).toEqual({
+			memoryOwner: "v2",
+		});
+	});
+
+	it("afterstate owns memory alone: V2 maintenance is not woken, the indexer is", async () => {
+		let maintained = 0;
+		const calls: string[] = [];
+		const port = {
+			call: async (op: string) => {
+				calls.push(op);
+				return op === "reconcile" ? { missing: [], stale: [] } : {};
+			},
+		} as AfterstatePort;
+		const hooks = conversationMemoryHooks(
+			{ mode: "afterstate", port },
+			rooms,
+			"r1",
+			() => maintained++,
+		);
+		expect(hooks.memoryOwner).toBe("afterstate");
+		hooks.maintain?.();
+		await new Promise((r) => setTimeout(r, 0));
+		expect(maintained).toBe(0);
+		expect(calls.length).toBeGreaterThan(0);
+	});
+
+	it("V2 keeps memory where afterstate cannot reach the prompt or only measures", () => {
+		const port = { call: async () => ({}) } as AfterstatePort;
+		let maintained = 0;
+		// A protected room is assembled by the server; no recall reaches it.
+		const protectedHooks = conversationMemoryHooks(
+			{ mode: "afterstate", port },
+			rooms,
+			"r1",
+			() => maintained++,
+			{ protectedRoom: true },
+		);
+		expect(protectedHooks.memoryOwner).toBe("v2");
+		// Shadow measures without changing anything.
+		expect(
+			conversationMemoryHooks({ mode: "shadow", port }, rooms, "r1")
+				.memoryOwner,
+		).toBe("v2");
+		// A requested afterstate with no engine falls back to legacy, and V2 resumes.
+		const fallback = conversationMemoryHooks(
+			{ mode: "afterstate", port: null },
+			rooms,
+			"r1",
+			() => maintained++,
+		);
+		expect(fallback.memoryOwner).toBe("v2");
+		fallback.maintain?.();
+		expect(maintained).toBe(1);
 	});
 
 	it("a failing port yields null, never a throw", async () => {

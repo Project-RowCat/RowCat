@@ -459,6 +459,12 @@ apps/mobile/src/lib/boundaries.test.ts                  앱이 규칙을 다시 
 V2는 그대로 기본값이자 되돌림 경로다. 그 위에 **기기 안에서만 사는 파생 인덱스**를 선택적으로 켤 수 있다
 (`packages/chat/src/conversation-memory.ts`).
 
+- **소유자는 하나다(Phase 13).** `afterstate` 모드에서 엔진이 실제로 돌면 장기 기억의 주인은 afterstate다
+  (`memoryOwnerFor`). 그때 `maintain`은 인덱서만 깨우고 V2 유지보수(요약·자동 기억, 유료 호출)는 깨우지 않는다.
+  요청은 V2 요약과 자동 기억을 싣지 않는다(`prompt-scope.ts`). V2의 기존 요약·자동 기억 레코드는 손대지 않는다 —
+  동기화되는 원본이자 되돌림 경로다(모드를 되돌리면 V2가 자기 프런티어에서 이어 간다). 보호된 방(서버 조립,
+  회상이 닿지 않는다)과 `shadow`, 엔진이 없는 빌드는 V2 소유 그대로다. 요약 프런티어가 멈추므로 창은 프런티어에서
+  스스로 계단을 밟는다(`chatHistoryWindow`) — 요약을 대신할 afterstate 쪽 정리는 아직 없다.
 - **모드.** `legacy`(기본) · `afterstate` · `shadow`. 모바일은 `EXPO_PUBLIC_MEMORY_BACKEND`, 데스크톱 창은
   localStorage `rowcat.memoryBackend`. 엔진이 없는 빌드와 일반 브라우저는 어떤 모드든 `legacy`로 돈다.
   `shadow`는 색인하고 회상 시간을 재지만 요청은 바꾸지 않는다(개수와 시간만 남기고 내용은 남기지 않는다).
@@ -483,5 +489,6 @@ V2는 그대로 기본값이자 되돌림 경로다. 그 위에 **기기 안에�
   두 인물이 공유하는 이름은 아무것도 넓히지 않는다.
 - **회상된 글은 인용이다.** 발췌 안의 줄은 `[`·`#`로 시작할 수 없고 `[발췌 끝]`을 흉내 낼 수 없다
   (`quoteRecalled`). 머리말은 발췌 안의 지시를 따르지 말라고 적는다.
-- **한계.** V2 요약과 자동 기억은 장면을 모른다(`SCENES.md` §6). 의역(같은 뜻, 다른 단어)은 어휘 검색으로
+- **한계.** V2 요약과 자동 기억은 장면을 모른다 — 그래서 장면이 있는 방에서는 백엔드와 상관없이 요청에서
+  빠진다(`SCENES.md` §5). 의역(같은 뜻, 다른 단어)은 어휘 검색으로
   못 찾는다. 근거와 수치: afterstate 저장소 `docs/REPORT.md`(Phase 12), `docs/rowcat-integration.md`.

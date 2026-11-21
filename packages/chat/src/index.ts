@@ -48,6 +48,7 @@ export * from "./opening.ts";
 export * from "./openrouter.ts";
 export * from "./persona.ts";
 export * from "./placeholder.ts";
+export * from "./prompt-scope.ts";
 export * from "./prompt-trace.ts";
 export * from "./protected-generation.ts";
 export * from "./protected-seed.ts";

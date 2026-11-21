@@ -1041,3 +1041,61 @@ describe("codec list", () => {
 		]);
 	});
 });
+
+describe("chat.memory codec · audience", () => {
+	const restricted = {
+		kind: "participants" as const,
+		members: ["char:mira", "user"],
+	};
+	const payload = (extra: Record<string, unknown> = {}) => ({
+		roomId: "room-1",
+		content: "미라만 아는 비밀",
+		pinned: false,
+		createdAt: "2026-01-01T00:00:00.000Z",
+		updatedAt: "2026-01-01T00:00:00.000Z",
+		...extra,
+	});
+
+	it("an unrestricted memory keeps its pre-axis bytes", () => {
+		const encoded = chatMemorySyncCodec.encode(memory()) as Record<
+			string,
+			unknown
+		>;
+		expect("audience" in encoded).toBe(false);
+	});
+
+	it("round-trips a normalized audience", () => {
+		const decoded = decodeMemory(
+			payload({
+				audience: { kind: "participants", members: ["user", "char:mira"] },
+			}),
+		);
+		expect(decoded?.audience).toEqual(restricted);
+	});
+
+	it("rejects a malformed audience rather than reading it as shared", () => {
+		expect(
+			decodeMemory(
+				payload({ audience: { kind: "participants", members: [] } }),
+			),
+		).toBeNull();
+	});
+
+	it("a later edit from a device that does not know the field keeps the audience", () => {
+		const local = memory({ audience: restricted, rev: rev(1000) });
+		const remote = memory({ content: "고친 문장", rev: rev(2000) });
+		const merged = chatMemorySyncCodec.merge(local, remote, context().ctx);
+		expect(merged.record.content).toBe("고친 문장");
+		expect(merged.record.audience).toEqual(restricted);
+		// The result matches neither server version, so it goes out again.
+		expect(merged.remoteWins).toBe(false);
+	});
+
+	it("an explicit widening follows the clock", () => {
+		const local = memory({ audience: restricted, rev: rev(1000) });
+		const remote = memory({ audience: { kind: "room" }, rev: rev(2000) });
+		const merged = chatMemorySyncCodec.merge(local, remote, context().ctx);
+		expect(merged.record.audience).toEqual({ kind: "room" });
+		expect(merged.remoteWins).toBe(true);
+	});
+});

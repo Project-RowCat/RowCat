@@ -83,13 +83,14 @@ export function createChatConversation(input: {
 	memory?: ConversationMemoryRuntime | null;
 }): ConversationSession {
 	const { room, store, preferences } = input;
+	const protectedStoryId = protectedStoryIdOf(room);
 	const memoryHooks = conversationMemoryHooks(
 		input.memory,
 		store,
 		room.id,
 		input.maintain,
+		{ protectedRoom: !!protectedStoryId },
 	);
-	const protectedStoryId = protectedStoryIdOf(room);
 	return {
 		token: input.token,
 		runtime: room,

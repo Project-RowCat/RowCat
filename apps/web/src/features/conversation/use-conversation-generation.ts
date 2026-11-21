@@ -612,11 +612,19 @@ export function useConversationGeneration(
 					 * so web and mobile ask the same thing. Sessions without the backend have no loadRecall,
 					 * and the request is then exactly V2's. The loader never throws and gives up quickly.
 					 */
-					const recall = session.loadRecall
-						? await session.loadRecall(recallRequestFor(history, memories))
-						: null;
-					/** Scenes (who witnessed what), a snapshot at the same moment; none: no scene marks. */
+					/**
+					 * Scenes (who witnessed what), a snapshot at the same moment. Read before recall so the recall
+					 * question knows which memories the knowledge boundary will carry (`prompt-scope.ts`).
+					 */
 					const scenes = (await session.loadScenes?.()) ?? [];
+					const recall = session.loadRecall
+						? await session.loadRecall(
+								recallRequestFor(history, memories, undefined, {
+									scenes,
+									memoryOwner: session.memoryOwner,
+								}),
+							)
+						: null;
 
 					/**
 					 * Step ②-e: secure this conversation's routing key. Some conversations have none.
@@ -764,6 +772,13 @@ export function useConversationGeneration(
 						characters,
 						summary,
 						...(recall ? { recall } : {}),
+						/*
+						 * Afterstate-owned memory leaves V2's summary and auto memories out (`prompt-scope.ts`). V2
+						 * ownership creates no key, so those requests are what they were.
+						 */
+						...(session.memoryOwner === "afterstate"
+							? { memoryOwner: "afterstate" as const }
+							: {}),
 						...(scenes.length > 0
 							? {
 									scenes: {

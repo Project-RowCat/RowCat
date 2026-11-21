@@ -9,6 +9,7 @@ import {
 	buildChatGenerationRequest,
 	buildChatGenerationRequestTraced,
 } from "./context.ts";
+import { scopePromptInput } from "./prompt-scope.ts";
 import type { ChatPromptTrace } from "./prompt-trace.ts";
 
 /**
@@ -101,8 +102,13 @@ export function planChatGeneration(input: {
  * would go out to the server's assembly input.
  */
 export function storyChatAssemblyRequest(
-	input: BuildChatGenerationRequestInput,
+	raw: BuildChatGenerationRequestInput,
 ): StoryChatAssemblyRequest {
+	/**
+	 * The knowledge boundary is applied on the device, before anything leaves it (`prompt-scope.ts`):
+	 * the server assembles from this request and has no scenes, so what is withheld must never be sent.
+	 */
+	const { input } = scopePromptInput(raw);
 	const { room } = input;
 	return {
 		messages: input.messages.map(({ role, speaker, content }) => ({

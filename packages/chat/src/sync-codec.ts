@@ -13,6 +13,7 @@ import {
 	type ChatMemory,
 	checkAutoMemoryContent,
 	checkMemoryContent,
+	mergeMemoryAudience,
 	mergeMemorySource,
 	normalizeMemoryContent,
 	readMemorySource,
@@ -579,6 +580,24 @@ const MemoryData = z
 		source: z.enum(CHAT_MEMORY_SOURCES).optional(),
 		/** Origin time of an automatic memory. Absent on manual memories. */
 		originAt: z.string().nullable().optional(),
+		/**
+		 * Who may know a human-written memory in a room with scenes (`ChatMemory.audience`). Optional and
+		 * added without a version, like `source`: an old reader ignores the key, a new reader reads its
+		 * absence as shared. A present audience that breaks the scene rules rejects the record rather
+		 * than reading as shared — dropping a private memory's audience would publish it.
+		 */
+		audience: z
+			.discriminatedUnion("kind", [
+				z.object({ kind: z.literal("room") }).strict(),
+				z.object({ kind: z.literal("narrator") }).strict(),
+				z
+					.object({
+						kind: z.literal("participants"),
+						members: z.array(z.string()),
+					})
+					.strict(),
+			])
+			.optional(),
 		createdAt: z.string(),
 		updatedAt: z.string(),
 	})
@@ -617,6 +636,11 @@ export const chatMemorySyncCodec = {
 				 */
 				source: record.source === "auto" ? "auto" : undefined,
 				originAt: record.originAt ?? undefined,
+				/** Absent stays absent, so a memory nobody restricted keeps its pre-axis bytes. */
+				audience:
+					record.source === "user" && record.audience
+						? record.audience
+						: undefined,
 			},
 		);
 	},
@@ -624,11 +648,15 @@ export const chatMemorySyncCodec = {
 	decode(input: DecodeInput): ChatMemory | null {
 		const parsed = MemoryData.safeParse(input.data);
 		if (!parsed.success) return null;
-		const { source, originAt, content, ...rest } = parsed.data;
+		const { source, originAt, content, audience, ...rest } = parsed.data;
 		const resolved = readMemorySource(source);
+		const checkedAudience =
+			resolved === "user" && audience ? normalizeSceneAudience(audience) : null;
+		if (checkedAudience && !checkedAudience.ok) return null;
 		return {
 			id: input.id,
 			...rest,
+			...(checkedAudience?.ok ? { audience: checkedAudience.audience } : {}),
 			content: normalizeMemoryContent(content),
 			source: resolved,
 			/** Manual memories get no origin time, the same rule as the factory. */
@@ -674,6 +702,29 @@ export const chatMemorySyncCodec = {
 				record: {
 					...loser,
 					rev: mergedRev(local.rev, remote.rev),
+					serverVersion: local.serverVersion,
+				},
+				remoteWins: false,
+			};
+		/**
+		 * The second exception is `audience`: a version without it comes from a device that does not
+		 * know the field (it dropped the key when it edited the content), and absence must not widen
+		 * who may know a memory. The newer content is kept with the present audience; two present
+		 * audiences follow the clock like everything else.
+		 */
+		if (
+			winner.audience === undefined &&
+			loser.audience !== undefined &&
+			winner.source === "user" &&
+			winner.deletedAt === null &&
+			loser.deletedAt === null
+		)
+			return {
+				record: {
+					...winner,
+					audience: mergeMemoryAudience(winner.audience, loser.audience),
+					rev: mergedRev(local.rev, remote.rev),
+					dirty: local.dirty,
 					serverVersion: local.serverVersion,
 				},
 				remoteWins: false,

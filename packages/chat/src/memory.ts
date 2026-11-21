@@ -1,5 +1,6 @@
 import type { ChatSoftDelete, ChatStamp, ChatSyncMeta } from "./model.ts";
 import { freshChatSyncMeta } from "./model.ts";
+import { type ChatSceneAudience, requireSceneAudience } from "./scene.ts";
 
 /**
  * Memory is room-scoped state that the user writes directly. It is not conversation history:
@@ -104,9 +105,42 @@ export interface ChatMemory extends ChatSyncMeta, ChatSoftDelete {
 	 * Without this, a user who pinned everything would see the whole chat history pushed out.
 	 */
 	pinned: boolean;
+	/**
+	 * Which characters may know this memory, in a room that records scenes (`scene.ts`,
+	 * `prompt-scope.ts`). Only human-written memories carry it.
+	 *
+	 * **Absent means shared, and that is the compatibility policy, not a guess.** Before this field
+	 * every memory reached every turn, and the user wrote it to be used; withholding unmarked memories
+	 * the day a room gains its first scene would make them stop working with nothing on screen to
+	 * say why. An explicit `{ kind: "room" }` is a different fact from absence: the user widened it on
+	 * purpose. The merge rule depends on that difference (`chatMemorySyncCodec`): absence — a device
+	 * that does not know this field — never widens a present audience.
+	 *
+	 * Rooms without scenes ignore it (everything is shared history there).
+	 */
+	audience?: ChatSceneAudience;
 	/** ISO 8601. */
 	createdAt: string;
 	updatedAt: string;
+}
+
+/**
+ * The audience of a memory after one device holds a version without the field and another holds one
+ * with it: the present audience. A device that never knew the field cannot have meant to widen it.
+ * Two present audiences follow the newer write, like every other field.
+ */
+export function mergeMemoryAudience(
+	winner: ChatSceneAudience | undefined,
+	loser: ChatSceneAudience | undefined,
+): ChatSceneAudience | undefined {
+	return winner ?? loser;
+}
+
+/** The one stored spelling of a memory audience (members sorted and unique). */
+export function normalizeMemoryAudience(
+	audience: ChatSceneAudience | undefined,
+): ChatSceneAudience | undefined {
+	return audience ? requireSceneAudience(audience) : undefined;
 }
 
 /**
@@ -321,7 +355,16 @@ export interface CreateMemoryInput {
  */
 export type UpdateMemoryPatch = Partial<
 	Pick<ChatMemory, "content" | "pinned" | "source">
->;
+> & {
+	/**
+	 * Who may know this memory in a room with scenes. Only human-written memories take one; storage
+	 * ignores it for automatic memories. **There is no way back to absent**: making a restricted
+	 * memory shared again writes `{ kind: "room" }`. Absence loses every merge against a present
+	 * audience (`mergeMemoryAudience`), so a device that cleared the field would never reach the
+	 * others.
+	 */
+	audience?: ChatSceneAudience;
+};
 
 /**
  * The patch to pass to storage when the user directly edits an auto memory.

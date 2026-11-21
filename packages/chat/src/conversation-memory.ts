@@ -3,6 +3,11 @@ import { selectMemoriesForContext } from "./context.ts";
 import type { ChatMemory } from "./memory.ts";
 import type { ChatMessage } from "./model.ts";
 import {
+	type ChatMemoryOwner,
+	memoryAdmitted,
+	promptPerspective,
+} from "./prompt-scope.ts";
+import {
 	audienceKey,
 	type ChatPerspective,
 	type ChatScene,
@@ -875,13 +880,26 @@ export function recallRequestFor(
 	history: readonly Pick<ChatMessage, "role" | "content">[],
 	memories: readonly ChatMemory[],
 	userInput?: string,
+	/**
+	 * The scenes and memory owner the request will be scoped with (`prompt-scope.ts`), so "in the
+	 * memory block" means what the block will actually carry: a memory the boundary withholds is not
+	 * in context, and recall may still quote it where the perspective admits it.
+	 */
+	scope?: { scenes?: readonly ChatScene[]; memoryOwner?: ChatMemoryOwner },
 ): RecallRequest {
+	const perspective = promptPerspective(
+		scope?.scenes ? { scenes: scope.scenes } : null,
+	);
+	const owner = scope?.memoryOwner ?? "v2";
+	const inBlock = memories.filter((m) =>
+		memoryAdmitted(m, { perspective, owner }),
+	);
 	return {
 		query: recallQuery(history, userInput),
 		windowLength: history.length,
 		memories,
 		memoryIdsInContext: new Set(
-			selectMemoriesForContext(memories).map((m) => m.id),
+			selectMemoriesForContext(inBlock).map((m) => m.id),
 		),
 	};
 }
@@ -1030,33 +1048,59 @@ export function createIndexer(
 }
 
 /**
+ * Who maintains a conversation's long-term memory — one owner, never two. `afterstate` only when the
+ * afterstate backend actually runs (a port is present) and the room is assembled on this device: a
+ * prompt-protected room is assembled by the server, where no recall reaches it, so V2 keeps its
+ * summary there. `shadow` measures afterstate without changing anything, so V2 still owns memory.
+ */
+export function memoryOwnerFor(
+	runtime: ConversationMemoryRuntime | null | undefined,
+	options: { protectedRoom?: boolean } = {},
+): ChatMemoryOwner {
+	if (!runtime || options.protectedRoom) return "v2";
+	return effectiveMemoryBackend(runtime.mode, runtime.port) === "afterstate"
+		? "afterstate"
+		: "v2";
+}
+
+/**
  * What a local room's session gets from the memory backend, composed once for both apps: the
- * recall loader (absent in legacy mode) and `maintain`, which still wakes V2 maintenance (the
- * summary and extracted memories stay V2's: synced, authoritative records; the index does no model
- * calls) and, beside it, the indexer (which reads those records like any others).
+ * recall loader (absent in legacy mode), the memory owner, and `maintain`.
+ *
+ * **One automatic pipeline.** Under V2 ownership `maintain` wakes V2 maintenance (summary and
+ * extracted memories) and, in shadow mode, the indexer beside it. Under afterstate ownership it runs
+ * the indexer **only**: V2's paid maintenance is not woken, so no model call and no second cursor
+ * processes the same messages. V2's existing summary and auto memories stay in storage untouched —
+ * they are synced, authoritative records and the rollback path (switch the mode back and V2 resumes
+ * from its own frontier) — and the request leaves them out (`prompt-scope.ts`).
  */
 export function conversationMemoryHooks(
 	runtime: ConversationMemoryRuntime | null | undefined,
 	source: ConversationMemorySource,
 	roomId: string,
 	maintain?: () => void,
+	options: { protectedRoom?: boolean } = {},
 ): {
 	loadRecall?: (request: RecallRequest) => Promise<ChatRecallSnapshot | null>;
 	maintain?: () => void;
+	memoryOwner: ChatMemoryOwner;
 } {
+	const memoryOwner = memoryOwnerFor(runtime, options);
 	const loadRecall = runtime
 		? createRecallLoader(runtime, source, roomId)
 		: undefined;
 	const index = runtime ? createIndexer(runtime, source, roomId) : undefined;
+	const v2 = memoryOwner === "v2" ? maintain : undefined;
 	const both =
-		maintain && index
+		v2 && index
 			? () => {
-					maintain();
+					v2();
 					index();
 				}
-			: (maintain ?? index);
+			: (v2 ?? index);
 	return {
 		...(loadRecall ? { loadRecall } : {}),
 		...(both ? { maintain: both } : {}),
+		memoryOwner,
 	};
 }

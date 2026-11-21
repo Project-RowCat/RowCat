@@ -1,5 +1,6 @@
 import type { ChatGenerationRequest } from "@rowcat/contracts/chat";
 import type { ChatLoreDecision } from "./lore.ts";
+import type { PromptScopeReport } from "./prompt-scope.ts";
 
 /**
  * The structure of an assembled prompt: names attached to values the assembler already holds. The
@@ -146,6 +147,11 @@ export interface ChatPromptTrace {
 	 * guard.
 	 */
 	allAges: boolean;
+	/**
+	 * What the knowledge boundary left out of this turn (`prompt-scope.ts`), as counts. Optional so
+	 * traces built before the boundary existed still type-check.
+	 */
+	scope?: PromptScopeReport;
 }
 
 /**

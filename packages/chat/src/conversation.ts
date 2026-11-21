@@ -10,6 +10,7 @@ import type { GenerationPreference } from "./generation-preference.ts";
 import type { ChatMemory } from "./memory.ts";
 import type { ChatMessage } from "./model.ts";
 import type { ChatNarrationSettings } from "./narration.ts";
+import type { ChatMemoryOwner } from "./prompt-scope.ts";
 import type { ChatScene } from "./scene.ts";
 
 /**
@@ -100,6 +101,12 @@ export interface ConversationSession {
 	 */
 	loadRecall?: (request: RecallRequest) => Promise<ChatRecallSnapshot | null>;
 	/**
+	 * Who maintains this conversation's long-term memory (`conversationMemoryHooks`). The generation
+	 * passes it into the request so the knowledge boundary leaves V2's summary and auto memories out
+	 * when afterstate owns memory (`prompt-scope.ts`). Absent means `v2`.
+	 */
+	memoryOwner?: ChatMemoryOwner;
+	/**
 	 * Characters the user has introduced in this conversation. A conversation with none returns an
 	 * empty array.
 	 *
@@ -112,7 +119,7 @@ export interface ConversationSession {
 	/**
 	 * Who witnessed which part of this conversation (`scene.ts`). Optional: sessions without a room
 	 * (replay, runtime) have none, and a room without scenes returns an empty array; either way the
-	 * request carries no scene marks and is exactly what it was before scenes existed. Same snapshot
+	 * request is not scene-scoped and is exactly what it was before scenes existed. Same snapshot
 	 * rule as memories.
 	 */
 	loadScenes?(): Promise<ChatScene[]>;
