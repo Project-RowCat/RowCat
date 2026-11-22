@@ -481,7 +481,11 @@ export function recallBlock(
 			return `- [${[earlier, "예전에 AI가 쓴 요약"].filter(Boolean).join(" · ")}] ${text}`;
 		if (p.layer === "ooc")
 			return `- [${[date, earlier, "이용자의 대화 밖 메모"].filter(Boolean).join(" · ")}] ${text}`;
-		const who = p.speaker ?? (p.role === "user" ? "이용자" : "인물");
+		const who =
+			p.speaker
+				?.replace(/[\s\p{Cc}\p{Cf}]+/gu, " ")
+				.replace(/[[\]]/g, "")
+				.trim() || (p.role === "user" ? "이용자" : "인물");
 		return `- [${[date, earlier, who].filter(Boolean).join(" · ")}] ${text}`;
 	});
 	return [RECALL_HEADER, ...lines, RECALL_FOOTER].join("\n");

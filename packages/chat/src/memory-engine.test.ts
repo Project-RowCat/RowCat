@@ -850,7 +850,7 @@ describe.skipIf(!hasAfterstateBridge())(
 						}),
 					),
 				).toContain("Berlin");
-				expect(FACTS_REVISION_PREFIX).toBe("f1~");
+				expect(FACTS_REVISION_PREFIX).toBe("f2~");
 			} finally {
 				await engine.close();
 			}

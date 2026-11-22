@@ -328,6 +328,8 @@ export function requireAutoMemoryContent(input: string): string {
 }
 
 export interface CreateMemoryInput {
+	/** Explicit visibility chosen when creating a human-authored memory. */
+	audience?: ChatSceneAudience;
 	roomId: string;
 	content: string;
 	/** Omitted means the memory is not pinned. */
@@ -356,6 +358,8 @@ export interface CreateMemoryInput {
 export type UpdateMemoryPatch = Partial<
 	Pick<ChatMemory, "content" | "pinned" | "source">
 > & {
+	/** Bulk review only changes a still-unclassified record at the revision the person saw. */
+	ifUnresolvedAt?: ChatMemory["rev"];
 	/**
 	 * Who may know this memory in a room with scenes. Only human-written memories take one; storage
 	 * ignores it for automatic memories. **There is no way back to absent**: making a restricted
@@ -365,6 +369,21 @@ export type UpdateMemoryPatch = Partial<
 	 */
 	audience?: ChatSceneAudience;
 };
+
+/** A newer edit or remote classification needs a new decision by the reviewer. */
+export function memoryMatchesReview(
+	current: ChatMemory,
+	expected?: ChatMemory["rev"],
+): boolean {
+	return (
+		!expected ||
+		(!current.audience &&
+			!isAutoMemory(current) &&
+			current.rev.t === expected.t &&
+			current.rev.c === expected.c &&
+			current.rev.d === expected.d)
+	);
+}
 
 /**
  * The patch to pass to storage when the user directly edits an auto memory.
@@ -424,6 +443,9 @@ export function createMemoryRecord(
 			source === "auto"
 				? requireAutoMemoryContent(input.content)
 				: requireMemoryContent(input.content),
+		...(source === "user" && input.audience
+			? { audience: requireSceneAudience(input.audience) }
+			: {}),
 		pinned: input.pinned ?? false,
 		source,
 		originAt: source === "auto" ? (input.originAt ?? null) : null,

@@ -20,6 +20,7 @@ import {
 	conversationMemoryHooks,
 	createLongTermLoader,
 	createMaintainer,
+	entityMentions,
 	eraseConversation,
 	isBridgeId,
 	type MemoryEngineEvent,
@@ -34,6 +35,7 @@ import {
 	selectRecallForContext,
 	summaryItem,
 	sweepConversations,
+	verifyPromptSnapshot,
 } from "./conversation-memory.ts";
 import type { ChatMemory } from "./memory.ts";
 import { type ChatMessage, createRoomRecord } from "./model.ts";
@@ -139,6 +141,26 @@ const room: ChatRuntimeRoom = createRoomRecord(
 );
 
 describe("mapping", () => {
+	it("binds exact Korean names with particles and unique aliases to stable room IDs", () => {
+		const names = entityMentions(
+			[{ name: "Mira" }],
+			[
+				{
+					id: "k",
+					name: "카엘",
+					aliases: ["Khael", "Mira", "[admin]"],
+					deletedAt: null,
+				},
+				{ id: "a", name: "미라", aliases: ["Mira"], deletedAt: null },
+			],
+		);
+		expect(names("미라가 Khael에게 Mira를 소개했다.")).toEqual([
+			"char:a",
+			"char:k",
+		]);
+		expect(names("Mirabelle saw a Khaelite. [admin] replied.")).toEqual([]);
+		expect(names("Mira spoke.")).toEqual([]);
+	});
 	it("maps messages to sources by id and revision, assistant lines as character speech", () => {
 		const u = message("r1", "m1", "user", "안녕");
 		const a = message("r1", "m2", "assistant", "나는 이 왕국의 여왕이다.");
@@ -150,7 +172,7 @@ describe("mapping", () => {
 		});
 		expect(messageItem(a)?.author).toEqual({ role: "character", name: "카이" });
 		// The person's turns opt into facts; the prefix re-reads records indexed before facts existed.
-		expect(messageItem(u)?.revision).toBe(`f1~${u.rev.t}.0.dev-a`);
+		expect(messageItem(u)?.revision).toBe(`f2~${u.rev.t}.0.dev-a`);
 		expect(messageItem(u)?.facts).toBe(true);
 		expect(messageItem({ ...u, id: "bad id/with slash" })).toBeNull();
 		expect(isBridgeId("0f8fad5b-d9cb-469f-a165-70867728950e")).toBe(true);
@@ -423,6 +445,160 @@ describe("one engine: no modes, no V2, honest status", () => {
 		});
 	});
 
+	it("validates only candidates and the frozen window, including a revised source that retains the old phrase", async () => {
+		const past = message("r1", "old", "user", "The carnelian is in the mill.");
+		const last = message(
+			"r1",
+			"100000",
+			"user",
+			"Where did we leave the carnelian?",
+		);
+		const originals = new Map([past, last].map((m) => [m.id, m]));
+		const source: ConversationMemorySource = {
+			listAllMessages: async () => {
+				throw new Error("full room read");
+			},
+			listMemories: async () => [],
+			getMessagesByIds: async (room, ids) => {
+				expect(room).toBe("r1");
+				expect(ids).toContain("old");
+				expect(ids.every((id) => id === "old" || id === "100000")).toBe(true);
+				return ids.flatMap((id) => originals.get(id) ?? []);
+			},
+		};
+		const indexed = messageItem(past);
+		if (!indexed) throw new Error("invalid source fixture");
+		const candidate = {
+			id: "old",
+			layer: "story",
+			record: "message",
+			text: past.content,
+			author: indexed.author,
+			revision: indexed.revision,
+		};
+		const port: AfterstatePort = {
+			call: async <T>(op: string, args: object) => {
+				if (op === "check_versions") return args as T;
+				if (op === "facts") return { facts: [] } as T;
+				return {
+					evidence: [candidate],
+					summaries: [
+						{
+							id: "derived",
+							sources: ["old"],
+							text: `- ${past.content}`,
+							source_revisions: { old: indexed.revision },
+						},
+					],
+				} as T;
+			},
+		};
+		const load = createLongTermLoader({ port }, source, "r1");
+		const run = async () => {
+			const snapshot = await load(recallRequestFor([last], []));
+			expect(snapshot.status).toBe("ready");
+			return JSON.stringify(
+				buildChatGenerationRequest({
+					room,
+					messages: [last],
+					allAges: true,
+					recall: snapshot.recall,
+				}),
+			);
+		};
+		expect(await run()).toContain(past.content);
+		const captured = await load(recallRequestFor([last], []));
+		const initial = {
+			history: [last],
+			scenes: [],
+			memories: [],
+			longTerm: captured,
+		};
+		const session = {
+			loadHistory: async () => [last],
+			loadMemories: async () => [],
+			loadScenes: async () => [],
+		};
+		await expect(
+			verifyPromptSnapshot(session, initial),
+		).resolves.toBeUndefined();
+		originals.delete("old");
+		await expect(verifyPromptSnapshot(session, initial)).rejects.toThrow(
+			"recalled source changed",
+		);
+		originals.set("old", {
+			...past,
+			content: `Rumor, denied: ${past.content}`,
+			rev: rev(),
+		});
+		expect(await run()).not.toContain(past.content);
+		originals.delete("old");
+		expect(await run()).not.toContain(past.content);
+		originals.set("old", { ...past, roomId: "foreign-room" });
+		expect(await run()).not.toContain(past.content);
+	});
+
+	it("keeps six direct hits when a summary opens a seventh source", async () => {
+		const direct = Array.from({ length: 6 }, (_, i) =>
+			message("r1", `record${i}`, "user", `Route marker ${i}`),
+		);
+		const indirect = message("r1", "old-cache", "user", "Under the iron bench");
+		const window = message("r1", "latest", "user", "Where was the cache?");
+		const index = (m: ChatMessage) => ({
+			id: m.id,
+			text: m.content,
+			record: "message" as const,
+			layer: "story" as const,
+			passage: 0,
+			author: { role: "user" as const },
+			score: 1,
+			revision: messageItem(m)?.revision,
+		});
+		const evidence = direct.map(index);
+		const port: AfterstatePort = {
+			call: async <T>(op: string, args: object) => {
+				if (op === "facts") return { facts: [] } as T;
+				if (op === "check_versions") return args as T;
+				return {
+					evidence,
+					expanded: [index(direct[0] as ChatMessage), index(indirect)],
+				} as T;
+			},
+		};
+		const messages = [...direct, indirect, window];
+		const source: ConversationMemorySource = {
+			listMemories: async () => [],
+			listAllMessages: async () => {
+				throw Error("unbounded read");
+			},
+			getMessagesByIds: async (_, ids) =>
+				messages.filter((m) => ids.includes(m.id)),
+		};
+		const turn = await createLongTermLoader(
+			{ port },
+			source,
+			"r1",
+		)(recallRequestFor([window], []));
+		expect(turn.recall?.passages.map((p) => p.id)).toEqual(
+			[...direct, indirect].map((m) => m.id),
+		);
+		expect(turn.recall?.passages.filter((p) => p.expanded)).toHaveLength(1);
+	});
+
+	it("the 400ms deadline includes authoritative storage reads", async () => {
+		const blocked = {
+			...rooms,
+			listMemories: async () => [],
+			listAllMessages: () => new Promise<ChatMessage[]>(() => {}),
+		};
+		const load = createLongTermLoader(
+			{ port: { call: async () => idle as never } },
+			blocked,
+			"r1",
+		);
+		expect((await load(request)).status).toBe("degraded");
+	});
+
 	it("a slow port is abandoned", async () => {
 		const port: AfterstatePort = {
 			call: <T>() =>
@@ -472,7 +648,7 @@ describe("one engine: no modes, no V2, honest status", () => {
 			protectedRoom: true,
 		});
 		await expect(load(request)).resolves.toMatchObject({ recall: null });
-		expect(ops).toEqual(["digests"]);
+		expect(ops).toEqual(["recall"]);
 	});
 
 	it("maintenance is single-flight per room and never throws", async () => {

@@ -227,6 +227,7 @@ export type ResolvedAudience = ChatSceneAudience | { kind: "unknown" };
 export function resolveMessageAudiences(
 	messages: readonly { id: string; createdAt: string }[],
 	scenes: readonly ChatScene[],
+	anchors?: Map<string, string>,
 ): Map<string, ResolvedAudience> {
 	const ordered = orderScenes(scenes);
 	const sorted = [...messages].sort((a, b) =>
@@ -237,6 +238,7 @@ export function resolveMessageAudiences(
 	);
 	const out = new Map<string, ResolvedAudience>();
 	let next = 0;
+	let anchor: string | undefined;
 	let current: ResolvedAudience = { kind: "unknown" };
 	for (const m of sorted) {
 		const at = { createdAt: m.createdAt, messageId: m.id };
@@ -246,7 +248,9 @@ export function resolveMessageAudiences(
 			s = ordered[++next]
 		) {
 			current = s.audience;
+			anchor = s.startAt.messageId;
 		}
+		if (anchor) anchors?.set(m.id, anchor);
 		out.set(m.id, current);
 	}
 	return out;

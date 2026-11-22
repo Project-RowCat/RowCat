@@ -94,7 +94,10 @@ export function memoryAdmission(
 	context: { perspective: ChatPerspective | null; restricted: boolean },
 ): MemoryAdmission {
 	if (memory.source === "auto") return "auto";
-	if (!context.perspective) return "admitted";
+	if (!context.perspective)
+		return !memory.audience || memory.audience.kind === "room"
+			? "admitted"
+			: "outside-audience";
 	if (!memory.audience) return context.restricted ? "unresolved" : "admitted";
 	return perspectiveAdmits(context.perspective, memory.audience)
 		? "admitted"

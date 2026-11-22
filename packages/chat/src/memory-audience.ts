@@ -47,7 +47,10 @@ export function memoryVisibility(
 	scenes: readonly ChatScene[],
 	cast: MemoryAudienceCast,
 ): MemoryVisibility {
-	if (isAutoMemory(memory) || orderScenes(scenes).length === 0)
+	if (
+		isAutoMemory(memory) ||
+		(!memory.audience && orderScenes(scenes).length === 0)
+	)
 		return { state: "not-applicable" };
 	const audience = memory.audience;
 	if (!audience)

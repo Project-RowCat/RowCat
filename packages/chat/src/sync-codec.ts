@@ -729,6 +729,31 @@ export const chatMemorySyncCodec = {
 				},
 				remoteWins: false,
 			};
+		// Two explicit classifications racing from offline devices can disagree. Keep the
+		// intersection until a user who has seen it deliberately reclassifies the note.
+		if (
+			local.audience &&
+			remote.audience &&
+			!sameAudience(local.audience, remote.audience) &&
+			winner.source === "user" &&
+			!local.deletedAt &&
+			!remote.deletedAt &&
+			(local.dirty === 1 || compareRev(local.rev, remote.rev) === 0)
+		) {
+			const audience = mergeSceneAudience(local.audience, remote.audience);
+			const matchesRemote =
+				remoteWins && sameAudience(audience, remote.audience);
+			return {
+				record: {
+					...winner,
+					audience,
+					rev: mergedRev(local.rev, remote.rev),
+					dirty: local.dirty,
+					serverVersion: local.serverVersion,
+				},
+				remoteWins: matchesRemote,
+			};
+		}
 		return {
 			record: remoteWins
 				? { ...remote, dirty: local.dirty, serverVersion: local.serverVersion }
@@ -1060,6 +1085,7 @@ const SceneData = z.object({
  */
 export const CHAT_SYNC_CONCURRENT_MERGE_TYPES: ReadonlySet<string> = new Set([
 	"chat.scene",
+	"chat.memory",
 ]);
 
 export const chatSceneSyncCodec = {

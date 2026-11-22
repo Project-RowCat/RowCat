@@ -84,6 +84,16 @@ export interface ChatStore extends ChatMemoryStore, ChatPersonaStore {
 	 * live records with its derived index in the background.
 	 */
 	listAllMessages(roomId: string): Promise<ChatMessage[]>;
+	/** Targeted live evidence and bounded continuation lookups for native memory validation. */
+	getMessagesByIds?(
+		roomId: string,
+		ids: readonly string[],
+	): Promise<ChatMessage[]>;
+	listFollowingMessages?(
+		roomId: string,
+		id: string,
+		limit: number,
+	): Promise<ChatMessage[]>;
 
 	/**
 	 * How many live messages the room has (0 for a missing or deleted room). The history window is a

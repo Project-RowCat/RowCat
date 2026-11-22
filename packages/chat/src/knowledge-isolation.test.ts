@@ -297,14 +297,14 @@ describe("chat.scene sync merge", () => {
 describe("indexing carries the audience", () => {
 	it("a message's revision and item change when its scene changes, and not otherwise", () => {
 		const m = message("m1", 1, "user", "text");
-		expect(messageItem(m)?.revision).toBe("f1~1001.0.a");
+		expect(messageItem(m)?.revision).toBe("f2~1001.0.a");
 		expect(messageItem(m)?.audience).toBeUndefined();
 		const p = messageItem(m, P("user", "char:a"));
 		expect(p?.audience).toEqual({
 			kind: "participants",
 			members: ["char:a", "user"],
 		});
-		expect(p?.revision).not.toBe("f1~1001.0.a");
+		expect(p?.revision).not.toBe("f2~1001.0.a");
 		expect(messageItem(m, { kind: "room" })?.revision).not.toBe(p?.revision);
 	});
 });
