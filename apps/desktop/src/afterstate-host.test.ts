@@ -70,6 +70,20 @@ describe.skipIf(!existsSync(BRIDGE))(
 			expect(readdirSync(dir).filter((f) => f.endsWith(".db"))).toHaveLength(2);
 		});
 
+		it("forwards the native hierarchy and source-validation operations", async () => {
+			for (const op of ["consolidate", "digests", "facts"])
+				await expect(
+					ipc.call(from(WEB), "member-memory", op, { conversation: "room-1" }),
+				).resolves.toBeDefined();
+			await expect(
+				ipc.call(from(WEB), "member-memory", "check_versions", {
+					versions: { item: "v1" },
+				}),
+			).resolves.toEqual({
+				versions: { item: expect.stringMatching(/^[a-f0-9]{12}$/) },
+			});
+		});
+
 		it("refuses other origins, unknown ops and malformed arguments", async () => {
 			await expect(
 				ipc.call(from("http://localhost:9999/"), "member-a", "status", {}),
@@ -195,7 +209,8 @@ rl.on("close", () => process.exit(0));`;
 	});
 
 	it("refuses an engine that speaks another protocol and leaves no process", async () => {
-		const hosts = new AfterstateHosts(oldProtocol, store, quick);
+		// Exercise the normal handshake deadline here. The silent-child test below uses the short timer.
+		const hosts = new AfterstateHosts(oldProtocol, store);
 		const ipc = afterstateIpc(hosts, () => WEB);
 		await expect(ipc.call(from(WEB), "m", "status", {})).rejects.toThrow(
 			"afterstate open: incompatible",

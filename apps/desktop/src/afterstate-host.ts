@@ -41,6 +41,10 @@ export const AFTERSTATE_PROTOCOL = "afterstate-bridge/1";
 
 export const AFTERSTATE_OPS = new Set([
 	"status",
+	"consolidate",
+	"facts",
+	"digests",
+	"check_versions",
 	"ingest",
 	"recall",
 	"reconcile",
