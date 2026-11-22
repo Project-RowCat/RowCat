@@ -41,6 +41,7 @@ import {
 	markCascadeDeleted,
 	markLocalDelete,
 	markLocalUpdate,
+	memoryMatchesReview,
 	mergeMemorySource,
 	nextSummaryEpoch,
 	normalizeCharacterAliases,
@@ -375,6 +376,35 @@ export function createChatStore(db: LocalDb): ChatStore {
 			return page.reverse();
 		},
 
+		async getMessagesByIds(roomId, ids) {
+			return db.transaction("r", db.rooms, db.messages, async () => {
+				if (!(await liveRoom(roomId))) return [];
+				const rows = await db.messages.bulkGet([...ids]);
+				return rows.filter(
+					(row): row is ChatMessage =>
+						row !== undefined && row.roomId === roomId && isLiveChatRecord(row),
+				);
+			});
+		},
+
+		async listFollowingMessages(roomId, id, limit) {
+			if (limit <= 0 || !(await liveRoom(roomId))) return [];
+			const cursor = await db.messages.get(id);
+			if (!cursor || cursor.roomId !== roomId || !isLiveChatRecord(cursor))
+				return [];
+			return db.messages
+				.where("[roomId+createdAt+id]")
+				.between(
+					[roomId, cursor.createdAt, id],
+					[roomId, MAX_COMPONENT],
+					false,
+					false,
+				)
+				.filter(isLiveChatRecord)
+				.limit(limit)
+				.toArray();
+		},
+
 		async listAllMessages(roomId: string): Promise<ChatMessage[]> {
 			// Same reason as above: a deleted room returns empty. Search does not revive deleted
 			// conversations either.
@@ -395,16 +425,17 @@ export function createChatStore(db: LocalDb): ChatStore {
 		},
 
 		async countMessages(roomId: string): Promise<number> {
-			if (!(await liveRoom(roomId))) return 0;
-			/*
-			 * Counts on the same composite index without materializing message bodies into the turn.
-			 * Tombstones stay in the table, so the count filters them like every other read.
-			 */
-			return db.messages
-				.where("[roomId+createdAt+id]")
-				.between([roomId], [roomId, MAX_COMPONENT], true, false)
-				.filter(isLiveChatRecord)
-				.count();
+			return db.transaction("r", db.rooms, db.messages, async () => {
+				if (!(await liveRoom(roomId))) return 0;
+				const [total, deleted] = await Promise.all([
+					db.messages.where("roomId").equals(roomId).count(),
+					db.messages
+						.where("[roomId+deletedAt]")
+						.between([roomId], [roomId, MAX_COMPONENT], true, false)
+						.count(),
+				]);
+				return total - deleted;
+			});
 		},
 
 		async appendMessage(input: AppendMessageInput): Promise<ChatMessage> {
@@ -910,6 +941,7 @@ export function createChatStore(db: LocalDb): ChatStore {
 				 * structural path to revive a deleted room through a memory edit.
 				 */
 				if (!current || !isLiveChatRecord(current)) return;
+				if (!memoryMatchesReview(current, patch.ifUnresolvedAt)) return;
 				const source = mergeMemorySource(current.source, patch.source);
 				const next: ChatMemory = {
 					...current,

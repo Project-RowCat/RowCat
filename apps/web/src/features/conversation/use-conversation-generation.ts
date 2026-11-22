@@ -20,6 +20,7 @@ import {
 	resolveGenerationOutcome,
 	resolveNarrationExecution,
 	safeChatRequestDebug,
+	verifyPromptSnapshot,
 } from "@rowcat/chat";
 import { canUseByoProvider, canViewAdultContent } from "@rowcat/domain";
 import { ensurePromptPack } from "@rowcat/prompt-packs";
@@ -612,16 +613,6 @@ export function useConversationGeneration(
 					 * it answers `unavailable` with nothing, and the turn goes out on the recent window and the
 					 * memories the person wrote. No other engine stands in.
 					 */
-					const longTerm = session.loadLongTermMemory
-						? await session.loadLongTermMemory(
-								recallRequestFor(history, memories, undefined, { scenes }),
-							)
-						: null;
-					const recall = longTerm?.recall ?? null;
-					const consolidated = longTerm?.consolidated
-						? consolidatedText(longTerm.consolidated)
-						: "";
-					const facts = longTerm?.facts ? factsText(longTerm.facts) : "";
 
 					/**
 					 * Step ②-e: secure this conversation's routing key. Some conversations have none.
@@ -762,6 +753,16 @@ export function useConversationGeneration(
 							target: execution.target,
 						}),
 					});
+					const longTerm = session.loadLongTermMemory
+						? await session.loadLongTermMemory(
+								recallRequestFor(history, memories, undefined, { scenes }),
+							)
+						: null;
+					const recall = longTerm?.recall ?? null;
+					const consolidated = longTerm?.consolidated
+						? consolidatedText(longTerm.consolidated)
+						: "";
+					const facts = longTerm?.facts ? factsText(longTerm.facts) : "";
 					const assemblyInput = {
 						room: session.runtime,
 						messages: history,
@@ -807,6 +808,12 @@ export function useConversationGeneration(
 					const promptGuardsEnabled = debug
 						? await readPromptGuardsEnabled(client, controller.signal)
 						: undefined;
+					await verifyPromptSnapshot(session, {
+						history,
+						scenes,
+						memories,
+						longTerm,
+					});
 					const plan = planChatGeneration({
 						assembly: {
 							...assemblyInput,

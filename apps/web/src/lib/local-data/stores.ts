@@ -130,6 +130,8 @@ const CHAT_READS: ReadonlySet<keyof ChatStore & string> = new Set([
 	/** The history window counts the room on every turn; missed here, each turn would wake sync. */
 	"countMessages",
 	"listAllMessages",
+	"getMessagesByIds",
+	"listFollowingMessages",
 	"listMemories",
 	/** This entry was missing. Each time a chat room subscribed to its characters, sync woke once. */
 	"listCharacters",

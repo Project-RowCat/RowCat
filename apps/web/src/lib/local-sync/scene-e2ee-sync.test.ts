@@ -332,6 +332,51 @@ async function storyRoom(chat: ChatStore) {
 // ── (1) ─────────────────────────────────────────────────────────────────────────────────────────
 
 describe("(1) a room with messages and scenes crosses the relay encrypted", () => {
+	it("syncs reviewed audiences without widening a revised note or rewriting the original text", async () => {
+		const { relay, a, b } = await pairedPeers();
+		const story = await storyRoom(a.chat);
+		const first = await a.chat.createMemory({
+			roomId: story.room.id,
+			content: "First surviving note",
+		});
+		const stale = await a.chat.createMemory({
+			roomId: story.room.id,
+			content: "Private carnelian",
+		});
+		const removed = await a.chat.createMemory({
+			roomId: story.room.id,
+			content: "Removed note",
+		});
+		const classified = await a.chat.createMemory({
+			roomId: story.room.id,
+			content: "Narrator carnelian",
+			audience: { kind: "narrator" },
+		});
+		await sync(a, b);
+		await b.chat.updateMemory(stale.id, { audience: { kind: "narrator" } });
+		await b.chat.deleteMemory(removed.id);
+		await converge(a, b);
+		for (const note of [first, stale, removed])
+			await a.chat.updateMemory(note.id, {
+				audience: { kind: "room" },
+				ifUnresolvedAt: note.rev,
+			});
+		await sync(a, b);
+		const notes = await b.chat.listMemories(story.room.id);
+		expect(notes).toHaveLength(3);
+		expect(notes.find((n) => n.id === first.id)).toMatchObject({
+			content: first.content,
+			audience: { kind: "room" },
+		});
+		for (const n of [stale, classified])
+			expect(notes.find((row) => row.id === n.id)).toMatchObject({
+				content: n.content,
+				audience: { kind: "narrator" },
+			});
+		expect(notes.some((row) => row.id === removed.id)).toBe(false);
+		expect(relayHas(relay.server, "carnelian")).toBe(false);
+	});
+
 	it("B decrypts exactly A's records; the relay holds only envelope output", async () => {
 		const { relay, a, b } = await pairedPeers();
 		const story = await storyRoom(a.chat);

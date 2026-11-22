@@ -216,6 +216,12 @@ export const chat: Messages["chat"] = {
 			choose: "인물 고르기…",
 			narrator: "어떤 인물도 모름",
 		},
+		reviewUnresolved: "미분류 기억 검토",
+		selectedAudience: "선택한 기억을 아는 대상",
+		applySelected: "선택한 기억에 적용",
+		oocHint: "이야기 밖 지시는 대화방의 사용자 노트에 적어 주세요.",
+		newAudience: "이 창에서 추가하는 기억의 공개 대상",
+		leaveUnclassified: "미분류로 두기",
 		chooseLabel: "이 기억을 아는 인물",
 		status: {
 			unavailable:

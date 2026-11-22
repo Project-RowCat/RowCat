@@ -694,6 +694,12 @@ export class LocalDb extends Dexie {
 		this.version(25).stores({
 			chatScenes: "id, roomId, [dirty+id]",
 		});
+		// IndexedDB omits compound keys containing null. This index contains only tombstones,
+		// so generation can count live messages without loading any transcript bodies.
+		this.version(26).stores({
+			messages:
+				"id, roomId, [roomId+createdAt+id], [dirty+id], [roomId+deletedAt]",
+		});
 
 		/**
 		 * A new database skips the upgrade function, so the sync state row must be created here. Dexie

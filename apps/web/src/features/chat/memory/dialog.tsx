@@ -6,9 +6,11 @@ import {
 	ChatRoomMissingError,
 	type ChatSceneAudience,
 	type ChatStore,
+	createMaintainer,
 	isAutoMemory,
 	type MemoryVisibility,
 	type MemoryVisibilityOption,
+	memoryMatchesReview,
 	memoryStatusFor,
 	memoryVisibility,
 	memoryVisibilityOptions,
@@ -19,6 +21,7 @@ import {
 	unresolvedMemoryCount,
 } from "@rowcat/chat";
 import { Button } from "@rowcat/ui-web/components/button";
+import { Checkbox } from "@rowcat/ui-web/components/checkbox";
 import {
 	Dialog,
 	DialogContent,
@@ -127,10 +130,8 @@ export function MemoryDialog({
 	 * Whether long-term memory works here, stated once (`memoryStatusFor`). `ready` stays quiet: a
 	 * line saying "everything is fine" is a line nobody reads twice.
 	 */
-	const memoryStatus = memoryStatusFor(
-		useMemoryRuntime(viewerId, store),
-		room.id,
-	);
+	const runtime = useMemoryRuntime(viewerId, store);
+	const memoryStatus = memoryStatusFor(runtime, room.id);
 	/**
 	 * Scenes and the cast decide each row's visibility and its choices (`memory-audience.ts`). Until all
 	 * three have answered no row draws them: a choice naming nobody before the cast arrives, or a state
@@ -157,6 +158,20 @@ export function MemoryDialog({
 	const unresolved = scenes.loading
 		? 0
 		: unresolvedMemoryCount(items, scenes.items);
+	const [reviewing, setReviewing] = useState(false);
+	const [selected, setSelected] = useState<ChatMemory[]>([]);
+	const reviewed = selected.filter((old) =>
+		items.some(
+			(current) =>
+				current.id === old.id && memoryMatchesReview(current, old.rev),
+		),
+	);
+	const [newAudience, setNewAudience] = useState<ChatSceneAudience>();
+	const [choosingDefault, setChoosingDefault] = useState(false);
+	const cast =
+		roomState.status === "ready" && !characters.loading && !scenes.loading
+			? sceneCast(roomState.room, characters.items)
+			: null;
 	const [adding, setAdding] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
@@ -194,6 +209,7 @@ export function MemoryDialog({
 		setError(null);
 		try {
 			await perform(store);
+			createMaintainer(runtime, store, room.id)?.();
 			return true;
 		} catch (failure) {
 			if (failure instanceof ChatRoomMissingError) {
@@ -284,7 +300,11 @@ export function MemoryDialog({
 											 * and holding the value here would keep the same memory in two places.
 											 */
 											async (chat) => {
-												await chat.createMemory({ roomId: room.id, content });
+												await chat.createMemory({
+													roomId: room.id,
+													content,
+													audience: newAudience,
+												});
 											},
 											memorySaveFailureMessage(),
 										);
@@ -328,6 +348,130 @@ export function MemoryDialog({
 						</p>
 					)}
 
+					{cast &&
+						unresolved > 0 &&
+						(reviewing ? (
+							<fieldset className="flex flex-col gap-2">
+								<legend>{t("memory.reviewUnresolved")}</legend>
+								{items
+									.filter((item) => !item.audience && !isAutoMemory(item))
+									.map((item) => (
+										<label
+											key={item.id}
+											htmlFor={`${errorId}-review-${item.id}`}
+											className="flex items-start gap-2"
+										>
+											<Checkbox
+												id={`${errorId}-review-${item.id}`}
+												checked={reviewed.some((s) => s.id === item.id)}
+												disabled={pending}
+												onCheckedChange={(checked) =>
+													setSelected((rows) => [
+														...rows.filter((s) => s.id !== item.id),
+														...(checked === true ? [item] : []),
+													])
+												}
+											/>
+											{item.content}
+										</label>
+									))}
+								{reviewed.length > 0 && (
+									<AudiencePicker
+										cast={cast}
+										kinds
+										initial={{ kind: "participants", members: [] }}
+										label={t("memory.selectedAudience")}
+										submitLabel={t("memory.applySelected")}
+										pending={pending}
+										onCancel={() => {
+											setReviewing(false);
+											setSelected([]);
+										}}
+										onSubmit={async (audience) => {
+											const ok = await run(async (chat) => {
+												for (const item of reviewed)
+													await chat.updateMemory(item.id, {
+														audience,
+														ifUnresolvedAt: item.rev,
+													});
+											}, memorySaveFailureMessage());
+											if (ok) {
+												setReviewing(false);
+												setSelected([]);
+											}
+										}}
+									/>
+								)}
+								{reviewed.length === 0 && (
+									<Button
+										type="button"
+										variant="outline"
+										onClick={() => setReviewing(false)}
+									>
+										{t("common:actions.cancel")}
+									</Button>
+								)}
+							</fieldset>
+						) : (
+							<Button
+								type="button"
+								variant="outline"
+								onClick={() => {
+									setSelected([]);
+									setReviewing(true);
+								}}
+							>
+								{t("memory.reviewUnresolved")}
+							</Button>
+						))}
+					{adding && cast && scenes.items.length > 0 && (
+						<div className="flex flex-col gap-2">
+							{choosingDefault ? (
+								<AudiencePicker
+									kinds
+									cast={cast}
+									initial={newAudience ?? { kind: "participants", members: [] }}
+									pending={pending}
+									label={t("memory.newAudience")}
+									note={t("memory.oocHint")}
+									submitLabel={t("common:actions.save")}
+									onCancel={() => setChoosingDefault(false)}
+									onSubmit={(value) => {
+										setNewAudience(value);
+										setChoosingDefault(false);
+									}}
+								/>
+							) : (
+								<Button
+									type="button"
+									variant="outline"
+									onClick={() => setChoosingDefault(true)}
+								>
+									{t("memory.newAudience")}
+								</Button>
+							)}
+							{newAudience && (
+								<>
+									{roomState.status === "ready" && (
+										<VisibilityLine
+											visibility={memoryVisibility(
+												{ source: "user", audience: newAudience },
+												scenes.items,
+												{ room: roomState.room, characters: characters.items },
+											)}
+										/>
+									)}
+									<Button
+										type="button"
+										variant="outline"
+										onClick={() => setNewAudience(undefined)}
+									>
+										{t("memory.leaveUnclassified")}
+									</Button>
+								</>
+							)}
+						</div>
+					)}
 					{full && !adding && (
 						<p className="text-sm text-muted-foreground">
 							{t("memory.full", { max: CHAT_MEMORY_MAX_PER_ROOM })}

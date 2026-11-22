@@ -222,6 +222,12 @@ export const chat = {
 			choose: "Choose characters…",
 			narrator: "No character",
 		},
+		reviewUnresolved: "Review unclassified memories",
+		selectedAudience: "Choose who knows the selected memories",
+		applySelected: "Apply to selected memories",
+		oocHint: "Use the room’s user note for out-of-character instructions.",
+		newAudience: "Audience for new memories in this dialog",
+		leaveUnclassified: "Leave unclassified",
 		chooseLabel: "Characters who know this memory",
 		status: {
 			unavailable:
