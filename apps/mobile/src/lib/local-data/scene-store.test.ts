@@ -58,6 +58,52 @@ const firstMessage = async (roomId: string, content = "Hello") => {
 };
 
 describe("Scene", () => {
+	it("targets live source ids and ordered successors only within the requested room", async () => {
+		const store = chat;
+		const room = await newRoom();
+		const other = await newRoom();
+		const one = await store.appendMessage({
+			roomId: room.id,
+			role: "user",
+			content: "first",
+		});
+		const two = await store.appendMessage({
+			roomId: room.id,
+			role: "user",
+			content: "second",
+		});
+		const secret = await store.appendMessage({
+			roomId: other.id,
+			role: "user",
+			content: "private",
+		});
+		const ordered = await store.listAllMessages(room.id);
+		if (
+			!store.getMessagesByIds ||
+			!store.listFollowingMessages ||
+			!ordered[0] ||
+			!ordered[1]
+		)
+			throw new Error("missing evidence lookup or fixture");
+		expect(
+			(
+				await store.getMessagesByIds(room.id, [one.id, secret.id, "missing"])
+			).map((m) => m.id),
+		).toEqual([one.id]);
+		expect(
+			(await store.listFollowingMessages(room.id, ordered[0].id, 1)).map(
+				(m) => m.id,
+			),
+		).toEqual([ordered[1].id]);
+		expect(await store.countMessages(room.id)).toBe(2);
+		expect(await store.listFollowingMessages(room.id, secret.id, 2)).toEqual(
+			[],
+		);
+		await store.deleteRoom(room.id);
+		expect(await store.getMessagesByIds(room.id, [one.id, two.id])).toEqual([]);
+		expect(await store.countMessages(room.id)).toBe(0);
+	});
+
 	it("creates and reads back — members normalized into the JSON column", async () => {
 		const room = await newRoom();
 		const { startAt } = await firstMessage(room.id);

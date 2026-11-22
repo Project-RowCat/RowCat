@@ -25,6 +25,7 @@ import {
 	resolveGenerationOutcome,
 	resolveNarrationExecution,
 	safeChatRequestDebug,
+	verifyPromptSnapshot,
 } from "@rowcat/chat";
 import type { ChatStreamEvent } from "@rowcat/contracts";
 import {
@@ -298,16 +299,6 @@ export async function runGenerationTurn(
 		 * function as web. The loader never throws and gives up quickly; without an engine it answers
 		 * `unavailable` with nothing, and no other engine stands in.
 		 */
-		const longTerm = session.loadLongTermMemory
-			? await session.loadLongTermMemory(
-					recallRequestFor(history, memories, undefined, { scenes }),
-				)
-			: null;
-		const recall = longTerm?.recall ?? null;
-		const consolidated = longTerm?.consolidated
-			? consolidatedText(longTerm.consolidated)
-			: "";
-		const facts = longTerm?.facts ? factsText(longTerm.facts) : "";
 		/**
 		 * Secures this conversation's routing-affinity key; some conversations have none (playback
 		 * sessions). Unlike the three above this is acquisition, not a snapshot: the value lives on the
@@ -401,6 +392,16 @@ export async function runGenerationTurn(
 			effort: effective.reasoningEffort,
 			capability: input.reasoningCapability(execution.target),
 		});
+		const longTerm = session.loadLongTermMemory
+			? await session.loadLongTermMemory(
+					recallRequestFor(history, memories, undefined, { scenes }),
+				)
+			: null;
+		const recall = longTerm?.recall ?? null;
+		const consolidated = longTerm?.consolidated
+			? consolidatedText(longTerm.consolidated)
+			: "";
+		const facts = longTerm?.facts ? factsText(longTerm.facts) : "";
 		const assemblyInput = {
 			room: session.runtime,
 			messages: history,
@@ -438,6 +439,12 @@ export async function runGenerationTurn(
 		 * tracing on, a different view of the same assembler is used; both go through one implementation,
 		 * so the outgoing request is identical either way.
 		 */
+		await verifyPromptSnapshot(session, {
+			history,
+			scenes,
+			memories,
+			longTerm,
+		});
 		const plan = planChatGeneration({
 			assembly: assemblyInput,
 			protectedStoryId: session.protectedStoryId ?? null,

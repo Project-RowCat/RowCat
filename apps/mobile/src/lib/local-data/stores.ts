@@ -352,6 +352,8 @@ const CHAT_READS: ReadonlySet<keyof ChatStore & string> = new Set([
 	/** The history window counts the room on every turn; missed here, each turn would signal a write. */
 	"countMessages",
 	"listAllMessages",
+	"getMessagesByIds",
+	"listFollowingMessages",
 	"listMemories",
 	/**
 	 * **This line was missing.** The chat room subscribes to characters, so that query emitted a

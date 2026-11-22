@@ -2,6 +2,7 @@ import {
 	type ChatRoom,
 	type ChatStore,
 	type ConversationMemoryRuntime,
+	createMaintainer,
 	memoryStatusFor,
 	type RoomSettingsRowId,
 } from "@rowcat/chat";
@@ -330,6 +331,7 @@ export function useRoomManagement(
 								loading: characters.status === "loading",
 							}}
 							store={target.store}
+							maintain={createMaintainer(memory, target.store, room.id)}
 							status={
 								memory === undefined
 									? undefined

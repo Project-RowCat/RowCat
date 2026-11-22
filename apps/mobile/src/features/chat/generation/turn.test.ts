@@ -195,6 +195,55 @@ const run = (options: RunOptions = {}) =>
 const messages = () => chat.listAllMessages(room.id);
 
 describe("normal end", () => {
+	it.each([
+		[false, "note"],
+		[true, "note"],
+		[false, "scene"],
+		[true, "scene"],
+	] as const)("aborts before transport on policy drift (protected %s, changed %s)", async (protectedRoom, changed) => {
+		const note = await chat.createMemory({
+			roomId: room.id,
+			content: "private canary",
+			audience: { kind: "room" },
+		});
+		let sent = false;
+		const result = await run({
+			session: {
+				...session,
+				...(protectedRoom ? { protectedStoryId: "story-1" } : {}),
+				loadLongTermMemory: async () => {
+					if (changed === "note")
+						await chat.updateMemory(note.id, {
+							audience: { kind: "narrator" },
+						});
+					else {
+						const [first] = await messages();
+						if (!first) throw Error("missing window");
+						await chat.setScene({
+							roomId: room.id,
+							startAt: { messageId: first.id, createdAt: first.createdAt },
+							audience: { kind: "narrator" },
+						});
+					}
+					return {
+						status: "degraded",
+						recall: null,
+						facts: null,
+						consolidated: null,
+					};
+				},
+			},
+			transportFor: () => {
+				sent = true;
+				return scripted([done]);
+			},
+		});
+		expect(sent).toBe(false);
+		expect(result.end).toBe("failed");
+		expect((await messages()).filter((m) => m.role === "assistant")).toEqual(
+			[],
+		);
+	});
 	it("one user line and one assistant reply remain", async () => {
 		const result = await run();
 

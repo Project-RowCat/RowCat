@@ -12,6 +12,7 @@ import {
 	isAutoMemory,
 	type MemoryVisibility,
 	type MemoryVisibilityOption,
+	memoryMatchesReview,
 	memoryVisibility,
 	memoryVisibilityOptions,
 	promoteMemoryPatch,
@@ -29,6 +30,7 @@ import {
 	Icon,
 	Notice,
 	Spinner,
+	Switch,
 	Text,
 	Textarea,
 	touchTarget,
@@ -88,6 +90,7 @@ export function MemoryPanel({
 	characters,
 	store,
 	status,
+	maintain,
 	onClose,
 }: {
 	roomId: string;
@@ -105,6 +108,7 @@ export function MemoryPanel({
 	 * (the conversation list); then no line is drawn rather than a guess.
 	 */
 	status?: ChatMemoryStatus;
+	maintain?: () => void;
 	onClose: () => void;
 }) {
 	const load = useMemo(() => () => store.listMemories(roomId), [store, roomId]);
@@ -140,6 +144,18 @@ export function MemoryPanel({
 	const statusLine = status ? memoryStatusMessage(status) : null;
 
 	/** What is being edited: `"new"` adds, an id edits, `null` is the list. */
+	const [reviewing, setReviewing] = useState(false);
+	const [selected, setSelected] = useState<ChatMemory[]>([]);
+	const [busy, setBusy] = useState(false);
+	const reviewed = selected.filter((old) =>
+		memories.value.some(
+			(current) =>
+				current.id === old.id && memoryMatchesReview(current, old.rev),
+		),
+	);
+	const [newAudience, setNewAudience] = useState<ChatSceneAudience>();
+	const [choosingDefault, setChoosingDefault] = useState(false);
+	const cast = sceneCast(room, characters.value);
 	const [editing, setEditing] = useState<"new" | string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
@@ -169,27 +185,77 @@ export function MemoryPanel({
 			}}
 		>
 			{editing !== null ? (
-				<MemoryEditor
-					initial={target?.content ?? ""}
-					onCancel={() => {
-						setEditing(null);
-						setError(null);
-					}}
-					onSave={(content) =>
-						target
-							? /**
-								 * Editing makes the memory the user's own (`promoteMemoryPatch`); left as auto, the next
-								 * maintenance would treat it as a stale auto fact and replace or delete it. A no-op for user
-								 * memories, so there is no source branch.
-								 */
-								store.updateMemory(target.id, promoteMemoryPatch(content))
-							: store.createMemory({ roomId, content })
-					}
-					onSaved={() => {
-						setEditing(null);
-						setError(null);
-					}}
-				/>
+				<>
+					{editing === "new" &&
+						scenes.status === "ready" &&
+						scenes.value.length > 0 &&
+						!characters.loading && (
+							<View>
+								{choosingDefault ? (
+									<AudiencePicker
+										kinds
+										cast={cast}
+										initial={
+											newAudience ?? { kind: "participants", members: [] }
+										}
+										label="Audience for new memories in this dialog"
+										note="Use the room’s user note for out-of-character instructions."
+										submitLabel="Use this audience"
+										busy={false}
+										onCancel={() => setChoosingDefault(false)}
+										onSubmit={(audience) => {
+											setNewAudience(audience);
+											setChoosingDefault(false);
+										}}
+									/>
+								) : (
+									<Button
+										label="Choose audience for new memories"
+										onPress={() => setChoosingDefault(true)}
+									/>
+								)}
+								{newAudience && (
+									<>
+										<Text>
+											{memoryVisibilityText(
+												memoryVisibility(
+													{ source: "user", audience: newAudience },
+													scenes.value,
+													{ room, characters: characters.value },
+												),
+											)}
+										</Text>
+										<Button
+											label="Leave unclassified"
+											onPress={() => setNewAudience(undefined)}
+										/>
+									</>
+								)}
+							</View>
+						)}
+					<MemoryEditor
+						initial={target?.content ?? ""}
+						onCancel={() => {
+							setEditing(null);
+							setError(null);
+						}}
+						onSave={(content) =>
+							target
+								? /**
+									 * Editing makes the memory the user's own (`promoteMemoryPatch`); left as auto, the next
+									 * maintenance would treat it as a stale auto fact and replace or delete it. A no-op for user
+									 * memories, so there is no source branch.
+									 */
+									store.updateMemory(target.id, promoteMemoryPatch(content))
+								: store.createMemory({ roomId, content, audience: newAudience })
+						}
+						onSaved={() => {
+							maintain?.();
+							setEditing(null);
+							setError(null);
+						}}
+					/>
+				</>
 			) : (
 				<View style={memory.root}>
 					{error ? <Notice tone="destructive" message={error} /> : null}
@@ -202,6 +268,68 @@ export function MemoryPanel({
 						</View>
 					) : null}
 
+					{unresolved > 0 &&
+						!characters.loading &&
+						(reviewing ? (
+							<View style={memory.list}>
+								{memories.value
+									.filter((item) => !item.audience && !isAutoMemory(item))
+									.map((item) => (
+										<View key={item.id} style={memory.origin}>
+											<Text style={memory.flexText}>{item.content}</Text>
+											<Switch
+												label={item.content}
+												value={reviewed.some((s) => s.id === item.id)}
+												disabled={busy}
+												onValueChange={(checked) =>
+													setSelected((rows) => [
+														...rows.filter((s) => s.id !== item.id),
+														...(checked ? [item] : []),
+													])
+												}
+											/>
+										</View>
+									))}
+								{reviewed.length > 0 ? (
+									<AudiencePicker
+										cast={cast}
+										kinds
+										initial={{ kind: "participants", members: [] }}
+										label="Who knows the selected memories?"
+										busy={busy}
+										submitLabel="Apply to selected memories"
+										onCancel={() => setReviewing(false)}
+										onSubmit={async (audience) => {
+											setBusy(true);
+											try {
+												for (const item of reviewed)
+													await store.updateMemory(item.id, {
+														audience,
+														ifUnresolvedAt: item.rev,
+													});
+												maintain?.();
+												setReviewing(false);
+												setSelected([]);
+											} catch (failure) {
+												setError(memorySaveFailureMessage(failure));
+											} finally {
+												setBusy(false);
+											}
+										}}
+									/>
+								) : (
+									<Button label="Cancel" onPress={() => setReviewing(false)} />
+								)}
+							</View>
+						) : (
+							<Button
+								label="Review unclassified memories"
+								onPress={() => {
+									setSelected([]);
+									setReviewing(true);
+								}}
+							/>
+						))}
 					{memories.status === "loading" ? (
 						<Spinner />
 					) : memories.value.length === 0 ? (
@@ -215,6 +343,7 @@ export function MemoryPanel({
 							onSetAudience={(item, audience) => {
 								void store
 									.updateMemory(item.id, { audience })
+									.then(maintain)
 									.catch((failure: unknown) =>
 										setError(memorySaveFailureMessage(failure)),
 									);
@@ -226,6 +355,7 @@ export function MemoryPanel({
 							onTogglePin={(item) => {
 								void store
 									.updateMemory(item.id, { pinned: !item.pinned })
+									.then(maintain)
 									.catch((failure: unknown) =>
 										setError(memorySaveFailureMessage(failure)),
 									);
@@ -233,6 +363,7 @@ export function MemoryPanel({
 							onDelete={(item) => {
 								void store
 									.deleteMemory(item.id)
+									.then(maintain)
 									.catch(() => setError(MEMORY_DELETE_FAILURE_MESSAGE));
 							}}
 						/>

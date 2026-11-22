@@ -40,6 +40,7 @@ import {
 	isLiveChatRecord,
 	markLocalDelete,
 	markLocalUpdate,
+	memoryMatchesReview,
 	mergeMemorySource,
 	nextSummaryEpoch,
 	normalizeCharacterAliases,
@@ -111,6 +112,14 @@ const liveRows = <T extends { deletedAt: string | null }>(
 	rows: SqlRow[],
 	map: (row: SqlRow) => T,
 ): T[] => rows.map(map).filter(isLiveChatRecord);
+
+/** Materialize only the requested primary keys and room IDs. With a direct join SQLite
+ * can pick the room timeline index and visit every row before checking the ID list. */
+export const sourceLookupSql = (count: number) => `WITH chosen AS MATERIALIZED (
+	SELECT rowid AS message_row, room_id FROM chat_message
+	WHERE id IN (${Array.from({ length: count }, () => "?").join(",")}) AND deleted_at IS NULL)
+	SELECT m.* FROM chosen c JOIN chat_room r ON r.id=c.room_id
+	JOIN chat_message m ON m.rowid=c.message_row WHERE r.id=? AND r.deleted_at IS NULL`;
 
 export function createChatStore(db: MobileDatabase): ChatStore {
 	const readRoom = async (
@@ -380,6 +389,32 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 				);
 			}
 			return liveRows(rows, chatMessageTable.fromRow).reverse();
+		},
+
+		async getMessagesByIds(roomId, ids) {
+			const result: ChatMessage[] = [];
+			for (let i = 0; i < ids.length; i += 200) {
+				const batch = ids.slice(i, i + 200);
+				const rows = await db.all<SqlRow>(sourceLookupSql(batch.length), [
+					...batch,
+					roomId,
+				]);
+				result.push(...liveRows(rows, chatMessageTable.fromRow));
+			}
+			return result;
+		},
+
+		async listFollowingMessages(roomId, id, limit) {
+			if (limit <= 0 || !(await liveRoom(db, roomId))) return [];
+			const cursor = await readMessage(db, id);
+			if (!cursor || cursor.roomId !== roomId || cursor.deletedAt !== null)
+				return [];
+			const rows = await db.all<SqlRow>(
+				`SELECT * FROM chat_message WHERE room_id = ? AND deleted_at IS NULL
+				 AND (created_at, id) > (?, ?) ORDER BY created_at ASC, id ASC LIMIT ?`,
+				[roomId, cursor.createdAt, id, limit],
+			);
+			return liveRows(rows, chatMessageTable.fromRow);
 		},
 
 		async listAllMessages(roomId: string): Promise<ChatMessage[]> {
@@ -840,6 +875,7 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 				);
 				const current = row ? chatMemoryTable.fromRow(row) : null;
 				if (!current || !isLiveChatRecord(current)) return;
+				if (!memoryMatchesReview(current, patch.ifUnresolvedAt)) return;
 				const source = mergeMemorySource(current.source, patch.source);
 				const next: ChatMemory = {
 					...current,
