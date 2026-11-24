@@ -1278,6 +1278,13 @@ export function useConversationGeneration(
 			 * not write anyway.
 			 */
 			const result = await perform();
+			// Reconcile only after the authoritative rewrite commits. This also
+			// covers hand-edited assistant replies that do not regenerate.
+			try {
+				session?.maintain?.();
+			} catch {
+				/* the saved edit still succeeds */
+			}
 
 			if (!options.regenerate?.(result)) {
 				clearSettledTurn(epoch);
@@ -1297,7 +1304,7 @@ export function useConversationGeneration(
 				start("", true);
 			return result;
 		},
-		[start, clearSettledTurn],
+		[start, clearSettledTurn, session],
 	);
 
 	return {

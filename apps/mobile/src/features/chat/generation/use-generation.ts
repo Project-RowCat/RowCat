@@ -536,6 +536,13 @@ export function useChatGeneration(
 			 * ends, and the in-flight generation's cleanup finishes afterwards (it cannot write anyway).
 			 */
 			const result = await perform();
+			// Reconcile only after the authoritative rewrite commits. This also
+			// covers hand-edited assistant replies that do not regenerate.
+			try {
+				session?.maintain?.();
+			} catch {
+				/* the saved edit still succeeds */
+			}
 
 			if (!options.regenerate?.(result)) {
 				clearSettledTurn(epoch);
@@ -551,7 +558,7 @@ export function useChatGeneration(
 				begin("", true);
 			return result;
 		},
-		[begin, clearSettledTurn],
+		[begin, clearSettledTurn, session],
 	);
 
 	return {
