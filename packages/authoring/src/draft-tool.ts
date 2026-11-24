@@ -1,6 +1,7 @@
 import type {
 	ChatCreatorToolAction,
 	ChatCreatorToolDto,
+	ChatCustomToolDto,
 	ChatToolParameterType,
 } from "@rowcat/contracts/chat";
 import {
@@ -185,6 +186,49 @@ export function toCreatorTool(tool: DraftTool): ChatCreatorToolDto {
 		},
 		action: actionOf(tool),
 	};
+}
+
+/**
+ * A user's library tool as a new draft tool: the bridge from Settings → Tools into a story. The
+ * declaration and action are copied as values, not linked: a published work must not change when
+ * its author later edits their own library, and a reader never has that library.
+ *
+ * `http` has no draft form (creators cannot publish one, see the header), so it returns `null` and
+ * the picker says why rather than dropping the endpoint silently.
+ */
+export function newDraftToolOf(tool: ChatCustomToolDto): NewDraftTool | null {
+	const { declaration, action } = tool;
+	const base: NewDraftTool = {
+		name: declaration.name,
+		description: declaration.description,
+		parameters: declaration.parameters.map((parameter) => ({
+			name: parameter.name,
+			type: parameter.type,
+			description: parameter.description,
+			required: parameter.required,
+			choices: [...parameter.choices],
+		})),
+	};
+	switch (action.kind) {
+		case "template":
+			return { ...base, kind: "template", template: action.template };
+		case "table":
+			return {
+				...base,
+				kind: "table",
+				entries: [...action.entries],
+				draws: action.draws,
+			};
+		case "agent":
+			return {
+				...base,
+				kind: "agent",
+				system: action.system,
+				maxOutputTokens: action.maxOutputTokens,
+			};
+		case "http":
+			return null;
+	}
 }
 
 /**

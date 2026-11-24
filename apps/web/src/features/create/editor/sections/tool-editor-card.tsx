@@ -1,9 +1,11 @@
 import {
+	checkDraftTool,
 	DRAFT_TOOL_LIMITS,
 	type DraftTool,
 	type DraftToolKind,
 	type DraftToolParameter,
 } from "@rowcat/authoring";
+import { userToolNameTaken } from "@rowcat/chat";
 import {
 	CHAT_MAX_TOOL_DESCRIPTION_CHARS,
 	CHAT_MAX_TOOL_PARAMETERS,
@@ -24,13 +26,22 @@ import {
 	SelectValue,
 } from "@rowcat/ui-web/components/select";
 import { Switch } from "@rowcat/ui-web/components/switch";
-import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
+import {
+	BookmarkPlus,
+	ChevronDown,
+	ChevronUp,
+	Plus,
+	Trash2,
+} from "lucide-react";
 import * as m from "motion/react-m";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useToolLibrary } from "#/features/tools/use-tool-library.ts";
+import { useLocalUserTools } from "#/lib/local-chat/hooks.ts";
 import { useExitGuard } from "#/lib/motion/exit-guard.ts";
 import { rowExit } from "#/lib/motion/list-motion.ts";
 import { layoutTransition } from "#/lib/motion/transitions.ts";
+import { showErrorToast } from "#/lib/toast.ts";
 import {
 	CardActionsMenu,
 	CardDisclosureButton,
@@ -61,10 +72,14 @@ import {
  * kind's fields side by side (`draft-tool.ts`), so switching the kind hides the other kind's fields
  * without clearing them; switching back brings the text back.
  *
- * What blocks publishing is shown on the card, from `checkDraftTool` (the contract's own schema).
- * The issue lines are the contract's English messages with their field path, the same lines the
- * publish panel lists; a second, translated copy of the rules here would drift from the one the
- * server enforces.
+ * What blocks publishing is shown on the card, from `checkDraftTool` (the contract's own schema),
+ * worded per issue code (`toolIssueText`), so the rule stays the server's and only the words are
+ * the app's.
+ *
+ * `Save to my tools` copies a publishable tool into the author's own library (Settings → Tools),
+ * the reverse of `ToolFromLibraryDialog`. The copy arrives off (`enabledByDefault: false`), the
+ * tool-file import rule: a tool written for one story should not join every other conversation
+ * until its author turns it on.
  */
 export function ToolEditorCard({
 	tool,
@@ -93,6 +108,27 @@ export function ToolEditorCard({
 	/** A tool with nothing written yet starts expanded, so `Add` leads straight to typing. */
 	const [expanded, setExpanded] = useState(() => isBlankTool(tool));
 	const summary = toolSummary(tool);
+	const library = useToolLibrary();
+	const { items: libraryTools } = useLocalUserTools();
+	const [savedToLibrary, setSavedToLibrary] = useState(false);
+
+	const saveToLibrary = async (): Promise<void> => {
+		const checked = checkDraftTool(tool);
+		if (!checked.ok) return;
+		if (userToolNameTaken(libraryTools, checked.tool.declaration.name)) {
+			showErrorToast(t("toolEditorCard.libraryNameTaken"));
+			return;
+		}
+		try {
+			const created = await library.create({
+				tool: checked.tool,
+				enabledByDefault: false,
+			});
+			if (created) setSavedToLibrary(true);
+		} catch {
+			showErrorToast(t("toolEditorCard.saveToLibraryFailed"));
+		}
+	};
 
 	const patch = (next: Parameters<DraftAutosave["patchTool"]>[1]) =>
 		autosave.patchTool(tool.id, next);
@@ -130,6 +166,11 @@ export function ToolEditorCard({
 					<span className="mt-1 block text-xs text-muted-foreground">
 						{[t("tool.nth", { n: index + 1 }), ...summary.meta].join(" · ")}
 					</span>
+					{savedToLibrary && (
+						<span className="mt-1 block text-xs text-muted-foreground">
+							{t("toolEditorCard.savedToLibrary")}
+						</span>
+					)}
 				</CardDisclosureButton>
 
 				<CardActionsMenu label={t("tool.manage", { n: index + 1 })}>
@@ -143,6 +184,13 @@ export function ToolEditorCard({
 					>
 						<ChevronDown aria-hidden="true" />
 						{t("toolEditorCard.down")}
+					</DropdownMenuItem>
+					<DropdownMenuItem
+						disabled={!library.ready || summary.issues.length > 0}
+						onClick={() => void saveToLibrary()}
+					>
+						<BookmarkPlus aria-hidden="true" />
+						{t("toolEditorCard.saveToLibrary")}
 					</DropdownMenuItem>
 					<DropdownMenuSeparator />
 					<DropdownMenuItem variant="destructive" onClick={onRemove}>

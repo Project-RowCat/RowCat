@@ -1,4 +1,4 @@
-import type { AuthoringStore } from "@rowcat/authoring";
+import type { AuthoringStore, NewDraftTool } from "@rowcat/authoring";
 import { useCallback, useMemo } from "react";
 import { useAuthoringScope } from "#/lib/local-authoring/scope.ts";
 import { showErrorToast } from "#/lib/toast.ts";
@@ -27,7 +27,8 @@ export interface DraftActions {
 	moveLore: (orderedIds: string[]) => Promise<void>;
 
 	/** Creator tools: lore's three structural operations. */
-	addTool: () => Promise<void>;
+	/** `input`: a copy from the author's tool library (`newDraftToolOf`); omitted, a blank tool. */
+	addTool: (input?: NewDraftTool) => Promise<void>;
 	removeTool: (id: string) => Promise<void>;
 	moveTool: (orderedIds: string[]) => Promise<void>;
 
@@ -83,7 +84,7 @@ export function useDraftActions(draftId: string): DraftActions {
 			removeLore: (id) => run((s) => s.deleteLore(id)),
 			moveLore: (orderedIds) => run((s) => s.reorderLore(draftId, orderedIds)),
 
-			addTool: () => run((s) => s.createTool(draftId)),
+			addTool: (input) => run((s) => s.createTool(draftId, input)),
 			removeTool: (id) => run((s) => s.deleteTool(id)),
 			moveTool: (orderedIds) => run((s) => s.reorderTools(draftId, orderedIds)),
 

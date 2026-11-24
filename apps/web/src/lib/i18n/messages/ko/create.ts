@@ -549,6 +549,7 @@ export const create: Messages["create"] = {
 	toolList: {
 		empty: "아직 도구가 없습니다. 도구 없이도 발행할 수 있습니다.",
 		add: "추가",
+		fromLibrary: "내 도구에서",
 	},
 	tool: {
 		nth: "#{{n}}",
@@ -569,28 +570,40 @@ export const create: Messages["create"] = {
 	},
 	toolIssue: {
 		name_invalid:
-			"이름: 영문 소문자로 시작하고 소문자·숫자·밑줄만 쓸 수 있어요(최대 48자).",
-		name_reserved: "이름: 기본 제공 도구의 이름이라 쓸 수 없어요.",
-		name_taken: "이름: 이 작품의 다른 도구가 이미 쓰고 있어요.",
+			"이름: 영문 소문자로 시작하고 소문자·숫자·밑줄만 쓸 수 있습니다(최대 48자).",
+		name_reserved: "이름: 기본 제공 도구의 이름이라 쓸 수 없습니다.",
+		name_taken: "이름: 이 작품의 다른 도구가 이미 쓰고 있습니다.",
 		description_required: "설명: AI가 언제 이 도구를 쓸지 적어 주세요.",
-		description_too_long: "설명: 너무 길어요.",
-		too_many_parameters: "인자: 최대 {{max}}개까지예요.",
-		parameter_names_repeat: "인자: 이름이 같은 인자가 있어요.",
+		description_too_long: "설명: 너무 깁니다.",
+		too_many_parameters: "인자: 최대 {{max}}개까지입니다.",
+		parameter_names_repeat: "인자: 이름이 같은 인자가 있습니다.",
 		parameter_name_invalid:
-			"인자 #{{row}}: 영문 소문자로 시작하는 이름(소문자·숫자·밑줄)이 필요해요.",
-		parameter_description_too_long: "인자 #{{row}}: 설명이 너무 길어요.",
+			"인자 #{{row}}: 영문 소문자로 시작하는 이름(소문자·숫자·밑줄)이 필요합니다.",
+		parameter_description_too_long: "인자 #{{row}}: 설명이 너무 깁니다.",
 		parameter_choices_invalid:
-			"인자 #{{row}}: 선택지가 너무 많거나 너무 길어요.",
+			"인자 #{{row}}: 선택지가 너무 많거나 너무 깁니다.",
 		template_required: "템플릿: 돌려줄 글을 적어 주세요.",
-		template_too_long: "템플릿: 최대 {{max}}자까지예요.",
+		template_too_long: "템플릿: 최대 {{max}}자까지입니다.",
 		entries_required: "행: 한 줄 이상 넣어 주세요.",
-		too_many_entries: "행: 최대 {{max}}줄까지예요.",
-		entry_too_long: "행: 한 줄은 최대 {{max}}자까지예요.",
-		draws_out_of_range: "한 번에 뽑을 행: 1부터 {{max}}까지예요.",
+		too_many_entries: "행: 최대 {{max}}줄까지입니다.",
+		entry_too_long: "행: 한 줄은 최대 {{max}}자까지입니다.",
+		draws_out_of_range: "한 번에 뽑을 행: 1부터 {{max}}까지입니다.",
 		system_required: "서브 에이전트 지시문: 내용을 적어 주세요.",
-		system_too_long: "서브 에이전트 지시문: 최대 {{max}}자까지예요.",
-		max_output_tokens_out_of_range: "답변 길이 상한: 1부터 {{max}}까지예요.",
-		other: "아직 올바르지 않은 부분이 있어요.",
+		system_too_long: "서브 에이전트 지시문: 최대 {{max}}자까지입니다.",
+		max_output_tokens_out_of_range: "답변 길이 상한: 1부터 {{max}}까지입니다.",
+		other: "아직 올바르지 않은 부분이 있습니다.",
+	},
+	toolLibraryPick: {
+		title: "내 도구에서 추가",
+		description:
+			"설정 → 도구의 도구를 이 작품에 복사합니다. 나중에 한쪽을 고쳐도 다른 쪽은 바뀌지 않습니다.",
+		empty: "아직 만든 도구가 없습니다.",
+		openSettings: "설정 → 도구 열기",
+		add: "추가",
+		http: "웹 요청",
+		httpUnavailable:
+			"웹 요청 도구는 작품에 넣을 수 없습니다. 독자의 대화가 내 주소로 전송되기 때문입니다.",
+		inDraft: "이미 이 작품에 있습니다.",
 	},
 	toolEditorCard: {
 		name: "이름",
@@ -629,6 +642,10 @@ export const create: Messages["create"] = {
 		deleteTool: "도구 삭제",
 		up: "위로",
 		down: "아래로",
+		saveToLibrary: "내 도구로 저장",
+		savedToLibrary: "설정 → 도구에 저장했습니다(기본은 꺼짐).",
+		libraryNameTaken: "설정 → 도구에 같은 이름의 도구가 이미 있습니다.",
+		saveToLibraryFailed: "내 도구에 저장하지 못했습니다. 다시 시도해 주세요.",
 	},
 
 	startSceneEditorCard: {

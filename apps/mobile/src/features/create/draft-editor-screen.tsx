@@ -510,7 +510,7 @@ function EditorBody({
 						draftId={view.id}
 						tools={tools}
 						onPatch={autosave.patchTool}
-						onAdd={() => void actions.addTool()}
+						onAdd={(input) => void actions.addTool(input)}
 						onRemove={(id) => void actions.removeTool(id)}
 						onReorder={(ids) => void actions.moveTool(ids)}
 					/>

@@ -10,6 +10,7 @@ import {
 	DRAFT_TOOL_RESERVED_NAMES,
 	type DraftTool,
 	draftToolIssueSentence,
+	newDraftToolOf,
 	sortDraftTools,
 	toCreatorTool,
 } from "./draft-tool.ts";
@@ -287,6 +288,52 @@ describe("issue codes", () => {
 			expect(sentence).not.toMatch(/declaration|action\.|expected/);
 			expect(sentence.length).toBeGreaterThan(0);
 		}
+	});
+});
+
+describe("between a user's library and a draft", () => {
+	it("a library tool becomes a draft tool that publishes the same definition", () => {
+		const library = {
+			declaration: {
+				name: "advisor",
+				description: "Ask a seasoned advisor.",
+				parameters: [
+					{
+						name: "worry",
+						type: "string" as const,
+						description: "",
+						required: true,
+						choices: [],
+					},
+				],
+			},
+			action: {
+				kind: "agent" as const,
+				system: "Be brief.",
+				maxOutputTokens: 300,
+			},
+		};
+		const input = newDraftToolOf(library);
+		expect(input).not.toBeNull();
+		const draft = createDraftToolRecord(
+			{ draftId: "draft-1", positionIndex: 0, ...input },
+			stamp("t"),
+		);
+		expect(checkDraftTool(draft)).toEqual({ ok: true, tool: library });
+	});
+
+	it("an http tool has no draft form", () => {
+		expect(
+			newDraftToolOf({
+				declaration: { name: "hook", description: "x", parameters: [] },
+				action: {
+					kind: "http",
+					url: "https://example.test",
+					method: "POST",
+					headers: [],
+				},
+			}),
+		).toBeNull();
 	});
 });
 

@@ -1,9 +1,9 @@
 import type { DraftTool } from "@rowcat/authoring";
 import { STORY_PUBLISH_LIMITS } from "@rowcat/contracts";
 import { Button } from "@rowcat/ui-web/components/button";
-import { Plus } from "lucide-react";
+import { Library, Plus } from "lucide-react";
 import { AnimatePresence } from "motion/react";
-import { memo } from "react";
+import { memo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { translator } from "#/lib/i18n/current.ts";
 import { EditorSection, EditorSectionSkeleton } from "../fields.tsx";
@@ -14,6 +14,7 @@ import {
 import { type DraftActions, movedOrder } from "../use-actions.ts";
 import type { DraftAutosave } from "../use-autosave.ts";
 import { ToolEditorCard } from "./tool-editor-card.tsx";
+import { ToolFromLibraryDialog } from "./tool-from-library-dialog.tsx";
 
 /**
  * The creator tools list: tools the conversation's model can call in this work (`draft-tool.ts` in
@@ -64,6 +65,7 @@ export const ToolList = memo(function ToolList({
 }) {
 	const { t } = useTranslation(["create", "common"]);
 	const mode = useConversationAuthoringMode(draftId);
+	const [picking, setPicking] = useState(false);
 
 	const ids = tools.map((tool) => tool.id);
 	/**
@@ -88,17 +90,35 @@ export const ToolList = memo(function ToolList({
 			layoutDependency={order}
 			description={toolSection().description}
 			action={
-				<Button
-					size="sm"
-					variant="outline"
-					disabled={full}
-					onClick={() => void actions.addTool()}
-				>
-					<Plus aria-hidden="true" />
-					{t("toolList.add")}
-				</Button>
+				<div className="flex flex-wrap gap-2">
+					<Button
+						size="sm"
+						variant="outline"
+						disabled={full}
+						onClick={() => setPicking(true)}
+					>
+						<Library aria-hidden="true" />
+						{t("toolList.fromLibrary")}
+					</Button>
+					<Button
+						size="sm"
+						variant="outline"
+						disabled={full}
+						onClick={() => void actions.addTool()}
+					>
+						<Plus aria-hidden="true" />
+						{t("toolList.add")}
+					</Button>
+				</div>
 			}
 		>
+			<ToolFromLibraryDialog
+				open={picking}
+				onOpenChange={setPicking}
+				disabled={full}
+				draftNames={new Set(tools.map((tool) => tool.name.trim()))}
+				onPick={(input) => void actions.addTool(input)}
+			/>
 			{tools.length === 0 && (
 				<p className="text-sm text-muted-foreground">{t("toolList.empty")}</p>
 			)}

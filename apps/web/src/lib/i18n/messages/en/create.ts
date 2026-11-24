@@ -559,6 +559,7 @@ export const create = {
 	toolList: {
 		empty: "No tools yet. You can publish without tools.",
 		add: "Add",
+		fromLibrary: "From my tools",
 	},
 	tool: {
 		nth: "#{{n}}",
@@ -602,6 +603,18 @@ export const create = {
 		max_output_tokens_out_of_range: "Answer length cap: from 1 to {{max}}.",
 		other: "Something in this tool isn't valid yet.",
 	},
+	toolLibraryPick: {
+		title: "Add from my tools",
+		description:
+			"Copies a tool from Settings → Tools into this story. Later edits on either side don't affect the other.",
+		empty: "You have no tools yet.",
+		openSettings: "Open Settings → Tools",
+		add: "Add",
+		http: "Web request",
+		httpUnavailable:
+			"Web request tools can't be added to a story: they would send readers' conversations to your address.",
+		inDraft: "Already in this story.",
+	},
 	toolEditorCard: {
 		name: "Name",
 		nameHint:
@@ -639,6 +652,10 @@ export const create = {
 		deleteTool: "Delete tool",
 		up: "Up",
 		down: "Down",
+		saveToLibrary: "Save to my tools",
+		savedToLibrary: "Saved to Settings → Tools (off by default).",
+		libraryNameTaken: "A tool with this name is already in Settings → Tools.",
+		saveToLibraryFailed: "Couldn't save to your tools. Try again.",
 	},
 
 	startSceneEditorCard: {

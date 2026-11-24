@@ -304,6 +304,20 @@ export const TOOL = {
 	 */
 	issues: "Not publishable yet. Fix these and the tool will be published:",
 	tooMany: (max: number) => `A story can't have more than ${max} tools.`,
+	/** Settings → Tools into this story (`newDraftToolOf`), and back. */
+	fromLibrary: "From my tools",
+	fromLibraryHint:
+		"Copies a tool from Settings → Tools into this story. Later edits on either side don't affect the other.",
+	libraryEmpty: "You have no tools in Settings → Tools yet.",
+	libraryAdd: "Add",
+	libraryClose: "Done",
+	libraryHttp:
+		"Web request tools can't be added to a story: they would send readers' conversations to your address.",
+	libraryInDraft: "Already in this story.",
+	saveToLibrary: "Save to my tools",
+	savedToLibrary: "Saved to Settings → Tools (off by default).",
+	libraryNameTaken: "A tool with this name is already in Settings → Tools.",
+	saveToLibraryFailed: "Couldn't save to your tools. Try again.",
 } as const;
 
 export const TOOL_KIND_LABEL: Record<DraftToolKind, string> = {

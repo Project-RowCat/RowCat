@@ -6,7 +6,10 @@ import {
 	type DraftToolParameter,
 	type DraftToolPatch,
 	draftToolIssueSentence,
+	type NewDraftTool,
+	newDraftToolOf,
 } from "@rowcat/authoring";
+import { userToolNameTaken } from "@rowcat/chat";
 import {
 	CHAT_MAX_TOOL_PARAMETERS,
 	CHAT_TOOL_PARAMETER_TYPES,
@@ -28,6 +31,7 @@ import {
 import { useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { MotionRow } from "../../lib/motion/list-motion.tsx";
+import { useToolLibrary } from "../tools/use-tool-library.ts";
 import {
 	joinToolChoices,
 	joinToolRows,
@@ -75,11 +79,13 @@ export function ToolSection({
 	draftId: string;
 	tools: readonly DraftTool[];
 	onPatch: (id: string, patch: DraftToolPatch) => void;
-	onAdd: () => void;
+	/** `input`: a copy from the author's tool library; omitted, a blank tool. */
+	onAdd: (input?: NewDraftTool) => void;
 	onRemove: (id: string) => void;
 	onReorder: (orderedIds: string[]) => void;
 }) {
 	const mode = useConversationAuthoringMode(draftId);
+	const [picking, setPicking] = useState(false);
 
 	const ids = tools.map((tool) => tool.id);
 	const over = tools.length > STORY_PUBLISH_LIMITS.tools;
@@ -111,16 +117,33 @@ export function ToolSection({
 				) : null
 			}
 			action={
-				<Button
-					label={TOOL.add}
-					icon="add"
-					variant="outline"
-					size="sm"
-					disabled={full}
-					onPress={onAdd}
-				/>
+				<View style={card.actions}>
+					<Button
+						label={TOOL.fromLibrary}
+						variant="outline"
+						size="sm"
+						disabled={full}
+						onPress={() => setPicking((open) => !open)}
+					/>
+					<Button
+						label={TOOL.add}
+						icon="add"
+						variant="outline"
+						size="sm"
+						disabled={full}
+						onPress={() => onAdd()}
+					/>
+				</View>
 			}
 		>
+			{picking ? (
+				<LibraryPicker
+					disabled={full}
+					draftNames={new Set(tools.map((tool) => tool.name.trim()))}
+					onPick={(input) => onAdd(input)}
+					onClose={() => setPicking(false)}
+				/>
+			) : null}
 			{tools.length === 0 ? (
 				<Text variant="label" tone="muted-foreground">
 					{TOOL.empty}
@@ -162,6 +185,29 @@ function ToolCard({
 }) {
 	const headline = toolHeadline(tool.name);
 	const checked = checkDraftTool(tool);
+	const library = useToolLibrary();
+	const [libraryNote, setLibraryNote] = useState<string | null>(null);
+
+	/**
+	 * Copies a publishable tool into Settings → Tools, arriving off (the tool-file import rule): a tool
+	 * written for one story should not join every other conversation until its author turns it on.
+	 */
+	const saveToLibrary = async (): Promise<void> => {
+		if (!checked.ok) return;
+		if (userToolNameTaken(library.tools, checked.tool.declaration.name)) {
+			setLibraryNote(TOOL.libraryNameTaken);
+			return;
+		}
+		try {
+			const outcome = await library.create({
+				tool: checked.tool,
+				enabledByDefault: false,
+			});
+			setLibraryNote(outcome === "done" ? TOOL.savedToLibrary : null);
+		} catch {
+			setLibraryNote(TOOL.saveToLibraryFailed);
+		}
+	};
 
 	return (
 		<Panel style={card.card}>
@@ -195,6 +241,23 @@ function ToolCard({
 					onPress={onRemove}
 				/>
 			</View>
+
+			{checked.ok ? (
+				<View style={card.libraryRow}>
+					<Button
+						label={TOOL.saveToLibrary}
+						variant="outline"
+						size="sm"
+						disabled={library.store === null || library.pending}
+						onPress={() => void saveToLibrary()}
+					/>
+					{libraryNote ? (
+						<Text variant="caption" tone="muted-foreground">
+							{libraryNote}
+						</Text>
+					) : null}
+				</View>
+			) : null}
 
 			{checked.ok ? null : (
 				/** Not destructive: an unfinished tool is the normal state while writing, not a failure. */
@@ -477,7 +540,78 @@ function ToolParameters({
 	);
 }
 
+/**
+ * Settings → Tools into this story, inline under the section header rather than a sheet: the
+ * presentation boundary keeps generic sheets out of feature code, and the list is short. `http`
+ * tools are listed with the reason they cannot be added, so the author does not wonder where they
+ * went.
+ */
+function LibraryPicker({
+	disabled,
+	draftNames,
+	onPick,
+	onClose,
+}: {
+	disabled: boolean;
+	draftNames: ReadonlySet<string>;
+	onPick: (input: NewDraftTool) => void;
+	onClose: () => void;
+}) {
+	const { tools } = useToolLibrary();
+	return (
+		<Panel style={card.card}>
+			<Text variant="caption" tone="muted-foreground">
+				{TOOL.fromLibraryHint}
+			</Text>
+			{tools.length === 0 ? (
+				<Text variant="label" tone="muted-foreground">
+					{TOOL.libraryEmpty}
+				</Text>
+			) : null}
+			{tools.map((tool) => {
+				const input = newDraftToolOf(tool.tool);
+				const inDraft = draftNames.has(tool.tool.declaration.name);
+				return (
+					<View key={tool.id} style={card.libraryItem}>
+						<View style={card.libraryText}>
+							<Text variant="label" weight="semibold" numberOfLines={1}>
+								{tool.tool.declaration.name}
+							</Text>
+							<Text variant="caption" tone="muted-foreground" numberOfLines={2}>
+								{input === null
+									? TOOL.libraryHttp
+									: inDraft
+										? TOOL.libraryInDraft
+										: `${TOOL_KIND_LABEL[input.kind ?? "template"]} · ${tool.tool.declaration.description}`}
+							</Text>
+						</View>
+						<Button
+							label={TOOL.libraryAdd}
+							variant="outline"
+							size="sm"
+							disabled={input === null || inDraft || disabled}
+							onPress={() => {
+								if (input) onPick(input);
+							}}
+						/>
+					</View>
+				);
+			})}
+			<Button
+				label={TOOL.libraryClose}
+				variant="ghost"
+				size="sm"
+				onPress={onClose}
+			/>
+		</Panel>
+	);
+}
+
 const card = StyleSheet.create({
+	actions: { flexDirection: "row", gap: space.sm },
+	libraryRow: { gap: space.xs },
+	libraryItem: { flexDirection: "row", alignItems: "center", gap: space.sm },
+	libraryText: { flex: 1, minWidth: 0 },
 	card: { gap: space.sm, padding: space.md },
 	head: { alignItems: "center", flexDirection: "row", gap: space.xs },
 	headline: { flex: 1, minWidth: 0 },
