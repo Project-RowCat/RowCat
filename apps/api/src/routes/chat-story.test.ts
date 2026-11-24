@@ -138,10 +138,15 @@ const TEXT_REPLY = sse([
 ]);
 
 // Collects upstream request bodies in order and serves the given responses one by one.
+type UpstreamBody = {
+	messages: { role: string; content: string }[];
+	tools?: unknown[];
+};
+
 function provider(responses: (() => Response)[]): {
-	bodies: () => { messages: { role: string; content: string }[] }[];
+	bodies: () => UpstreamBody[];
 } {
-	const bodies: { messages: { role: string; content: string }[] }[] = [];
+	const bodies: UpstreamBody[] = [];
 	vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
 		bodies.push(JSON.parse(String(init?.body)));
 		const next = responses[bodies.length - 1] ?? (() => TEXT_REPLY.clone());
@@ -377,6 +382,133 @@ describe.skipIf(!databaseReady)("the server's tool round trip", () => {
 		expect(events.some((event) => event.type === "tool_call")).toBe(false);
 		// Managed generation is unmetered, so no billing frame even with two round trips.
 		expect(events.some((event) => event.type === "billing")).toBe(false);
+		expect(events.at(-1)).toMatchObject({ type: "done" });
+	});
+
+	// A one-call tool round: the model calls `name` with `args`, then stops for the result.
+	const callTool = (name: string, args: Record<string, unknown>) =>
+		sse([
+			JSON.stringify({
+				choices: [
+					{
+						delta: {
+							tool_calls: [
+								{
+									index: 0,
+									id: "call_0",
+									function: { name, arguments: JSON.stringify(args) },
+								},
+							],
+						},
+					},
+				],
+			}),
+			'{"choices":[{"finish_reason":"tool_calls"}]}',
+		]);
+
+	/**
+	 * Creator tools travel in the seed, and in a protected room the device never sees the seed
+	 * (`projectProtectedSeed` blanks `tools`), so the server is the only place they can run.
+	 */
+	test("the server runs a creator's template tool", async () => {
+		const owner = await signUp();
+		const id = await seedStory(owner.memberId, {
+			tools: [
+				{
+					declaration: {
+						name: "harbor_weather",
+						description: "The weather at a place in the harbor city.",
+						parameters: [
+							{
+								name: "place",
+								type: "string",
+								description: "Where.",
+								required: true,
+								choices: [],
+							},
+						],
+					},
+					action: {
+						kind: "template",
+						template: "TEMPLATE_MARKER Rain over {{place}}.",
+					},
+				},
+			],
+		});
+		const upstream = provider([
+			() => callTool("harbor_weather", { place: "the pier" }),
+			() => TEXT_REPLY.clone(),
+		]);
+		const events = await eventsOf(await generate(owner.cookie, id, assembly()));
+
+		const bodies = upstream.bodies();
+		expect(bodies).toHaveLength(2);
+		// Declared next to lore search on the first round.
+		expect(JSON.stringify(bodies[0].tools)).toContain("harbor_weather");
+		expect(JSON.stringify(bodies[0].tools)).toContain("lore_search");
+		expect(JSON.stringify(bodies[1].messages)).toContain(
+			"TEMPLATE_MARKER Rain over the pier.",
+		);
+		expect(events.some((event) => event.type === "tool_call")).toBe(false);
+		expect(events.at(-1)).toMatchObject({ type: "done" });
+	});
+
+	test("a creator's sub-agent runs as its own guarded, tool-less call and its text is the result", async () => {
+		const owner = await signUp();
+		const id = await seedStory(owner.memberId, {
+			tools: [
+				{
+					declaration: {
+						name: "oracle",
+						description: "Asks the harbor oracle a question.",
+						parameters: [
+							{
+								name: "question",
+								type: "string",
+								description: "The question.",
+								required: true,
+								choices: [],
+							},
+						],
+					},
+					action: {
+						kind: "agent",
+						system: "AGENT_SYSTEM_MARKER You are the harbor oracle.",
+						maxOutputTokens: 256,
+					},
+				},
+			],
+		});
+		const upstream = provider([
+			() => callTool("oracle", { question: "When is high tide?" }),
+			() =>
+				sse([
+					'{"choices":[{"delta":{"content":"AGENT_ANSWER_MARKER At dusk."},"finish_reason":"stop"}]}',
+				]),
+			() => TEXT_REPLY.clone(),
+		]);
+		const events = await eventsOf(await generate(owner.cookie, id, assembly()));
+
+		const bodies = upstream.bodies();
+		expect(bodies).toHaveLength(3);
+		const agent = bodies[1];
+		const agentSystem = systemOf(agent);
+		// The agent's own prompt, under the same platform guard as the conversation.
+		expect(agentSystem).toContain("AGENT_SYSTEM_MARKER");
+		expect(agentSystem.startsWith(ABSOLUTE_GUARD)).toBe(true);
+		// It sees what the model passed, not the manuscript or the conversation.
+		expect(JSON.stringify(agent.messages)).toContain("When is high tide?");
+		expect(JSON.stringify(agent)).not.toContain("SCENARIO_MARKER");
+		expect(
+			agent.messages.filter((message) => message.role !== "system"),
+		).toHaveLength(1);
+		// One level deep: the agent declares no tools.
+		expect(agent.tools ?? []).toHaveLength(0);
+		// The agent's text is the tool result of the conversation's next round.
+		expect(JSON.stringify(bodies[2].messages)).toContain(
+			"AGENT_ANSWER_MARKER At dusk.",
+		);
+		expect(events.some((event) => event.type === "tool_call")).toBe(false);
 		expect(events.at(-1)).toMatchObject({ type: "done" });
 	});
 });

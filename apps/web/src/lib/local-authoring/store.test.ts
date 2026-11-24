@@ -554,7 +554,7 @@ describe("v1 → v3 upgrade", () => {
 		 * Removing any intermediate declaration (v1, v2, or v3) breaks the chain, and chats already on
 		 * users' devices are lost at that moment.
 		 */
-		expect(db.verno).toBe(26);
+		expect(db.verno).toBe(27);
 
 		const room = await chat.getRoom("room-1");
 		expect(room).toMatchObject({ id: "room-1", title: "Old conversation" });
@@ -1110,5 +1110,53 @@ describe("managed runtime images", () => {
 
 		await store.deleteDraft(draft.id);
 		expect(await store.listRuntimeAssets(draft.id)).toEqual([]);
+	});
+});
+
+describe("creator tools", () => {
+	it("a tool mid-edit saves, keeps every kind's fields, and lists in order", async () => {
+		const store = open(nextViewer("alice"));
+		const draft = await store.createDraft({ title: "Draft" });
+		const a = await store.createTool(draft.id, { name: "first" });
+		const b = await store.createTool(draft.id, { name: "second" });
+
+		/**
+		 * Invalid on purpose: no description, and a kind switched after the template was written. The
+		 * store keeps it as typed; publishing is what narrows it.
+		 */
+		await store.updateTool(a.id, { template: "Rain.", kind: "agent" });
+		await store.reorderTools(draft.id, [b.id, a.id]);
+
+		const tools = await store.listTools(draft.id);
+		expect(tools.map((tool) => tool.name)).toEqual(["second", "first"]);
+		expect(tools[1]).toMatchObject({ kind: "agent", template: "Rain." });
+	});
+
+	it("deleting a tool or its draft leaves tombstones, and the publication source carries live tools", async () => {
+		const db = activateLocalDbScope(nextViewer("alice"));
+		const store = createAuthoringStore(db);
+		const draft = await store.createDraft({ title: "Draft", prompt: "Body" });
+		const kept = await store.createTool(draft.id, {
+			name: "harbor_weather",
+			description: "The weather.",
+			template: "Rain.",
+		});
+		const removed = await store.createTool(draft.id, { name: "gone" });
+		await store.deleteTool(removed.id);
+
+		const source = await store.loadPublicationSource(draft.id);
+		expect(source?.tools?.map((tool) => tool.id)).toEqual([kept.id]);
+		const built = source ? buildStoryPublication(source) : null;
+		expect(built?.ok).toBe(true);
+		if (built?.ok)
+			expect(built.publication.play.tools[0]?.declaration.name).toBe(
+				"harbor_weather",
+			);
+
+		await store.deleteDraft(draft.id);
+		const stored = await db.draftTools.get(kept.id);
+		expect(stored?.deletedAt).not.toBeNull();
+		expect(stored?.dirty).toBe(1);
+		expect(await store.listTools(draft.id)).toEqual([]);
 	});
 });

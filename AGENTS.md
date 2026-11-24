@@ -1262,6 +1262,29 @@ screen     features/chat/suggestion/                  the panel above the compos
   is the operator's key and the member's rate-limit window, on BYO it is the member's own key; a count
   setting asks the user to weigh cost with nothing on screen to weigh it against.
 
+### Custom tools and sub-agents — tools people write
+
+Full rules in `docs/chat/TOOLS.md` §14–§17.
+
+```text
+contract     ChatCustomToolDto = declaration + action (template · table · http · agent); creators: no http
+user tools   chat.tool records (account library, like personas) · room.toolOverrides by id · settings → Tools
+creator      authoring.tool draft children → seed.tools (only valid ones; publish blocks on invalid_tool)
+registry     chatConversationTools(room, { userTools, ports }) — lore → creator → user, first name wins, ≤ CHAT_MAX_TOOLS
+sub-agent    agent action → ports.runAgent → chatAgentRequest: own system prompt, no history, tools [], parent's context
+share        tool-file.ts — header values never exported, imports arrive off, never preselect replace
+```
+
+- **One registry.** Apps and the server's protected loop pass ports; they never build tool lists themselves.
+  Without `ports` only lore search is built — that is every caller's shape before this axis.
+- **A kind whose port is missing is not declared** (`chatCustomTool` → `null`). Never declare a tool that cannot run.
+- **Sub-agents are one level deep by construction** (their request declares no tools). Do not give `runAgent`
+  a transport with `toolAccess`.
+- **Agents run on the conversation's own target** (same BYO key or managed door); the device opens that transport
+  inside the generation hook, which is already a credential door — do not add a new one.
+- **Rooms refer to user tools by id; they do not copy them** (unlike personas): a tool result never outlives a turn.
+- **`lore_search` is reserved** for users (store, codec) and creators (publication), pinned equal in both packages.
+
 ### Prompt protection — the manuscript stays on the server
 
 **What a request body carries is what anyone with devtools reads.** Full rules in
@@ -1292,9 +1315,10 @@ protected turn   POST /v2/chat/stories/:storyId/generate — device sends its sh
 - **Same gate, every turn.** The route goes through `requirePlayableStory` (now `routes/stories/playback-gate.ts`,
   shared with `/play` and `/playback`) — republishing reaches open rooms on the next turn, and losing entitlement
   stops them. **Protected rooms are no longer acquisition-time snapshots; that was a product decision.**
-- **The server runs the lore tool loop for these rooms** with the same `runChatToolLoop`; the whole loop is one
+- **The server runs the tool loop for these rooms** with the same `runChatToolLoop`; the whole loop is one
   request to the managed gates — the allowlist and both rate-limit windows are checked once, at the start
-  (`docs/chat/TOOLS.md` §3).
+  (`docs/chat/TOOLS.md` §3). That includes the creator's own tools (blanked from the device seed like lore);
+  a sub-agent there is admitted through the same budget as a later round. User tools do not run in these rooms.
 - **BYO is blocked on protected rooms** (`managed_only`) — there is no manuscript to send from the browser. So a
   member who is **not** on the managed-generation allowlist cannot converse in a protected room at all (the
   managed door answers `chat_managed_not_allowed` and there is no BYO door to fall back to); the screen sends them

@@ -77,6 +77,7 @@ describe("what folds", () => {
 		["create/lore-section.tsx", "lore"],
 		["create/start-scene-section.tsx", "startScenes"],
 		["create/scene-image-section.tsx", "sceneImages"],
+		["create/tool-section.tsx", "tools"],
 	])("%s passes a summary", (path, noun) => {
 		const text = read(path);
 		expect(text).toContain(`SECTION_SUMMARY_NOUN.${noun}`);
@@ -130,6 +131,7 @@ describe("folding loses nothing", () => {
 		"create/lore-section.tsx",
 		"create/start-scene-section.tsx",
 		"create/scene-image-section.tsx",
+		"create/tool-section.tsx",
 	])("%s passes warnings as alert", (path) => {
 		expect(read(path)).toContain("alert={");
 	});

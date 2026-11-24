@@ -89,6 +89,7 @@ const seed = (title: string): ChatSeed => ({
 	lore: [],
 	startScenes: [],
 	sceneImages: [],
+	tools: [],
 });
 
 /** Synthetic plaintext the relay must never see. Distinctive enough to scan for. */

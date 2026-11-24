@@ -366,6 +366,12 @@ const CHAT_READS: ReadonlySet<keyof ChatStore & string> = new Set([
 	"getSummary",
 	"listPersonas",
 	"getPersona",
+	/**
+	 * The tool library. Generation reads it once per turn, and the room's tools pane subscribes to
+	 * it; missed here, either read would signal a write and wake sync (and itself).
+	 */
+	"listUserTools",
+	"getUserTool",
 ]);
 
 /**
@@ -409,6 +415,8 @@ const AUTHORING_READS: ReadonlySet<keyof AuthoringStore & string> = new Set([
 	"listDrafts",
 	"getDraft",
 	"listLore",
+	/** Creator tools: the editor's tools section subscribes to this list, so a miss would loop like scene images. */
+	"listTools",
 	"listStartScenes",
 	/**
 	 * **This line was missing.** The list direction had been set to the safe side (an unknown method

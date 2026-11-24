@@ -5,6 +5,7 @@ import { loreRuntimeLock } from "./sections/lore-list.tsx";
 import { promptRuntimeLock } from "./sections/prompt-editing.ts";
 import { sceneImageRuntimeLock } from "./sections/scene-image-list.tsx";
 import { startSceneRuntimeLock } from "./sections/start-scene-list.tsx";
+import { toolRuntimeLock } from "./sections/tool-list.tsx";
 
 const read = (name: string): string =>
 	readFileSync(fileURLToPath(new URL(name, import.meta.url)), "utf8");
@@ -15,7 +16,7 @@ const stripComments = (text: string): string =>
 const lockWiring = stripComments(read("./runtime-lock.tsx"));
 
 /**
- * The four conversation-material sections that pass the runtime check. This list is what the tests
+ * The conversation-material sections that pass the runtime check (tools joined the original four). This list is what the tests
  * in this file inspect.
  */
 const MATERIAL_SECTIONS = [
@@ -23,6 +24,7 @@ const MATERIAL_SECTIONS = [
 	["lore", "./sections/lore-list.tsx"],
 	["opening scene", "./sections/start-scene-list.tsx"],
 	["scene image", "./sections/scene-image-list.tsx"],
+	["tool", "./sections/tool-list.tsx"],
 ] as const;
 
 const materials = MATERIAL_SECTIONS.map(
@@ -96,6 +98,7 @@ describe("turning runtime on locks the conversation material", () => {
 		["lore", loreRuntimeLock],
 		["opening scene", startSceneRuntimeLock],
 		["scene image", sceneImageRuntimeLock],
+		["tool", toolRuntimeLock],
 	] as const)("the %s lock copy says the value is kept and comes back", (_name, lock) => {
 		const { body } = lock();
 		expect(body).toContain("kept");

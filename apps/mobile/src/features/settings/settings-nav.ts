@@ -17,7 +17,7 @@
 import { deferredGroup, translator } from "../../lib/i18n/instance.ts";
 
 /** Settings screens that exist. A category is added only together with its screen, in the same commit. */
-export type MobileSettingsCategory = "general" | "ai" | "persona";
+export type MobileSettingsCategory = "general" | "ai" | "persona" | "tools";
 
 export interface MobileSettingsNavItem {
 	category: MobileSettingsCategory;
@@ -29,7 +29,11 @@ export interface MobileSettingsNavItem {
 	 * two addresses with no way to say which is canonical (the create workspace omits its default tab
 	 * from the address for the same reason). The web's list uses the same three addresses.
 	 */
-	route: "/settings" | "/settings/ai" | "/settings/personas";
+	route:
+		| "/settings"
+		| "/settings/ai"
+		| "/settings/personas"
+		| "/settings/tools";
 }
 
 export const MOBILE_SETTINGS_NAV: readonly MobileSettingsNavItem[] = [
@@ -59,6 +63,18 @@ export const MOBILE_SETTINGS_NAV: readonly MobileSettingsNavItem[] = [
 			return categoryLabel("persona");
 		},
 		route: "/settings/personas",
+	},
+	/**
+	 * Tools are an account asset for the persona's reason (`user-tool.ts` in `@rowcat/chat`): the
+	 * library is written once and switched on or off per room. The list lives here; the room's tools
+	 * pane only decides which of them are on in that conversation. After personas, as on web.
+	 */
+	{
+		category: "tools",
+		get label() {
+			return categoryLabel("tools");
+		},
+		route: "/settings/tools",
 	},
 ] as const;
 

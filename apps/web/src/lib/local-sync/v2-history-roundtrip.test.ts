@@ -42,6 +42,7 @@ const seed = (title: string): ChatSeed => ({
 	lore: [],
 	startScenes: [],
 	sceneImages: [],
+	tools: [],
 });
 
 let devices: Device[] = [];

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createDraftToolRecord } from "./draft-tool.ts";
 import {
 	createDraftLoreEntryRecord,
 	createDraftStartSceneRecord,
@@ -52,11 +53,28 @@ const scene = (
 		stamp(id),
 	);
 
+const tool = (
+	id: string,
+	input: Partial<Parameters<typeof createDraftToolRecord>[0]> = {},
+) =>
+	createDraftToolRecord(
+		{
+			draftId: "draft-1",
+			positionIndex: 0,
+			name: "harbor_weather",
+			description: "The weather at a place.",
+			template: "Rain over {{place}}.",
+			...input,
+		},
+		stamp(id),
+	);
+
 const source = (over: Partial<StoryPublicationSource> = {}) => ({
 	draft: over.draft ?? baseDraft(),
 	lore: over.lore ?? [],
 	startScenes: over.startScenes ?? [],
 	sceneImages: over.sceneImages ?? [],
+	tools: over.tools,
 });
 
 /**
@@ -73,9 +91,33 @@ const RUNTIME_FIELDS = [
 	"lore",
 	"startScenes",
 	"sceneImages",
+	"tools",
 ] as const;
 
 describe("the same normalization as publication", () => {
+	/**
+	 * A tool the contract rejects would make every request of the test a 400, so the test plays
+	 * without it and publishing names it. Both still read the one list that `prepareStoryPublication`
+	 * kept, so a valid tool behaves the same in both.
+	 */
+	it("plays only the valid tools, the same ones publishing sends", () => {
+		const input = source({
+			tools: [
+				tool("tool-b", { positionIndex: 1, name: "half", description: "" }),
+				tool("tool-a", { positionIndex: 0 }),
+			],
+		});
+		const snapshot = buildPlaytestSnapshot(input);
+		expect(snapshot.seed.tools.map((entry) => entry.declaration.name)).toEqual([
+			"harbor_weather",
+		]);
+		expect(snapshot.seed.tools).toEqual(
+			prepareStoryPublication(input).publication.play.tools,
+		);
+		// Publishing the same source is blocked instead.
+		expect(buildStoryPublication(input).ok).toBe(false);
+	});
+
 	it("runtime fields equal the publish request by value", () => {
 		const input = source({
 			draft: baseDraft({ prompt: "  a body with surrounding whitespace  " }),

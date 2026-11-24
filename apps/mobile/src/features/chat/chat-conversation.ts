@@ -1,5 +1,6 @@
 import {
 	type AssistantContinuation,
+	activeUserTools,
 	type ChatRoom,
 	type ChatStore,
 	type ConversationMemoryRuntime,
@@ -112,6 +113,16 @@ export function createChatConversation(input: {
 		// reproduce that, so it is read once at start and frozen.
 		loadNarration: async () =>
 			(await store.getRoom(room.id))?.narration ?? null,
+		// The user's tools on in this room, re-read for narration's reason (same wiring as web): both
+		// halves, the room's overrides and the library, can change in settings right before a send. A
+		// room deleted meanwhile answers none rather than every default-on tool.
+		loadUserTools: async () => {
+			const [current, tools] = await Promise.all([
+				store.getRoom(room.id),
+				store.listUserTools(),
+			]);
+			return current ? activeUserTools(current, tools) : [];
+		},
 		...memoryHooks,
 		appendUserMessage: async (content: string) => {
 			await store.appendMessage({

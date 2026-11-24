@@ -111,6 +111,7 @@ const publishRequest = {
 		lore: [],
 		startScenes: [],
 		sceneImages: [],
+		tools: [],
 	},
 };
 

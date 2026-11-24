@@ -38,6 +38,8 @@ export type PlaytestSeed = Pick<
 	| "startScenes"
 	/** Scene images. The test must draw the same pictures as a real conversation. */
 	| "sceneImages"
+	/** Creator tools. Only the valid ones (`toolIssues` holds the rest), the same set publishing sends. */
+	| "tools"
 >;
 
 /**
@@ -139,6 +141,7 @@ export function buildPlaytestSnapshot(
 			lore: play.lore,
 			startScenes: play.startScenes,
 			sceneImages: play.sceneImages,
+			tools: play.tools,
 		},
 		startScenes,
 		startSceneId: override ? override.id : prepared.defaultStartSceneId,

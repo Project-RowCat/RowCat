@@ -13,6 +13,7 @@
 export * from "./autosave-queue.ts";
 export * from "./character-card.ts";
 export * from "./conversation-authoring.ts";
+export * from "./draft-tool.ts";
 export * from "./legacy.ts";
 export * from "./model.ts";
 export * from "./playtest.ts";

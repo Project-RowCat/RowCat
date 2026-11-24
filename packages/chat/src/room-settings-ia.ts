@@ -65,6 +65,12 @@ export type RoomSettingsRowId =
 	 * request wins. `Conversation info` is read-only and always ends the `Conversation` group, which is why it comes after.
 	 */
 	| "userNote"
+	/**
+	 * Tools: which of the user's own tools are on in this conversation (`user-tool.ts`). After the user
+	 * note, because both are things the user adds to how this conversation runs, and before the
+	 * read-only info row that ends the group.
+	 */
+	| "tools"
 	| "info"
 	| "rename"
 	/**
@@ -98,6 +104,7 @@ export const ROOM_SETTINGS_IA: readonly RoomSettingsGroupSpec[] = [
 			"characters",
 			"memory",
 			"userNote",
+			"tools",
 			"info",
 		],
 	},
@@ -127,6 +134,7 @@ export const ROOM_SETTINGS_NAVIGATIONAL_ROWS: ReadonlySet<RoomSettingsRowId> =
 		"characters",
 		"memory",
 		"userNote",
+		"tools",
 		"info",
 		"rename",
 	]);

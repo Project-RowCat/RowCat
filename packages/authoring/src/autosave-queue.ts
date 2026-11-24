@@ -13,6 +13,8 @@ import type { AuthoringStore } from "./store.ts";
 export type PendingKind =
 	| "draft"
 	| "lore"
+	/** Creator tool. Typed text in a draft child, like lore. */
+	| "tool"
 	| "startScene"
 	| "sceneImage"
 	/**

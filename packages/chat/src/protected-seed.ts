@@ -8,7 +8,8 @@ import type { StoryChatSeedDto } from "@rowcat/contracts/chat";
  * Generation is assembled by the server from the currently published seed, and the device receives
  * only what the screen draws.
  *
- * Cleared: scenario, play guide, character description fields, lore. Kept: title, tagline, rating,
+ * Cleared: scenario, play guide, character description fields, lore, creator tools (an agent's
+ * system prompt and a template are manuscript; the server runs them). Kept: title, tagline, rating,
  * first scene, start scenes, persona, scene images, character names.
  *
  * The test for keeping a field is whether the screen already draws it. The opening and start scenes
@@ -35,5 +36,6 @@ export function projectProtectedSeed(seed: StoryChatSeedDto): StoryChatSeedDto {
 			prompt: "",
 		})),
 		lore: [],
+		tools: [],
 	};
 }

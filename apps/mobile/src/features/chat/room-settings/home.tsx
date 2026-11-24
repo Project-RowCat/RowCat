@@ -16,6 +16,7 @@ import { View } from "react-native";
 import { getRowCatClient } from "../../../lib/api.ts";
 import { useLocalCharacters } from "../../../lib/local-data/use-characters.ts";
 import { useProviderConnections } from "../../../lib/local-data/use-provider-connections.ts";
+import { useLocalUserTools } from "../../../lib/local-data/use-user-tools.ts";
 import { useViewerCapability } from "../../../lib/viewer-capability.ts";
 import { personaRowSummary } from "../../persona/persona-form.ts";
 import { useRoomGenerationState } from "../generation/use-room-generation.ts";
@@ -24,6 +25,7 @@ import { characterRowSummary } from "./character-copy.ts";
 import { intensityRowSummary } from "./intensity-copy.ts";
 import { narrationRowSummary } from "./narration-copy.ts";
 import { RoomSettingsGroup, RoomSettingsRow } from "./parts.tsx";
+import { toolsRowSummary } from "./tools-copy.ts";
 import { userNoteRowSummary } from "./user-note-copy.ts";
 import {
 	ROOM_SETTINGS_BLOCKED_WARNING,
@@ -61,6 +63,12 @@ export function RoomSettingsHome({
 	/** Only the count is needed; the detail pane subscribes to the list (`useRoomManagement`), and holding it here too would be two subscriptions. */
 	const { value: characters } = useLocalCharacters(room.id);
 	const characterCount = characters.length;
+	/**
+	 * The tool library, for the row's "n of m on". A subscription only while settings is open, the
+	 * characters' trade-off: the conversation screen itself holds none (generation reads the library
+	 * once per turn).
+	 */
+	const userTools = useLocalUserTools();
 	/** Same query key as the generation detail (`@rowcat/query`): no extra request (same keys merge), and the list the detail needs is warmed while home is open. */
 	const catalog = useQuery(generationModelsQueryOptions(getRowCatClient()));
 	const capability = useViewerCapability();
@@ -111,6 +119,12 @@ export function RoomSettingsHome({
 			);
 		/* The summary never truncates the body: a cut instruction can read as its opposite (`Don't use formal speech…`), common at this width. Same function as the web row. */
 		if (row === "userNote") return userNoteRowSummary(roomUserNote(room));
+		/* Counts what the next turn declares (`userToolActiveIn`), not what is on by default. */
+		if (row === "tools")
+			return toolsRowSummary(
+				room,
+				userTools.status === "loading" ? null : userTools.value,
+			);
 		return ROOM_SETTINGS_ROW_SUMMARY[row];
 	};
 

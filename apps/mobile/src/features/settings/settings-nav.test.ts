@@ -8,20 +8,22 @@ import {
 } from "./settings-nav.ts";
 
 /**
- * The settings navigation model: there are three categories, and the account is not one of them.
+ * The settings navigation model: there are four categories, and the account is not one of them.
  */
 
 describe("categories", () => {
-	it("three, in the same order as the web", () => {
+	it("four, in the same order as the web", () => {
 		expect(MOBILE_SETTINGS_NAV.map((item) => item.category)).toEqual([
 			"general",
 			"ai",
 			"persona",
+			"tools",
 		]);
 		expect(MOBILE_SETTINGS_NAV.map((item) => item.label)).toEqual([
 			"General",
 			"AI",
 			"Persona",
+			"Tools",
 		]);
 	});
 
@@ -87,7 +89,7 @@ describe("every category is classified as the settings utility", () => {
 	 * The list and the shell decision read the **same address**. If they diverge, an existing category
 	 * fails to light the gear, and the symptom shows only on that screen.
 	 */
-	it("all three are utility=settings and turn on no section", () => {
+	it("all four are utility=settings and turn on no section", () => {
 		for (const item of MOBILE_SETTINGS_NAV)
 			expect(mobileShellRouteFor(item.route), item.route).toEqual({
 				section: null,
@@ -107,6 +109,7 @@ describe("where to return after signing in", () => {
 		expect(settingsLoginRedirect("general")).toBe("/settings");
 		expect(settingsLoginRedirect("ai")).toBe("/settings/ai");
 		expect(settingsLoginRedirect("persona")).toBe("/settings/personas");
+		expect(settingsLoginRedirect("tools")).toBe("/settings/tools");
 	});
 
 	/**

@@ -136,6 +136,22 @@ export async function setManagedRoomUserNote(
 	return "done";
 }
 
+/**
+ * Turns one of the user's tools on or off in this room; `null` returns it to the tool's own default
+ * (`applyRoomToolOverride`). The tool library itself is edited in settings
+ * (`features/tools/tool-mutations.ts`); this room write stays here with the other room writes.
+ */
+export async function setManagedRoomToolOverride(
+	scope: RoomMutationScope,
+	roomId: string,
+	toolId: string,
+	enabled: boolean | null,
+): Promise<RoomMutationOutcome> {
+	if (!scope.owns(scope.store)) return "foreign";
+	await scope.store.setRoomToolOverride(roomId, toolId, enabled);
+	return "done";
+}
+
 // The persona library mutations live in `features/persona/persona-mutations.ts`: the library is an
 // account asset, not a room child. Applying a persona to a room stays here
 // (`setManagedRoomPersona`).

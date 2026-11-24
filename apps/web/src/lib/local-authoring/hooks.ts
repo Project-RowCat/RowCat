@@ -5,6 +5,7 @@ import type {
 	DraftRuntimeProject,
 	DraftSceneImage,
 	DraftStartScene,
+	DraftTool,
 	StoryDraft,
 } from "@rowcat/authoring";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -102,6 +103,17 @@ export function useDraftLore(draftId: string): LocalListState<DraftLoreEntry> {
 	return useDraftChildren(
 		draftId,
 		store && ((id: string) => store.listLore(id)),
+		[store, draftId],
+		status === "ready",
+	);
+}
+
+/** Creator tools of one draft, in list order. */
+export function useDraftTools(draftId: string): LocalListState<DraftTool> {
+	const { store, status } = useAuthoringScope();
+	return useDraftChildren(
+		draftId,
+		store && ((id: string) => store.listTools(id)),
 		[store, draftId],
 		status === "ready",
 	);

@@ -1,3 +1,4 @@
+import type { DraftTool, DraftToolPatch, NewDraftTool } from "./draft-tool.ts";
 import type {
 	CreateDraftLoreEntryInput,
 	CreateDraftSceneImageInput,
@@ -99,6 +100,16 @@ export interface AuthoringStore {
 	 * known items is better than failing; the user's drag result is still applied.
 	 */
 	reorderLore(draftId: string, orderedIds: string[]): Promise<void>;
+
+	/**
+	 * Creator tools (`draft-tool.ts`): a draft child with lore's four operations and lore's reorder
+	 * rule. Deleting the draft cascades to them like every other child.
+	 */
+	listTools(draftId: string): Promise<DraftTool[]>;
+	createTool(draftId: string, input?: NewDraftTool): Promise<DraftTool>;
+	updateTool(id: string, patch: DraftToolPatch): Promise<void>;
+	deleteTool(id: string): Promise<void>;
+	reorderTools(draftId: string, orderedIds: string[]): Promise<void>;
 
 	listStartScenes(draftId: string): Promise<DraftStartScene[]>;
 	createStartScene(

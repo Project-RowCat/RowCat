@@ -1,3 +1,4 @@
+import type { ChatCreatorToolDto } from "@rowcat/contracts/chat";
 import type {
 	StoryPublishLore,
 	StoryPublishMetadata,
@@ -6,6 +7,12 @@ import type {
 	StoryPublishStartScene,
 } from "@rowcat/contracts/publication";
 import type { StoryPublishRuntimeInput } from "@rowcat/contracts/story-runtime";
+import {
+	checkDraftTool,
+	DRAFT_TOOL_RESERVED_NAMES,
+	type DraftTool,
+	sortDraftTools,
+} from "./draft-tool.ts";
 import type {
 	DraftLoreEntry,
 	DraftSceneImage,
@@ -61,6 +68,11 @@ export interface StoryPublicationSource {
 	 * reports it separately.
 	 */
 	sceneImages: DraftSceneImage[];
+	/**
+	 * Creator tools (`draft-tool.ts`). Optional: a caller that does not know the axis publishes no
+	 * tools, which is what that caller's version always did.
+	 */
+	tools?: DraftTool[];
 	/**
 	 * Creator runtime. Absent and disabled are different states.
 	 * - Field absent (undefined): the caller does not know the runtime axis. No `runtime` is sent.
@@ -146,6 +158,12 @@ export interface PreparedStoryPublication {
 	 * `No entry file` rather than a generic publish failure.
 	 */
 	runtimeIssues: { entryMissing: boolean };
+	/**
+	 * Tools that normalization left out of `play.tools`, by list position, with what is wrong. Only
+	 * valid tools are published or played: a tool the contract rejects would make every request of
+	 * the conversation a 400, so playtest drops it silently and publishing is blocked by validation.
+	 */
+	toolIssues: { index: number; name: string; issues: string[] }[];
 }
 
 export type BuildStoryPublicationResult =
@@ -351,6 +369,34 @@ export function prepareStoryPublication(
 	const { draft } = source;
 
 	const lore = sortLore(source.lore.filter(isLiveRecord));
+	const tools: ChatCreatorToolDto[] = [];
+	const toolIssues: PreparedStoryPublication["toolIssues"] = [];
+	const toolNames = new Set<string>(DRAFT_TOOL_RESERVED_NAMES);
+	sortDraftTools((source.tools ?? []).filter(isLiveRecord)).forEach(
+		(tool, index) => {
+			const checked = checkDraftTool(tool);
+			if (!checked.ok) {
+				toolIssues.push({ index, name: tool.name, issues: checked.issues });
+				return;
+			}
+			/**
+			 * A name already taken would be skipped by the conversation's registry (first wins), so the
+			 * second tool would be published but never callable.
+			 */
+			if (toolNames.has(checked.tool.declaration.name)) {
+				toolIssues.push({
+					index,
+					name: tool.name,
+					issues: [
+						`declaration.name: '${checked.tool.declaration.name}' is already used.`,
+					],
+				});
+				return;
+			}
+			toolNames.add(checked.tool.declaration.name);
+			tools.push(checked.tool);
+		},
+	);
 	const startScenes = sortStartScenes(source.startScenes.filter(isLiveRecord));
 	/**
 	 * Folds in slot order, keeping only the first entry for each trigger. If duplicates were sent, the
@@ -421,6 +467,7 @@ export function prepareStoryPublication(
 			lore: lore.map(toPublishLore),
 			startScenes: publishScenes,
 			sceneImages,
+			tools,
 		},
 		/**
 		 * The runtime field is sent only when the caller knows about it. Leaving `undefined` as is gives
@@ -436,6 +483,7 @@ export function prepareStoryPublication(
 		defaultStartSceneId: chosen?.id ?? null,
 		sceneImageIssues: { incomplete: incompleteSceneImages, duplicateTriggers },
 		runtimeIssues: { entryMissing: runtime?.entryMissing === true },
+		toolIssues,
 	};
 }
 
@@ -452,6 +500,7 @@ export function buildStoryPublication(
 		defaultStartSceneResolved: prepared.defaultStartSceneResolved,
 		sceneImageIssues: prepared.sceneImageIssues,
 		runtimeIssues: prepared.runtimeIssues,
+		toolIssues: prepared.toolIssues,
 	});
 	if (issues.length) return { ok: false, publication: null, issues };
 	return { ok: true, publication: prepared.publication, issues: [] };

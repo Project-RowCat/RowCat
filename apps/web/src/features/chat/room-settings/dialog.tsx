@@ -17,6 +17,7 @@ import { RoomSettingsInfo } from "./info.tsx";
 import { RoomSettingsIntensity } from "./intensity.tsx";
 import { RoomSettingsNarration } from "./narration.tsx";
 import { RoomSettingsPersona } from "./persona.tsx";
+import { RoomSettingsTools } from "./tools.tsx";
 import { RoomSettingsUserNote } from "./user-note.tsx";
 import {
 	type RoomSettingsView,
@@ -31,12 +32,14 @@ import {
  * - Rename: ChatStore.renameRoom. Delete: ChatStore.deleteRoom (synced tombstone)
  * - Memory: ChatMemoryStore, opened as a sibling dialog
  * - User note: ChatStore.setRoomUserNote (synced room record). Info: read-only copy
+ * - Tools: ChatStore.setRoomToolOverride (synced room record); the library itself is edited at
+ *   /settings/tools
  *
  * There is no single save button. No transaction spans these stores, so one commit could report
  * success after only some writes succeeded. Each action completes under its owner's rules.
  *
  * The dialog shows one surface at a time (home, generation, persona, narration, intensity,
- * characters, user note, info). Tabs and accordions are not used: tabs show every section at once,
+ * characters, user note, tools, info). Tabs and accordions are not used: tabs show every section at once,
  * and accordions recreate one long document. Nested dialogs are never opened, so Escape and the
  * focus trap have one target. Memory is the exception: its form and list would nest inside the
  * scroll area, and closing the outer dialog first would discard typed text. The persona creation
@@ -215,6 +218,8 @@ export function RoomSettingsDialog({
 						<RoomSettingsCharacters room={room} />
 					) : view === "userNote" ? (
 						<RoomSettingsUserNote room={room} />
+					) : view === "tools" ? (
+						<RoomSettingsTools room={room} onLeave={onClose} />
 					) : (
 						<RoomSettingsInfo room={room} />
 					)}

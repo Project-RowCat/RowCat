@@ -106,13 +106,15 @@ export async function exportDraftArchive(
 	const { store } = deps;
 	const draft = await store.getDraft(draftId);
 	if (!draft) throw new DraftArchiveError("not_found");
-	const [lore, startScenes, sceneImages, project, cover] = await Promise.all([
-		store.listLore(draftId),
-		store.listStartScenes(draftId),
-		store.listSceneImages(draftId),
-		store.getRuntimeProject(draftId),
-		deps.covers.get(draftId),
-	]);
+	const [lore, tools, startScenes, sceneImages, project, cover] =
+		await Promise.all([
+			store.listLore(draftId),
+			store.listTools(draftId),
+			store.listStartScenes(draftId),
+			store.listSceneImages(draftId),
+			store.getRuntimeProject(draftId),
+			deps.covers.get(draftId),
+		]);
 	const runtime = project
 		? {
 				project,
@@ -123,6 +125,7 @@ export async function exportDraftArchive(
 	const source = {
 		draft,
 		lore,
+		tools,
 		startScenes,
 		sceneImages,
 		runtime,
@@ -342,6 +345,7 @@ export async function importDraftArchive(
 	try {
 		for (const entry of plan.value.lore)
 			await store.createLore(draft.id, entry);
+		for (const tool of plan.value.tools) await store.createTool(draft.id, tool);
 		const scenes = [];
 		for (const scene of plan.value.startScenes) {
 			scenes.push(await store.createStartScene(draft.id, scene));

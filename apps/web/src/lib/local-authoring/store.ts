@@ -8,6 +8,7 @@ import {
 	createDraftRuntimeProjectRecord,
 	createDraftSceneImageRecord,
 	createDraftStartSceneRecord,
+	createDraftToolRecord,
 	createStoryDraftRecord,
 	type DraftLoreEntry,
 	type DraftLoreEntryPatch,
@@ -20,6 +21,8 @@ import {
 	type DraftSceneImagePatch,
 	type DraftStartScene,
 	type DraftStartScenePatch,
+	type DraftTool,
+	type DraftToolPatch,
 	defaultRuntimeStarter,
 	isLiveRecord,
 	markAuthoringDeleted,
@@ -30,11 +33,13 @@ import {
 	type NewDraftRuntimeAsset,
 	type NewDraftSceneImage,
 	type NewDraftStartScene,
+	type NewDraftTool,
 	type RuntimeStarter,
 	runtimeProjectIdFor,
 	type StoryDraft,
 	type StoryDraftPatch,
 	type StoryPublicationSource,
+	sortDraftTools,
 	sortLore,
 	sortRuntimeAssets,
 	sortRuntimeFiles,
@@ -80,6 +85,8 @@ import { nextRev, nextRevs } from "#/lib/local-data/hlc.ts";
  * their order deterministic.
  */
 const LORE_ORDER = "[draftId+positionIndex]";
+/** Creator tools are ordered exactly like lore: by the author's list position. */
+const TOOL_ORDER = "[draftId+positionIndex]";
 const START_SCENE_ORDER = "[draftId+position]";
 const SCENE_IMAGE_ORDER = "[draftId+position]";
 /**
@@ -356,6 +363,7 @@ export function createAuthoringStore(db: LocalDb): AuthoringStore {
 				[
 					db.storyDrafts,
 					db.draftLoreEntries,
+					db.draftTools,
 					db.draftStartScenes,
 					db.draftSceneImages,
 					db.draftRuntimeProjects,
@@ -378,6 +386,11 @@ export function createAuthoringStore(db: LocalDb): AuthoringStore {
 					 * record it accepts, and a write to the wrong table would slip past the compiler.
 					 */
 					await softDeleteChildrenOf(db.draftLoreEntries, id, now);
+					/**
+					 * Creator tools leave tombstones like lore: they sync as their own records, and a device
+					 * that has not seen the draft's tombstone yet must still drop them.
+					 */
+					await softDeleteChildrenOf(db.draftTools, id, now);
 					await softDeleteChildrenOf(db.draftStartScenes, id, now);
 					/**
 					 * Scene images also leave tombstones. The server's images are not deleted: what is removed is
@@ -480,6 +493,80 @@ export function createAuthoringStore(db: LocalDb): AuthoringStore {
 					reorderInTx(
 						db.draftLoreEntries,
 						LORE_ORDER,
+						draftId,
+						orderedIds,
+						(row, positionIndex) => ({ ...row, positionIndex }),
+					),
+			);
+		},
+
+		/**
+		 * Creator tools: lore's five operations, transcribed. The record is loose on purpose
+		 * (`draft-tool.ts`), so nothing here checks the tool; publishing does.
+		 */
+		listTools: async (draftId) =>
+			sortDraftTools(await liveChildren(db.draftTools, TOOL_ORDER, draftId)),
+
+		async createTool(
+			draftId: string,
+			input?: NewDraftTool,
+		): Promise<DraftTool> {
+			return db.transaction(
+				"rw",
+				[db.storyDrafts, db.draftTools, db.syncState],
+				async () => {
+					const now = nowIso();
+					const positionIndex = await nextPosition(
+						db.draftTools,
+						TOOL_ORDER,
+						draftId,
+						(row) => row.positionIndex,
+					);
+					const [childRev, parentRev] = await nextRevs(db, 2);
+					const tool = createDraftToolRecord(
+						{ ...input, draftId, positionIndex },
+						{ id: newLocalId(), now, rev: childRev },
+					);
+					await db.draftTools.add(tool);
+					await touchDraftInTx(draftId, now, parentRev);
+					return tool;
+				},
+			);
+		},
+
+		async updateTool(id: string, patch: DraftToolPatch): Promise<void> {
+			await db.transaction(
+				"rw",
+				[db.storyDrafts, db.draftTools, db.syncState],
+				async () => {
+					const current = await db.draftTools.get(id);
+					if (!current || !isLiveRecord(current)) return;
+					const now = nowIso();
+					const [childRev, parentRev] = await nextRevs(db, 2);
+					await db.draftTools.put(
+						markAuthoringUpdate({ ...current, ...patch }, now, childRev),
+					);
+					await touchDraftInTx(current.draftId, now, parentRev);
+				},
+			);
+		},
+
+		async deleteTool(id: string): Promise<void> {
+			await db.transaction(
+				"rw",
+				[db.storyDrafts, db.draftTools, db.syncState],
+				() => softDeleteChild(db.draftTools, id),
+			);
+		},
+
+		async reorderTools(draftId: string, orderedIds: string[]): Promise<void> {
+			await db.transaction(
+				"rw",
+				[db.storyDrafts, db.draftTools, db.syncState],
+				() =>
+					reorderInTx(
+						db.draftTools,
+						TOOL_ORDER,
 						draftId,
 						orderedIds,
 						(row, positionIndex) => ({ ...row, positionIndex }),
@@ -1050,6 +1137,7 @@ export function createAuthoringStore(db: LocalDb): AuthoringStore {
 				[
 					db.storyDrafts,
 					db.draftLoreEntries,
+					db.draftTools,
 					db.draftStartScenes,
 					db.draftSceneImages,
 					db.draftRuntimeProjects,
@@ -1063,6 +1151,13 @@ export function createAuthoringStore(db: LocalDb): AuthoringStore {
 						draft,
 						lore: sortLore(
 							await liveChildren(db.draftLoreEntries, LORE_ORDER, draftId),
+						),
+						/**
+						 * Tools come from the same read as the prompt they are written for: a tool whose
+						 * description names a lore entry should not publish beside the lore of another moment.
+						 */
+						tools: sortDraftTools(
+							await liveChildren(db.draftTools, TOOL_ORDER, draftId),
 						),
 						startScenes: sortStartScenes(
 							await liveChildren(

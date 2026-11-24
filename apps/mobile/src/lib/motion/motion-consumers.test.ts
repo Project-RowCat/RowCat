@@ -133,6 +133,7 @@ const PARITY: readonly MotionParityCase[] = [
 			"features/create/lore-section.tsx",
 			"features/create/start-scene-section.tsx",
 			"features/create/scene-image-section.tsx",
+			"features/create/tool-section.tsx",
 		],
 	},
 	{

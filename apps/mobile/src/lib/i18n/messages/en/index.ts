@@ -9,6 +9,7 @@ import { settings } from "./settings.ts";
 import { shell } from "./shell.ts";
 import { signIn } from "./sign-in.ts";
 import { story } from "./story.ts";
+import { tools } from "./tools.ts";
 import { updates } from "./updates.ts";
 import { vocab } from "./vocab.ts";
 
@@ -29,6 +30,7 @@ export const en = {
 	story,
 	moderation,
 	persona,
+	tools,
 	profile,
 	notifications,
 	updates,

@@ -4,7 +4,8 @@ import { useDraftRuntimeProject } from "#/lib/local-authoring/hooks.ts";
 import { EditorSection } from "./fields.tsx";
 
 /**
- * Wiring that locks the four conversation-material sections when runtime is enabled. All four pass
+ * Wiring that locks the conversation-material sections when runtime is enabled (the original four,
+ * plus creator tools, which only a conversation's requests declare). All of them pass
  * through this one point. The decision is the pure `resolveConversationAuthoringMode`, which mobile
  * also calls.
  *

@@ -45,6 +45,7 @@ const seed = (title: string): ChatSeed => ({
 	lore: [],
 	startScenes: [],
 	sceneImages: [],
+	tools: [],
 });
 
 const tick = async (rounds: number): Promise<void> => {

@@ -170,6 +170,7 @@ describe("the last row and the empty state don't overlap", () => {
 		["features/create/lore-section.tsx", "entries.length"],
 		["features/create/scene-image-section.tsx", "images.length"],
 		["features/create/start-scene-section.tsx", "scenes.length"],
+		["features/create/tool-section.tsx", "tools.length"],
 	];
 
 	it("those lists all turn off the last row's exit", () => {

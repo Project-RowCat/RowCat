@@ -158,6 +158,7 @@ describe("after publishing", () => {
 				lore: [],
 				startScenes: [],
 				sceneImages: [],
+				tools: [],
 			},
 		});
 
@@ -203,6 +204,7 @@ describe("after publishing", () => {
 				lore: [],
 				startScenes: [],
 				sceneImages: [],
+				tools: [],
 			},
 		});
 
@@ -246,6 +248,7 @@ describe("after publishing", () => {
 				lore: [],
 				startScenes: [],
 				sceneImages: [],
+				tools: [],
 			},
 		});
 

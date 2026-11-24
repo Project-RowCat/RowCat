@@ -1,4 +1,8 @@
-import type { ChatLorePosition } from "@rowcat/contracts";
+import type { DraftToolKind } from "@rowcat/authoring";
+import type {
+	ChatLorePosition,
+	ChatToolParameterType,
+} from "@rowcat/contracts";
 import { ORIENTATION_LABEL, type Orientation } from "@rowcat/domain";
 
 /**
@@ -55,6 +59,11 @@ export const SECTION = {
 		title: "Scene images",
 		description: "Pictures that `[img:trigger]` in the body calls.",
 	},
+	tools: {
+		title: "Tools",
+		description:
+			"Tools the AI can call in this story's conversations: fill in a template, draw from a random table, or ask a sub-agent.",
+	},
 	/** No description: the section's controls already say what they do. */
 	publish: { title: "Publish" },
 } as const;
@@ -81,6 +90,7 @@ export const SECTION_SUMMARY_NOUN = {
 	lore: "World",
 	startScenes: "Opening scenes",
 	sceneImages: "Scene images",
+	tools: "Callable",
 } as const;
 
 /* ── Basics ── */
@@ -249,6 +259,94 @@ export const SCENE_IMAGE = {
 	missingAsset: "No picture.",
 } as const;
 
+/* ── Creator tools ── */
+
+/**
+ * Creator tool copy. Same words as the web's `tool` and `toolEditorCard` messages; the two apps
+ * describe one record (`draft-tool.ts` in `@rowcat/authoring`).
+ */
+export const TOOL = {
+	add: "Add tool",
+	empty: "No tools yet. You can publish without tools.",
+	unnamed: "Unnamed tool",
+	remove: "Delete tool",
+	moveUp: "Up",
+	moveDown: "Down",
+	name: "Name",
+	nameHint:
+		"Lowercase letters, digits and underscores, starting with a letter. The AI calls the tool by this name.",
+	description: "Description",
+	descriptionHint:
+		"What the tool does and when to use it. The AI decides whether to call it from this alone.",
+	kind: "What it does",
+	template: "Template",
+	templateHint:
+		"Returned as the result. A parameter name in double braces, such as {{place}}, is replaced with the value the AI passed.",
+	entries: "Rows",
+	entriesHint: "One row per line. Each call draws rows at random.",
+	draws: "Rows per call",
+	system: "Sub-agent instructions",
+	systemHint:
+		"The sub-agent's own system prompt. It sees only what the AI passes in the parameters, not the conversation, and it can't call tools.",
+	maxOutputTokens: "Answer length cap (tokens)",
+	parameters: "Parameters",
+	noParameters: "No parameters. The AI calls the tool as is.",
+	addParameter: "Add parameter",
+	removeParameter: "Remove parameter",
+	parameterName: "Parameter name",
+	parameterType: "Type",
+	parameterDescription: "Parameter description",
+	parameterRequired: "Required",
+	parameterChoices: "Choices (comma-separated, empty for any text)",
+	/**
+	 * Shown beside the contract's own issue lines. An incomplete tool is the normal state while
+	 * writing; the sentence says what happens, not that something failed.
+	 */
+	issues: "Not publishable yet. Fix these and the tool will be published:",
+	tooMany: (max: number) => `A story can't have more than ${max} tools.`,
+} as const;
+
+export const TOOL_KIND_LABEL: Record<DraftToolKind, string> = {
+	template: "Template",
+	table: "Random table",
+	agent: "Sub-agent",
+};
+
+export const TOOL_PARAMETER_TYPE_LABEL: Record<ChatToolParameterType, string> =
+	{
+		string: "Text",
+		number: "Number",
+		boolean: "Yes or no",
+	};
+
+/** A name that is only whitespace counts as no name, since the card would show a blank row. */
+export const toolHeadline = (name: string): string =>
+	name.trim() || TOOL.unnamed;
+
+/**
+ * Table rows are edited as one box, a row per line. Empty lines are kept: the box is drawn from the
+ * record, so dropping them would eat the line break just typed. Publishing drops blank rows
+ * (`toCreatorTool`).
+ */
+export const splitToolRows = (text: string): string[] => text.split("\n");
+export const joinToolRows = (rows: readonly string[]): string =>
+	rows.join("\n");
+
+/** Choices, comma-separated, stored untrimmed for the same reason as rows. */
+export const splitToolChoices = (text: string): string[] =>
+	text === "" ? [] : text.split(",");
+export const joinToolChoices = (choices: readonly string[]): string =>
+	choices.join(",");
+
+/**
+ * A number box's value on change. Unreadable text keeps the previous value rather than saving 0: a
+ * draw count or token cap of 0 is never valid, and saving it would turn a typo into a publish issue.
+ */
+export function parseToolNumber(text: string, fallback: number): number {
+	const parsed = Number.parseInt(text, 10);
+	return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 /* ── Conversation material of drafts with the runtime on ── */
 
 /**
@@ -284,6 +382,17 @@ export const LORE_RUNTIME_LOCK = {
  * occupies the same position as the prompt, so the copy states the same three facts in the same
  * order: why it is not used, what takes that slot, and that the value has not been lost.
  */
+/**
+ * Tool section of a draft with the runtime on: a notice in place of the editor. Same wording as the
+ * web's `toolRuntimeLock`.
+ *
+ * Tools are declared on a conversation's requests, and runtime playback creates no conversation.
+ */
+export const TOOL_RUNTIME_LOCK = {
+	title: "Stories with runtime on don't use tools.",
+	body: "Tools are offered to the conversation's AI, but a runtime story's AI requests are built inside the runtime code. The tools you wrote are kept, and you can edit them again once runtime is off.",
+} as const;
+
 export const START_SCENE_RUNTIME_LOCK = {
 	title: "Stories with runtime on don't use opening scenes.",
 	body: "Runtime stories don't open a conversation room, so there is no place for an opening. Runtime code draws the first screen. The scenes you wrote are kept, and you can edit them again once runtime is off.",

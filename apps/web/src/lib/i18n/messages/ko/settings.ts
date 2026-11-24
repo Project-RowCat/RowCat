@@ -67,6 +67,7 @@ export const settings: Messages["settings"] = {
 		general: "일반",
 		ai: "AI",
 		persona: "페르소나",
+		tools: "도구",
 		account: "계정 관리",
 		return: "대화로 돌아가기",
 	},

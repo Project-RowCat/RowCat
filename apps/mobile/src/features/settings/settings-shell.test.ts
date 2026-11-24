@@ -46,7 +46,12 @@ const CATEGORY_SCREENS = [
 	"settings-persona-screen.tsx",
 ] as const;
 
-const CATEGORY_ROUTES = ["index.tsx", "ai.tsx", "personas.tsx"] as const;
+const CATEGORY_ROUTES = [
+	"index.tsx",
+	"ai.tsx",
+	"personas.tsx",
+	"tools.tsx",
+] as const;
 
 describe("the layout route owns the shell", () => {
 	/**
@@ -130,11 +135,12 @@ describe("the addresses didn't change by a character", () => {
 	});
 
 	/** The navigation model's three addresses are unchanged. */
-	it("the navigation model's addresses stay three", () => {
+	it("the navigation model's addresses are these four", () => {
 		expect(MOBILE_SETTINGS_NAV.map((item) => item.route)).toEqual([
 			"/settings",
 			"/settings/ai",
 			"/settings/personas",
+			"/settings/tools",
 		]);
 	});
 });
@@ -144,6 +150,7 @@ describe("address → category", () => {
 		expect(settingsCategoryForPath("/settings")).toBe("general");
 		expect(settingsCategoryForPath("/settings/ai")).toBe("ai");
 		expect(settingsCategoryForPath("/settings/personas")).toBe("persona");
+		expect(settingsCategoryForPath("/settings/tools")).toBe("tools");
 	});
 
 	/** A trailing slash is the same screen; the difference does not switch off the navigation row. */

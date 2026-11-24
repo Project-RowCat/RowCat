@@ -130,6 +130,7 @@ describe("arrival has no condition", () => {
 			"settings/index.tsx",
 			"settings/ai.tsx",
 			"settings/personas.tsx",
+			"settings/tools.tsx",
 			"stories/[storyId]/index.tsx",
 			"stories/[storyId]/play.tsx",
 		]) {

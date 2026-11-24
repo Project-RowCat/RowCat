@@ -150,6 +150,12 @@ export function buildPlayPayload(
 		lore: play.lore,
 		startScenes: play.startScenes,
 		sceneImages: play.sceneImages,
+		/**
+		 * Creator tools. Listed here like every other field: this function names the seed one field at a
+		 * time, so a field the publish request carries but this list forgets is dropped without an error,
+		 * and the work plays without its tools.
+		 */
+		tools: play.tools,
 	});
 }
 

@@ -37,7 +37,9 @@ export type RoomSettingsView =
 	/** Who else is in this conversation; same pane as web. */
 	| "characters"
 	/** The user's own instruction for how the conversation proceeds; same pane as web, right after `Memory` (`ROOM_SETTINGS_IA`): together the two rows are all the text the user puts into this prompt. */
-	| "userNote";
+	| "userNote"
+	/** Which of the user's own tools are on in this conversation; same pane as web, right after `userNote` (`ROOM_SETTINGS_IA`). */
+	| "tools";
 
 export const ROOM_SETTINGS_VIEW_TITLE: Record<RoomSettingsView, string> = {
 	home: "Conversation settings",
@@ -49,6 +51,7 @@ export const ROOM_SETTINGS_VIEW_TITLE: Record<RoomSettingsView, string> = {
 	intensity: "Intensity",
 	characters: "Characters",
 	userNote: "User note",
+	tools: "Tools",
 };
 
 /**
@@ -70,6 +73,7 @@ export const ROOM_SETTINGS_VIEW_PARENT: Record<
 	intensity: "home",
 	characters: "home",
 	userNote: "home",
+	tools: "home",
 };
 
 /** Accessible name of the back control; an unnamed icon button reads only as `button`, indistinguishable from the window's close button. */
@@ -97,6 +101,7 @@ export const ROOM_SETTINGS_ROW_TITLE: Record<RoomSettingsRowId, string> = {
 	characters: "Characters",
 	memory: "Memory",
 	userNote: "User note",
+	tools: "Tools",
 	info: "Conversation info",
 	rename: "Rename",
 	duplicate: "Duplicate conversation",
@@ -125,6 +130,8 @@ export const ROOM_SETTINGS_ROW_SUMMARY: Record<
 	memory: "Manage what this conversation remembers",
 	/** `null`: the summary is how much is written, from the room record (`userNoteRowSummary`). */
 	userNote: null,
+	/** `null`: built from the library and this room's overrides (`toolsRowSummary`). */
+	tools: null,
 	info: "Original story and conversation details",
 	rename: null,
 	duplicate: null,

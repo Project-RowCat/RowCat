@@ -1,7 +1,9 @@
 import { z } from "zod";
 import {
+	CHAT_MAX_TOOLS,
 	CHAT_SCENE_IMAGE_LIMITS,
 	CHAT_SCENE_TRIGGER_PATTERN,
+	ChatCreatorToolDto,
 	ChatLorePosition,
 } from "./chat.ts";
 import { Orientation, STORY_TAG_MAX_LENGTH, StoryDto } from "./gallery.ts";
@@ -67,6 +69,8 @@ export const STORY_PUBLISH_LIMITS = {
 	 * contract. The failure would land on whoever starts a chat with that story, not on the creator.
 	 */
 	sceneImages: CHAT_SCENE_IMAGE_LIMITS.perStory,
+	/** Creator tools. Same value as the playback snapshot cap, for the same reason as sceneImages. */
+	tools: CHAT_MAX_TOOLS,
 } as const;
 
 /**
@@ -200,6 +204,15 @@ export const StoryPublishPlayInput = z.object({
 	sceneImages: z
 		.array(StoryPublishSceneImage)
 		.max(STORY_PUBLISH_LIMITS.sceneImages)
+		.default([]),
+	/**
+	 * Creator tools. The seed's own shape is reused here, unlike the fields above: a tool has no
+	 * server-set identity, and two copies of the action vocabulary would let publishing accept an
+	 * action playback rejects. `.default([])` keeps older clients' requests valid.
+	 */
+	tools: z
+		.array(ChatCreatorToolDto)
+		.max(STORY_PUBLISH_LIMITS.tools)
 		.default([]),
 });
 export type StoryPublishPlayInput = z.infer<typeof StoryPublishPlayInput>;

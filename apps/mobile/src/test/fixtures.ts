@@ -17,4 +17,5 @@ export const seed = (title: string): ChatSeed => ({
 	lore: [],
 	startScenes: [],
 	sceneImages: [],
+	tools: [],
 });

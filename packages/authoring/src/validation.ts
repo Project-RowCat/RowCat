@@ -27,6 +27,8 @@ export const PUBLICATION_ISSUE_CODE = {
 	 * their setting is in effect and never find out why the result looks wrong.
 	 */
 	loreNeverTriggers: "lore_never_triggers",
+	/** A creator tool that does not satisfy the tool contract, or reuses a name. */
+	invalidTool: "invalid_tool",
 	unresolvedDefaultStartScene: "unresolved_default_start_scene",
 	/**
 	 * A scene image is missing either its trigger or its picture. Publishing would drop the whole
@@ -141,6 +143,8 @@ export interface PublicationValidationContext {
 	 * second copy of the normalization logic.
 	 */
 	runtimeIssues?: { entryMissing: boolean };
+	/** Creator tools normalization left out (`PreparedStoryPublication.toolIssues`). */
+	toolIssues?: { index: number; name: string; issues: string[] }[];
 }
 
 /**
@@ -345,6 +349,20 @@ export function validateStoryPublication(
 				"defaultStartSceneId",
 				PUBLICATION_ISSUE_CODE.unresolvedDefaultStartScene,
 				"The scene set as the default opening doesn't exist. Please choose an opening scene again.",
+			),
+		);
+
+	/**
+	 * A creator tool the contract rejects. Normalization already left it out of the payload, so
+	 * publishing anyway would ship a work without a tool its creator wrote, and they would learn that
+	 * only by playing it. Blocking names the tool and the contract's own reasons.
+	 */
+	for (const tool of context.toolIssues ?? [])
+		out.push(
+			issue(
+				`tools.${tool.index}`,
+				PUBLICATION_ISSUE_CODE.invalidTool,
+				`Tool '${tool.name || `#${tool.index + 1}`}' cannot be published: ${tool.issues.join(" ")}`,
 			),
 		);
 

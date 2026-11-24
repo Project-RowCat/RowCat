@@ -234,6 +234,12 @@ describe("wiring", () => {
 		expect(callers.sort()).toEqual([
 			"features/onboarding/guardian-panel.tsx",
 			"features/story/share-control.tsx",
+			/**
+			 * The third hands over a **file**, not a link: an exported tool file (`.rowcat-tools.json`) on
+			 * iOS, where the share sheet is where "Save to Files" lives. It carries no work and no visibility
+			 * verdict applies; header values never enter the file (`tool-file.ts` in `@rowcat/chat`).
+			 */
+			"lib/tool-files.ts",
 		]);
 	});
 });

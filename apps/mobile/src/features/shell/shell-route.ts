@@ -248,7 +248,9 @@ export function mobileShellRouteFor(pathname: string): MobileShellRoute {
 	if (
 		segments.length === 2 &&
 		segments[0] === "settings" &&
-		(segments[1] === "ai" || segments[1] === "personas")
+		(segments[1] === "ai" ||
+			segments[1] === "personas" ||
+			segments[1] === "tools")
 	)
 		return SETTINGS;
 

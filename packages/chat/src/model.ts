@@ -212,6 +212,17 @@ export interface ChatRoom extends ChatSyncMeta, ChatSoftDelete {
 	 */
 	userNote?: string;
 	/**
+	 * Which of the user's own tools are on or off in this room, by tool id. Absent ids follow the
+	 * tool's `enabledByDefault`; the full rationale is in the header of `user-tool.ts`.
+	 *
+	 * A reference, not a copy, unlike `persona`: a tool is not part of any stored message, so editing
+	 * it changes only what the next call does. Optional, and absence is intended: a room created
+	 * before this axis follows every tool's default, which is the accurate reading. "No overrides" has
+	 * one shape (`applyRoomToolOverride` deletes an empty map), and it is read only through
+	 * `roomToolOverrides`.
+	 */
+	toolOverrides?: Record<string, boolean>;
+	/**
 	 * The routing-friendly key for this conversation. Nothing in it enters the prompt.
 	 *
 	 * Its meaning is one thing: requests leaving this room are continuations of one conversation. When

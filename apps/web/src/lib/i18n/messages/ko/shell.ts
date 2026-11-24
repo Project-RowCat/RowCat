@@ -75,6 +75,7 @@ export const shell: Messages["shell"] = {
 		chats: "대화 | {{app}}",
 		story: "{{name}}님의 작품 · {{app}}",
 		personaSettings: "페르소나 설정 · {{app}}",
+		toolSettings: "도구 설정 · {{app}}",
 		settings: "설정 · {{app}}",
 		accountDeletion: "계정 삭제 안내 · {{app}}",
 		accountDeletionDescription:

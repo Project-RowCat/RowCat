@@ -563,12 +563,13 @@ describe("full-screen editing isn't a second draft state", () => {
 	});
 });
 
-/** The four conversation-material sections that go through the runtime decision; this list is what the checks below cover. */
+/** The conversation-material sections (the original four plus tools) that go through the runtime decision; this list is what the checks below cover. */
 const MATERIAL_SECTIONS = [
 	["Prompt", "features/create/prompt-section.tsx"],
 	["Lore", "features/create/lore-section.tsx"],
 	["Opening scenes", "features/create/start-scene-section.tsx"],
 	["Scene images", "features/create/scene-image-section.tsx"],
+	["Tools", "features/create/tool-section.tsx"],
 ] as const;
 
 /**
@@ -642,6 +643,7 @@ describe("turning the runtime on locks the conversation material", () => {
 		"LORE_RUNTIME_LOCK",
 		"START_SCENE_RUNTIME_LOCK",
 		"SCENE_IMAGE_RUNTIME_LOCK",
+		"TOOL_RUNTIME_LOCK",
 	])("%s states that it keeps and restores", (name) => {
 		const copy = fileAt("features/create/editor-copy.ts");
 		const at = copy.indexOf(`${name} = {`);
@@ -662,11 +664,18 @@ describe("turning the runtime on locks the conversation material", () => {
  */
 describe("cover before publishing", () => {
 	/** One lib is the file boundary; neither the store nor screens hold that library directly. */
-	it("only one place in lib imports expo-file-system", () => {
+	it("only the two file boundaries in lib import expo-file-system", () => {
 		const importers = product
 			.filter((file) => file.text.includes("expo-file-system"))
 			.map((file) => file.path);
-		expect(importers).toEqual(["lib/draft-cover-files.ts"]);
+		/**
+		 * The second is the tool-file boundary (`lib/tool-files.ts`): it picks and hands out a file and
+		 * stores nothing, so no path rule can spread from it into a feature folder.
+		 */
+		expect(importers.sort()).toEqual([
+			"lib/draft-cover-files.ts",
+			"lib/tool-files.ts",
+		]);
 	});
 
 	/**

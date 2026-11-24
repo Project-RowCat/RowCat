@@ -405,6 +405,15 @@ export const create = {
 		title: "Stories with runtime on don't use lore.",
 		body: "Lore is inserted into the conversation prompt, but a runtime story's AI requests are built inside the runtime code. The lore you wrote is kept, and you can edit it again once runtime is off.",
 	},
+	toolSection: {
+		title: "Tools",
+		description:
+			"Tools the AI can call during a conversation in this story: fill in a template, draw from a random table, or ask a sub-agent. They are offered on every turn, so add only the ones the story needs.",
+	},
+	toolRuntimeLock: {
+		title: "Stories with runtime on don't use tools.",
+		body: "Tools are offered to the conversation's AI, but a runtime story's AI requests are built inside the runtime code. The tools you wrote are kept, and you can edit them again once runtime is off.",
+	},
 	sceneImageSection: {
 		title: "Scene images",
 		description:
@@ -547,6 +556,66 @@ export const create = {
 		up: "Up",
 		content: "Content",
 	},
+	toolList: {
+		empty: "No tools yet. You can publish without tools.",
+		add: "Add",
+	},
+	tool: {
+		nth: "#{{n}}",
+		manage: "Manage tool #{{n}}",
+		unnamed: "Unnamed tool",
+		parameterCount: "Parameters: {{count}}",
+		notReady: "Not publishable yet",
+		kind: {
+			template: "Template",
+			table: "Random table",
+			agent: "Sub-agent",
+		},
+		parameterType: {
+			string: "Text",
+			number: "Number",
+			boolean: "Yes or no",
+		},
+	},
+	toolEditorCard: {
+		name: "Name",
+		nameHint:
+			"Lowercase letters, digits and underscores, starting with a letter. The AI calls the tool by this name.",
+		description: "Description",
+		descriptionHint:
+			"What the tool does and when to use it. The AI decides whether to call it from this alone.",
+		kind: "What it does",
+		template: "Template",
+		templateHint:
+			"Returned as the result. A parameter name in double braces, such as {{example}}, is replaced with the value the AI passed.",
+		entries: "Rows",
+		entriesHint: "One row per line. Each call draws rows at random.",
+		draws: "Rows per call",
+		drawsHint: "From 1 to {{max}}. The same row can come up more than once.",
+		system: "Sub-agent instructions",
+		systemHint:
+			"The sub-agent's own system prompt. It sees only what the AI passes in the parameters, not the conversation, and it can't call tools. It runs on the reader's connection and model.",
+		maxOutputTokens: "Answer length cap (tokens)",
+		maxOutputTokensHint:
+			"From 1 to {{max}}. The sub-agent's answer becomes the tool result.",
+		parameters: "Parameters",
+		parametersHint: "What the AI fills in when it calls the tool.",
+		noParameters: "No parameters. The AI calls the tool as is.",
+		addParameter: "Add parameter",
+		removeParameter: "Remove parameter #{{n}}",
+		parameterName: "Parameter name",
+		parameterType: "Type",
+		parameterDescription: "Parameter description",
+		parameterRequired: "Required",
+		parameterChoices: "Choices",
+		parameterChoicesHint:
+			"Separate with commas. Leave empty to accept any text.",
+		issues: "Not publishable yet. Fix these and the tool will be published:",
+		deleteTool: "Delete tool",
+		up: "Up",
+		down: "Down",
+	},
+
 	startSceneEditorCard: {
 		setAsDefaultOpening: "Set as default opening",
 		theLibraryAtDawn: "The library at dawn",

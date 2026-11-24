@@ -1,7 +1,11 @@
-import { CHAT_LORE_POSITIONS } from "@rowcat/contracts/chat";
+import {
+	CHAT_LORE_POSITIONS,
+	CHAT_TOOL_PARAMETER_TYPES,
+} from "@rowcat/contracts/chat";
 import type { Rev } from "@rowcat/contracts/sync";
 import { ORIENTATIONS, STORY_VISIBILITIES } from "@rowcat/domain";
 import { z } from "zod";
+import { DRAFT_TOOL_KINDS, type DraftTool } from "./draft-tool.ts";
 import { foldLegacyDraftBody } from "./legacy.ts";
 import {
 	AUTHORING_SCHEMA_VERSION,
@@ -506,6 +510,71 @@ export const draftLoreSyncCodec = {
 	revOf: (record: DraftLoreEntry): Rev => record.rev,
 };
 
+const ToolParameterData = z.object({
+	name: z.string(),
+	type: z.enum(CHAT_TOOL_PARAMETER_TYPES),
+	description: z.string(),
+	required: z.boolean(),
+	choices: z.array(z.string()),
+});
+
+/**
+ * Creator tool payload. As loose as the record (`draft-tool.ts`): a tool mid-edit is usually not a
+ * valid tool yet, and rejecting it here would drop the author's work on the receiving device. An
+ * unknown kind from a newer client is rejected, though, because this device could neither edit nor
+ * publish it.
+ */
+const ToolData = z.object({
+	draftId: z.string(),
+	positionIndex: z.number().int(),
+	name: z.string(),
+	description: z.string(),
+	parameters: z.array(ToolParameterData),
+	kind: z.enum(DRAFT_TOOL_KINDS),
+	template: z.string(),
+	entries: z.array(z.string()),
+	draws: z.number().int(),
+	system: z.string(),
+	maxOutputTokens: z.number().int(),
+	createdAt: z.string(),
+	updatedAt: z.string(),
+});
+
+export const draftToolSyncCodec = {
+	type: "authoring.tool",
+	schemaVersion: AUTHORING_SYNC_SCHEMA_VERSION,
+	encode: (record: DraftTool): unknown => ({
+		draftId: record.draftId,
+		positionIndex: record.positionIndex,
+		name: record.name,
+		description: record.description,
+		parameters: record.parameters,
+		kind: record.kind,
+		template: record.template,
+		entries: record.entries,
+		draws: record.draws,
+		system: record.system,
+		maxOutputTokens: record.maxOutputTokens,
+		createdAt: record.createdAt,
+		updatedAt: record.updatedAt,
+	}),
+	decode(input: DecodeInput): DraftTool | null {
+		const parsed = ToolData.safeParse(input.data);
+		if (!parsed.success) return null;
+		return {
+			id: input.id,
+			...parsed.data,
+			deletedAt: input.deletedAt,
+			rev: input.rev,
+			...INBOUND_META,
+		};
+	},
+	/** Last writer wins as a whole record, lore's rule. */
+	merge: (local: DraftTool, remote: DraftTool): Merged<DraftTool> =>
+		childMerge(local, remote),
+	revOf: (record: DraftTool): Rev => record.rev,
+};
+
 const StartSceneData = z.object({
 	draftId: z.string(),
 	position: z.number().int(),
@@ -836,4 +905,6 @@ export const authoringSyncCodecs = [
 	 * the project.
 	 */
 	draftRuntimeAssetSyncCodec,
+	/** Creator tools: a draft child, appended at the end like every new type. */
+	draftToolSyncCodec,
 ];

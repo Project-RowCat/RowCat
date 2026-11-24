@@ -18,7 +18,7 @@ import { translator } from "#/lib/i18n/current.ts";
  * Settings screens that actually exist. A category is added only together with its screen, in the
  * same commit.
  */
-export type SettingsCategory = "general" | "ai" | "persona";
+export type SettingsCategory = "general" | "ai" | "persona" | "tools";
 
 export interface SettingsNavItem {
 	category: SettingsCategory;
@@ -30,7 +30,7 @@ export interface SettingsNavItem {
 	 * answer to which one is canonical. This follows the same rule as the creation workspace, which
 	 * omits its default pane from the address.
 	 */
-	to: "/settings" | "/settings/ai" | "/settings/personas";
+	to: "/settings" | "/settings/ai" | "/settings/personas" | "/settings/tools";
 }
 
 export const SETTINGS_NAV: readonly SettingsNavItem[] = [
@@ -48,6 +48,12 @@ export const SETTINGS_NAV: readonly SettingsNavItem[] = [
 	 * conversation. This list decides which personas can be chosen at all.
 	 */
 	{ category: "persona", to: "/settings/personas" },
+	/**
+	 * The user's own chat tools, for the persona's reason: a tool is an account asset that rooms only
+	 * refer to by id (user-tool.ts in @rowcat/chat). Which rooms it is on in is decided in each room's
+	 * settings; what the tool is and does is decided here, once.
+	 */
+	{ category: "tools", to: "/settings/tools" },
 ] as const;
 
 /**

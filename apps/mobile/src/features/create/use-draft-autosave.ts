@@ -5,6 +5,7 @@ import type {
 	DraftRuntimeFilePatch,
 	DraftSceneImagePatch,
 	DraftStartScenePatch,
+	DraftToolPatch,
 	PendingEntry,
 	PendingKind,
 	StoryDraftPatch,
@@ -100,6 +101,8 @@ export interface DraftAutosave {
 	state: AutosaveStateSource;
 	patchDraft: (patch: StoryDraftPatch) => void;
 	patchLore: (id: string, patch: DraftLoreEntryPatch) => void;
+	/** Creator tool fields. Typed text in a draft child, so it debounces like lore. */
+	patchTool: (id: string, patch: DraftToolPatch) => void;
 	patchStartScene: (id: string, patch: DraftStartScenePatch) => void;
 	/**
 	 * Trigger of a scene image. **Assets never change through this path.**
@@ -134,6 +137,8 @@ function commit(entry: PendingEntry): Promise<unknown> {
 			return store.updateDraft(entry.id, entry.patch as StoryDraftPatch);
 		case "lore":
 			return store.updateLore(entry.id, entry.patch as DraftLoreEntryPatch);
+		case "tool":
+			return store.updateTool(entry.id, entry.patch as DraftToolPatch);
 		case "startScene":
 			return store.updateStartScene(
 				entry.id,
@@ -350,6 +355,7 @@ export function useDraftAutosave(draftId: string): DraftAutosave {
 			state: stateSource,
 			patchDraft: (patch) => schedule("draft", draftId, patch),
 			patchLore: (id, patch) => schedule("lore", id, patch),
+			patchTool: (id, patch) => schedule("tool", id, patch),
 			patchStartScene: (id, patch) => schedule("startScene", id, patch),
 			patchSceneImage: (id, patch) => schedule("sceneImage", id, patch),
 			flush,

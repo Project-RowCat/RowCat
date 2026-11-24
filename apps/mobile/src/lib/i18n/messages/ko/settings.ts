@@ -7,11 +7,14 @@ export const settings: Messages["settings"] = {
 		general: "일반",
 		ai: "AI",
 		persona: "페르소나",
+		tools: "도구",
 	},
 	categoryDescription: {
 		general: "이 앱의 모양과 이 기기의 언어·알림·저장된 데이터를 관리합니다.",
 		ai: "새 대화에 기본으로 적용되는 생성 설정입니다. 이 기기에만 적용됩니다.",
 		persona: "대화에서 맡을 역할을 저장해 두고 여러 대화에서 다시 고릅니다.",
+		tools:
+			"모델이 부를 수 있는 도구를 만들고 대화마다 켭니다. 계정과 이 기기에 저장됩니다.",
 	},
 	account: {
 		label: "계정 관리",

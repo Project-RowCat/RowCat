@@ -1,4 +1,7 @@
-import { ChatLorePosition } from "@rowcat/contracts/chat";
+import {
+	CHAT_TOOL_PARAMETER_TYPES,
+	ChatLorePosition,
+} from "@rowcat/contracts/chat";
 import { Orientation } from "@rowcat/contracts/gallery";
 import {
 	RUNTIME_AUDIO_LIMITS,
@@ -8,6 +11,12 @@ import {
 import { STORY_COVER_LIMITS } from "@rowcat/contracts/story-cover";
 import { StoryVisibility } from "@rowcat/contracts/story-visibility";
 import { z } from "zod";
+import {
+	DRAFT_TOOL_KINDS,
+	type DraftTool,
+	type NewDraftTool,
+	sortDraftTools,
+} from "./draft-tool.ts";
 import {
 	type CreateStoryDraftInput,
 	type DraftLoreEntry,
@@ -82,6 +91,13 @@ export const STORY_ARCHIVE_LIMITS = {
 	tags: 100,
 	lore: 1_000,
 	loreKeys: 200,
+	/**
+	 * Creator tools, with the same headroom as lore: a draft may hold more than a work ships
+	 * (`STORY_PUBLISH_LIMITS.tools`), and publishing is what enforces that cap.
+	 */
+	tools: 100,
+	toolParameters: 50,
+	toolEntries: 1_000,
 	startScenes: 200,
 	sceneImages: 200,
 	runtimeFiles: RUNTIME_PROJECT_LIMITS.files,
@@ -210,6 +226,48 @@ export const StoryArchiveManifest = z
 					.strict(),
 			)
 			.max(STORY_ARCHIVE_LIMITS.lore),
+		/**
+		 * Creator tools, as loose as the draft record (`draft-tool.ts`): a tool mid-edit travels as it
+		 * is, every kind's fields included.
+		 *
+		 * Optional, and written only when the draft has tools. The root is strict, so an importer from
+		 * before tools refuses an archive that carries them instead of quietly dropping them (the
+		 * version rule above), while an archive without tools stays readable by it.
+		 */
+		tools: z
+			.array(
+				z
+					.object({
+						name: text(STORY_ARCHIVE_LIMITS.shortText),
+						description: text(STORY_ARCHIVE_LIMITS.shortText),
+						parameters: z
+							.array(
+								z
+									.object({
+										name: text(STORY_ARCHIVE_LIMITS.shortText),
+										type: z.enum(CHAT_TOOL_PARAMETER_TYPES),
+										description: text(STORY_ARCHIVE_LIMITS.shortText),
+										required: z.boolean(),
+										choices: z
+											.array(text(STORY_ARCHIVE_LIMITS.shortText))
+											.max(STORY_ARCHIVE_LIMITS.toolParameters),
+									})
+									.strict(),
+							)
+							.max(STORY_ARCHIVE_LIMITS.toolParameters),
+						kind: z.enum(DRAFT_TOOL_KINDS),
+						template: text(STORY_ARCHIVE_LIMITS.text),
+						entries: z
+							.array(text(STORY_ARCHIVE_LIMITS.shortText))
+							.max(STORY_ARCHIVE_LIMITS.toolEntries),
+						draws: z.number().int(),
+						system: text(STORY_ARCHIVE_LIMITS.text),
+						maxOutputTokens: z.number().int(),
+					})
+					.strict(),
+			)
+			.max(STORY_ARCHIVE_LIMITS.tools)
+			.optional(),
 		startScenes: z
 			.array(
 				z
@@ -304,6 +362,8 @@ const fail = (
 export interface StoryArchiveSource {
 	draft: StoryDraft;
 	lore: readonly DraftLoreEntry[];
+	/** Optional: a caller that does not read tools exports none, which is what it always did. */
+	tools?: readonly DraftTool[];
 	startScenes: readonly DraftStartScene[];
 	sceneImages: readonly DraftSceneImage[];
 	runtime: {
@@ -399,6 +459,23 @@ export function buildStoryArchiveManifest(
 			}
 		: null;
 
+	const tools = sortDraftTools((source.tools ?? []).filter(isLiveRecord)).map(
+		(tool) => ({
+			name: tool.name,
+			description: tool.description,
+			parameters: tool.parameters.map((parameter) => ({
+				...parameter,
+				choices: [...parameter.choices],
+			})),
+			kind: tool.kind,
+			template: tool.template,
+			entries: [...tool.entries],
+			draws: tool.draws,
+			system: tool.system,
+			maxOutputTokens: tool.maxOutputTokens,
+		}),
+	);
+
 	const manifest = {
 		format: STORY_ARCHIVE_FORMAT,
 		version: STORY_ARCHIVE_VERSION,
@@ -424,6 +501,7 @@ export function buildStoryArchiveManifest(
 			position: entry.position,
 			order: entry.order,
 		})),
+		...(tools.length > 0 ? { tools } : {}),
 		startScenes: startScenes.map((scene) => ({
 			title: scene.title,
 			content: scene.content,
@@ -624,6 +702,7 @@ export interface StoryArchiveDraftPlan {
 	/** The archive file holding the cover, which the app puts in the device's cover store. */
 	cover: string | null;
 	lore: NewDraftLoreEntry[];
+	tools: NewDraftTool[];
 	startScenes: NewDraftStartScene[];
 	/** Index into `startScenes`, applied after they exist. */
 	defaultStartScene: number | null;
@@ -734,6 +813,14 @@ export function planStoryArchiveDraft(
 				constant: entry.constant,
 				position: entry.position,
 				order: entry.order,
+			})),
+			tools: (manifest.tools ?? []).map((tool) => ({
+				...tool,
+				parameters: tool.parameters.map((parameter) => ({
+					...parameter,
+					choices: [...parameter.choices],
+				})),
+				entries: [...tool.entries],
 			})),
 			startScenes: manifest.startScenes.map((scene) => ({
 				title: scene.title,

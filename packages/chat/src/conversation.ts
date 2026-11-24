@@ -1,3 +1,4 @@
+import type { ChatCustomToolDto } from "@rowcat/contracts/chat";
 import type { ChatCharacter } from "./character.ts";
 import type { ChatRuntimeMessage, ChatRuntimeRoom } from "./context.ts";
 import type { AssistantContinuation } from "./continuation.ts";
@@ -151,6 +152,16 @@ export interface ConversationSession {
 	 * wiring that joins the three belongs to each app's generation hook.
 	 */
 	loadNarration?: () => Promise<ChatNarrationSettings | null>;
+	/**
+	 * The user's own tools that are on in this conversation (`activeUserTools`), read at turn start.
+	 * Optional: only persisted rooms provide it, because the on/off choice is a room field
+	 * (`toolOverrides`) and a work test has no room to hold one. Absence means "no user tools", which
+	 * is the accurate answer there; the work's own tools (`seed.tools`) still come from the runtime.
+	 *
+	 * Async and re-read from storage for the preference's reason: a tool edited or switched off a
+	 * moment before sending must not depend on whether a render carried the change yet.
+	 */
+	loadUserTools?: () => Promise<ChatCustomToolDto[]>;
 	/**
 	 * Wakes long-term memory maintenance (afterstate indexing and consolidation) after the confirmed
 	 * response has been saved. Optional: absent where there is no engine and in replay sessions.

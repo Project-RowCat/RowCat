@@ -1,0 +1,142 @@
+import type { Messages } from "../../types.ts";
+
+export const tools: Messages["tools"] = {
+	copy: {
+		add: "새 도구",
+		import: "파일에서 가져오기",
+		exportAll: "파일로 내보내기",
+		emptyTitle: "아직 도구가 없습니다",
+		emptyBody:
+			"도구는 모델이 글을 쓰다가 부를 수 있는 기능입니다. 템플릿을 채우거나, 무작위 표에서 뽑거나, 하위 에이전트에게 묻거나, 직접 운영하는 웹 주소를 부를 수 있습니다. 한 번 만들어 두고 원하는 대화에서 켜세요.",
+		guest:
+			"도구는 계정과 이 기기에 저장됩니다. 로그인하면 만든 도구를 볼 수 있습니다.",
+		unavailable: "세션을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+		storageError:
+			"이 기기의 데이터를 열지 못했습니다. 도구를 불러올 수 없습니다.",
+		readError: "도구를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
+		saveFailed: "도구를 저장하지 못했습니다. 다시 시도해 주세요.",
+		deleteFailed: "도구를 삭제하지 못했습니다. 다시 시도해 주세요.",
+		deleteTitle: "이 도구를 삭제할까요?",
+		deleteConfirm: "삭제",
+		deleteNotice:
+			"대화는 그대로 남습니다. 모델이 이 도구를 더 이상 부르지 못할 뿐입니다.",
+		newTitle: "새 도구",
+		editTitle: "도구 편집",
+		save: "저장",
+		deleteThis: "이 도구 삭제",
+		name: "이름",
+		nameHint:
+			"모델이 부르는 이름입니다. 영문 소문자로 시작하고 소문자·숫자·밑줄만 씁니다.",
+		description: "설명",
+		descriptionHint:
+			"언제 쓰는 도구이고 무엇을 돌려주는지 적어 주세요. 모델은 이 설명만 보고 부를지 정합니다.",
+		parameters: "매개변수",
+		parametersHint:
+			"모델이 도구를 부를 때 채우는 값입니다. 받을 값이 없으면 비워 두세요.",
+		addParameter: "매개변수 추가",
+		removeParameter: "매개변수 삭제",
+		parameterName: "매개변수 이름",
+		parameterDescription: "매개변수 설명",
+		parameterType: "매개변수 형식",
+		parameterRequired: "필수",
+		parameterChoices: "허용하는 값",
+		parameterChoicesHint:
+			"한 줄에 하나씩 적습니다. 비우면 어떤 글이든 받습니다. 텍스트 매개변수에만 적용됩니다.",
+		typeString: "텍스트",
+		typeNumber: "숫자",
+		typeBoolean: "예 / 아니요",
+		kind: "하는 일",
+		kindTemplate: "템플릿",
+		kindTemplateNote: "매개변수를 채운 글을 돌려줍니다",
+		kindTable: "무작위 표",
+		kindTableNote: "목록에서 무작위로 줄을 뽑습니다",
+		kindAgent: "하위 에이전트",
+		kindAgentNote:
+			"자기 지시문을 가진 두 번째 모델에게 묻습니다. 이 대화의 모델과 연결을 씁니다",
+		kindHttp: "웹 요청",
+		kindHttpNote: "직접 운영하는 주소를 부르고 그 응답을 돌려줍니다",
+		template: "템플릿",
+		entries: "줄 목록",
+		entriesHint: "한 줄에 하나씩 적습니다. 부를 때마다 여기서 뽑습니다.",
+		draws: "한 번에 뽑는 줄 수",
+		system: "하위 에이전트 지시문",
+		systemHint:
+			"하위 에이전트의 시스템 프롬프트입니다. 대화는 보지 못하고 모델이 넘긴 값만 봅니다.",
+		maxOutputTokens: "최대 출력 토큰",
+		url: "URL",
+		method: "방식",
+		methodPost: "POST (JSON 본문)",
+		methodGet: "GET (쿼리 문자열)",
+		headers: "헤더",
+		headersHint:
+			"예를 들어 Authorization 키. 값은 내 기기에만 저장되고 이 URL로만 보내집니다.",
+		addHeader: "헤더 추가",
+		removeHeader: "헤더 삭제",
+		headerName: "헤더 이름",
+		headerValue: "헤더 값",
+		httpNotice:
+			"모델이 이 도구를 부르면, 모델이 대화를 읽고 쓴 인자가 이 URL로 보내집니다. 믿을 수 있는 주소만 쓰세요.",
+		enabledByDefault: "모든 대화에서 켜기",
+		enabledByDefaultHint:
+			"끄면 도구는 남아 있고, 대화 설정에서 대화마다 켤 수 있습니다.",
+		nameTaken: "이 이름을 쓰는 도구가 이미 있습니다.",
+		fixIssues: "저장하기 전에 고쳐 주세요:",
+		fieldName: "이름",
+		fieldDescription: "설명",
+		fieldParameters: "매개변수",
+		fieldAction: "하는 일",
+		exportFailed: "도구를 내보내지 못했습니다. 다시 시도해 주세요.",
+		exportEmpty: "아직 내보낼 도구가 없습니다.",
+		importFailed: "파일을 읽지 못했습니다. 다시 시도해 주세요.",
+		importTitle: "도구 가져오기",
+		importIntro:
+			"가져온 도구는 꺼진 상태로 시작합니다. 대화 설정에서 켜거나 ‘모든 대화에서 켜기’를 켜세요.",
+		importChoiceImport: "가져오기",
+		importChoiceReplace: "내 도구 바꾸기",
+		importChoiceSkip: "건너뛰기",
+		importNothing: "가져오도록 고른 도구가 없습니다.",
+		importApplyFailed:
+			"일부 도구를 가져오지 못했습니다. 라이브러리를 확인하고 다시 시도해 주세요.",
+		statusNew: "새 도구",
+		statusNameTaken:
+			"같은 이름의 도구가 이미 있습니다. 내 도구를 바꾸지 않으면 건너뜁니다.",
+		statusDuplicate:
+			"이 파일의 앞쪽에 같은 이름의 도구가 있습니다. 가져오지 않습니다.",
+		statusInvalid: "올바르지 않은 도구라 가져오지 않습니다.",
+		unnamed: "이름 없는 도구",
+		failureNotToolFile: "RowCat 도구 파일이 아닙니다.",
+		failureNewerVersion:
+			"더 새로운 버전의 RowCat에서 만든 파일입니다. 앱을 업데이트한 뒤 가져오세요.",
+		failureTooLarge: "도구 파일이라기엔 너무 큰 파일입니다.",
+		failureInvalid: "손상된 도구 파일이라 읽을 수 없습니다.",
+	},
+	templateHint:
+		"매개변수 값이 들어갈 자리에 {{example}}처럼 이름을 이중 중괄호로 감싸 적으세요. 모르는 이름은 빈칸이 됩니다.",
+	importAction: "{{count}}개 가져오기",
+	importApplied: "가져온 도구: {{count}}개.",
+	exportStripped:
+		"헤더 값은 파일에서 뺐습니다({{headers}}). 가져가는 사람이 자기 값을 채웁니다.",
+	httpReach: "{{origin}}(으)로 보냅니다",
+	headersToFill: "가져온 뒤 채울 값: {{headers}}",
+	invalidAt: "{{position}}번째 항목",
+	edit: "{{name}} 편집",
+	delete: "{{name}} 삭제",
+	deleteDescription: "{{name}} 도구가 라이브러리에서 사라집니다.",
+	parameterLabel: "매개변수 {{position}}",
+	headerLabel: "헤더 {{position}}",
+	room: {
+		description:
+			"설정에서 만든 내 도구입니다. 여기서 바꾸면 이 대화에만 적용됩니다.",
+		empty: "아직 만든 도구가 없습니다. 설정에서 만든 뒤 여기서 켜세요.",
+		openSettings: "설정에서 도구 관리",
+		followsDefault: "도구의 기본값을 따릅니다",
+		overridden: "이 대화에서 따로 정함",
+		reset: "기본값 사용",
+		saveFailed: "이 대화의 도구를 바꾸지 못했습니다. 다시 시도해 주세요.",
+		summaryEmpty: "설정에서 내 도구를 추가하세요",
+		summaryNoneOn: "켜진 도구 없음",
+		summaryOn: "{{total}}개 중 {{on}}개 켜짐",
+		switchLabel: "이 대화에서 {{name}}",
+		resetLabel: "{{name}}에 기본값 사용",
+	},
+};

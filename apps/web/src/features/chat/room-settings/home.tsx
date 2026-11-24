@@ -16,7 +16,10 @@ import { reasoningEffortLabel } from "#/features/generation/reasoning-effort-fie
 import { responseLengthLabel } from "#/features/generation/response-length-field.tsx";
 import { personaRowSummary } from "#/features/persona/persona-form.ts";
 import { getRowCatClient } from "#/lib/api.ts";
-import { useLocalCharacters } from "#/lib/local-chat/hooks.ts";
+import {
+	useLocalCharacters,
+	useLocalUserTools,
+} from "#/lib/local-chat/hooks.ts";
 import { useRoomGenerationState } from "#/lib/local-generation/hooks.ts";
 import { useConnectedProviders } from "#/lib/local-provider/hooks.ts";
 import { useViewerCapability } from "#/lib/query/viewer-capability.ts";
@@ -25,6 +28,7 @@ import { characterRowSummary } from "./character-copy.ts";
 import { intensityRowSummary } from "./intensity-copy.ts";
 import { narrationRowSummary } from "./narration-copy.ts";
 import { RoomSettingsGroup, RoomSettingsRow } from "./parts.tsx";
+import { toolRowSummary } from "./tool-copy.ts";
 import { userNoteRowSummary } from "./user-note-copy.ts";
 import type { RoomSettingsView } from "./view.ts";
 
@@ -75,6 +79,11 @@ export function RoomSettingsHome({
 	const { t } = useTranslation(["chat", "common"]);
 	const { effective, loading } = useRoomGenerationState(room.id);
 	const { items: characters } = useLocalCharacters(room.id);
+	/**
+	 * The tool library, for the row's count. Unlike memory, the count is the row's whole point (is
+	 * anything on here?), and the library is small and account-wide, so one subscription serves it.
+	 */
+	const { items: userTools } = useLocalUserTools();
 	/**
 	 * The catalog uses the same query key as the detail screen (ModelTargetField). Calling it here
 	 * adds no request (identical keys are merged), and the list the detail screen needs is pre-warmed
@@ -246,6 +255,17 @@ export function RoomSettingsHome({
 					summary={userNoteRowSummary(roomUserNote(room))}
 					navigational
 					onClick={() => onOpenView("userNote")}
+				/>
+				{/*
+				 * `Tools` comes right after `User note` (ROOM_SETTINGS_IA): both are things the user adds to how
+				 * this conversation runs. The summary counts the effective state, the same rule the switches
+				 * in the view show.
+				 */}
+				<RoomSettingsRow
+					title={t("home.tools")}
+					summary={toolRowSummary(room, userTools)}
+					navigational
+					onClick={() => onOpenView("tools")}
 				/>
 				<RoomSettingsRow
 					ref={infoRef}

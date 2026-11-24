@@ -62,11 +62,12 @@ describe("the files to check actually exist", () => {
 		expect(persona.length).toBeGreaterThan(3);
 	});
 
-	it("the three routes are in place", () => {
+	it("the four routes are in place", () => {
 		for (const path of [
 			"app/settings/index.tsx",
 			"app/settings/ai.tsx",
 			"app/settings/personas.tsx",
+			"app/settings/tools.tsx",
 		])
 			expect(() => fileAt(path)).not.toThrow();
 	});

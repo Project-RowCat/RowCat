@@ -5,6 +5,7 @@ import {
 	applyRoomIntensity,
 	applyRoomNarration,
 	applyRoomPersona,
+	applyRoomToolOverride,
 	applyRoomUserNote,
 	CHAT_CHARACTER_MAX_PER_ROOM,
 	CHAT_MEMORY_MAX_PER_ROOM,
@@ -25,10 +26,12 @@ import {
 	type ChatSummary,
 	type ChatTailMode,
 	type ChatTailRewrite,
+	type ChatUserTool,
 	type CreateCharacterInput,
 	type CreateMemoryInput,
 	type CreatePersonaInput,
 	type CreateRoomInput,
+	type CreateUserToolInput,
 	chatRoomDuplicateRecordCount,
 	createCharacterRecord,
 	createMemoryRecord,
@@ -36,6 +39,7 @@ import {
 	createPersonaRecord,
 	createRoomRecord,
 	createSceneRecord,
+	createUserToolRecord,
 	extendAssistantRecord,
 	isLiveChatRecord,
 	markCascadeDeleted,
@@ -58,6 +62,7 @@ import {
 	requirePersonaName,
 	requireRoomTitle,
 	requireSceneAudience,
+	requireUserToolDefinition,
 	rewindChangesAnything,
 	type SetSceneInput,
 	sameAudience,
@@ -65,11 +70,13 @@ import {
 	sortCharacters,
 	sortMemories,
 	sortPersonas,
+	sortUserTools,
 	summaryIdFor,
 	type UpdateCharacterPatch,
 	type UpdateMemoryPatch,
 	type UpdateMessagePatch,
 	type UpdatePersonaPatch,
+	type UpdateUserToolPatch,
 } from "@rowcat/chat";
 import { newLocalId, nowIso } from "#/lib/local-data/clock.ts";
 import type { LocalDb } from "#/lib/local-data/db.ts";
@@ -674,6 +681,34 @@ export function createChatStore(db: LocalDb): ChatStore {
 				await db.rooms.put(
 					markLocalUpdate(
 						applyRoomUserNote(room, note),
+						now,
+						await nextRev(db),
+					),
+				);
+			});
+		},
+
+		async setRoomToolOverride(
+			roomId: string,
+			toolId: string,
+			enabled: boolean | null,
+		): Promise<void> {
+			const now = nowIso();
+			/*
+			 * Only the room is locked, not the tool library. The tool id is deliberately not looked up (the
+			 * port's contract): an override for a tool whose record has not arrived on this device yet is a
+			 * valid choice, and the registry only ever reads live tools.
+			 */
+			await db.transaction("rw", [db.rooms, db.syncState], async () => {
+				const room = await liveRoom(roomId);
+				if (!room) return;
+				/*
+				 * Clearing the last override deletes the key (applyRoomToolOverride), the same "absent means
+				 * default" shape as the user note, so a two-device round trip stays idempotent.
+				 */
+				await db.rooms.put(
+					markLocalUpdate(
+						applyRoomToolOverride(room, toolId, enabled),
 						now,
 						await nextRev(db),
 					),
@@ -1341,6 +1376,89 @@ export function createChatStore(db: LocalDb): ChatStore {
 				 */
 				await db.chatPersonas.put(
 					markLocalDelete(persona, now, await nextRev(db)),
+				);
+			});
+		},
+
+		/*
+		 * User tool library section. Same shape as personas and for the same reason: a tool is an account
+		 * asset, so no operation here takes a room id or locks the room table. A room refers to a tool
+		 * only by id in `toolOverrides`, and an override naming a deleted tool is harmless (the registry
+		 * reads live tools only), so deleting a tool has nothing to cascade into.
+		 */
+
+		async listUserTools(): Promise<ChatUserTool[]> {
+			// sortUserTools is the authority on order (ties by id), as with personas.
+			const rows = await db.chatUserTools
+				.orderBy("updatedAt")
+				.reverse()
+				.toArray();
+			return sortUserTools(rows.filter(isLiveChatRecord));
+		},
+
+		async getUserTool(id: string): Promise<ChatUserTool | null> {
+			const tool = await db.chatUserTools.get(id);
+			return tool && isLiveChatRecord(tool) ? tool : null;
+		},
+
+		async createUserTool(input: CreateUserToolInput): Promise<ChatUserTool> {
+			/*
+			 * The definition is checked before the transaction opens. A throw inside would roll the
+			 * transaction back and Dexie would report the rollback instead, losing the `ChatUserToolError`
+			 * and its issue list the form shows. createUserToolRecord checks again; that second check is
+			 * the record builder's own contract and cannot fail here.
+			 */
+			const tool = requireUserToolDefinition(input.tool);
+			return db.transaction(
+				"rw",
+				[db.chatUserTools, db.syncState],
+				async () => {
+					const record = createUserToolRecord(
+						{ ...input, tool },
+						{ id: newLocalId(), now: nowIso(), rev: await nextRev(db) },
+					);
+					// `add`, not `put`: a fresh UUID that already exists is a bug, not an overwrite.
+					await db.chatUserTools.add(record);
+					return record;
+				},
+			);
+		},
+
+		async updateUserTool(
+			id: string,
+			patch: UpdateUserToolPatch,
+		): Promise<void> {
+			// Validation outside the transaction, for createUserTool's reason.
+			const next: UpdateUserToolPatch = {
+				...(patch.tool !== undefined
+					? { tool: requireUserToolDefinition(patch.tool) }
+					: {}),
+				...(patch.enabledByDefault !== undefined
+					? { enabledByDefault: patch.enabledByDefault }
+					: {}),
+			};
+			const now = nowIso();
+			await db.transaction("rw", [db.chatUserTools, db.syncState], async () => {
+				const tool = await db.chatUserTools.get(id);
+				// A missing or already-deleted tool is a no-op; an edit never revives a tombstone.
+				if (!tool || !isLiveChatRecord(tool)) return;
+				await db.chatUserTools.put(
+					markLocalUpdate({ ...tool, ...next }, now, await nextRev(db)),
+				);
+			});
+		},
+
+		async deleteUserTool(id: string): Promise<void> {
+			const now = nowIso();
+			await db.transaction("rw", [db.chatUserTools, db.syncState], async () => {
+				const tool = await db.chatUserTools.get(id);
+				if (!tool || !isLiveChatRecord(tool)) return;
+				/*
+				 * Rooms are not in this transaction on purpose: overrides naming this tool stay, and are inert
+				 * because every reader filters to live tools (`activeUserTools`).
+				 */
+				await db.chatUserTools.put(
+					markLocalDelete(tool, now, await nextRev(db)),
 				);
 			});
 		},

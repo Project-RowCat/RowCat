@@ -6,6 +6,7 @@ import {
 	type ChatPersona,
 	type ChatRoom,
 	type ChatScene,
+	type ChatUserTool,
 } from "@rowcat/chat";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useCallback, useState } from "react";
@@ -301,6 +302,28 @@ export function useLocalPersonas(): LocalListState<ChatPersona> {
 	const { store, status } = useChatScope();
 	const items = useLiveQuery(
 		() => (store ? store.listPersonas() : Promise.resolve(undefined)),
+		[store],
+	);
+	return {
+		items: items ?? [],
+		loading: status !== "ready" || items === undefined,
+	};
+}
+
+/**
+ * Subscribes to the account's tool library (live tools only, `sortUserTools` order from the store).
+ *
+ * Like personas it takes no room: a tool is an account asset. Two screens read it, the tools
+ * settings page and the room settings' tools view; the room view derives each row's on/off from
+ * the room it already holds (`userToolActiveIn`), so the library itself is the same list on both.
+ *
+ * The generation hook does not read this. A turn reads the library from the store at its start, so
+ * a tool edited a moment before sending is the one the turn declares, not a render-old copy.
+ */
+export function useLocalUserTools(): LocalListState<ChatUserTool> {
+	const { store, status } = useChatScope();
+	const items = useLiveQuery(
+		() => (store ? store.listUserTools() : Promise.resolve(undefined)),
 		[store],
 	);
 	return {

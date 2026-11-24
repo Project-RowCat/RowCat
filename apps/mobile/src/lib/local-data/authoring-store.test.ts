@@ -308,3 +308,68 @@ describe("child", () => {
 		expect(asset?.width).toBe(640);
 	});
 });
+
+describe("creator tools", () => {
+	it("a tool mid-edit round-trips every kind's fields and reorders in one transaction", async () => {
+		const draft = await authoring.createDraft({ title: "Tools" });
+		const a = await authoring.createTool(draft.id, { name: "first" });
+		const b = await authoring.createTool(draft.id, { name: "second" });
+
+		await authoring.updateTool(a.id, {
+			kind: "table",
+			template: "kept",
+			entries: ["one", ""],
+			draws: 2,
+			parameters: [
+				{
+					name: "place",
+					type: "string",
+					description: "Where",
+					required: true,
+					choices: ["pier", " market"],
+				},
+			],
+		});
+		await authoring.reorderTools(draft.id, [b.id, a.id]);
+
+		const tools = await authoring.listTools(draft.id);
+		expect(tools.map((tool) => tool.name)).toEqual(["second", "first"]);
+		expect(tools[1]).toMatchObject({
+			kind: "table",
+			template: "kept",
+			entries: ["one", ""],
+			draws: 2,
+			parameters: [
+				{
+					name: "place",
+					type: "string",
+					description: "Where",
+					required: true,
+					choices: ["pier", " market"],
+				},
+			],
+		});
+	});
+
+	it("the publish source carries live tools, and deleting the draft tombstones them", async () => {
+		const draft = await authoring.createDraft({
+			title: "Tools",
+			prompt: "Body",
+		});
+		const kept = await authoring.createTool(draft.id, { name: "kept" });
+		const removed = await authoring.createTool(draft.id, { name: "removed" });
+		await authoring.deleteTool(removed.id);
+
+		const source = await authoring.loadPublicationSource(draft.id);
+		expect(source?.tools?.map((tool) => tool.id)).toEqual([kept.id]);
+
+		await authoring.deleteDraft(draft.id);
+		expect(await authoring.listTools(draft.id)).toEqual([]);
+		const row = await db.first<{ deleted_at: string | null; dirty: number }>(
+			"SELECT deleted_at, dirty FROM authoring_tool WHERE id = ?",
+			[kept.id],
+		);
+		expect(row?.deleted_at).not.toBeNull();
+		expect(row?.dirty).toBe(1);
+	});
+});

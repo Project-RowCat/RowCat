@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createDraftToolRecord } from "./draft-tool.ts";
 import {
 	createDraftLoreEntryRecord,
 	createDraftSceneImageRecord,
@@ -395,5 +396,105 @@ describe("import", () => {
 			ok: false,
 			issue: { code: "media_mismatch" },
 		});
+	});
+});
+
+describe("creator tools", () => {
+	const withTools = () =>
+		source({
+			tools: [
+				createDraftToolRecord(
+					{
+						draftId: "draft-1",
+						positionIndex: 1,
+						name: "oracle",
+						kind: "agent",
+						template: "kept while the kind is agent",
+						system: "You are the oracle.",
+						parameters: [
+							{
+								name: "question",
+								type: "string",
+								description: "",
+								required: true,
+								choices: ["tide", ""],
+							},
+						],
+					},
+					stamp("tool-b"),
+				),
+				createDraftToolRecord(
+					{ draftId: "draft-1", positionIndex: 0, name: "dice", kind: "table" },
+					stamp("tool-a"),
+				),
+				markAuthoringDeleted(
+					createDraftToolRecord(
+						{ draftId: "draft-1", positionIndex: 2, name: "gone" },
+						stamp("tool-c"),
+					),
+					NOW,
+					REV,
+				),
+			],
+		});
+
+	const build = (input: StoryArchiveSource) => {
+		const result = buildStoryArchiveManifest(input, allMedia(), {
+			exportedAt: NOW,
+			origin: null,
+		});
+		if (!result.ok) throw new Error(JSON.stringify(result.issue));
+		return result.value;
+	};
+
+	it("an archive without tools has no tools key, so importers from before tools still read it", () => {
+		expect(build(source())).not.toHaveProperty("tools");
+	});
+
+	it("live tools travel in list order, mid-edit fields included, without ids, and come back as store input", () => {
+		const manifest = build(withTools());
+		expect(manifest.tools?.map((tool) => tool.name)).toEqual([
+			"dice",
+			"oracle",
+		]);
+		expect(JSON.stringify(manifest.tools)).not.toContain("tool-");
+
+		const parsed = parseStoryArchiveManifest(
+			JSON.parse(JSON.stringify(manifest)),
+		);
+		if (!parsed.ok) throw new Error(JSON.stringify(parsed.issue));
+		const plan = planStoryArchiveDraft(parsed.value, (upload) => ({
+			assetId: `new-${upload.role}`,
+			mime: upload.role === "runtime-audio" ? "audio/mpeg" : "image/webp",
+			width: 1,
+			height: 1,
+			durationMs: 1,
+		}));
+		if (!plan.ok) throw new Error(JSON.stringify(plan.issue));
+		expect(plan.value.tools[1]).toEqual({
+			name: "oracle",
+			description: "",
+			parameters: [
+				{
+					name: "question",
+					type: "string",
+					description: "",
+					required: true,
+					choices: ["tide", ""],
+				},
+			],
+			kind: "agent",
+			template: "kept while the kind is agent",
+			entries: [],
+			draws: 1,
+			system: "You are the oracle.",
+			maxOutputTokens: 1_024,
+		});
+	});
+
+	it("an unknown tool kind is refused rather than dropped", () => {
+		const manifest = JSON.parse(JSON.stringify(build(withTools())));
+		manifest.tools[0].kind = "http";
+		expect(parseStoryArchiveManifest(manifest).ok).toBe(false);
 	});
 });

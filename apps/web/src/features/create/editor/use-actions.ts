@@ -26,6 +26,11 @@ export interface DraftActions {
 	removeLore: (id: string) => Promise<void>;
 	moveLore: (orderedIds: string[]) => Promise<void>;
 
+	/** Creator tools: lore's three structural operations. */
+	addTool: () => Promise<void>;
+	removeTool: (id: string) => Promise<void>;
+	moveTool: (orderedIds: string[]) => Promise<void>;
+
 	addStartScene: () => Promise<void>;
 	removeStartScene: (id: string) => Promise<void>;
 	moveStartScene: (orderedIds: string[]) => Promise<void>;
@@ -77,6 +82,10 @@ export function useDraftActions(draftId: string): DraftActions {
 			addLore: () => run((s) => s.createLore(draftId)),
 			removeLore: (id) => run((s) => s.deleteLore(id)),
 			moveLore: (orderedIds) => run((s) => s.reorderLore(draftId, orderedIds)),
+
+			addTool: () => run((s) => s.createTool(draftId)),
+			removeTool: (id) => run((s) => s.deleteTool(id)),
+			moveTool: (orderedIds) => run((s) => s.reorderTools(draftId, orderedIds)),
 
 			addStartScene: () => run((s) => s.createStartScene(draftId)),
 			removeStartScene: (id) => run((s) => s.deleteStartScene(id)),

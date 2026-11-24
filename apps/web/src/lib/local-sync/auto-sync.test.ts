@@ -38,6 +38,7 @@ const seed = (title: string): ChatSeed => ({
 	lore: [],
 	startScenes: [],
 	sceneImages: [],
+	tools: [],
 });
 
 const flush = async (): Promise<void> => {

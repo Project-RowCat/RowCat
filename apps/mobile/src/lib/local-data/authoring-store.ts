@@ -8,6 +8,7 @@ import {
 	createDraftRuntimeProjectRecord,
 	createDraftSceneImageRecord,
 	createDraftStartSceneRecord,
+	createDraftToolRecord,
 	createStoryDraftRecord,
 	type DraftLoreEntry,
 	type DraftLoreEntryPatch,
@@ -20,6 +21,8 @@ import {
 	type DraftSceneImagePatch,
 	type DraftStartScene,
 	type DraftStartScenePatch,
+	type DraftTool,
+	type DraftToolPatch,
 	defaultRuntimeStarter,
 	isLiveRecord,
 	markAuthoringDeleted,
@@ -30,11 +33,13 @@ import {
 	type NewDraftRuntimeAsset,
 	type NewDraftSceneImage,
 	type NewDraftStartScene,
+	type NewDraftTool,
 	type RuntimeStarter,
 	runtimeProjectIdFor,
 	type StoryDraft,
 	type StoryDraftPatch,
 	type StoryPublicationSource,
+	sortDraftTools,
 	sortLore,
 	sortRuntimeAssets,
 	sortRuntimeFiles,
@@ -55,6 +60,7 @@ import {
 	authoringRuntimeProjectTable,
 	authoringSceneImageTable,
 	authoringSceneTable,
+	authoringToolTable,
 	type RecordTable,
 	type SqlRow,
 } from "./tables.ts";
@@ -297,6 +303,11 @@ export function createAuthoringStore(db: MobileDatabase): AuthoringStore {
 					markAuthoringDeleted(draft, now, await nextRev(tx)),
 				);
 				await softDeleteChildrenOf(tx, authoringLoreTable, id, now);
+				/**
+				 * Creator tools receive tombstones like lore: they sync as their own records, and a device that
+				 * has not seen the draft's tombstone yet must still drop them (the web does the same).
+				 */
+				await softDeleteChildrenOf(tx, authoringToolTable, id, now);
 				await softDeleteChildrenOf(tx, authoringSceneTable, id, now);
 				/**
 				 * Scene images also receive tombstones — **the server's pictures are not deleted.** Only the
@@ -374,6 +385,65 @@ export function createAuthoringStore(db: MobileDatabase): AuthoringStore {
 				reorderInTx<DraftLoreEntry>(
 					tx,
 					authoringLoreTable,
+					draftId,
+					orderedIds,
+					(row, positionIndex) => ({ ...row, positionIndex }),
+				),
+			);
+		},
+
+		/* ── Creator tools ── */
+
+		/**
+		 * Lore's five operations, transcribed. The record is loose on purpose (`draft-tool.ts`), so
+		 * nothing here checks the tool; publishing does.
+		 */
+		listTools: async (draftId) =>
+			sortDraftTools(
+				await liveChildren<DraftTool>(db, authoringToolTable, draftId),
+			),
+
+		createTool: (draftId: string, input?: NewDraftTool): Promise<DraftTool> =>
+			db.transaction(async (tx) => {
+				const now = nowIso();
+				const positionIndex = await nextPosition(
+					tx,
+					authoringToolTable,
+					draftId,
+				);
+				const [childRev, parentRev] = await nextRevs(tx, 2);
+				const tool = createDraftToolRecord(
+					{ ...input, draftId, positionIndex },
+					{ id: newLocalId(), now, rev: childRev },
+				);
+				await authoringToolTable.upsert(tx, tool);
+				await touchDraftInTx(tx, draftId, now, parentRev);
+				return tool;
+			}),
+
+		async updateTool(id: string, patch: DraftToolPatch): Promise<void> {
+			await db.transaction(async (tx) => {
+				const current = await readChild<DraftTool>(tx, authoringToolTable, id);
+				if (!current || !isLiveRecord(current)) return;
+				const now = nowIso();
+				const [childRev, parentRev] = await nextRevs(tx, 2);
+				await authoringToolTable.upsert(
+					tx,
+					markAuthoringUpdate({ ...current, ...patch }, now, childRev),
+				);
+				await touchDraftInTx(tx, current.draftId, now, parentRev);
+			});
+		},
+
+		async deleteTool(id: string): Promise<void> {
+			await db.transaction((tx) => softDeleteChild(tx, authoringToolTable, id));
+		},
+
+		async reorderTools(draftId: string, orderedIds: string[]): Promise<void> {
+			await db.transaction((tx) =>
+				reorderInTx<DraftTool>(
+					tx,
+					authoringToolTable,
 					draftId,
 					orderedIds,
 					(row, positionIndex) => ({ ...row, positionIndex }),
@@ -866,6 +936,12 @@ export function createAuthoringStore(db: MobileDatabase): AuthoringStore {
 					draft,
 					lore: sortLore(
 						await liveChildren<DraftLoreEntry>(tx, authoringLoreTable, draftId),
+					),
+					/**
+					 * Tools come from the same read as the prompt they are written for, for the reason above.
+					 */
+					tools: sortDraftTools(
+						await liveChildren<DraftTool>(tx, authoringToolTable, draftId),
 					),
 					startScenes: sortStartScenes(
 						await liveChildren<DraftStartScene>(

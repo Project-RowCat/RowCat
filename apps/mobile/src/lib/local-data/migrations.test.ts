@@ -94,7 +94,10 @@ describe("migrations", () => {
 				deleted_at, dirty, server_version, rev_t, rev_c, rev_d
 			) VALUES ('c1', 'r1', 'Yujin', '', 'a', 'a', NULL, 0, 3, 1, 0, 'd')`,
 		);
-		/** Undo v22 and v21. The file is now a real v20. */
+		/** Undo v23, v22 and v21. The file is now a real v20. */
+		await first.run(`DROP TABLE chat_tool`);
+		await first.run(`DROP TABLE authoring_tool`);
+		await first.run(`ALTER TABLE chat_room DROP COLUMN tool_overrides`);
 		await first.run(`ALTER TABLE chat_memory DROP COLUMN audience`);
 		await first.run(`DROP TABLE chat_scene`);
 		await first.run(`ALTER TABLE chat_character DROP COLUMN aliases`);
@@ -125,7 +128,10 @@ describe("migrations", () => {
 				deleted_at, dirty, server_version, rev_t, rev_c, rev_d
 			) VALUES ('m1', 'r1', 'Memory', 0, 'user', NULL, 'a', 'a', NULL, 0, 3, 1, 0, 'd')`,
 		);
-		/** Undo v22. The file is now a real v21. */
+		/** Undo v23 and v22. The file is now a real v21. */
+		await first.run(`DROP TABLE chat_tool`);
+		await first.run(`DROP TABLE authoring_tool`);
+		await first.run(`ALTER TABLE chat_room DROP COLUMN tool_overrides`);
 		await first.run(`ALTER TABLE chat_memory DROP COLUMN audience`);
 		await first.run(`PRAGMA user_version = 21`);
 		await first.close();
@@ -140,6 +146,45 @@ describe("migrations", () => {
 				"SELECT audience, dirty FROM chat_memory WHERE id = 'm1'",
 			),
 		).toEqual({ audience: null, dirty: 0 });
+		await second.close();
+	});
+
+	/**
+	 * v23 adds the tool library and the room's override column. A v22 room must come up with no
+	 * override key (the column reads `NULL`) and stay clean: a schema change is not an edit, and
+	 * marking it dirty would re-upload every room on the device.
+	 */
+	it("v23 adds the tool tables and a NULL tool_overrides; a v22 room stays clean", async () => {
+		const first = await open();
+		await first.run(
+			`INSERT INTO chat_room (
+				id, origin_story_id, title, adult, prompt_protected, seed,
+				created_at, updated_at, deleted_at, dirty, server_version,
+				rev_t, rev_c, rev_d
+			) VALUES ('r1', NULL, 'Room', 0, 0, '{}', 'a', 'a', NULL, 0, 3, 1, 0, 'd')`,
+		);
+		/** Undo v23. The file is now a real v22. */
+		await first.run(`DROP TABLE chat_tool`);
+		await first.run(`DROP TABLE authoring_tool`);
+		await first.run(`ALTER TABLE chat_room DROP COLUMN tool_overrides`);
+		await first.run(`PRAGMA user_version = 22`);
+		await first.close();
+
+		const second = await open();
+		const version = await second.first<{ user_version: number }>(
+			"PRAGMA user_version",
+		);
+		expect(version?.user_version).toBe(MOBILE_SCHEMA_VERSION);
+		expect(
+			await second.first<{ tool_overrides: string | null; dirty: number }>(
+				"SELECT tool_overrides, dirty FROM chat_room WHERE id = 'r1'",
+			),
+		).toEqual({ tool_overrides: null, dirty: 0 });
+		for (const table of ["chat_tool", "authoring_tool"])
+			expect(
+				await second.first(`SELECT COUNT(*) AS n FROM ${table}`),
+				table,
+			).toEqual({ n: 0 });
 		await second.close();
 	});
 

@@ -122,6 +122,7 @@ describe("all six types are present", () => {
 			"authoring.runtimeProject",
 			"authoring.runtimeFile",
 			"authoring.runtimeAsset",
+			"authoring.tool",
 		]);
 	});
 

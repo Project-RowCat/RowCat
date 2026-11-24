@@ -205,6 +205,9 @@ describe("v12 → v13 migration", () => {
 		await first.run(`ALTER TABLE chat_memory DROP COLUMN audience`);
 		await first.run(`DROP TABLE chat_scene`);
 		await first.run(`DROP TABLE chat_character`);
+		await first.run(`DROP TABLE chat_tool`);
+		await first.run(`DROP TABLE authoring_tool`);
+		await first.run(`ALTER TABLE chat_room DROP COLUMN tool_overrides`);
 		await first.run(`PRAGMA user_version = 12`);
 		await first.close();
 

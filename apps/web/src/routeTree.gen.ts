@@ -31,6 +31,7 @@ import { Route as appPersonasIndexRouteImport } from './routes/(app)/personas/in
 import { Route as appSettingsIndexRouteImport } from './routes/(app)/settings/index'
 import { Route as appSettingsAiRouteImport } from './routes/(app)/settings/ai'
 import { Route as appSettingsPersonasRouteImport } from './routes/(app)/settings/personas'
+import { Route as appSettingsToolsRouteImport } from './routes/(app)/settings/tools'
 import { Route as appStoriesStoryIdRouteImport } from './routes/(app)/stories/$storyId'
 import { Route as appChatRuntimeStoryIdRouteImport } from './routes/(app)/chat/runtime/$storyId'
 import { Route as appCreateDraftIdRuntimeRouteImport } from './routes/(app)/create/$draftId_/runtime'
@@ -148,6 +149,11 @@ const appSettingsPersonasRoute = appSettingsPersonasRouteImport.update({
   path: '/personas',
   getParentRoute: () => appSettingsRouteRoute,
 } as any)
+const appSettingsToolsRoute = appSettingsToolsRouteImport.update({
+  id: '/tools',
+  path: '/tools',
+  getParentRoute: () => appSettingsRouteRoute,
+} as any)
 const appStoriesStoryIdRoute = appStoriesStoryIdRouteImport.update({
   id: '/stories/$storyId',
   path: '/stories/$storyId',
@@ -199,6 +205,7 @@ export interface FileRoutesByFullPath {
   '/creators/$creatorId': typeof appCreatorsCreatorIdRoute
   '/settings/ai': typeof appSettingsAiRoute
   '/settings/personas': typeof appSettingsPersonasRoute
+  '/settings/tools': typeof appSettingsToolsRoute
   '/stories/$storyId': typeof appStoriesStoryIdRoute
   '/account-deletion/': typeof appAccountDeletionIndexRoute
   '/account/': typeof appAccountIndexRoute
@@ -228,6 +235,7 @@ export interface FileRoutesByTo {
   '/creators/$creatorId': typeof appCreatorsCreatorIdRoute
   '/settings/ai': typeof appSettingsAiRoute
   '/settings/personas': typeof appSettingsPersonasRoute
+  '/settings/tools': typeof appSettingsToolsRoute
   '/stories/$storyId': typeof appStoriesStoryIdRoute
   '/account-deletion': typeof appAccountDeletionIndexRoute
   '/account': typeof appAccountIndexRoute
@@ -260,6 +268,7 @@ export interface FileRoutesById {
   '/(app)/creators/$creatorId': typeof appCreatorsCreatorIdRoute
   '/(app)/settings/ai': typeof appSettingsAiRoute
   '/(app)/settings/personas': typeof appSettingsPersonasRoute
+  '/(app)/settings/tools': typeof appSettingsToolsRoute
   '/(app)/stories/$storyId': typeof appStoriesStoryIdRoute
   '/(app)/account-deletion/': typeof appAccountDeletionIndexRoute
   '/(app)/account/': typeof appAccountIndexRoute
@@ -292,6 +301,7 @@ export interface FileRouteTypes {
     | '/creators/$creatorId'
     | '/settings/ai'
     | '/settings/personas'
+    | '/settings/tools'
     | '/stories/$storyId'
     | '/account-deletion/'
     | '/account/'
@@ -321,6 +331,7 @@ export interface FileRouteTypes {
     | '/creators/$creatorId'
     | '/settings/ai'
     | '/settings/personas'
+    | '/settings/tools'
     | '/stories/$storyId'
     | '/account-deletion'
     | '/account'
@@ -352,6 +363,7 @@ export interface FileRouteTypes {
     | '/(app)/creators/$creatorId'
     | '/(app)/settings/ai'
     | '/(app)/settings/personas'
+    | '/(app)/settings/tools'
     | '/(app)/stories/$storyId'
     | '/(app)/account-deletion/'
     | '/(app)/account/'
@@ -535,6 +547,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof appSettingsPersonasRouteImport
       parentRoute: typeof appSettingsRouteRoute
     }
+    '/(app)/settings/tools': {
+      id: '/(app)/settings/tools'
+      path: '/tools'
+      fullPath: '/settings/tools'
+      preLoaderRoute: typeof appSettingsToolsRouteImport
+      parentRoute: typeof appSettingsRouteRoute
+    }
     '/(app)/stories/$storyId': {
       id: '/(app)/stories/$storyId'
       path: '/stories/$storyId'
@@ -590,12 +609,14 @@ declare module '@tanstack/react-router' {
 interface appSettingsRouteRouteChildren {
   appSettingsAiRoute: typeof appSettingsAiRoute
   appSettingsPersonasRoute: typeof appSettingsPersonasRoute
+  appSettingsToolsRoute: typeof appSettingsToolsRoute
   appSettingsIndexRoute: typeof appSettingsIndexRoute
 }
 
 const appSettingsRouteRouteChildren: appSettingsRouteRouteChildren = {
   appSettingsAiRoute: appSettingsAiRoute,
   appSettingsPersonasRoute: appSettingsPersonasRoute,
+  appSettingsToolsRoute: appSettingsToolsRoute,
   appSettingsIndexRoute: appSettingsIndexRoute,
 }
 

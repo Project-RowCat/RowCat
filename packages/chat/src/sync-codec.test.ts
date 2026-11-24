@@ -38,6 +38,7 @@ const seed = (): ChatSeed => ({
 	lore: [],
 	startScenes: [],
 	sceneImages: [],
+	tools: [],
 });
 
 const room = (patch: Partial<ChatRoom> = {}): ChatRoom => ({
@@ -1024,6 +1025,50 @@ describe("chat.persona codec", () => {
 	});
 });
 
+describe("chat.room codec · tool overrides", () => {
+	const decode = (data: unknown) =>
+		chatRoomSyncCodec.decode({
+			id: "room-1",
+			schemaVersion: CHAT_SYNC_SCHEMA_VERSION,
+			rev: rev(1000),
+			deletedAt: null,
+			data,
+		});
+
+	it("omits the key without overrides, so pre-axis payloads stay identical", () => {
+		expect(chatRoomSyncCodec.encode(room())).not.toHaveProperty(
+			"toolOverrides",
+		);
+		expect(
+			chatRoomSyncCodec.encode(room({ toolOverrides: {} })),
+		).not.toHaveProperty("toolOverrides");
+	});
+
+	it("round trips the map", () => {
+		const decoded = decode(
+			chatRoomSyncCodec.encode(room({ toolOverrides: { a: false, b: true } })),
+		);
+		expect(decoded?.toolOverrides).toEqual({ a: false, b: true });
+	});
+
+	it("the later version's whole map wins, and a newer clear wins too", () => {
+		const local = room({ toolOverrides: { a: false }, rev: rev(1000) });
+		const remote = room({
+			toolOverrides: { b: true },
+			rev: rev(2000, "device-b"),
+		});
+		expect(
+			chatRoomSyncCodec.merge(local, remote, context().ctx).record
+				.toolOverrides,
+		).toEqual({ b: true });
+		const cleared = room({ rev: rev(3000, "device-b") });
+		expect(
+			"toolOverrides" in
+				chatRoomSyncCodec.merge(local, cleared, context().ctx).record,
+		).toBe(false);
+	});
+});
+
 describe("codec list", () => {
 	/**
 	 * Order is the outbound collection order, so new types go at the end to keep in-progress
@@ -1038,6 +1083,7 @@ describe("codec list", () => {
 			"chat.persona",
 			"chat.character",
 			"chat.scene",
+			"chat.tool",
 		]);
 	});
 });

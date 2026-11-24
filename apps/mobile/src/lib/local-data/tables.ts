@@ -5,6 +5,7 @@ import type {
 	DraftRuntimeProject,
 	DraftSceneImage,
 	DraftStartScene,
+	DraftTool,
 	StoryDraft,
 } from "@rowcat/authoring";
 import type {
@@ -18,6 +19,7 @@ import type {
 	ChatSceneAudience,
 	ChatSeed,
 	ChatSummary,
+	ChatUserTool,
 } from "@rowcat/chat";
 import {
 	normalizeCharacterAliases,
@@ -113,6 +115,12 @@ export const TABLE_ORDER = [
 	 * the codec list in `@rowcat/chat` place it here too).
 	 */
 	"chat.scene",
+	/**
+	 * Custom tools, appended at the end like every new type (the web's array places them the same
+	 * way). `chat.tool` has no parent; `authoring.tool` is a draft child, and its parent is earlier.
+	 */
+	"chat.tool",
+	"authoring.tool",
 ] as const;
 
 export type SyncType = (typeof TABLE_ORDER)[number];
@@ -122,6 +130,7 @@ export const CHILD_ORDER_FIELD: Partial<
 	Record<SyncType, "position" | "positionIndex">
 > = {
 	"authoring.lore": "positionIndex",
+	"authoring.tool": "positionIndex",
 	"authoring.scene": "position",
 	"authoring.sceneImage": "position",
 	/**
@@ -215,6 +224,27 @@ function upsertSql(table: string, columns: readonly string[]): string {
 const quote = (column: string): string => `"${column}"`;
 
 const json = (value: unknown): string => JSON.stringify(value);
+
+/**
+ * The room's tool overrides column: a JSON map of tool id to on/off. Anything else (missing column,
+ * broken JSON, non-boolean values, an empty map) folds to `undefined`, so the key is not created.
+ */
+const readToolOverrides = (
+	value: unknown,
+): Record<string, boolean> | undefined => {
+	if (typeof value !== "string" || !value) return undefined;
+	try {
+		const parsed: unknown = JSON.parse(value);
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+			return undefined;
+		const out: Record<string, boolean> = {};
+		for (const [key, flag] of Object.entries(parsed))
+			if (typeof flag === "boolean") out[key] = flag;
+		return Object.keys(out).length > 0 ? out : undefined;
+	} catch {
+		return undefined;
+	}
+};
 const parseJson = <T>(value: unknown, fallback: T): T => {
 	if (typeof value !== "string") return fallback;
 	try {
@@ -291,6 +321,8 @@ const ROOM_COLUMNS = [
 	 * in v17).
 	 */
 	"user_note",
+	/** Tool overrides (v23): one JSON map. No overrides stores `NULL`. */
+	"tool_overrides",
 	"created_at",
 	"updated_at",
 ] as const;
@@ -347,6 +379,11 @@ export const chatRoomTable: RecordTable<ChatRoom> = {
 				 * as a key, the room's shape would differ from one where `applyRoomUserNote` cleared the note.
 				 */
 				userNote: nullableText(row.user_note) || undefined,
+				/*
+				 * Broken JSON and an empty map both fold to no key, the shape `applyRoomToolOverride`
+				 * produces. Folding is the safe side: the worst case is every tool following its default.
+				 */
+				toolOverrides: readToolOverrides(row.tool_overrides),
 			},
 		),
 	upsert: (tx, record) =>
@@ -364,6 +401,9 @@ export const chatRoomTable: RecordTable<ChatRoom> = {
 			record.narration ? json(record.narration) : null,
 			/* No note stores `NULL`, not an empty string. */
 			record.userNote || null,
+			record.toolOverrides && Object.keys(record.toolOverrides).length > 0
+				? json(record.toolOverrides)
+				: null,
 			record.createdAt,
 			record.updatedAt,
 			...metaValues(record),
@@ -1165,6 +1205,108 @@ export const chatPersonaTable: RecordTable<ChatPersona> = {
 		]),
 };
 
+/* ── chat.tool ─────────────────────────────────────────────────────────────── */
+
+const USER_TOOL_COLUMNS = [
+	"tool",
+	"enabled_by_default",
+	"created_at",
+	"updated_at",
+] as const;
+
+const USER_TOOL_UPSERT = upsertSql("chat_tool", USER_TOOL_COLUMNS);
+
+/**
+ * A row of the user's tool library. `parent: null` for the persona table's reason: room tombstones
+ * never sweep it. The definition is stored as written; it was validated on the way in (storage and
+ * the sync codec both run the contract).
+ */
+export const chatUserToolTable: RecordTable<ChatUserTool> = {
+	type: "chat.tool",
+	table: "chat_tool",
+	parent: null,
+	order: null,
+	fromRow: (row) => ({
+		id: text(row.id),
+		tool: parseJson<ChatUserTool["tool"]>(row.tool, {} as ChatUserTool["tool"]),
+		enabledByDefault: fromFlag(row.enabled_by_default),
+		createdAt: text(row.created_at),
+		updatedAt: text(row.updated_at),
+		...metaOf(row),
+	}),
+	upsert: (tx, record) =>
+		tx.run(USER_TOOL_UPSERT, [
+			record.id,
+			json(record.tool),
+			toFlag(record.enabledByDefault),
+			record.createdAt,
+			record.updatedAt,
+			...metaValues(record),
+		]),
+};
+
+/* ── authoring.tool ────────────────────────────────────────────────────────── */
+
+const DRAFT_TOOL_COLUMNS = [
+	"draft_id",
+	"position_index",
+	"name",
+	"description",
+	"parameters",
+	"kind",
+	"template",
+	"entries",
+	"draws",
+	"system",
+	"max_output_tokens",
+	"created_at",
+	"updated_at",
+] as const;
+
+const DRAFT_TOOL_UPSERT = upsertSql("authoring_tool", DRAFT_TOOL_COLUMNS);
+
+export const authoringToolTable: RecordTable<DraftTool> = {
+	type: "authoring.tool",
+	table: "authoring_tool",
+	parent: "draft_id",
+	order: "position_index",
+	fromRow: (row) => ({
+		id: text(row.id),
+		draftId: text(row.draft_id),
+		positionIndex: int(row.position_index),
+		name: text(row.name),
+		description: text(row.description),
+		parameters: parseJson<DraftTool["parameters"]>(row.parameters, []),
+		kind: text(row.kind) as DraftTool["kind"],
+		template: text(row.template),
+		entries: parseJson<string[]>(row.entries, []),
+		draws: int(row.draws),
+		system: text(row.system),
+		maxOutputTokens: int(row.max_output_tokens),
+		createdAt: text(row.created_at),
+		updatedAt: text(row.updated_at),
+		...metaOf(row),
+	}),
+	upsert: (tx, record) =>
+		tx.run(DRAFT_TOOL_UPSERT, [
+			record.id,
+			record.draftId,
+			record.positionIndex,
+			record.name,
+			record.description,
+			json(record.parameters),
+			record.kind,
+			record.template,
+			json(record.entries),
+			record.draws,
+			record.system,
+			record.maxOutputTokens,
+			record.createdAt,
+			record.updatedAt,
+			...metaValues(record),
+		]),
+};
+
 /* ── runtime.playthrough ──────────────────────────────────────────────────── */
 
 const RUNTIME_PLAYTHROUGH_COLUMNS = [
@@ -1335,6 +1477,8 @@ const BY_TYPE: Record<SyncType, RecordTable> = {
 	"authoring.runtimeFile": authoringRuntimeFileTable as RecordTable,
 	"authoring.runtimeAsset": authoringRuntimeAssetTable as RecordTable,
 	"chat.persona": chatPersonaTable as RecordTable,
+	"chat.tool": chatUserToolTable as RecordTable,
+	"authoring.tool": authoringToolTable as RecordTable,
 	"runtime.playthrough": runtimePlaythroughTable as RecordTable,
 	"runtime.persistent": runtimePersistentTable as RecordTable,
 	"runtime.conversation": runtimeConversationTable as RecordTable,

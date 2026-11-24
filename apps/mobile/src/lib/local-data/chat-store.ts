@@ -5,6 +5,7 @@ import {
 	applyRoomIntensity,
 	applyRoomNarration,
 	applyRoomPersona,
+	applyRoomToolOverride,
 	applyRoomUserNote,
 	CHAT_CHARACTER_MAX_PER_ROOM,
 	CHAT_MEMORY_MAX_PER_ROOM,
@@ -25,10 +26,12 @@ import {
 	type ChatSummary,
 	type ChatTailMode,
 	type ChatTailRewrite,
+	type ChatUserTool,
 	type CreateCharacterInput,
 	type CreateMemoryInput,
 	type CreatePersonaInput,
 	type CreateRoomInput,
+	type CreateUserToolInput,
 	chatRoomDuplicateRecordCount,
 	createCharacterRecord,
 	createMemoryRecord,
@@ -36,6 +39,7 @@ import {
 	createPersonaRecord,
 	createRoomRecord,
 	createSceneRecord,
+	createUserToolRecord,
 	extendAssistantRecord,
 	isLiveChatRecord,
 	markLocalDelete,
@@ -57,6 +61,7 @@ import {
 	requirePersonaName,
 	requireRoomTitle,
 	requireSceneAudience,
+	requireUserToolDefinition,
 	rewindChangesAnything,
 	type SetSceneInput,
 	sameAudience,
@@ -64,11 +69,13 @@ import {
 	sortCharacters,
 	sortMemories,
 	sortPersonas,
+	sortUserTools,
 	summaryIdFor,
 	type UpdateCharacterPatch,
 	type UpdateMemoryPatch,
 	type UpdateMessagePatch,
 	type UpdatePersonaPatch,
+	type UpdateUserToolPatch,
 } from "@rowcat/chat";
 import { newLocalId, nowIso } from "./clock.ts";
 import { nextRev, nextRevs } from "./hlc.ts";
@@ -81,6 +88,7 @@ import {
 	chatRoomTable,
 	chatSceneTable,
 	chatSummaryTable,
+	chatUserToolTable,
 	type SqlRow,
 } from "./tables.ts";
 
@@ -640,6 +648,32 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 			});
 		},
 
+		async setRoomToolOverride(
+			roomId: string,
+			toolId: string,
+			enabled: boolean | null,
+		): Promise<void> {
+			const now = nowIso();
+			await db.transaction(async (tx) => {
+				const room = await liveRoom(tx, roomId);
+				if (!room) return;
+				/*
+				 * Calls the **same function** as web (`applyRoomToolOverride`). Clearing the last override
+				 * deletes the key, so "no overrides" has one shape on both apps and in the column (`NULL`).
+				 * The tool id is deliberately not looked up: an override for a tool this device has not
+				 * pulled yet is valid, and generation reads only live tools (`activeUserTools`).
+				 */
+				await chatRoomTable.upsert(
+					tx,
+					markLocalUpdate(
+						applyRoomToolOverride(room, toolId, enabled),
+						now,
+						await nextRev(tx),
+					),
+				);
+			});
+		},
+
 		/**
 		 * Secures this room's routing key. It follows the **same rule** as the web function of the same
 		 * name.
@@ -1179,6 +1213,91 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 				 * operation. Conversations that used this persona keep their own copy and continue as they are.
 				 */
 				await chatPersonaTable.upsert(
+					tx,
+					markLocalDelete(current, now, await nextRev(tx)),
+				);
+			});
+		},
+
+		/* ── Tool library ──────────────────────────────────────────────────────────
+		 *
+		 * The persona section's shape and its defining trait: **it never touches the room.** A room
+		 * names a tool only by id in its override map (`setRoomToolOverride`), so deleting a tool leaves
+		 * those keys behind, and they are harmless because generation reads only live tools.
+		 * ────────────────────────────────────────────────────────────────────── */
+
+		async listUserTools(): Promise<ChatUserTool[]> {
+			const rows = await db.all<SqlRow>(
+				`SELECT * FROM chat_tool WHERE deleted_at IS NULL
+				 ORDER BY updated_at DESC, id DESC`,
+			);
+			/* The authority on order is `sortUserTools`, the web's function, as with personas. */
+			return sortUserTools(rows.map(chatUserToolTable.fromRow));
+		},
+
+		async getUserTool(id: string): Promise<ChatUserTool | null> {
+			const row = await db.first<SqlRow>(
+				"SELECT * FROM chat_tool WHERE id = ?",
+				[id],
+			);
+			const tool = row ? chatUserToolTable.fromRow(row) : null;
+			return tool && isLiveChatRecord(tool) ? tool : null;
+		},
+
+		createUserTool: (input: CreateUserToolInput): Promise<ChatUserTool> =>
+			db.transaction(async (tx) => {
+				const tool = createUserToolRecord(input, {
+					id: newLocalId(),
+					now: nowIso(),
+					rev: await nextRev(tx),
+				});
+				await chatUserToolTable.upsert(tx, tool);
+				return tool;
+			}),
+
+		async updateUserTool(
+			id: string,
+			patch: UpdateUserToolPatch,
+		): Promise<void> {
+			/*
+			 * The definition is re-checked **outside the transaction**, for `setRoomUserNote`'s reason:
+			 * a rejection must reach the form as `ChatUserToolError` with its issues, not as a rolled-back
+			 * write.
+			 */
+			const next: UpdateUserToolPatch = {
+				...(patch.tool !== undefined
+					? { tool: requireUserToolDefinition(patch.tool) }
+					: {}),
+				...(patch.enabledByDefault !== undefined
+					? { enabledByDefault: patch.enabledByDefault }
+					: {}),
+			};
+			const now = nowIso();
+			await db.transaction(async (tx) => {
+				const row = await tx.first<SqlRow>(
+					"SELECT * FROM chat_tool WHERE id = ?",
+					[id],
+				);
+				const current = row ? chatUserToolTable.fromRow(row) : null;
+				if (!current || !isLiveChatRecord(current)) return;
+				await chatUserToolTable.upsert(
+					tx,
+					markLocalUpdate({ ...current, ...next }, now, await nextRev(tx)),
+				);
+			});
+		},
+
+		async deleteUserTool(id: string): Promise<void> {
+			const now = nowIso();
+			await db.transaction(async (tx) => {
+				const row = await tx.first<SqlRow>(
+					"SELECT * FROM chat_tool WHERE id = ?",
+					[id],
+				);
+				const current = row ? chatUserToolTable.fromRow(row) : null;
+				if (!current || !isLiveChatRecord(current)) return;
+				/* Nothing here touches `chat_room`: the overrides naming this tool stay, inert. */
+				await chatUserToolTable.upsert(
 					tx,
 					markLocalDelete(current, now, await nextRev(tx)),
 				);

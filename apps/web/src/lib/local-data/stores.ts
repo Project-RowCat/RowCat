@@ -140,12 +140,17 @@ const CHAT_READS: ReadonlySet<keyof ChatStore & string> = new Set([
 	"getSummary",
 	"listPersonas",
 	"getPersona",
+	/** The tool library is read at every turn's start (the registry), so a miss would wake sync per turn. */
+	"listUserTools",
+	"getUserTool",
 ]);
 
 const AUTHORING_READS: ReadonlySet<keyof AuthoringStore & string> = new Set([
 	"listDrafts",
 	"getDraft",
 	"listLore",
+	/** Creator tools: the editor's tools section subscribes to this list, so a miss would loop like scene images. */
+	"listTools",
 	"listStartScenes",
 	"listSceneImages",
 	/**

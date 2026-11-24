@@ -233,6 +233,7 @@ describe("utilities", () => {
 		"/settings",
 		"/settings/ai",
 		"/settings/personas",
+		"/settings/tools",
 	])("%s lights only the settings utility", (path) => {
 		expect(mobileShellRouteFor(path)).toEqual({
 			section: null,
@@ -253,6 +254,7 @@ describe("utilities", () => {
 		"/settings/ai/provider",
 		"/settings/personas/123",
 		"/settings/personas/new",
+		"/settings/tools/new",
 		"/settingsx",
 	])("%s isn't classified as settings", (path) => {
 		expect(mobileShellRouteFor(path).utility).toBeNull();

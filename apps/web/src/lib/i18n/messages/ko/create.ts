@@ -395,6 +395,15 @@ export const create: Messages["create"] = {
 		title: "런타임이 켜진 작품은 로어를 쓰지 않습니다.",
 		body: "로어는 대화 프롬프트에 끼워 넣는 설정인데, 런타임 작품의 AI 요청은 런타임 코드 안에서 만들어집니다. 적어 둔 로어는 그대로 보관되고, 런타임을 끄면 다시 편집할 수 있습니다.",
 	},
+	toolSection: {
+		title: "도구",
+		description:
+			"이 작품의 대화에서 AI가 부를 수 있는 도구입니다. 템플릿을 채우거나, 무작위 표에서 뽑거나, 하위 에이전트에게 묻습니다. 매 턴 함께 실리므로 작품에 필요한 것만 추가하세요.",
+	},
+	toolRuntimeLock: {
+		title: "런타임이 켜진 작품은 도구를 쓰지 않습니다.",
+		body: "도구는 대화의 AI에게 제공되는데, 런타임 작품의 AI 요청은 런타임 코드 안에서 만들어집니다. 적어 둔 도구는 그대로 보관되고, 런타임을 끄면 다시 편집할 수 있습니다.",
+	},
 	sceneImageSection: {
 		title: "상황 이미지",
 		description:
@@ -537,6 +546,66 @@ export const create: Messages["create"] = {
 		up: "위로",
 		content: "내용",
 	},
+	toolList: {
+		empty: "아직 도구가 없습니다. 도구 없이도 발행할 수 있습니다.",
+		add: "추가",
+	},
+	tool: {
+		nth: "#{{n}}",
+		manage: "도구 #{{n}} 관리",
+		unnamed: "이름 없는 도구",
+		parameterCount: "매개변수 {{count}}개",
+		notReady: "아직 발행할 수 없음",
+		kind: {
+			template: "템플릿",
+			table: "무작위 표",
+			agent: "하위 에이전트",
+		},
+		parameterType: {
+			string: "텍스트",
+			number: "숫자",
+			boolean: "예/아니오",
+		},
+	},
+	toolEditorCard: {
+		name: "이름",
+		nameHint:
+			"영문 소문자로 시작하고 소문자, 숫자, 밑줄만 씁니다. AI는 이 이름으로 도구를 부릅니다.",
+		description: "설명",
+		descriptionHint:
+			"도구가 무엇을 하고 언제 쓰는지 적습니다. AI는 이 설명만 보고 부를지 정합니다.",
+		kind: "하는 일",
+		template: "템플릿",
+		templateHint:
+			"결과로 돌려줍니다. {{example}}처럼 이중 중괄호로 감싼 매개변수 이름은 AI가 넘긴 값으로 바뀝니다.",
+		entries: "항목",
+		entriesHint: "한 줄에 한 항목. 부를 때마다 무작위로 뽑습니다.",
+		draws: "한 번에 뽑을 개수",
+		drawsHint: "1부터 {{max}}까지. 같은 항목이 다시 나올 수 있습니다.",
+		system: "하위 에이전트 지시문",
+		systemHint:
+			"하위 에이전트 자신의 시스템 프롬프트입니다. 대화는 보지 못하고 AI가 매개변수로 넘긴 내용만 보며, 도구를 부를 수 없습니다. 읽는 사람의 연결과 모델로 실행됩니다.",
+		maxOutputTokens: "답변 길이 상한(토큰)",
+		maxOutputTokensHint:
+			"1부터 {{max}}까지. 하위 에이전트의 답변이 도구 결과가 됩니다.",
+		parameters: "매개변수",
+		parametersHint: "AI가 도구를 부를 때 채워 넣는 값입니다.",
+		noParameters: "매개변수가 없습니다. AI는 그냥 부릅니다.",
+		addParameter: "매개변수 추가",
+		removeParameter: "매개변수 #{{n}} 삭제",
+		parameterName: "매개변수 이름",
+		parameterType: "형식",
+		parameterDescription: "매개변수 설명",
+		parameterRequired: "필수",
+		parameterChoices: "선택지",
+		parameterChoicesHint:
+			"쉼표로 구분합니다. 비워 두면 아무 텍스트나 받습니다.",
+		issues: "아직 발행할 수 없습니다. 아래를 고치면 함께 발행됩니다:",
+		deleteTool: "도구 삭제",
+		up: "위로",
+		down: "아래로",
+	},
+
 	startSceneEditorCard: {
 		setAsDefaultOpening: "기본 도입부로 지정",
 		theLibraryAtDawn: "새벽의 도서관",

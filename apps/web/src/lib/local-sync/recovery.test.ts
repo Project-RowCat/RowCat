@@ -307,6 +307,8 @@ describe("protocol boundary", () => {
 			"chat.character",
 			/** Also a room child appended at the end (`chat.scene`). */
 			"chat.scene",
+			/** The user's tool library, an account asset like personas (`user-tool.ts`). */
+			"chat.tool",
 			"authoring.draft",
 			"authoring.lore",
 			"authoring.scene",
@@ -314,6 +316,8 @@ describe("protocol boundary", () => {
 			"authoring.runtimeProject",
 			"authoring.runtimeFile",
 			"authoring.runtimeAsset",
+			/** Creator tools in a draft, appended after the runtime tables. */
+			"authoring.tool",
 			"runtime.playthrough",
 			"runtime.persistent",
 			"runtime.conversation",

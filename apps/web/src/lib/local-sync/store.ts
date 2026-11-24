@@ -101,6 +101,13 @@ export const SYNC_STORE_TABLE_ORDER = [
 	 * characters. The codec list in `@rowcat/chat` puts it in the same place.
 	 */
 	"chat.scene",
+	/**
+	 * Custom tools, appended at the end like every new type. The user library (`chat.tool`) has no
+	 * parent and is outside room cascades, like personas. Creator tools (`authoring.tool`) are a draft
+	 * child; the parent comes first in this list, so the order rule holds at the end.
+	 */
+	"chat.tool",
+	"authoring.tool",
 ] as const;
 
 const TABLE_ORDER = SYNC_STORE_TABLE_ORDER;
@@ -143,6 +150,10 @@ const tableOf = (
 			return db.draftRuntimeAssets as unknown as Table<StoredRecord, string>;
 		case "chat.persona":
 			return db.chatPersonas as unknown as Table<StoredRecord, string>;
+		case "chat.tool":
+			return db.chatUserTools as unknown as Table<StoredRecord, string>;
+		case "authoring.tool":
+			return db.draftTools as unknown as Table<StoredRecord, string>;
 		case "runtime.playthrough":
 			return db.runtimePlaythroughs as unknown as Table<StoredRecord, string>;
 		case "runtime.persistent":
@@ -169,6 +180,7 @@ const CHILD_ORDER_FIELD: Partial<
 	Record<SyncType, "position" | "positionIndex">
 > = {
 	"authoring.lore": "positionIndex",
+	"authoring.tool": "positionIndex",
 	"authoring.scene": "position",
 	"authoring.sceneImage": "position",
 	/**
@@ -457,6 +469,9 @@ async function applyPullPage(
 			 * whole.
 			 */
 			db.chatPersonas,
+			/** The tool tables are here for the persona table's reason: every type is applied here. */
+			db.chatUserTools,
+			db.draftTools,
 			/**
 			 * The two player save tables are here for the same reason: this transaction applies every sync
 			 * type, and IndexedDB throws on writes to undeclared tables. Leaving them out would fail any

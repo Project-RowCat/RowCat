@@ -1,9 +1,11 @@
 import {
+	type ChatCustomToolPorts,
 	type ConversationDebugSink,
 	type ConversationSession,
 	type ConversationSessionKey,
 	canPersistGeneration,
 	canStartGeneration,
+	chatAgentRequest,
 	chatConversationTools,
 	type GenerationOwner,
 	type GenerationTarget,
@@ -22,7 +24,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { getRowCatClient } from "../../../lib/api.ts";
 import { nativeStreamingFetch } from "../../../lib/generation/native-fetch.ts";
-import { streamChatGenerationPlan } from "../../../lib/generation/transport.ts";
+import { chatToolFetch } from "../../../lib/generation/tool-fetch.ts";
+import {
+	createGenerationTransport,
+	streamChatGenerationPlan,
+} from "../../../lib/generation/transport.ts";
 import { useHapticCue } from "../../../lib/haptics/index.ts";
 import {
 	useGenerationScope,
@@ -330,6 +336,15 @@ export function useChatGeneration(
 			const startedAt = Date.now();
 
 			try {
+				/**
+				 * The user's tools on in this room, read once at turn start (`loadUserTools`), so a tool
+				 * switched off a moment before sending is already off. Sessions without a room (a draft
+				 * playtest) do not provide it and send none. A failed read is an empty list, the direction of
+				 * `loadConnectedProviders` below: the turn runs without the user's tools rather than not at
+				 * all.
+				 */
+				const userTools =
+					(await session.loadUserTools?.().catch(() => [])) ?? [];
 				const result = await runGenerationTurn({
 					session,
 					text,
@@ -359,8 +374,46 @@ export function useChatGeneration(
 							target,
 						}),
 					signal: controller.signal,
-					streamPlan: (plan, target, options) =>
-						streamChatGenerationPlan(
+					streamPlan: (plan, target, options) => {
+						/**
+						 * What custom tools need from this device. Only an assembled plan gets them: a protected
+						 * story's request is assembled and its tool loop run on the server, which builds its own
+						 * creator tools, and a user tool (or this device's network) must not ride along.
+						 *
+						 * - `random`: the table action's draw.
+						 * - `fetch`: the `http` action, under the port's own deadline (`tool-fetch.ts`).
+						 * - `runAgent`: the sub-agent, a second one-shot generation on **this turn's target**, so
+						 *   it spends the connection the person already chose and nothing else. Its transport
+						 *   is built **without `toolAccess`**: the agent's request declares no tools
+						 *   (`chatAgentRequest`), and without the loop an agent cannot start another agent even
+						 *   if a provider invented a call. An error frame is thrown, not returned: the loop
+						 *   turns a throw into its fixed error sentence and never reads the thrown value.
+						 */
+						const ports: ChatCustomToolPorts | undefined =
+							plan.kind === "assembled"
+								? {
+										random: Math.random,
+										fetch: chatToolFetch,
+										runAgent: async (run, signal) => {
+											const agent = createGenerationTransport(target, {
+												client,
+												credentials,
+												fetch: nativeStreamingFetch,
+											});
+											let text = "";
+											for await (const event of agent.stream(
+												chatAgentRequest(run, plan.request),
+												{ signal },
+											)) {
+												if (event.type === "delta") text += event.text;
+												else if (event.type === "error")
+													throw new Error(`agent ${event.code}`);
+											}
+											return text;
+										},
+									}
+								: undefined;
+						return streamChatGenerationPlan(
 							plan,
 							target,
 							{
@@ -375,7 +428,10 @@ export function useChatGeneration(
 								 * to before this axis.
 								 */
 								toolAccess: {
-									tools: chatConversationTools(session.runtime),
+									tools: chatConversationTools(
+										session.runtime,
+										ports ? { userTools, ports } : {},
+									),
 									/**
 									 * A generation that can no longer be saved makes no more round trips either. The same
 									 * predicate as the confirming save; the results differ but the axis is the same, and
@@ -390,7 +446,8 @@ export function useChatGeneration(
 								},
 							},
 							options,
-						),
+						);
+					},
 					/**
 					 * The check right before the confirming save, over both axes: conversation identity alone
 					 * would attach an answer to a conversation just deleted, and history alone would send a

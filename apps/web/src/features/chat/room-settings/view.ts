@@ -18,6 +18,7 @@ export type RoomSettingsView =
 	| "intensity"
 	| "characters"
 	| "userNote"
+	| "tools"
 	| "info";
 
 /** Title for each surface. The dialog header renders these directly. */

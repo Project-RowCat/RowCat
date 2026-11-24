@@ -9,6 +9,7 @@ export const settings = {
 		general: "General",
 		ai: "AI",
 		persona: "Persona",
+		tools: "Tools",
 	},
 	categoryDescription: {
 		general:
@@ -16,6 +17,8 @@ export const settings = {
 		ai: "Generation settings applied to new conversations by default. Applies only to this device.",
 		persona:
 			"Save the roles you play in conversations and pick them again across conversations.",
+		tools:
+			"Make tools the model can call, then turn them on per conversation. Stored on your account and this device.",
 	},
 	account: {
 		label: "Manage account",

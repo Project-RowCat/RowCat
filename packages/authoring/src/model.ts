@@ -260,7 +260,7 @@ export interface AuthoringStamp {
 	rev: Rev;
 }
 
-const freshSyncMeta = (rev: Rev): AuthoringSyncMeta => ({
+export const freshSyncMeta = (rev: Rev): AuthoringSyncMeta => ({
 	dirty: 1,
 	serverVersion: 0,
 	rev,

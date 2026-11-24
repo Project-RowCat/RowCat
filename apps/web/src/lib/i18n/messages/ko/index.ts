@@ -26,6 +26,7 @@ import { shell } from "./shell.ts";
 import { social } from "./social.ts";
 import { story } from "./story.ts";
 import { sync } from "./sync.ts";
+import { tools } from "./tools.ts";
 import { vocab } from "./vocab.ts";
 
 export const ko: Messages = {
@@ -57,4 +58,5 @@ export const ko: Messages = {
 	runtimePreview,
 	runtimePlayer,
 	deviceApproval,
+	tools,
 };

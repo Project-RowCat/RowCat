@@ -69,6 +69,7 @@ export const settings = {
 		general: "General",
 		ai: "AI",
 		persona: "Personas",
+		tools: "Tools",
 		account: "Manage account",
 		return: "Back to the conversation",
 	},

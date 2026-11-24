@@ -35,6 +35,7 @@ describe("settings navigation list", () => {
 			"/settings",
 			"/settings/ai",
 			"/settings/personas",
+			"/settings/tools",
 			"/account",
 		]);
 	});
@@ -60,6 +61,7 @@ describe("settings navigation list", () => {
 			"general",
 			"ai",
 			"persona",
+			"tools",
 		]);
 	});
 
@@ -73,6 +75,13 @@ describe("settings navigation list", () => {
 		const persona = SETTINGS_NAV.find((item) => item.category === "persona");
 		expect(settingsNavLabel("persona")).toBe("Personas");
 		expect(persona?.to).toBe("/settings/personas");
+	});
+
+	/** Tools sit beside personas: both are account assets that rooms only use. */
+	it("tools are a settings category", () => {
+		const tools = SETTINGS_NAV.find((item) => item.category === "tools");
+		expect(settingsNavLabel("tools")).toBe("Tools");
+		expect(tools?.to).toBe("/settings/tools");
 	});
 
 	/**

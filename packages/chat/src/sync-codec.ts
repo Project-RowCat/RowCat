@@ -1,4 +1,4 @@
-import { StoryChatSeedDto } from "@rowcat/contracts/chat";
+import { ChatCustomToolDto, StoryChatSeedDto } from "@rowcat/contracts/chat";
 import type { Rev } from "@rowcat/contracts/sync";
 import { z } from "zod";
 import {
@@ -37,6 +37,11 @@ import {
 } from "./scene.ts";
 import { type ChatSummary, clampSummary } from "./summary.ts";
 import { applyRoomUserNote } from "./user-note.ts";
+import {
+	applyRoomToolOverrides,
+	CHAT_RESERVED_TOOL_NAMES,
+	type ChatUserTool,
+} from "./user-tool.ts";
 
 /**
  * Codec for conversation records: record and payload conversion, plus the conflict rules for these
@@ -211,6 +216,12 @@ const RoomData = z.object({
 	 * the assembler clamps deterministically (`clampChatUserNote`).
 	 */
 	userNote: z.string().optional(),
+	/**
+	 * Tool overrides: optional, schema still at 1, the same rule as the axes above. Ids are not checked
+	 * against the tool library: an override for a tool this device has not received yet is valid, and
+	 * one for a deleted tool is harmless (`activeUserTools` reads only live tools).
+	 */
+	toolOverrides: z.record(z.string(), z.boolean()).optional(),
 	createdAt: z.string(),
 	updatedAt: z.string(),
 });
@@ -262,6 +273,11 @@ export const chatRoomSyncCodec = {
 				 * a single representation.
 				 */
 				userNote: record.userNote || undefined,
+				/** An empty map is omitted, so "no overrides" has one representation. */
+				toolOverrides:
+					record.toolOverrides && Object.keys(record.toolOverrides).length > 0
+						? record.toolOverrides
+						: undefined,
 			},
 		);
 	},
@@ -275,6 +291,7 @@ export const chatRoomSyncCodec = {
 			narration,
 			intensity,
 			userNote,
+			toolOverrides,
 			...rest
 		} = parsed.data;
 		return withOptional(
@@ -292,6 +309,10 @@ export const chatRoomSyncCodec = {
 				intensity: intensity ?? undefined,
 				/* An empty string means no note. A `""` left by an old version must not come back as a key. */
 				userNote: userNote || undefined,
+				toolOverrides:
+					toolOverrides && Object.keys(toolOverrides).length > 0
+						? toolOverrides
+						: undefined,
 			},
 		);
 	},
@@ -344,6 +365,14 @@ export const chatRoomSyncCodec = {
 		 */
 		const userNote = remoteNewer ? remote.userNote : local.userNote;
 		/**
+		 * Tool overrides follow the user note: the later version wins as a whole map, and erasure is
+		 * not protected. Merging per key would mix two devices' choices into a set of switches neither
+		 * device showed; losing one choice only means flipping it again.
+		 */
+		const toolOverrides = remoteNewer
+			? remote.toolOverrides
+			: local.toolOverrides;
+		/**
 		 * The routing key is never erased and converges when the two sides differ.
 		 *
 		 * Later-wins fails in one case: a record from a device that does not know this axis. Its payload
@@ -390,7 +419,9 @@ export const chatRoomSyncCodec = {
 		 * Applied through the shared function (`applyRoomUserNote`). Writing `userNote: ""` directly
 		 * would give the same fact two shapes.
 		 */
-		const merged = applyRoomUserNote(withIntensity, userNote ?? null);
+		const withNote = applyRoomUserNote(withIntensity, userNote ?? null);
+		/* Applied through the shared function, so an empty map and an absent key are one shape. */
+		const merged = applyRoomToolOverrides(withNote, toolOverrides);
 		/**
 		 * Did the server copy win as is, meaning there is nothing to send back? Equal revisions mean the
 		 * same write from the same device, since the revision includes the device id. The revision alone
@@ -1055,6 +1086,74 @@ export const chatPersonaSyncCodec = {
 };
 
 /* ─────────────────────────────────────────────────────────────────────────────
+ * chat.tool
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * User tool payload. The definition is re-validated with the contract's own schema: a payload that
+ * decrypts is not yet a tool this device can run, and a definition from a newer client with an
+ * action kind this one does not know is dropped here rather than stored half-understood. Dropping is
+ * safe: this device never encodes a record it does not hold, so it cannot overwrite the newer one.
+ */
+const UserToolData = z
+	.object({
+		tool: ChatCustomToolDto,
+		enabledByDefault: z.boolean(),
+		createdAt: z.string(),
+		updatedAt: z.string(),
+	})
+	.refine(
+		(value) => !CHAT_RESERVED_TOOL_NAMES.includes(value.tool.declaration.name),
+		{ path: ["tool", "declaration", "name"], message: "reserved tool name" },
+	);
+
+export const chatUserToolSyncCodec = {
+	type: "chat.tool",
+	schemaVersion: CHAT_SYNC_SCHEMA_VERSION,
+
+	encode(record: ChatUserTool): unknown {
+		return {
+			tool: record.tool,
+			enabledByDefault: record.enabledByDefault,
+			createdAt: record.createdAt,
+			updatedAt: record.updatedAt,
+		};
+	},
+
+	decode(input: DecodeInput): ChatUserTool | null {
+		const parsed = UserToolData.safeParse(input.data);
+		if (!parsed.success) return null;
+		return {
+			id: input.id,
+			...parsed.data,
+			deletedAt: input.deletedAt,
+			rev: input.rev,
+			...INBOUND_META,
+		};
+	},
+
+	/**
+	 * Plain HLC last-writer-wins, the persona rule. The definition is one value: merging fields would
+	 * pair one device's parameters with the other's template, a tool nobody wrote.
+	 */
+	merge(
+		local: ChatUserTool,
+		remote: ChatUserTool,
+		_context: MergeCtx,
+	): Merged<ChatUserTool> {
+		const remoteWins = compareRev(remote.rev, local.rev) >= 0;
+		return {
+			record: remoteWins
+				? { ...remote, dirty: local.dirty, serverVersion: local.serverVersion }
+				: local,
+			remoteWins,
+		};
+	},
+
+	revOf: (record: ChatUserTool): Rev => record.rev,
+};
+
+/* ─────────────────────────────────────────────────────────────────────────────
  * chat.scene
  * ──────────────────────────────────────────────────────────────────────────── */
 
@@ -1206,4 +1305,6 @@ export const chatSyncCodecs = [
 	chatCharacterSyncCodec,
 	/** Scenes: a room child, appended for the same reason as characters. */
 	chatSceneSyncCodec,
+	/** User tools: no parent, appended at the end like every new type. */
+	chatUserToolSyncCodec,
 ];

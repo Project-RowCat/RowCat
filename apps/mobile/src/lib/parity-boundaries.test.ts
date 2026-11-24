@@ -94,6 +94,7 @@ describe("route list", () => {
 			"app/settings/ai.tsx",
 			"app/settings/index.tsx",
 			"app/settings/personas.tsx",
+			"app/settings/tools.tsx",
 			"app/stories/[storyId]/index.tsx",
 			/**
 			 * Retired playback address — a compatibility route that redirects to `/chat/runtime/[storyId]`.

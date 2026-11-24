@@ -23,4 +23,5 @@ export const seedFromTitle = (title: string): ChatSeed => ({
 	lore: [],
 	startScenes: [],
 	sceneImages: [],
+	tools: [],
 });

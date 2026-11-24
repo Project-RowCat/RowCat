@@ -77,6 +77,7 @@ export const shell = {
 		chats: "Conversations | {{app}}",
 		story: "{{name}}'s story · {{app}}",
 		personaSettings: "Persona settings · {{app}}",
+		toolSettings: "Tool settings · {{app}}",
 		settings: "Settings · {{app}}",
 		accountDeletion: "Account deletion guide · {{app}}",
 		accountDeletionDescription:

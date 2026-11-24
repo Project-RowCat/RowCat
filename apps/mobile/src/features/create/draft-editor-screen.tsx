@@ -23,6 +23,7 @@ import {
 	useDraftLore,
 	useDraftSceneImages,
 	useDraftStartScenes,
+	useDraftTools,
 	useLocalDraft,
 } from "../../lib/local-data/use-drafts.ts";
 import { PageEnter } from "../../lib/motion/page-enter.tsx";
@@ -57,6 +58,7 @@ import { toPublishVisibility } from "./publish-copy.ts";
 import { PublishSection } from "./publish-section.tsx";
 import { SceneImageSection } from "./scene-image-section.tsx";
 import { StartSceneSection } from "./start-scene-section.tsx";
+import { ToolSection } from "./tool-section.tsx";
 import { useDraftActions } from "./use-draft-actions.ts";
 import {
 	type DraftAutosave,
@@ -106,6 +108,7 @@ export function DraftEditorScreen({ draftId }: { draftId: string }) {
 	const lore = useDraftLore(draftId);
 	const scenes = useDraftStartScenes(draftId);
 	const images = useDraftSceneImages(draftId);
+	const tools = useDraftTools(draftId);
 
 	const autosave = useDraftAutosave(draftId);
 	const actions = useDraftActions(draftId);
@@ -164,6 +167,7 @@ export function DraftEditorScreen({ draftId }: { draftId: string }) {
 				lore={lore.value}
 				scenes={scenes.value}
 				images={images.value}
+				tools={tools.value}
 				autosave={autosave}
 				actions={actions}
 				upload={upload}
@@ -292,6 +296,7 @@ function EditorBody({
 	lore,
 	scenes,
 	images,
+	tools,
 	autosave,
 	actions,
 	upload,
@@ -305,6 +310,7 @@ function EditorBody({
 	lore: ReturnType<typeof useDraftLore>["value"];
 	scenes: ReturnType<typeof useDraftStartScenes>["value"];
 	images: ReturnType<typeof useDraftSceneImages>["value"];
+	tools: ReturnType<typeof useDraftTools>["value"];
 	autosave: DraftAutosave;
 	actions: ReturnType<typeof useDraftActions>;
 	upload: ReturnType<typeof useSceneImageUpload>;
@@ -494,6 +500,19 @@ function EditorBody({
 						onPatch={autosave.patchSceneImage}
 						onRemove={(id) => void actions.removeSceneImage(id)}
 						upload={upload}
+					/>
+
+					{/*
+					 * Tools come after everything the conversation is made of: the sections above are what the model
+					 * reads, and tools are what it can do. Locked with the rest when the runtime is on.
+					 */}
+					<ToolSection
+						draftId={view.id}
+						tools={tools}
+						onPatch={autosave.patchTool}
+						onAdd={() => void actions.addTool()}
+						onRemove={(id) => void actions.removeTool(id)}
+						onReorder={(ids) => void actions.moveTool(ids)}
 					/>
 
 					<PublishSection

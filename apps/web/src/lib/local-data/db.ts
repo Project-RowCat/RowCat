@@ -5,6 +5,7 @@ import type {
 	DraftRuntimeProject,
 	DraftSceneImage,
 	DraftStartScene,
+	DraftTool,
 	LegacyDraftCharacterBody,
 	StoryDraft,
 } from "@rowcat/authoring";
@@ -20,6 +21,7 @@ import type {
 	ChatRoom,
 	ChatScene,
 	ChatSummary,
+	ChatUserTool,
 } from "@rowcat/chat";
 import type { Rev } from "@rowcat/contracts/sync";
 import type {
@@ -237,6 +239,14 @@ export class LocalDb extends Dexie {
 	 * cascade is not skipped; it cannot apply.
 	 */
 	chatPersonas!: Table<ChatPersona, string>;
+	/**
+	 * The user's tool library (`user-tool.ts` in @rowcat/chat): an account record like personas, with
+	 * no parent. Rooms refer to rows by id only to turn them on or off (`ChatRoom.toolOverrides`), so
+	 * the room cascade does not apply here either.
+	 */
+	chatUserTools!: Table<ChatUserTool, string>;
+	/** Creator tools: a draft child with lore's indexes (`draft-tool.ts` in @rowcat/authoring). */
+	draftTools!: Table<DraftTool, string>;
 	/**
 	 * Local copy of a version discarded in a concurrent same-group edit: the fifth table that is not
 	 * synced. It sits beside `storyDrafts` but is the opposite in nature. This row has no sync axes at
@@ -700,6 +710,17 @@ export class LocalDb extends Dexie {
 		this.version(26).stores({
 			messages:
 				"id, roomId, [roomId+createdAt+id], [dirty+id], [roomId+deletedAt]",
+		});
+
+		/**
+		 * Schema v27 adds two tables for custom tools: the user's library (`chatUserTools`, persona's
+		 * indexes) and creator tools in drafts (`draftTools`, lore's indexes). No upgrade function: both
+		 * are new, and empty is the correct state. The room's `toolOverrides` is an unindexed optional
+		 * field and needs no declaration.
+		 */
+		this.version(27).stores({
+			chatUserTools: "id, updatedAt, [dirty+id]",
+			draftTools: "id, draftId, [draftId+positionIndex], [dirty+id]",
 		});
 
 		/**

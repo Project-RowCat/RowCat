@@ -4,6 +4,7 @@ import {
 	type ConversationDebugSignal,
 	type ConversationDebugSink,
 	canStartGeneration,
+	chatAgentRequest,
 	chatConversationTools,
 	consolidatedText,
 	factsText,
@@ -34,9 +35,12 @@ import { getRowCatClient } from "#/lib/api.ts";
 import { useHoldBuildSwitch } from "#/lib/build-freshness/hold.ts";
 import { GenerationBlockedError } from "#/lib/generation/availability.ts";
 import {
+	createGenerationTransport,
 	readPromptGuardsEnabled,
 	streamChatGenerationPlan,
 } from "#/lib/generation/router.ts";
+import { runToolAgent } from "#/lib/generation/tool-agent.ts";
+import { createToolFetch } from "#/lib/generation/tool-fetch.ts";
 import { useGenerationScope } from "#/lib/local-generation/scope.ts";
 import {
 	useProviderCredentialScope,
@@ -189,6 +193,13 @@ export interface ConversationGenerationOptions {
 	 */
 	debug?: ConversationDebugSink | null;
 }
+
+/**
+ * The network port for `http` custom tools. One instance serves every turn: it keeps no state
+ * between calls, and its timeout and cookie rules are the same for every conversation
+ * (lib/generation/tool-fetch.ts).
+ */
+const toolFetch = createToolFetch();
 
 export function useConversationGeneration(
 	session: ConversationSession | null,
@@ -629,6 +640,14 @@ export function useConversationGeneration(
 						(await session.loadRoutingSessionId?.()) ?? null;
 
 					/**
+					 * The user's own tools on in this conversation, a snapshot at the same moment as the rest.
+					 * Only persisted rooms answer (`loadUserTools`); a work test has none, and its work's own
+					 * tools still come from the runtime's seed. Reading it here rather than from a render value
+					 * means a tool switched off a moment ago is not declared on this turn.
+					 */
+					const userTools = (await session.loadUserTools?.()) ?? [];
+
+					/**
 					 * Step ②-b: freeze this turn's effective generation settings, resolved as conversation over
 					 * global over product default.
 					 *
@@ -858,7 +877,42 @@ export function useConversationGeneration(
 						 * transport, and the request is byte-identical to one from before this axis existed.
 						 */
 						toolAccess: {
-							tools: chatConversationTools(session.runtime),
+							/**
+							 * Custom tools (the work's `seed.tools` and the user's own) need ports, and the ports exist
+							 * only for an assembled plan. A protected story is assembled and run on the server, which
+							 * runs its own loop; this transport is never built for it, so no port is offered there.
+							 * Without ports the registry builds lore search alone, exactly the pre-custom-tool list.
+							 */
+							tools: chatConversationTools(session.runtime, {
+								userTools,
+								...(plan.kind === "assembled"
+									? {
+											ports: {
+												random: Math.random,
+												fetch: toolFetch,
+												/**
+												 * A sub-agent runs on this turn's own target and credentials: the connection the
+												 * person already chose to spend, and nothing else. Its transport is built with no
+												 * `toolAccess`, which is the second half of "one level deep" (its request already
+												 * declares no tools, `chatAgentRequest`). It inherits the parent request's safety
+												 * context, so it never runs under a looser guard than the conversation.
+												 */
+												runAgent: (run, signal) =>
+													runToolAgent(
+														createGenerationTransport(execution.target, {
+															...(promptGuardsEnabled === undefined
+																? {}
+																: { promptGuardsEnabled }),
+															client,
+															credentials: credentials ?? null,
+														}),
+														chatAgentRequest(run, plan.request),
+														signal,
+													),
+											},
+										}
+									: {}),
+							}),
 							/**
 							 * A generation that can no longer be saved makes no further round trips.
 							 *

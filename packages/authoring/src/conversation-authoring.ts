@@ -1,7 +1,8 @@
 import { type DraftRuntimeProject, isRuntimeEnabled } from "./runtime.ts";
 
 /**
- * Editability of the conversation-material sections (prompt, lore, opening scene, scene image),
+ * Editability of the conversation-material sections (prompt, lore, opening scene, scene image, and
+ * creator tools, which are offered only to a conversation's requests),
  * derived only from runtime project state. Basic info (title, cover, tags, adult flag) is catalog
  * data and is not governed by this.
  * - Project state unknown: pending. No editing.

@@ -28,6 +28,7 @@ import {
 	useDraftLore,
 	useDraftSceneImages,
 	useDraftStartScenes,
+	useDraftTools,
 	useLocalDraft,
 } from "#/lib/local-authoring/hooks.ts";
 import { PageEnter } from "#/lib/motion/page-transition.tsx";
@@ -56,6 +57,7 @@ import {
 	StartSceneList,
 	startSceneSection,
 } from "./sections/start-scene-list.tsx";
+import { ToolList, toolSection } from "./sections/tool-list.tsx";
 import { TagInput } from "./tag-input.tsx";
 import { useDraftActions } from "./use-actions.ts";
 import {
@@ -195,6 +197,7 @@ function DraftEditor({ draft }: { draft: StoryDraft }) {
 	const lore = useDraftLore(draft.id);
 	const startScenes = useDraftStartScenes(draft.id);
 	const sceneImages = useDraftSceneImages(draft.id);
+	const tools = useDraftTools(draft.id);
 
 	/**
 	 * Whether the viewer may turn on the adult flag. It is the same axis as the server's publication
@@ -460,6 +463,22 @@ function DraftEditor({ draft }: { draft: StoryDraft }) {
 							<SceneImageList
 								draftId={draft.id}
 								images={sceneImages.items}
+								autosave={autosave}
+								actions={actions}
+							/>
+						)}
+
+						{/*
+						 * Tools come after everything the conversation is made of. The sections above are what the model
+						 * reads; tools are what it can do, and a creator decides those once the story they serve is
+						 * written. Locked with the other conversation material when runtime is on.
+						 */}
+						{tools.loading ? (
+							<EditorSectionSkeleton {...toolSection()} />
+						) : (
+							<ToolList
+								draftId={draft.id}
+								tools={tools.items}
 								autosave={autosave}
 								actions={actions}
 							/>

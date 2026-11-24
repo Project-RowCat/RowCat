@@ -19,7 +19,7 @@ import type { MobileDatabase, SqlRunner } from "./sqlite.ts";
  * other axes. Those three are agreements between devices: bumping them affects other devices. This
  * value stays inside this file.
  */
-export const MOBILE_SCHEMA_VERSION = 22;
+export const MOBILE_SCHEMA_VERSION = 23;
 
 /**
  * v1 sets up conversation, authoring and sync state in one go.
@@ -1080,6 +1080,59 @@ const V22: readonly MigrationStep[] = [
 	`ALTER TABLE chat_memory ADD COLUMN audience TEXT`,
 ];
 
+/**
+ * v23: custom tools. Two new tables and one room column.
+ * - `chat_tool`: the user's tool library, an account record like `chat_persona` (no parent). The
+ *   definition is one JSON blob: it is validated as a whole against the contract and never queried
+ *   inside.
+ * - `authoring_tool`: creator tools, a draft child with lore's order column. Columns per field,
+ *   because the editor patches them one at a time.
+ * - `chat_room.tool_overrides`: which library tools are on or off in this room (JSON map). Without
+ *   the column sync would drop the axis, the same reason as `user_note` in v19.
+ */
+const V23: readonly MigrationStep[] = [
+	`CREATE TABLE chat_tool (
+		id TEXT PRIMARY KEY NOT NULL,
+		tool TEXT NOT NULL,
+		enabled_by_default INTEGER NOT NULL,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		deleted_at TEXT,
+		dirty INTEGER NOT NULL,
+		server_version INTEGER NOT NULL,
+		rev_t INTEGER NOT NULL,
+		rev_c INTEGER NOT NULL,
+		rev_d TEXT NOT NULL
+	)`,
+	`CREATE INDEX chat_tool_recent ON chat_tool (updated_at, id)`,
+	`CREATE INDEX chat_tool_dirty ON chat_tool (dirty, id)`,
+	`CREATE TABLE authoring_tool (
+		id TEXT PRIMARY KEY NOT NULL,
+		draft_id TEXT NOT NULL,
+		position_index INTEGER NOT NULL,
+		name TEXT NOT NULL,
+		description TEXT NOT NULL,
+		parameters TEXT NOT NULL,
+		kind TEXT NOT NULL,
+		template TEXT NOT NULL,
+		entries TEXT NOT NULL,
+		draws INTEGER NOT NULL,
+		system TEXT NOT NULL,
+		max_output_tokens INTEGER NOT NULL,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		deleted_at TEXT,
+		dirty INTEGER NOT NULL,
+		server_version INTEGER NOT NULL,
+		rev_t INTEGER NOT NULL,
+		rev_c INTEGER NOT NULL,
+		rev_d TEXT NOT NULL
+	)`,
+	`CREATE INDEX authoring_tool_order ON authoring_tool (draft_id, position_index, id)`,
+	`CREATE INDEX authoring_tool_dirty ON authoring_tool (dirty, id)`,
+	`ALTER TABLE chat_room ADD COLUMN tool_overrides TEXT`,
+];
+
 /** Migration steps per version. The array position is the target version (1-based). */
 const MIGRATIONS: readonly (readonly MigrationStep[])[] = [
 	V1,
@@ -1104,6 +1157,7 @@ const MIGRATIONS: readonly (readonly MigrationStep[])[] = [
 	V20,
 	V21,
 	V22,
+	V23,
 ];
 
 /**

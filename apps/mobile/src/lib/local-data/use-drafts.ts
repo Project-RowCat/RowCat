@@ -4,6 +4,7 @@ import type {
 	DraftRuntimeProject,
 	DraftSceneImage,
 	DraftStartScene,
+	DraftTool,
 	StoryDraft,
 } from "@rowcat/authoring";
 import { useMemo } from "react";
@@ -90,6 +91,16 @@ export function useDraftLore(draftId: string): LocalLive<DraftLoreEntry[]> {
 	return useLocalLive<DraftLoreEntry[]>(load, EMPTY_LORE);
 }
 
+/** Creator tools of one draft, in list order. */
+export function useDraftTools(draftId: string): LocalLive<DraftTool[]> {
+	const { store } = useAuthoringScope();
+	const load = useMemo(
+		() => (store ? () => store.listTools(draftId) : null),
+		[store, draftId],
+	);
+	return useLocalLive<DraftTool[]>(load, EMPTY_TOOLS);
+}
+
 export function useDraftStartScenes(
 	draftId: string,
 ): LocalLive<DraftStartScene[]> {
@@ -115,6 +126,7 @@ export function useDraftSceneImages(
 /** A stable empty array: a new array per render would make consumers redraw every time. */
 const EMPTY_DRAFTS: StoryDraft[] = [];
 const EMPTY_LORE: DraftLoreEntry[] = [];
+const EMPTY_TOOLS: DraftTool[] = [];
 const EMPTY_SCENES: DraftStartScene[] = [];
 const EMPTY_IMAGES: DraftSceneImage[] = [];
 

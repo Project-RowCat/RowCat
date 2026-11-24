@@ -211,6 +211,17 @@ export const StoryChatSeedDto = z.object({
 		.array(ChatSeedSceneImageDto)
 		.max(CHAT_SCENE_IMAGE_LIMITS.perStory)
 		.default([]),
+	/**
+	 * Tools the creator wrote for this work (`ChatCreatorToolDto`). Same compatibility rule as
+	 * `sceneImages`: `.default([])`, no version bump. Rooms stored before this field have no key, and
+	 * that absence is correct.
+	 *
+	 * Lazy only because the tool vocabulary is declared further down this file; the value is an
+	 * ordinary array.
+	 */
+	tools: z
+		.lazy(() => z.array(ChatCreatorToolDto).max(CHAT_MAX_TOOLS))
+		.default([]),
 });
 export type StoryChatSeedDto = z.infer<typeof StoryChatSeedDto>;
 
@@ -619,6 +630,152 @@ export const ChatToolDeclaration = z
 		},
 	);
 export type ChatToolDeclaration = z.infer<typeof ChatToolDeclaration>;
+
+/**
+ * Custom tools: a declaration plus an action that says what the device does when the model calls
+ * it. Lore search is built in; these are written by people. Two authors write them:
+ * - Users, in their own settings (`chat.tool` records in @rowcat/chat). Every action kind is open.
+ * - Creators, as part of a work (`StoryChatSeedDto.tools`). `http` is closed to them
+ *   (`ChatCreatorToolDto`), because a creator's tool runs on other people's devices, and its
+ *   arguments are written by a model that has read that person's conversation. An endpoint the
+ *   creator controls would receive excerpts of strangers' conversations on every call.
+ *
+ * The action vocabulary is closed and declarative on purpose. There is no code execution: what a
+ * tool does must mean the same thing on web, mobile and the server (prompt-protected rooms run
+ * creator tools there), and a fourth runtime would be a fourth place for that meaning to drift.
+ *
+ * Every kind returns one string. The tool layer cuts it to `CHAT_MAX_TOOL_RESULT_CHARS` and adds
+ * the boundary sentence, so these limits only bound what is stored.
+ */
+export const CHAT_CUSTOM_TOOL_LIMITS = {
+	/** Template body. `{{parameter}}` placeholders are replaced with the call's arguments. */
+	templateChars: 8_000,
+	/** Random-table rows, and the length of one row. */
+	tableEntries: 200,
+	tableEntryChars: 2_000,
+	/** How many rows one call may draw. Rows are drawn with replacement. */
+	tableMaxDraws: 10,
+	urlChars: 2_000,
+	headers: 8,
+	headerNameChars: 64,
+	headerValueChars: 2_000,
+	/** The sub-agent's own system prompt. */
+	agentSystemChars: 20_000,
+	/** The sub-agent's output cap. Smaller than a turn's: its answer becomes a tool result. */
+	agentMaxOutputTokens: 2_048,
+} as const;
+
+/**
+ * Fills a text with the call's arguments. Placeholders that name no argument become empty, which is
+ * the same rule the resolver applies to `null` (absence).
+ */
+export const ChatTemplateToolAction = z.object({
+	kind: z.literal("template"),
+	template: z.string().min(1).max(CHAT_CUSTOM_TOOL_LIMITS.templateChars),
+});
+
+/** Draws rows from a list. Randomness is a port, so the same rule runs on every device. */
+export const ChatTableToolAction = z.object({
+	kind: z.literal("table"),
+	entries: z
+		.array(z.string().min(1).max(CHAT_CUSTOM_TOOL_LIMITS.tableEntryChars))
+		.min(1)
+		.max(CHAT_CUSTOM_TOOL_LIMITS.tableEntries),
+	draws: z
+		.number()
+		.int()
+		.min(1)
+		.max(CHAT_CUSTOM_TOOL_LIMITS.tableMaxDraws)
+		.default(1),
+});
+
+/**
+ * A sub-agent: the tool runs a second, independent generation with its own system prompt and
+ * returns that text. It runs on the conversation's own connection and model, so it spends the same
+ * key the person already chose, and nothing else.
+ *
+ * It is one level deep by construction. The agent's request declares no tools, so an agent cannot
+ * call another agent, and the parent turn's round-trip cap still bounds how many agents one turn
+ * can start.
+ */
+export const ChatAgentToolAction = z.object({
+	kind: z.literal("agent"),
+	system: z.string().min(1).max(CHAT_CUSTOM_TOOL_LIMITS.agentSystemChars),
+	maxOutputTokens: z
+		.number()
+		.int()
+		.min(1)
+		.max(CHAT_CUSTOM_TOOL_LIMITS.agentMaxOutputTokens)
+		.default(1_024),
+});
+
+export const ChatToolHttpHeader = z.object({
+	name: z
+		.string()
+		.regex(
+			/^[A-Za-z0-9-]{1,64}$/,
+			"Header names use letters, digits and hyphens.",
+		),
+	value: z.string().max(CHAT_CUSTOM_TOOL_LIMITS.headerValueChars),
+});
+export type ChatToolHttpHeader = z.infer<typeof ChatToolHttpHeader>;
+
+/**
+ * Calls an endpoint the user runs. `POST` sends `{ "tool": name, "arguments": {...} }` as JSON;
+ * `GET` sends the arguments as query parameters. The response body, as text, is the result.
+ * Headers are stored in the user's own encrypted records and never leave their devices except to
+ * that endpoint.
+ */
+export const ChatHttpToolAction = z.object({
+	kind: z.literal("http"),
+	url: z
+		.string()
+		.max(CHAT_CUSTOM_TOOL_LIMITS.urlChars)
+		.refine((value) => /^https?:\/\/[^\s]+$/i.test(value), {
+			message: "The URL must start with http:// or https://.",
+		}),
+	method: z.enum(["GET", "POST"]).default("POST"),
+	headers: z
+		.array(ChatToolHttpHeader)
+		.max(CHAT_CUSTOM_TOOL_LIMITS.headers)
+		.default([]),
+});
+
+export const ChatCreatorToolAction = z.discriminatedUnion("kind", [
+	ChatTemplateToolAction,
+	ChatTableToolAction,
+	ChatAgentToolAction,
+]);
+export type ChatCreatorToolAction = z.infer<typeof ChatCreatorToolAction>;
+
+export const ChatCustomToolAction = z.discriminatedUnion("kind", [
+	ChatTemplateToolAction,
+	ChatTableToolAction,
+	ChatAgentToolAction,
+	ChatHttpToolAction,
+]);
+export type ChatCustomToolAction = z.infer<typeof ChatCustomToolAction>;
+export type ChatCustomToolKind = ChatCustomToolAction["kind"];
+export const CHAT_CUSTOM_TOOL_KINDS = [
+	"template",
+	"table",
+	"agent",
+	"http",
+] as const satisfies readonly ChatCustomToolKind[];
+
+/** A user's custom tool: any action kind. */
+export const ChatCustomToolDto = z.object({
+	declaration: ChatToolDeclaration,
+	action: ChatCustomToolAction,
+});
+export type ChatCustomToolDto = z.infer<typeof ChatCustomToolDto>;
+
+/** A creator's custom tool, carried in the seed. `http` is not in its vocabulary (see above). */
+export const ChatCreatorToolDto = z.object({
+	declaration: ChatToolDeclaration,
+	action: ChatCreatorToolAction,
+});
+export type ChatCreatorToolDto = z.infer<typeof ChatCreatorToolDto>;
 
 /**
  * The identifier of one call, which is opaque. It is used only to pair a result with its call

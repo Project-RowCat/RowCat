@@ -9,6 +9,7 @@ import type {
 	RoomSettingsRowId,
 } from "@rowcat/chat";
 import { Dialog } from "@rowcat/ui-native";
+import { useRouter } from "expo-router";
 import { useState } from "react";
 import { RoomInfoContent } from "../room/info-content.tsx";
 import { RoomSettingsCharacters } from "./characters.tsx";
@@ -17,6 +18,7 @@ import { RoomSettingsHome } from "./home.tsx";
 import { RoomSettingsIntensity } from "./intensity.tsx";
 import { RoomSettingsNarration } from "./narration.tsx";
 import { PersonaEditor, RoomSettingsPersona } from "./persona.tsx";
+import { RoomSettingsTools } from "./tools.tsx";
 import { RoomSettingsUserNote } from "./user-note.tsx";
 import {
 	backLabelFor,
@@ -51,6 +53,7 @@ import {
  * intensity    RoomSettingsIntensity   how much the description shows (rating is the ceiling)
  * characters   RoomSettingsCharacters  add, edit and delete characters in this room
  * personaForm  PersonaEditor           create or edit that role
+ * tools        RoomSettingsTools       which of my tools are on in this conversation
  * info         RoomInfoContent         read-only facts + recent usage
  * ```
  *
@@ -79,6 +82,7 @@ export function RoomSettingsDialog({
 	onSetNarration,
 	onSetIntensity,
 	onSetUserNote,
+	onSetToolOverride,
 	characters,
 	onCreateCharacter,
 	onUpdateCharacter,
@@ -114,6 +118,11 @@ export function RoomSettingsDialog({
 	onSetIntensity: (intensity: ChatIntensity | null) => Promise<unknown>;
 	/** Writes the user note to the room, through the same ownership gate as the role. */
 	onSetUserNote: (userNote: string | null) => Promise<unknown>;
+	/** Turns one of the user's tools on or off here; `null` follows the tool's default. Same gate. */
+	onSetToolOverride: (
+		toolId: string,
+		enabled: boolean | null,
+	) => Promise<unknown>;
 	/**
 	 * This room's characters, from a subscription. Not store-held for the ownership reason above;
 	 * passed as an argument because the subscription outlives this window (`useRoomManagement` opens
@@ -150,6 +159,7 @@ export function RoomSettingsDialog({
 	 * role meanwhile, saving overwrites it, which is correct: the user edited the value they saw.
 	 */
 	const [editing, setEditing] = useState<ChatPersona | null>(null);
+	const router = useRouter();
 
 	const parent = ROOM_SETTINGS_VIEW_PARENT[view];
 
@@ -197,7 +207,8 @@ export function RoomSettingsDialog({
 							row === "narration" ||
 							row === "intensity" ||
 							row === "characters" ||
-							row === "userNote"
+							row === "userNote" ||
+							row === "tools"
 						)
 							return setView(row);
 						/** The remaining three close this window first so two windows never stack. */
@@ -213,6 +224,20 @@ export function RoomSettingsDialog({
 				<RoomSettingsIntensity room={room} onApply={onSetIntensity} />
 			) : view === "userNote" ? (
 				<RoomSettingsUserNote room={room} onApply={onSetUserNote} />
+			) : view === "tools" ? (
+				<RoomSettingsTools
+					room={room}
+					onApply={onSetToolOverride}
+					/**
+					 * The library is edited on its own screen, unlike personas: a tool is a long form (a whole
+					 * sub-agent prompt, endpoint headers) that does not belong one pane deep in this window. The
+					 * window closes first so it does not stay open behind settings.
+					 */
+					onOpenSettings={() => {
+						onClose();
+						router.push("/settings/tools");
+					}}
+				/>
 			) : view === "characters" ? (
 				<RoomSettingsCharacters
 					room={room}

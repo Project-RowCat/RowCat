@@ -47,6 +47,7 @@ import {
 	setManagedRoomIntensity,
 	setManagedRoomNarration,
 	setManagedRoomPersona,
+	setManagedRoomToolOverride,
 	setManagedRoomUserNote,
 	updateManagedCharacter,
 } from "./mutations.ts";
@@ -269,6 +270,14 @@ export function useRoomManagement(
 							}
 							onSetUserNote={(userNote) =>
 								setManagedRoomUserNote(scopeOf(target.store), room.id, userNote)
+							}
+							onSetToolOverride={(toolId, enabled) =>
+								setManagedRoomToolOverride(
+									scopeOf(target.store),
+									room.id,
+									toolId,
+									enabled,
+								)
 							}
 							/*
 							 * Passed by value: a subscription owned by the window would outlive a window that closed

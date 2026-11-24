@@ -111,7 +111,14 @@ export type ChatRuntimeSeed = Pick<
 	 * wire it, and one side omitting it would show no picture in that app only.
 	 */
 	| "sceneImages"
->;
+> & {
+	/**
+	 * The creator's tools. They never enter the prompt text; the tool registry reads them
+	 * (`chatConversationTools`). Optional because rooms stored before this field have no key, and a
+	 * draft preview builds its seed from the draft, where absence means no tools.
+	 */
+	tools?: ChatSeed["tools"];
+};
 
 /**
  * The room as the assembler sees it: the seed alone. Title, source work, sync metadata and

@@ -42,6 +42,7 @@ const seed = (
 	lore: [],
 	startScenes: [],
 	sceneImages: [],
+	tools: [],
 });
 
 let devices: Device[] = [];

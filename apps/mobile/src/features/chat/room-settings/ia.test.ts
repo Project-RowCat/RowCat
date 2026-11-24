@@ -52,6 +52,7 @@ describe("groups and rows", () => {
 			"characters",
 			"memory",
 			"userNote",
+			"tools",
 			"info",
 			"rename",
 			"duplicate",
@@ -71,6 +72,7 @@ describe("groups and rows", () => {
 					"characters",
 					"memory",
 					"userNote",
+					"tools",
 					"info",
 				],
 			},
@@ -117,7 +119,7 @@ describe("copy", () => {
 	});
 
 	/** The pane title is the window name, the first word a screen reader reads on open. */
-	it("the nine surfaces have the same titles as the web", () => {
+	it("the ten surfaces have the same titles as the web", () => {
 		expect(ROOM_SETTINGS_VIEW_TITLE).toEqual({
 			home: "Conversation settings",
 			generation: "Generation settings",
@@ -128,6 +130,7 @@ describe("copy", () => {
 			intensity: "Intensity",
 			characters: "Characters",
 			userNote: "User note",
+			tools: "Tools",
 		});
 	});
 
@@ -143,6 +146,7 @@ describe("copy", () => {
 			intensity: "home",
 			characters: "home",
 			userNote: "home",
+			tools: "home",
 		});
 	});
 

@@ -27,6 +27,11 @@ import type {
 import type { ChatScene, SetSceneInput } from "./scene.ts";
 import type { ChatSummary } from "./summary.ts";
 import type { ChatTailRewrite } from "./tail-rewrite.ts";
+import type {
+	ChatUserTool,
+	CreateUserToolInput,
+	UpdateUserToolPatch,
+} from "./user-tool.ts";
 
 /**
  * The local storage port: the boundary between pure conversation rules and actual persistence.
@@ -44,7 +49,10 @@ import type { ChatTailRewrite } from "./tail-rewrite.ts";
  *    stream completion or a write from another tab must not overwrite a tombstone, or the user sees
  *    a deleted conversation come back.
  */
-export interface ChatStore extends ChatMemoryStore, ChatPersonaStore {
+export interface ChatStore
+	extends ChatMemoryStore,
+		ChatPersonaStore,
+		ChatUserToolStore {
 	/**
 	 * Creates a room. The implementation generates the id, since a device-owned identity needs no
 	 * server round-trip. Returns the created record so the caller can navigate straight to
@@ -200,6 +208,18 @@ export interface ChatStore extends ChatMemoryStore, ChatPersonaStore {
 	 * (`applyRoomUserNote`). A missing or deleted room is a no-op.
 	 */
 	setRoomUserNote(roomId: string, userNote: string | null): Promise<void>;
+
+	/**
+	 * Turns one of the user's tools on or off in this room, or clears the room's choice (`null`: follow
+	 * the tool's `enabledByDefault`). A narrow operation like the ones above. The tool id is not looked
+	 * up: an override for a tool this device has not received yet is valid, and the registry reads
+	 * only live tools (`activeUserTools`). A missing or deleted room is a no-op.
+	 */
+	setRoomToolOverride(
+		roomId: string,
+		toolId: string,
+		enabled: boolean | null,
+	): Promise<void>;
 
 	/*
 	 * Characters are the room's fourth child. They share the four-operation shape of memory and are
@@ -478,3 +498,34 @@ export interface ChatPersonaStore {
  * still fits one read.
  */
 export const CHAT_MESSAGE_PAGE_SIZE = 50;
+
+/**
+ * The user's tool library (`user-tool.ts`). It shares the store for the persona store's reason:
+ * the records live in the same per-member database. Contracts:
+ * 1. Deleted tools are invisible.
+ * 2. No operation revives a deleted tool.
+ * 3. Deleting a tool never touches rooms. Overrides that name it stay and are harmless; a room
+ *    reads only live tools.
+ */
+export interface ChatUserToolStore {
+	/** Live tools, most recently edited first (`sortUserTools`). */
+	listUserTools(): Promise<ChatUserTool[]>;
+
+	/** One tool, or null. */
+	getUserTool(id: string): Promise<ChatUserTool | null>;
+
+	/**
+	 * Creates a tool; storage generates the id. The definition is re-checked by storage
+	 * (`createUserToolRecord` → `requireUserToolDefinition`).
+	 */
+	createUserTool(input: CreateUserToolInput): Promise<ChatUserTool>;
+
+	/**
+	 * Updates a tool as one logical edit and one revision. A new definition is re-checked
+	 * (`requireUserToolDefinition`). A missing or deleted tool is a no-op.
+	 */
+	updateUserTool(id: string, patch: UpdateUserToolPatch): Promise<void>;
+
+	/** Soft-deletes a tool, for the persona store's reason. A missing or deleted tool is a no-op. */
+	deleteUserTool(id: string): Promise<void>;
+}
