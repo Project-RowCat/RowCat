@@ -2,6 +2,33 @@
  * Copy for the conversation room: messages, the composer, room settings, memory and search.
  */
 export const chat = {
+	attachments: {
+		summary: {
+			none: "Attach files the model reads on every reply",
+			some_one: "{{count}} file · {{chars}} characters",
+			some_other: "{{count}} files · {{chars}} characters",
+		},
+		description:
+			"Attached files are sent to the model with every reply as reference for this conversation. They keep being read until you remove them, and other conversations aren't affected.",
+		supported:
+			"Only text files (.txt, .md, .json, .csv, source code and similar) can be attached. Up to {{perFile}} characters per file and {{total}} per conversation.",
+		usage: "{{used}} / {{total}} characters",
+		length: "{{count}} characters",
+		empty: "No files attached yet.",
+		attach: "Attach files",
+		remove: "Remove {{name}}",
+		readsEveryReply: "Read on every reply",
+		unsupported: "{{name}}: only text files can be attached.",
+		binary:
+			"{{name}}: this file can't be read as text. Check that it's a UTF-8 text file.",
+		empty_file: "{{name}}: the file is empty.",
+		tooLong: "{{name}}: a file can be at most {{max}} characters.",
+		limitCount: "A conversation can hold at most {{max}} files.",
+		limitTotal:
+			"{{name}}: this conversation's files would exceed {{max}} characters together. Remove another file and try again.",
+		failed: "{{name}}: couldn't attach the file. Please try again.",
+		removeFailed: "Couldn't remove the file. Please try again.",
+	},
 	characters: {
 		summary: {
 			none: "Add characters to this conversation",
@@ -74,6 +101,7 @@ export const chat = {
 			narration: "Narration",
 			intensity: "Intensity",
 			characters: "Characters",
+			attachments: "Attachments",
 			userNote: "User note",
 			tools: "Tools",
 			info: "Conversation info",
@@ -181,6 +209,7 @@ export const chat = {
 		intensity: "Intensity",
 		userNote: "User note",
 		tools: "Tools",
+		attachments: "Attachments",
 		conversationInfo: "Conversation info",
 		rename: "Rename",
 		duplicateConversation: "Duplicate conversation",
@@ -430,6 +459,7 @@ export const chat = {
 		typeAMessage: "Type a message",
 		insertActionMarker: "Insert action marker",
 		addCharacter: "Add character",
+		attachFiles: "Attach files",
 		message: "Message",
 		stopGenerating: "Stop generating",
 		send: "Send",

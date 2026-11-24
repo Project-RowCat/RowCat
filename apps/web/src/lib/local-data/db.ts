@@ -14,6 +14,7 @@ import {
 	foldLegacyDraftBody,
 } from "@rowcat/authoring";
 import type {
+	ChatAttachment,
 	ChatCharacter,
 	ChatMemory,
 	ChatMessage,
@@ -135,6 +136,11 @@ export class LocalDb extends Dexie {
 	 * `seed:<n>`, `char:<id>`), never names.
 	 */
 	chatScenes!: Table<ChatScene, string>;
+	/**
+	 * Attachments, the room's sixth child (`packages/chat/src/attachment.ts`): text files the model
+	 * reads on every turn. All sync axes, like characters.
+	 */
+	chatAttachments!: Table<ChatAttachment, string>;
 	storyDrafts!: Table<StoryDraft, string>;
 	draftLoreEntries!: Table<DraftLoreEntry, string>;
 	draftStartScenes!: Table<DraftStartScene, string>;
@@ -721,6 +727,15 @@ export class LocalDb extends Dexie {
 		this.version(27).stores({
 			chatUserTools: "id, updatedAt, [dirty+id]",
 			draftTools: "id, draftId, [draftId+positionIndex], [dirty+id]",
+		});
+
+		/**
+		 * Schema v28 adds the room's sixth child table: attachments. No upgrade function — the table is
+		 * new and empty is the correct state (no room had files). The indexes mirror characters: the
+		 * room's list and outbound collection.
+		 */
+		this.version(28).stores({
+			chatAttachments: "id, roomId, [dirty+id]",
 		});
 
 		/**

@@ -19,6 +19,7 @@
  * writing its shape twice would drift.
  */
 export * from "./ai-evidence.ts";
+export * from "./attachment.ts";
 export * from "./character.ts";
 export * from "./composer-emphasis.ts";
 export * from "./context.ts";

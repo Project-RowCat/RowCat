@@ -130,33 +130,37 @@ export function RoomSettingsHome({
 
 	return (
 		<View>
-			{/* The narration row stands only in a build that carries pack bodies; the web home asks the same predicate. */}
-			{roomSettingsGroups({ narration: PROMPT_PACKS_AVAILABLE }).map(
-				(group, index) => (
-					<RoomSettingsGroup
-						key={group.id}
-						title={ROOM_SETTINGS_GROUP_TITLE[group.id]}
-						first={index === 0}
-					>
-						{group.rows.map((row) => (
-							<RoomSettingsRow
-								key={row}
-								title={ROOM_SETTINGS_ROW_TITLE[row]}
-								summary={summaryOf(row)}
-								/** The unusable-target fact must stay here: hiding it while moving the control one level in leaves the user not knowing why the conversation is blocked. The web settings home does the same. */
-								warning={
-									row === "generation" && summary.blocked
-										? ROOM_SETTINGS_BLOCKED_WARNING
-										: null
-								}
-								navigational={ROOM_SETTINGS_NAVIGATIONAL_ROWS.has(row)}
-								destructive={ROOM_SETTINGS_DESTRUCTIVE_ROWS.has(row)}
-								onPress={() => onOpenRow(row)}
-							/>
-						))}
-					</RoomSettingsGroup>
-				),
-			)}
+			{/*
+			 * The narration row stands only in a build that carries pack bodies; the web home asks the same
+			 * predicate. The attachments row waits for this app's file picker (`attachment.ts`).
+			 */}
+			{roomSettingsGroups({
+				narration: PROMPT_PACKS_AVAILABLE,
+				attachments: false,
+			}).map((group, index) => (
+				<RoomSettingsGroup
+					key={group.id}
+					title={ROOM_SETTINGS_GROUP_TITLE[group.id]}
+					first={index === 0}
+				>
+					{group.rows.map((row) => (
+						<RoomSettingsRow
+							key={row}
+							title={ROOM_SETTINGS_ROW_TITLE[row]}
+							summary={summaryOf(row)}
+							/** The unusable-target fact must stay here: hiding it while moving the control one level in leaves the user not knowing why the conversation is blocked. The web settings home does the same. */
+							warning={
+								row === "generation" && summary.blocked
+									? ROOM_SETTINGS_BLOCKED_WARNING
+									: null
+							}
+							navigational={ROOM_SETTINGS_NAVIGATIONAL_ROWS.has(row)}
+							destructive={ROOM_SETTINGS_DESTRUCTIVE_ROWS.has(row)}
+							onPress={() => onOpenRow(row)}
+						/>
+					))}
+				</RoomSettingsGroup>
+			))}
 		</View>
 	);
 }

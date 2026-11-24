@@ -1,4 +1,5 @@
 import type { ChatCustomToolDto } from "@rowcat/contracts/chat";
+import type { ChatAttachment } from "./attachment.ts";
 import type { ChatCharacter } from "./character.ts";
 import type { ChatRuntimeMessage, ChatRuntimeRoom } from "./context.ts";
 import type { AssistantContinuation } from "./continuation.ts";
@@ -121,6 +122,13 @@ export interface ConversationSession {
 	 * rule as memories.
 	 */
 	loadScenes?(): Promise<ChatScene[]>;
+	/**
+	 * Files attached to this conversation (`attachment.ts`), in display order. Optional: sessions
+	 * without a room (replay, runtime) have none. Same snapshot rule as characters — read once when the
+	 * generation starts, so a file attached mid-stream is read from the next turn on, and from then on
+	 * on every turn.
+	 */
+	loadAttachments?(): Promise<ChatAttachment[]>;
 	/**
 	 * Secures this conversation's routing-friendly key. Optional, since some conversations have none.
 	 *

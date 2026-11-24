@@ -1,6 +1,33 @@
 import type { Messages } from "../../types.ts";
 
 export const chat: Messages["chat"] = {
+	attachments: {
+		summary: {
+			none: "모델이 매 응답마다 읽을 파일 첨부",
+			some_one: "파일 {{count}}개 · {{chars}}자",
+			some_other: "파일 {{count}}개 · {{chars}}자",
+		},
+		description:
+			"첨부한 파일은 이 대화의 참고 자료로 매 응답마다 모델에게 함께 전달됩니다. 지울 때까지 계속 읽히며, 다른 대화에는 영향을 주지 않습니다.",
+		supported:
+			"텍스트 파일(.txt, .md, .json, .csv, 소스 코드 등)만 첨부할 수 있습니다. 파일 하나는 {{perFile}}자, 대화 전체는 {{total}}자까지입니다.",
+		usage: "{{used}} / {{total}}자",
+		length: "{{count}}자",
+		empty: "아직 첨부한 파일이 없습니다.",
+		attach: "파일 첨부",
+		remove: "{{name}} 삭제",
+		readsEveryReply: "매 응답마다 읽힘",
+		unsupported: "{{name}}: 텍스트 파일만 첨부할 수 있습니다.",
+		binary:
+			"{{name}}: 텍스트로 읽을 수 없는 파일입니다. UTF-8 텍스트 파일인지 확인해 주세요.",
+		empty_file: "{{name}}: 내용이 비어 있습니다.",
+		tooLong: "{{name}}: 파일 하나는 {{max}}자까지 첨부할 수 있습니다.",
+		limitCount: "파일은 대화마다 {{max}}개까지 첨부할 수 있습니다.",
+		limitTotal:
+			"{{name}}: 이 대화의 첨부 파일이 합쳐서 {{max}}자를 넘게 됩니다. 다른 파일을 지운 뒤 다시 시도해 주세요.",
+		failed: "{{name}}: 파일을 첨부하지 못했습니다. 다시 시도해 주세요.",
+		removeFailed: "파일을 지우지 못했습니다. 다시 시도해 주세요.",
+	},
 	characters: {
 		summary: {
 			none: "이 대화에 등장할 인물 추가",
@@ -73,6 +100,7 @@ export const chat: Messages["chat"] = {
 			narration: "서술 방식",
 			intensity: "표현 수위",
 			characters: "등장인물",
+			attachments: "첨부 파일",
 			userNote: "유저 노트",
 			tools: "도구",
 			info: "대화 정보",
@@ -175,6 +203,7 @@ export const chat: Messages["chat"] = {
 		intensity: "표현 수위",
 		userNote: "유저 노트",
 		tools: "도구",
+		attachments: "첨부 파일",
 		conversationInfo: "대화 정보",
 		rename: "이름 변경",
 		duplicateConversation: "대화 복제",
@@ -419,6 +448,7 @@ export const chat: Messages["chat"] = {
 		typeAMessage: "메시지를 입력하세요",
 		insertActionMarker: "행동 표시 넣기",
 		addCharacter: "인물 추가",
+		attachFiles: "파일 첨부",
 		message: "메시지 입력",
 		stopGenerating: "생성 중지",
 		send: "보내기",

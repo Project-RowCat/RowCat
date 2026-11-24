@@ -94,7 +94,8 @@ describe("migrations", () => {
 				deleted_at, dirty, server_version, rev_t, rev_c, rev_d
 			) VALUES ('c1', 'r1', 'Yujin', '', 'a', 'a', NULL, 0, 3, 1, 0, 'd')`,
 		);
-		/** Undo v23, v22 and v21. The file is now a real v20. */
+		/** Undo v24, v23, v22 and v21. The file is now a real v20. */
+		await first.run(`DROP TABLE chat_attachment`);
 		await first.run(`DROP TABLE chat_tool`);
 		await first.run(`DROP TABLE authoring_tool`);
 		await first.run(`ALTER TABLE chat_room DROP COLUMN tool_overrides`);
@@ -128,7 +129,8 @@ describe("migrations", () => {
 				deleted_at, dirty, server_version, rev_t, rev_c, rev_d
 			) VALUES ('m1', 'r1', 'Memory', 0, 'user', NULL, 'a', 'a', NULL, 0, 3, 1, 0, 'd')`,
 		);
-		/** Undo v23 and v22. The file is now a real v21. */
+		/** Undo v24, v23 and v22. The file is now a real v21. */
+		await first.run(`DROP TABLE chat_attachment`);
 		await first.run(`DROP TABLE chat_tool`);
 		await first.run(`DROP TABLE authoring_tool`);
 		await first.run(`ALTER TABLE chat_room DROP COLUMN tool_overrides`);
@@ -163,7 +165,8 @@ describe("migrations", () => {
 				rev_t, rev_c, rev_d
 			) VALUES ('r1', NULL, 'Room', 0, 0, '{}', 'a', 'a', NULL, 0, 3, 1, 0, 'd')`,
 		);
-		/** Undo v23. The file is now a real v22. */
+		/** Undo v24 and v23. The file is now a real v22. */
+		await first.run(`DROP TABLE chat_attachment`);
 		await first.run(`DROP TABLE chat_tool`);
 		await first.run(`DROP TABLE authoring_tool`);
 		await first.run(`ALTER TABLE chat_room DROP COLUMN tool_overrides`);
@@ -185,6 +188,40 @@ describe("migrations", () => {
 				await second.first(`SELECT COUNT(*) AS n FROM ${table}`),
 				table,
 			).toEqual({ n: 0 });
+		await second.close();
+	});
+
+	/**
+	 * v24 adds the attachment table. A v23 file comes up with an empty table and its rooms untouched
+	 * (clean): a schema change is not an edit.
+	 */
+	it("v24 adds an empty chat_attachment table; a v23 room stays clean", async () => {
+		const first = await open();
+		await first.run(
+			`INSERT INTO chat_room (
+				id, origin_story_id, title, adult, prompt_protected, seed,
+				created_at, updated_at, deleted_at, dirty, server_version,
+				rev_t, rev_c, rev_d
+			) VALUES ('r1', NULL, 'Room', 0, 0, '{}', 'a', 'a', NULL, 0, 3, 1, 0, 'd')`,
+		);
+		/** Undo v24. The file is now a real v23. */
+		await first.run(`DROP TABLE chat_attachment`);
+		await first.run(`PRAGMA user_version = 23`);
+		await first.close();
+
+		const second = await open();
+		const version = await second.first<{ user_version: number }>(
+			"PRAGMA user_version",
+		);
+		expect(version?.user_version).toBe(MOBILE_SCHEMA_VERSION);
+		expect(
+			await second.first("SELECT COUNT(*) AS n FROM chat_attachment"),
+		).toEqual({ n: 0 });
+		expect(
+			await second.first<{ dirty: number }>(
+				"SELECT dirty FROM chat_room WHERE id = 'r1'",
+			),
+		).toEqual({ dirty: 0 });
 		await second.close();
 	});
 

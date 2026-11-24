@@ -1212,6 +1212,24 @@ export const StoryChatGenerationRequest = z
 			.max(50)
 			.default([]),
 		/**
+		 * Files attached to this conversation, in display order (`attachment.ts` in `@rowcat/chat`). Text
+		 * only; the per-file and room caps are the chat package's, and its assembler folds again on this
+		 * side. The bounds here only stop an absurd body: 20,000 code points can be 40,000 UTF-16 units,
+		 * which is what zod counts. Absent on older devices, which then send no files — the same request
+		 * as before this axis existed.
+		 */
+		attachments: z
+			.array(
+				z
+					.object({
+						name: z.string().max(500),
+						content: z.string().max(40_000),
+					})
+					.strict(),
+			)
+			.max(20)
+			.default([]),
+		/**
 		 * The narration pack: the body already fetched and its judgment. The device sends it because
 		 * packs are source works and not secret. The server holds no pack bodies (@rowcat/prompt-packs).
 		 */

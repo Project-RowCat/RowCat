@@ -1084,6 +1084,7 @@ describe("codec list", () => {
 			"chat.character",
 			"chat.scene",
 			"chat.tool",
+			"chat.attachment",
 		]);
 	});
 });

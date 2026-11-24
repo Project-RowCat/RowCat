@@ -2,6 +2,12 @@ import { ChatCustomToolDto, StoryChatSeedDto } from "@rowcat/contracts/chat";
 import type { Rev } from "@rowcat/contracts/sync";
 import { z } from "zod";
 import {
+	CHAT_ATTACHMENT_CONTENT_MAX_LENGTH,
+	type ChatAttachment,
+	normalizeAttachmentContent,
+	normalizeAttachmentName,
+} from "./attachment.ts";
+import {
 	CHAT_CHARACTER_NAME_MAX_LENGTH,
 	CHAT_CHARACTER_PROMPT_MAX_LENGTH,
 	type ChatCharacter,
@@ -1281,6 +1287,78 @@ export const chatSceneSyncCodec = {
 	revOf: (record: ChatScene): Rev => record.rev,
 };
 
+/* ─────────────────────────────────────────────────────────────────────────────
+ * chat.attachment
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Attachment payload, the room's sixth child (`attachment.ts`, `docs/chat/ATTACHMENTS.md`). Added as
+ * a kind, not a version, like characters: an older client skips it and advances its cursor. Text
+ * over the per-file cap is truncated rather than rejected (a rejected file would never reach this
+ * device, and the assembler folds anyway). A record with no usable name or no text is rejected — it
+ * cannot be listed, and it would put an empty region in every prompt.
+ */
+const AttachmentData = z.object({
+	roomId: z.string(),
+	name: z.string(),
+	content: z.string(),
+	createdAt: z.string(),
+	updatedAt: z.string(),
+});
+
+export const chatAttachmentSyncCodec = {
+	type: "chat.attachment",
+	schemaVersion: CHAT_SYNC_SCHEMA_VERSION,
+
+	encode(record: ChatAttachment): unknown {
+		return {
+			roomId: record.roomId,
+			name: record.name,
+			content: record.content,
+			createdAt: record.createdAt,
+			updatedAt: record.updatedAt,
+		};
+	},
+
+	decode(input: DecodeInput): ChatAttachment | null {
+		const parsed = AttachmentData.safeParse(input.data);
+		if (!parsed.success) return null;
+		const name = normalizeAttachmentName(parsed.data.name);
+		const content = normalizeAttachmentContent(parsed.data.content);
+		if (!name || !content) return null;
+		return {
+			id: input.id,
+			...parsed.data,
+			name,
+			content: clampCharacterField(content, CHAT_ATTACHMENT_CONTENT_MAX_LENGTH),
+			deletedAt: input.deletedAt,
+			rev: input.rev,
+			...INBOUND_META,
+		};
+	},
+
+	/**
+	 * Plain HLC last-writer-wins. An attachment is never edited in place, so the only concurrent
+	 * change is a delete on one device racing nothing on the other, and the later revision is the
+	 * tombstone.
+	 */
+	merge(
+		local: ChatAttachment,
+		remote: ChatAttachment,
+		_context: MergeCtx,
+	): Merged<ChatAttachment> {
+		const remoteWins = compareRev(remote.rev, local.rev) >= 0;
+		return {
+			record: remoteWins
+				? { ...remote, dirty: local.dirty, serverVersion: local.serverVersion }
+				: local,
+			remoteWins,
+		};
+	},
+
+	revOf: (record: ChatAttachment): Rev => record.rev,
+};
+
 /**
  * The list is ordered parents first and is also the outbound collection order. Memories follow
  * messages only by convention, since the children do not reference each other. New types are
@@ -1307,4 +1385,6 @@ export const chatSyncCodecs = [
 	chatSceneSyncCodec,
 	/** User tools: no parent, appended at the end like every new type. */
 	chatUserToolSyncCodec,
+	/** Attachments: a room child, appended for the same reason as characters. */
+	chatAttachmentSyncCodec,
 ];

@@ -617,6 +617,11 @@ export function useConversationGeneration(
 					 */
 					const scenes = (await session.loadScenes?.()) ?? [];
 					/**
+					 * Attached files (`attachment.ts`), a snapshot at the same moment. They ride every turn —
+					 * read here on each one, not carried over from the turn they were attached on.
+					 */
+					const attachments = (await session.loadAttachments?.()) ?? [];
+					/**
 					 * Step ②-c: long-term memory, a snapshot at the same moment — afterstate's recalled passages
 					 * and consolidated earlier episodes for this turn's perspective. The question is built from
 					 * the snapshots above by one shared function (recallRequestFor), so web and mobile ask the
@@ -787,6 +792,7 @@ export function useConversationGeneration(
 						messages: history,
 						memories,
 						characters,
+						...(attachments.length > 0 ? { attachments } : {}),
 						...(consolidated ? { consolidated } : {}),
 						...(facts ? { facts } : {}),
 						...(recall ? { recall } : {}),

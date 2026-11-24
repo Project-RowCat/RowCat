@@ -17,6 +17,7 @@ export type RoomSettingsView =
 	| "narration"
 	| "intensity"
 	| "characters"
+	| "attachments"
 	| "userNote"
 	| "tools"
 	| "info";

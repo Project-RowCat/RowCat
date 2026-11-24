@@ -294,6 +294,11 @@ export async function runGenerationTurn(
 		 */
 		const scenes = (await session.loadScenes?.()) ?? [];
 		/**
+		 * Attached files (`attachment.ts`), a snapshot at the same moment, read on every turn like the
+		 * cast — the same rule as web.
+		 */
+		const attachments = (await session.loadAttachments?.()) ?? [];
+		/**
 		 * Long-term memory, a snapshot at the same moment: afterstate's recalled passages and
 		 * consolidated earlier episodes for this turn's perspective, asked through the same shared
 		 * function as web. The loader never throws and gives up quickly; without an engine it answers
@@ -407,6 +412,7 @@ export async function runGenerationTurn(
 			messages: history,
 			memories,
 			characters,
+			...(attachments.length > 0 ? { attachments } : {}),
 			...(consolidated ? { consolidated } : {}),
 			...(facts ? { facts } : {}),
 			...(recall ? { recall } : {}),

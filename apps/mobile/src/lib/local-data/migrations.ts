@@ -19,7 +19,7 @@ import type { MobileDatabase, SqlRunner } from "./sqlite.ts";
  * other axes. Those three are agreements between devices: bumping them affects other devices. This
  * value stays inside this file.
  */
-export const MOBILE_SCHEMA_VERSION = 23;
+export const MOBILE_SCHEMA_VERSION = 24;
 
 /**
  * v1 sets up conversation, authoring and sync state in one go.
@@ -1133,6 +1133,31 @@ const V23: readonly MigrationStep[] = [
 	`ALTER TABLE chat_room ADD COLUMN tool_overrides TEXT`,
 ];
 
+/**
+ * v24 adds the room's sixth child: attachments (`attachment.ts` in `@rowcat/chat`), the same shape
+ * of child table as `chat_character`. No backfill — no room had files. Without the table, sync would
+ * skip `chat.attachment` and advance its cursor, so a file attached on the web would never reach
+ * this device's turns.
+ */
+const V24: readonly MigrationStep[] = [
+	`CREATE TABLE chat_attachment (
+		id TEXT PRIMARY KEY NOT NULL,
+		room_id TEXT NOT NULL,
+		name TEXT NOT NULL,
+		content TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		deleted_at TEXT,
+		dirty INTEGER NOT NULL,
+		server_version INTEGER NOT NULL,
+		rev_t INTEGER NOT NULL,
+		rev_c INTEGER NOT NULL,
+		rev_d TEXT NOT NULL
+	)`,
+	`CREATE INDEX chat_attachment_room ON chat_attachment (room_id)`,
+	`CREATE INDEX chat_attachment_dirty ON chat_attachment (dirty, id)`,
+];
+
 /** Migration steps per version. The array position is the target version (1-based). */
 const MIGRATIONS: readonly (readonly MigrationStep[])[] = [
 	V1,
@@ -1158,6 +1183,7 @@ const MIGRATIONS: readonly (readonly MigrationStep[])[] = [
 	V21,
 	V22,
 	V23,
+	V24,
 ];
 
 /**

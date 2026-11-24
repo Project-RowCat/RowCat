@@ -30,12 +30,17 @@ import { generationRecovery } from "#/features/conversation/generation-error.ts"
 import { GenerationRecoveryActionButton } from "#/features/conversation/generation-recovery-action.tsx";
 import { translator } from "#/lib/i18n/current.ts";
 import {
+	useLocalAttachments,
 	useLocalCharacters,
 	useLocalMessages,
 	useLocalRoom,
 } from "#/lib/local-chat/hooks.ts";
+import { useChatScope } from "#/lib/local-chat/scope.ts";
 import { PageEnter } from "#/lib/motion/page-transition.tsx";
 import { enterTransition, exitTransition } from "#/lib/motion/transitions.ts";
+import { showErrorToast } from "#/lib/toast.ts";
+import { attachFiles } from "./attachments/attach-files.ts";
+import { AttachmentStrip } from "./attachments/attachment-strip.tsx";
 import { CHAT_COLUMN, ChatColumn, ChatShell } from "./chat-shell.tsx";
 import { ChatComposer, type ChatComposerHandle } from "./composer/composer.tsx";
 import { MessageActionBar } from "./messages/action-bar.tsx";
@@ -106,6 +111,12 @@ export function ChatPage() {
 	 * frame instead of one frame after opening (`add-character-dialog.tsx`).
 	 */
 	const { items: characters } = useLocalCharacters(roomId);
+	/**
+	 * The room's attached files, for the strip above the composer. The prompt reads the same list at
+	 * the generation boundary (`loadAttachments`), on every turn.
+	 */
+	const { items: attachments } = useLocalAttachments(roomId);
+	const { store: chatStore } = useChatScope();
 	/**
 	 * What `{{char}}` and `{{user}}` resolve to — **the same function and the same input as the
 	 * assembler.**
@@ -649,6 +660,8 @@ export function ChatPage() {
 						/>
 					)}
 
+					{room && <AttachmentStrip attachments={attachments} />}
+
 					<ChatComposer
 						ref={composerRef}
 						// No place to send yet while the room has not arrived or the scope is not open.
@@ -658,6 +671,16 @@ export function ChatPage() {
 						onStop={generation.stop}
 						onEmptyChange={setComposerEmpty}
 						onAddCharacter={() => setAddingCharacter(true)}
+						/*
+						 * Attaching from the composer: no pane is open to hold a refusal, so each one is a toast
+						 * (`lib/toast.ts`); the strip above shows what was attached.
+						 */
+						onAttachFiles={(files) => {
+							if (!chatStore || !room) return;
+							void attachFiles(chatStore, room.id, files).then((result) => {
+								for (const message of result.failures) showErrorToast(message);
+							});
+						}}
 					/>
 				</ChatColumn>
 

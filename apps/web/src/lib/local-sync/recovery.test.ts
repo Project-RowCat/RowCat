@@ -309,6 +309,8 @@ describe("protocol boundary", () => {
 			"chat.scene",
 			/** The user's tool library, an account asset like personas (`user-tool.ts`). */
 			"chat.tool",
+			/** A room child appended at the end (`chat.attachment`). */
+			"chat.attachment",
 			"authoring.draft",
 			"authoring.lore",
 			"authoring.scene",

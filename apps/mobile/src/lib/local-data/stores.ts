@@ -363,6 +363,8 @@ const CHAT_READS: ReadonlySet<keyof ChatStore & string> = new Set([
 	 */
 	"listCharacters",
 	"listScenes",
+	/** Read on every turn (`loadAttachments`); off this list, each turn would wake every subscriber. */
+	"listAttachments",
 	"getSummary",
 	"listPersonas",
 	"getPersona",

@@ -108,6 +108,8 @@ export const SYNC_STORE_TABLE_ORDER = [
 	 */
 	"chat.tool",
 	"authoring.tool",
+	/** Attachments: a room child (`attachment.ts` in `@rowcat/chat`), appended like characters. */
+	"chat.attachment",
 ] as const;
 
 const TABLE_ORDER = SYNC_STORE_TABLE_ORDER;
@@ -132,6 +134,8 @@ const tableOf = (
 			return db.chatCharacters as unknown as Table<StoredRecord, string>;
 		case "chat.scene":
 			return db.chatScenes as unknown as Table<StoredRecord, string>;
+		case "chat.attachment":
+			return db.chatAttachments as unknown as Table<StoredRecord, string>;
 		case "chat.summary":
 			return db.chatSummaries as unknown as Table<StoredRecord, string>;
 		case "authoring.draft":
@@ -452,6 +456,7 @@ async function applyPullPage(
 			db.chatMemories,
 			db.chatCharacters,
 			db.chatScenes,
+			db.chatAttachments,
 			db.chatSummaries,
 			db.storyDrafts,
 			db.draftLoreEntries,
@@ -694,7 +699,8 @@ async function applyTombstone(
 }
 
 /**
- * A room has five kinds of children: messages, memories, characters, scenes, and summaries. They are
+ * A room has six kinds of children: messages, memories, characters, scenes, attachments and
+ * summaries. They are
  * deleted together with the same timestamp and the same rule. Missing one would leave an orphan
  * record that exists only on this device. The next outbound collection would then push it,
  * re-uploading content of an already-deleted room.
@@ -719,6 +725,7 @@ async function cascadeRoomChildren(
 	await cascadeDelete(db.chatMemories, roomId, deletedAt);
 	await cascadeDelete(db.chatCharacters, roomId, deletedAt);
 	await cascadeDelete(db.chatScenes, roomId, deletedAt);
+	await cascadeDelete(db.chatAttachments, roomId, deletedAt);
 	await cascadeDelete(db.chatSummaries, roomId, deletedAt);
 	/**
 	 * Personas are deliberately absent here; their absence is the rule. The library is an account

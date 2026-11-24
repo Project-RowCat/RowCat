@@ -141,6 +141,14 @@ export function storyChatAssemblyRequest(
 			name,
 			prompt,
 		})),
+		...(input.attachments && input.attachments.length > 0
+			? {
+					attachments: input.attachments.map(({ name, content }) => ({
+						name,
+						content,
+					})),
+				}
+			: {}),
 		...(input.narration !== undefined ? { narration: input.narration } : {}),
 		...(input.maxOutputTokens !== undefined
 			? { maxOutputTokens: input.maxOutputTokens }
@@ -203,5 +211,8 @@ export function storyAssemblyInput(input: {
 			? { narration: request.narration }
 			: {}),
 		characters: request.characters,
+		...(request.attachments.length > 0
+			? { attachments: request.attachments }
+			: {}),
 	};
 }

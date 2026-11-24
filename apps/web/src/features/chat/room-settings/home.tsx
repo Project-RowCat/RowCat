@@ -17,12 +17,14 @@ import { responseLengthLabel } from "#/features/generation/response-length-field
 import { personaRowSummary } from "#/features/persona/persona-form.ts";
 import { getRowCatClient } from "#/lib/api.ts";
 import {
+	useLocalAttachments,
 	useLocalCharacters,
 	useLocalUserTools,
 } from "#/lib/local-chat/hooks.ts";
 import { useRoomGenerationState } from "#/lib/local-generation/hooks.ts";
 import { useConnectedProviders } from "#/lib/local-provider/hooks.ts";
 import { useViewerCapability } from "#/lib/query/viewer-capability.ts";
+import { attachmentRowSummary } from "../attachments/attachment-copy.ts";
 import { roomGenerationSummary } from "../room/generation-summary.ts";
 import { characterRowSummary } from "./character-copy.ts";
 import { intensityRowSummary } from "./intensity-copy.ts";
@@ -79,6 +81,11 @@ export function RoomSettingsHome({
 	const { t } = useTranslation(["chat", "common"]);
 	const { effective, loading } = useRoomGenerationState(room.id);
 	const { items: characters } = useLocalCharacters(room.id);
+	/**
+	 * The room's files, for the row's count and size. Like the cast, the summary is the point of the
+	 * row: what rides every turn is worth seeing without opening the pane.
+	 */
+	const { items: attachments } = useLocalAttachments(room.id);
 	/**
 	 * The tool library, for the row's count. Unlike memory, the count is the row's whole point (is
 	 * anything on here?), and the library is small and account-wide, so one subscription serves it.
@@ -180,6 +187,7 @@ export function RoomSettingsHome({
 				 */}
 				{roomSettingsRowAvailable("narration", {
 					narration: PROMPT_PACKS_AVAILABLE,
+					attachments: true,
 				}) ? (
 					<RoomSettingsRow
 						title={t("home.narration")}
@@ -232,6 +240,16 @@ export function RoomSettingsHome({
 					)}
 					navigational
 					onClick={() => onOpenView("characters")}
+				/>
+				{/*
+				 * `Attachments` sits between the cast and memory (ROOM_SETTINGS_IA): the order the prompt reads
+				 * them. Mobile has no picker yet, so its home asks `roomSettingsGroups` with the row off.
+				 */}
+				<RoomSettingsRow
+					title={t("home.attachments")}
+					summary={attachmentRowSummary(attachments)}
+					navigational
+					onClick={() => onOpenView("attachments")}
 				/>
 				<RoomSettingsRow
 					title={t("home.memory")}

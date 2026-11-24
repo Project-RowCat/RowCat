@@ -103,6 +103,8 @@ export function createChatConversation(input: {
 		// Characters added in this conversation are frozen at start, like memory.
 		loadCharacters: () => store.listCharacters(room.id),
 		loadScenes: () => store.listScenes(room.id),
+		// Attached files ride every turn (`attachment.ts`); attached on web or here, read the same way.
+		loadAttachments: () => store.listAttachments(room.id),
 		// The routing-affinity key is ensured, not read (same wiring as web). Rooms created before this
 		// axis have none, and the fix is to issue and store one; unstored, every turn would send a
 		// different key, which is worse than none.

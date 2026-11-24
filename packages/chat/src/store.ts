@@ -1,3 +1,4 @@
+import type { ChatAttachment, CreateAttachmentInput } from "./attachment.ts";
 import type {
 	ChatCharacter,
 	CreateCharacterInput,
@@ -269,6 +270,26 @@ export interface ChatStore
 	/** Soft-deletes a scene (the previous scene then continues). Idempotent. */
 	deleteScene(id: string): Promise<void>;
 
+	/*
+	 * Attachments are the room's sixth child (`attachment.ts`, `docs/chat/ATTACHMENTS.md`): text files
+	 * the model reads on every turn. Cascade-deleted with the room on both sides, like characters.
+	 */
+
+	/** The room's live attachments in display order (`sortAttachments`). Empty if there are none. */
+	listAttachments(roomId: string): Promise<ChatAttachment[]>;
+
+	/**
+	 * Attaches a file. The content rule is re-checked by storage (`createAttachmentRecord` throws
+	 * `ChatAttachmentContentError`), and the room's limits are checked against its live attachments in
+	 * the same transaction (`checkAttachmentRoom` → `ChatAttachmentLimitError`): two tabs attaching at
+	 * once must not together pass a cap each passed alone. The room's activity time is not bumped
+	 * (attaching is setup, not conversation). A missing or deleted room throws, as for characters.
+	 */
+	createAttachment(input: CreateAttachmentInput): Promise<ChatAttachment>;
+
+	/** Soft-deletes an attachment; the next turn no longer reads it. Idempotent. */
+	deleteAttachment(id: string): Promise<void>;
+
 	/**
 	 * Returns the room's routing-friendly key, issuing and persisting one if it does not exist yet.
 	 * The method is named `ensure` rather than `set` on purpose: callers do not choose the value (the
@@ -283,7 +304,7 @@ export interface ChatStore
 	ensureRoomRoutingSession(roomId: string): Promise<string | null>;
 
 	/**
-	 * Copies a room and its four children (messages, memories, characters, summary) under new
+	 * Copies a room and its children (messages, memories, characters, scenes, attachments) under new
 	 * identities, in one transaction. What a copy carries is one pure rule, `planRoomDuplicate`, so
 	 * both implementations write the same copy; this method only reads the source and writes the
 	 * result. Split across transactions, a room could exist with half its messages, and the next sync
@@ -296,10 +317,11 @@ export interface ChatStore
 	duplicateRoom(id: string, title: string): Promise<ChatRoom | null>;
 
 	/**
-	 * Soft-deletes a room together with its messages, memories, summary, characters and scenes, all in one
+	 * Soft-deletes a room together with its messages, memories, summary, characters, scenes and
+	 * attachments, all in one
 	 * transaction. Forgetting any child leaves an orphaned character on this device that the next
 	 * outbound sync would upload again, bringing back data from a deleted room. The receiving side's
-	 * cascade (`applyTombstone`) must cover the same four children; fixing only one side would show up
+	 * cascade (`applyTombstone`) must cover the same children; fixing only one side would show up
 	 * only after a round trip between two devices. Cascaded children get no tombstones of their own,
 	 * because the room's tombstone stands in for the whole subtree (see `markCascadeDeleted`). A
 	 * missing or deleted room is a no-op, since the same room can be deleted from two tabs and the

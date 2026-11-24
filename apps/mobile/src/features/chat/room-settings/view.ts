@@ -99,6 +99,7 @@ export const ROOM_SETTINGS_ROW_TITLE: Record<RoomSettingsRowId, string> = {
 	narration: "Narration",
 	intensity: "Intensity",
 	characters: "Characters",
+	attachments: "Attachments",
 	memory: "Memory",
 	userNote: "User note",
 	tools: "Tools",
@@ -127,6 +128,11 @@ export const ROOM_SETTINGS_ROW_SUMMARY: Record<
 	intensity: null,
 	/** `null`: built from the added count and the work's count (`characterRowSummary`). */
 	characters: null,
+	/**
+	 * Not drawn in this app yet (`roomSettingsGroups` with `attachments: false`): this build has no
+	 * picker. Files attached on the web are still stored, synced and read on this device's turns.
+	 */
+	attachments: "Files the model reads on every reply",
 	memory: "Manage what this conversation remembers",
 	/** `null`: the summary is how much is written, from the room record (`userNoteRowSummary`). */
 	userNote: null,

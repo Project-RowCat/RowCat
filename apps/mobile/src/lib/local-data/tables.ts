@@ -9,6 +9,7 @@ import type {
 	StoryDraft,
 } from "@rowcat/authoring";
 import type {
+	ChatAttachment,
 	ChatCharacter,
 	ChatMemory,
 	ChatMessage,
@@ -121,6 +122,8 @@ export const TABLE_ORDER = [
 	 */
 	"chat.tool",
 	"authoring.tool",
+	/** Attachments: a room child appended at the end, like characters (the web's array matches). */
+	"chat.attachment",
 ] as const;
 
 export type SyncType = (typeof TABLE_ORDER)[number];
@@ -697,6 +700,52 @@ export const chatSceneTable: RecordTable<ChatScene> = {
 			record.startAt.createdAt,
 			record.startAt.messageId,
 			json(audienceJson(record.audience)),
+			record.createdAt,
+			record.updatedAt,
+			...metaValues(record),
+		]),
+};
+
+/* ── chat.attachment ───────────────────────────────────────────────────────── */
+
+const CHAT_ATTACHMENT_COLUMNS = [
+	"room_id",
+	"name",
+	"content",
+	"created_at",
+	"updated_at",
+] as const;
+
+const CHAT_ATTACHMENT_UPSERT = upsertSql(
+	"chat_attachment",
+	CHAT_ATTACHMENT_COLUMNS,
+);
+
+/**
+ * A text file attached to the conversation (`attachment.ts`): the room's sixth child, the same shape
+ * of child as a character. This app has no screen for it yet; the table exists so a file attached on
+ * the web arrives, rides this device's turns, and is not dropped by its next push.
+ */
+export const chatAttachmentTable: RecordTable<ChatAttachment> = {
+	type: "chat.attachment",
+	table: "chat_attachment",
+	parent: "room_id",
+	order: null,
+	fromRow: (row) => ({
+		id: text(row.id),
+		roomId: text(row.room_id),
+		name: text(row.name),
+		content: text(row.content),
+		createdAt: text(row.created_at),
+		updatedAt: text(row.updated_at),
+		...metaOf(row),
+	}),
+	upsert: (tx, record) =>
+		tx.run(CHAT_ATTACHMENT_UPSERT, [
+			record.id,
+			record.roomId,
+			record.name,
+			record.content,
 			record.createdAt,
 			record.updatedAt,
 			...metaValues(record),
@@ -1468,6 +1517,7 @@ const BY_TYPE: Record<SyncType, RecordTable> = {
 	"chat.memory": chatMemoryTable as RecordTable,
 	"chat.character": chatCharacterTable as RecordTable,
 	"chat.scene": chatSceneTable as RecordTable,
+	"chat.attachment": chatAttachmentTable as RecordTable,
 	"chat.summary": chatSummaryTable as RecordTable,
 	"authoring.draft": authoringDraftTable as RecordTable,
 	"authoring.lore": authoringLoreTable as RecordTable,

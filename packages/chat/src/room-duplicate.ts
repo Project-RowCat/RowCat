@@ -1,4 +1,5 @@
 import type { Rev } from "@rowcat/contracts/sync";
+import type { ChatAttachment } from "./attachment.ts";
 import type { ChatCharacter } from "./character.ts";
 import type { ChatMemory } from "./memory.ts";
 import {
@@ -12,7 +13,7 @@ import {
 import type { ChatScene, ChatSceneAudience } from "./scene.ts";
 
 /**
- * Duplicating a conversation: one room and its four children copied under new identities.
+ * Duplicating a conversation: one room and its children copied under new identities.
  *
  * The rule lives in the pure package because both stores (Dexie on web, SQLite on mobile) write the
  * same copy. Written per store, one of them eventually forgets a child, and that copy is a
@@ -21,7 +22,8 @@ import type { ChatScene, ChatSceneAudience } from "./scene.ts";
  *
  * What a copy is:
  *
- * - **Every child, live ones only.** Messages, memories, added characters and scenes. A tombstoned
+ * - **Every child, live ones only.** Messages, memories, added characters, scenes and attached files
+ *   (the copy must read the same reference the original reads every turn). A tombstoned
  *   record is history the user removed; copying it would bring it back in a room that never deleted
  *   it. Memory V2's historical summary is **not** copied: nothing creates V2 records any more, and the
  *   copy's long-term memory is rebuilt by its own afterstate index from the copied messages.
@@ -57,6 +59,8 @@ export interface ChatRoomDuplicateSource {
 	characters: readonly ChatCharacter[];
 	/** The room's scenes (`scene.ts`). Tombstones are skipped here. */
 	scenes: readonly ChatScene[];
+	/** The room's attachments (`attachment.ts`). Absent reads as none. Tombstones are skipped here. */
+	attachments?: readonly ChatAttachment[];
 }
 
 export interface ChatRoomDuplicateStamp {
@@ -82,6 +86,7 @@ export interface ChatRoomDuplicate {
 	memories: ChatMemory[];
 	characters: ChatCharacter[];
 	scenes: ChatScene[];
+	attachments: ChatAttachment[];
 }
 
 type Position = { createdAt: string; id: string };
@@ -169,7 +174,8 @@ export function chatRoomDuplicateRecordCount(
 		messages.length +
 		source.memories.filter(isLiveChatRecord).length +
 		source.characters.filter(isLiveChatRecord).length +
-		copyableScenes(source.scenes, messages).length
+		copyableScenes(source.scenes, messages).length +
+		(source.attachments ?? []).filter(isLiveChatRecord).length
 	);
 }
 
@@ -244,7 +250,17 @@ export function planRoomDuplicate(
 		...freshChatSyncMeta(rev()),
 	}));
 
-	return { room, messages, memories, characters, scenes };
+	// Attach order (`createdAt`) is kept verbatim, so the copy's prompt lists files in the same order.
+	const attachments = (source.attachments ?? [])
+		.filter(isLiveChatRecord)
+		.map((attachment) => ({
+			...attachment,
+			id: stamp.newId(),
+			roomId,
+			...freshChatSyncMeta(rev()),
+		}));
+
+	return { room, messages, memories, characters, scenes, attachments };
 }
 
 /**

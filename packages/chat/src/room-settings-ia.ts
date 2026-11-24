@@ -56,6 +56,13 @@ export type RoomSettingsRowId =
 	 * `@rowcat/chat`).
 	 */
 	| "characters"
+	/**
+	 * Attachments: text files the model reads on every turn (`attachment.ts`). Between `characters`
+	 * and `memory`, the order the prompt reads them in (cast, then attached reference, then memory and
+	 * the note): the rows after the cast run from what was brought in to what the conversation
+	 * established to what the user asks now.
+	 */
+	| "attachments"
 	| "memory"
 	/**
 	 * User note: free-text instructions the user writes for this conversation. It sits right after
@@ -102,6 +109,7 @@ export const ROOM_SETTINGS_IA: readonly RoomSettingsGroupSpec[] = [
 			"narration",
 			"intensity",
 			"characters",
+			"attachments",
 			"memory",
 			"userNote",
 			"tools",
@@ -132,6 +140,7 @@ export const ROOM_SETTINGS_NAVIGATIONAL_ROWS: ReadonlySet<RoomSettingsRowId> =
 		"narration",
 		"intensity",
 		"characters",
+		"attachments",
 		"memory",
 		"userNote",
 		"tools",
@@ -144,21 +153,31 @@ export const ROOM_SETTINGS_NAVIGATIONAL_ROWS: ReadonlySet<RoomSettingsRowId> =
  * worse than no row: the user changes it and every turn comes back the same, with no error to explain
  * why.
  *
- * Only narration has such a dependency. Its value is injected as a pack body, and the public release
+ * Narration has such a dependency. Its value is injected as a pack body, and the public release
  * ships none (`@rowcat/prompt-packs`, `PROMPT_PACKS_AVAILABLE`). The app passes that fact in; this
  * package does not import the bodies' package, for the same weight reason the assembler does not.
  *
  * Stored narration settings are untouched when the row is absent. They still sync, and they apply again
  * the day the build carries bodies.
+ *
+ * Attachments depend on the app having a screen for them. The web has one; mobile stores, syncs and
+ * sends attachments but cannot pick files yet, so it passes `false` and the row is absent there
+ * rather than drawn as a door to nothing. Files attached on the web still ride that device's turns.
  */
 export interface RoomSettingsAvailability {
 	narration: boolean;
+	attachments: boolean;
 }
 
 export const roomSettingsRowAvailable = (
 	row: RoomSettingsRowId,
 	availability: RoomSettingsAvailability,
-): boolean => row !== "narration" || availability.narration;
+): boolean =>
+	row === "narration"
+		? availability.narration
+		: row === "attachments"
+			? availability.attachments
+			: true;
 
 /**
  * The IA with the rows this build cannot honour taken out. Order and grouping stay `ROOM_SETTINGS_IA`'s;

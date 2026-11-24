@@ -10,6 +10,9 @@ import {
 	CHAT_CHARACTER_MAX_PER_ROOM,
 	CHAT_MEMORY_MAX_PER_ROOM,
 	CHAT_MESSAGE_PAGE_SIZE,
+	type ChatAttachment,
+	ChatAttachmentContentError,
+	ChatAttachmentLimitError,
 	type ChatCharacter,
 	ChatCharacterLimitError,
 	type ChatIntensity,
@@ -27,12 +30,16 @@ import {
 	type ChatTailMode,
 	type ChatTailRewrite,
 	type ChatUserTool,
+	type CreateAttachmentInput,
 	type CreateCharacterInput,
 	type CreateMemoryInput,
 	type CreatePersonaInput,
 	type CreateRoomInput,
 	type CreateUserToolInput,
 	chatRoomDuplicateRecordCount,
+	checkAttachmentContent,
+	checkAttachmentRoom,
+	createAttachmentRecord,
 	createCharacterRecord,
 	createMemoryRecord,
 	createMessageRecord,
@@ -48,6 +55,7 @@ import {
 	memoryMatchesReview,
 	mergeMemorySource,
 	nextSummaryEpoch,
+	normalizeAttachmentName,
 	normalizeCharacterAliases,
 	normalizeMemoryAudience,
 	planHistoryRewind,
@@ -67,6 +75,7 @@ import {
 	type SetSceneInput,
 	sameAudience,
 	selectChatTail,
+	sortAttachments,
 	sortCharacters,
 	sortMemories,
 	sortPersonas,
@@ -759,6 +768,7 @@ export function createChatStore(db: LocalDb): ChatStore {
 					db.chatSummaries,
 					db.chatCharacters,
 					db.chatScenes,
+					db.chatAttachments,
 					db.syncState,
 				],
 				async () => {
@@ -777,6 +787,10 @@ export function createChatStore(db: LocalDb): ChatStore {
 							.equals(id)
 							.toArray(),
 						scenes: await db.chatScenes.where("roomId").equals(id).toArray(),
+						attachments: await db.chatAttachments
+							.where("roomId")
+							.equals(id)
+							.toArray(),
 					};
 					const copy = planRoomDuplicate(source, {
 						title: checked,
@@ -789,6 +803,7 @@ export function createChatStore(db: LocalDb): ChatStore {
 					await db.chatMemories.bulkAdd(copy.memories);
 					await db.chatCharacters.bulkAdd(copy.characters);
 					await db.chatScenes.bulkAdd(copy.scenes);
+					await db.chatAttachments.bulkAdd(copy.attachments);
 					return copy.room;
 				},
 			);
@@ -805,6 +820,7 @@ export function createChatStore(db: LocalDb): ChatStore {
 					db.chatSummaries,
 					db.chatCharacters,
 					db.chatScenes,
+					db.chatAttachments,
 					db.syncState,
 				],
 				async () => {
@@ -889,6 +905,21 @@ export function createChatStore(db: LocalDb): ChatStore {
 						scenes
 							.filter(isLiveChatRecord)
 							.map((scene) => markCascadeDeleted(scene, now)),
+					);
+
+					/**
+					 * Attachments are the room's sixth child, by the same rule. A live file left behind would be
+					 * re-uploaded by the next sync as reference for a room that no longer exists. This list must
+					 * match the receiving side's cascade (applyTombstone).
+					 */
+					const attachments = await db.chatAttachments
+						.where("roomId")
+						.equals(id)
+						.toArray();
+					await db.chatAttachments.bulkPut(
+						attachments
+							.filter(isLiveChatRecord)
+							.map((attachment) => markCascadeDeleted(attachment, now)),
 					);
 				},
 			);
@@ -1201,6 +1232,82 @@ export function createChatStore(db: LocalDb): ChatStore {
 					markLocalDelete(current, now, await nextRev(db)),
 				);
 			});
+		},
+
+		/*
+		 * Attachment section (`packages/chat/src/attachment.ts`). Like characters, attaching a file is
+		 * setup rather than conversation, so these writes never touch the room's `updatedAt`.
+		 */
+
+		async listAttachments(roomId: string): Promise<ChatAttachment[]> {
+			// A file of a deleted room counts as absent (the room is checked first, as for characters).
+			if (!(await liveRoom(roomId))) return [];
+			const rows = await db.chatAttachments
+				.where("roomId")
+				.equals(roomId)
+				.toArray();
+			return sortAttachments(rows.filter(isLiveChatRecord));
+		},
+
+		async createAttachment(
+			input: CreateAttachmentInput,
+		): Promise<ChatAttachment> {
+			/**
+			 * The content rule runs outside the transaction so `ChatAttachmentContentError` reaches the
+			 * screen unwrapped (the same reason as characters).
+			 */
+			const name = normalizeAttachmentName(input.name);
+			if (!name) throw new ChatAttachmentContentError("unsupported");
+			const checked = checkAttachmentContent(input.content);
+			if (!checked.ok) throw new ChatAttachmentContentError(checked.reason);
+			const content = checked.content;
+			const now = nowIso();
+			const created = await db.transaction(
+				"rw",
+				[db.chatAttachments, db.rooms, db.syncState],
+				async () => {
+					const room = await liveRoom(input.roomId);
+					if (!room) throw new ChatRoomMissingError(input.roomId);
+					/**
+					 * The room's limits are counted here against live siblings, in the same transaction as the
+					 * write: two tabs attaching at once must not together pass a cap each passed alone. The
+					 * limit is returned, not thrown, so the error type survives the transaction (Dexie wraps
+					 * errors thrown inside it on abort).
+					 */
+					const live = (
+						await db.chatAttachments
+							.where("roomId")
+							.equals(input.roomId)
+							.toArray()
+					).filter(isLiveChatRecord);
+					const fits = checkAttachmentRoom(live, { content });
+					if (!fits.ok) return { ok: false as const, limit: fits.kind };
+					const attachment = createAttachmentRecord(
+						{ roomId: input.roomId, name, content },
+						{ id: newLocalId(), now, rev: await nextRev(db) },
+					);
+					await db.chatAttachments.add(attachment);
+					return { ok: true as const, attachment };
+				},
+			);
+			if (!created.ok) throw new ChatAttachmentLimitError(created.limit);
+			return created.attachment;
+		},
+
+		async deleteAttachment(id: string): Promise<void> {
+			const now = nowIso();
+			await db.transaction(
+				"rw",
+				[db.chatAttachments, db.syncState],
+				async () => {
+					const current = await db.chatAttachments.get(id);
+					// Idempotent, and soft: other devices learn of the removal only through the tombstone.
+					if (!current || !isLiveChatRecord(current)) return;
+					await db.chatAttachments.put(
+						markLocalDelete(current, now, await nextRev(db)),
+					);
+				},
+			);
 		},
 
 		async deleteMemory(id: string): Promise<void> {

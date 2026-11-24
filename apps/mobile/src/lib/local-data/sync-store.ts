@@ -590,6 +590,7 @@ async function cascadeRoomChildren(
 		"chat_memory",
 		"chat_character",
 		"chat_scene",
+		"chat_attachment",
 		"chat_summary",
 	])
 		await tx.run(

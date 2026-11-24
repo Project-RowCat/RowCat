@@ -2,7 +2,7 @@ import { applyChatEmphasisMarker } from "@rowcat/chat";
 import { Button } from "@rowcat/ui-web/components/button";
 import { Textarea } from "@rowcat/ui-web/components/textarea";
 import { cn } from "@rowcat/ui-web/lib/utils";
-import { Asterisk, Send, Square, UserRoundPlus } from "lucide-react";
+import { Asterisk, Paperclip, Send, Square, UserRoundPlus } from "lucide-react";
 import {
 	type KeyboardEvent,
 	type Ref,
@@ -13,6 +13,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatedIconSwap } from "#/lib/motion/animated-icon-swap.tsx";
+import { ATTACHMENT_ACCEPT } from "../attachments/attach-files.ts";
 import {
 	COMPOSER_BUTTON,
 	COMPOSER_FIELD_MIN_H,
@@ -84,6 +85,9 @@ export interface ChatComposerHandle {
  * The leading button only says "the person wants to add a character" (`onAddCharacter`). Which
  * window opens, what it writes and to which room are the screen's: this box still knows no store,
  * and a conversation kind with no room to add to (the story test) passes nothing and gets no button.
+ *
+ * Attaching files is the same kind of request (`onAttachFiles`): this box opens the picker and hands
+ * the chosen files up; reading, checking and storing them is the screen's.
  */
 
 export function ChatComposer({
@@ -93,6 +97,7 @@ export function ChatComposer({
 	onStop,
 	onEmptyChange,
 	onAddCharacter,
+	onAttachFiles,
 	ref,
 }: {
 	/** The local store is not ready yet, or the room was not found. */
@@ -117,11 +122,17 @@ export function ChatComposer({
 	 * story test has no room whose cast could grow.
 	 */
 	onAddCharacter?: () => void;
+	/**
+	 * Hands picked files to the screen, which attaches them to this conversation (`attachment.ts`).
+	 * **Without it there is no button**, for the same reason as `onAddCharacter`.
+	 */
+	onAttachFiles?: (files: File[]) => void;
 	ref?: Ref<ChatComposerHandle>;
 }) {
 	const { t } = useTranslation(["chat", "common"]);
 	const [text, setText] = useState("");
 	const inputRef = useRef<HTMLTextAreaElement>(null);
+	const fileRef = useRef<HTMLInputElement>(null);
 	/**
 	 * A **synchronous copy** of the current value. `onAccepted` is a callback that remembers the
 	 * `text` of the render it was created in. Comparing against that value cannot tell apart the case
@@ -333,6 +344,44 @@ export function ChatComposer({
 					>
 						<UserRoundPlus aria-hidden="true" />
 					</Button>
+				)}
+				{/*
+				 * Attach files — beside the quick add, on the room side of the surface: like it, it writes a
+				 * record for the room, not text into the sentence. It keeps the caret where it was, for the
+				 * quick add's reason. The input is hidden because a native file input's label is the
+				 * browser's own.
+				 */}
+				{onAttachFiles && (
+					<>
+						<input
+							ref={fileRef}
+							type="file"
+							multiple
+							accept={ATTACHMENT_ACCEPT}
+							className="hidden"
+							tabIndex={-1}
+							aria-hidden="true"
+							onChange={(event) => {
+								const files = [...(event.target.files ?? [])];
+								// Cleared at once so picking the same file again still fires.
+								event.target.value = "";
+								if (files.length > 0) onAttachFiles(files);
+							}}
+						/>
+						<Button
+							type="button"
+							variant="ghost"
+							size="icon"
+							aria-label={t("composer.attachFiles")}
+							title={t("composer.attachFiles")}
+							disabled={disabled}
+							className={`${onAddCharacter ? COMPOSER_BUTTON : COMPOSER_LEADING_BUTTON} text-muted-foreground`}
+							onMouseDown={(event) => event.preventDefault()}
+							onClick={() => fileRef.current?.click()}
+						>
+							<Paperclip aria-hidden="true" />
+						</Button>
+					</>
 				)}
 				<Textarea
 					ref={inputRef}

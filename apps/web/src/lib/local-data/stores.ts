@@ -137,6 +137,8 @@ const CHAT_READS: ReadonlySet<keyof ChatStore & string> = new Set([
 	"listCharacters",
 	/** Scenes are read by the memory index and the assembler, so a missing entry would wake sync per turn. */
 	"listScenes",
+	/** Attachments are read at every turn's start (`loadAttachments`), so a miss would wake sync per turn. */
+	"listAttachments",
 	"getSummary",
 	"listPersonas",
 	"getPersona",

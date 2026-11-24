@@ -1,5 +1,6 @@
 import {
 	CHAT_MESSAGE_PAGE_SIZE,
+	type ChatAttachment,
 	type ChatCharacter,
 	type ChatMemory,
 	type ChatMessage,
@@ -258,6 +259,27 @@ export function useLocalCharacters(
 		() =>
 			store && roomId
 				? store.listCharacters(roomId)
+				: Promise.resolve(undefined),
+		[store, roomId],
+	);
+	return {
+		items: items ?? [],
+		loading: roomId !== null && (status !== "ready" || items === undefined),
+	};
+}
+
+/**
+ * Subscribes to a room's attachments. Ordering is the store's (`sortAttachments`), the same order the
+ * prompt reads, for the reason given for characters.
+ */
+export function useLocalAttachments(
+	roomId: string | null,
+): LocalListState<ChatAttachment> {
+	const { store, status } = useChatScope();
+	const items = useLiveQuery(
+		() =>
+			store && roomId
+				? store.listAttachments(roomId)
 				: Promise.resolve(undefined),
 		[store, roomId],
 	);

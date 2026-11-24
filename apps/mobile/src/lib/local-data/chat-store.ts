@@ -10,6 +10,9 @@ import {
 	CHAT_CHARACTER_MAX_PER_ROOM,
 	CHAT_MEMORY_MAX_PER_ROOM,
 	CHAT_MESSAGE_PAGE_SIZE,
+	type ChatAttachment,
+	ChatAttachmentContentError,
+	ChatAttachmentLimitError,
 	type ChatCharacter,
 	ChatCharacterLimitError,
 	type ChatIntensity,
@@ -27,12 +30,16 @@ import {
 	type ChatTailMode,
 	type ChatTailRewrite,
 	type ChatUserTool,
+	type CreateAttachmentInput,
 	type CreateCharacterInput,
 	type CreateMemoryInput,
 	type CreatePersonaInput,
 	type CreateRoomInput,
 	type CreateUserToolInput,
 	chatRoomDuplicateRecordCount,
+	checkAttachmentContent,
+	checkAttachmentRoom,
+	createAttachmentRecord,
 	createCharacterRecord,
 	createMemoryRecord,
 	createMessageRecord,
@@ -47,6 +54,7 @@ import {
 	memoryMatchesReview,
 	mergeMemorySource,
 	nextSummaryEpoch,
+	normalizeAttachmentName,
 	normalizeCharacterAliases,
 	normalizeMemoryAudience,
 	planHistoryRewind,
@@ -66,6 +74,7 @@ import {
 	type SetSceneInput,
 	sameAudience,
 	selectChatTail,
+	sortAttachments,
 	sortCharacters,
 	sortMemories,
 	sortPersonas,
@@ -81,6 +90,7 @@ import { newLocalId, nowIso } from "./clock.ts";
 import { nextRev, nextRevs } from "./hlc.ts";
 import type { MobileDatabase, SqlRunner } from "./sqlite.ts";
 import {
+	chatAttachmentTable,
 	chatCharacterTable,
 	chatMemoryTable,
 	chatMessageTable,
@@ -742,6 +752,10 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 						chatCharacterTable.fromRow,
 					),
 					scenes: await children("chat_scene", chatSceneTable.fromRow),
+					attachments: await children(
+						"chat_attachment",
+						chatAttachmentTable.fromRow,
+					),
 				};
 				const copy = planRoomDuplicate(source, {
 					title: checked,
@@ -757,6 +771,8 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 				for (const character of copy.characters)
 					await chatCharacterTable.upsert(tx, character);
 				for (const scene of copy.scenes) await chatSceneTable.upsert(tx, scene);
+				for (const attachment of copy.attachments)
+					await chatAttachmentTable.upsert(tx, attachment);
 				return copy.room;
 			});
 		},
@@ -809,6 +825,14 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 				 */
 				await tx.run(
 					"UPDATE chat_scene SET deleted_at = ? WHERE room_id = ? AND deleted_at IS NULL",
+					[now, id],
+				);
+				/**
+				 * Attachments are the **sixth child**, by the same rule; the receiving side's cascade lists
+				 * them too.
+				 */
+				await tx.run(
+					"UPDATE chat_attachment SET deleted_at = ? WHERE room_id = ? AND deleted_at IS NULL",
 					[now, id],
 				);
 			});
@@ -1100,6 +1124,68 @@ export function createChatStore(db: MobileDatabase): ChatStore {
 				// Idempotent, and soft (the tombstone is how other devices learn of it).
 				if (!current || !isLiveChatRecord(current)) return;
 				await chatSceneTable.upsert(
+					tx,
+					markLocalDelete(current, now, await nextRev(tx)),
+				);
+			});
+		},
+
+		/* ── Attachments: the room's sixth child ─────────────────────────────────── */
+
+		async listAttachments(roomId: string): Promise<ChatAttachment[]> {
+			if (!(await liveRoom(db, roomId))) return [];
+			const rows = await db.all<SqlRow>(
+				"SELECT * FROM chat_attachment WHERE room_id = ? AND deleted_at IS NULL",
+				[roomId],
+			);
+			/** The store owns the order, so a future screen and prompt assembly see the same one. */
+			return sortAttachments(rows.map(chatAttachmentTable.fromRow));
+		},
+
+		async createAttachment(
+			input: CreateAttachmentInput,
+		): Promise<ChatAttachment> {
+			/** Validated outside the transaction, as on web, so the error's type is preserved. */
+			const name = normalizeAttachmentName(input.name);
+			if (!name) throw new ChatAttachmentContentError("unsupported");
+			const checked = checkAttachmentContent(input.content);
+			if (!checked.ok) throw new ChatAttachmentContentError(checked.reason);
+			const content = checked.content;
+			const now = nowIso();
+			const created = await db.transaction(async (tx) => {
+				const room = await liveRoom(tx, input.roomId);
+				if (!room) throw new ChatRoomMissingError(input.roomId);
+				/** The room's limits, counted against live siblings in the writing transaction (as web). */
+				const live = (
+					await tx.all<SqlRow>(
+						"SELECT * FROM chat_attachment WHERE room_id = ? AND deleted_at IS NULL",
+						[input.roomId],
+					)
+				).map(chatAttachmentTable.fromRow);
+				const fits = checkAttachmentRoom(live, { content });
+				if (!fits.ok) return { ok: false as const, limit: fits.kind };
+				const attachment = createAttachmentRecord(
+					{ roomId: input.roomId, name, content },
+					{ id: newLocalId(), now, rev: await nextRev(tx) },
+				);
+				await chatAttachmentTable.upsert(tx, attachment);
+				return { ok: true as const, attachment };
+			});
+			if (!created.ok) throw new ChatAttachmentLimitError(created.limit);
+			return created.attachment;
+		},
+
+		async deleteAttachment(id: string): Promise<void> {
+			const now = nowIso();
+			await db.transaction(async (tx) => {
+				const row = await tx.first<SqlRow>(
+					"SELECT * FROM chat_attachment WHERE id = ?",
+					[id],
+				);
+				const current = row ? chatAttachmentTable.fromRow(row) : null;
+				// Idempotent, and soft (the tombstone is how other devices learn of it).
+				if (!current || !isLiveChatRecord(current)) return;
+				await chatAttachmentTable.upsert(
 					tx,
 					markLocalDelete(current, now, await nextRev(tx)),
 				);

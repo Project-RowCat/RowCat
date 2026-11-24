@@ -10,6 +10,7 @@ import {
 import { ChevronLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { RoomActionRequests } from "../room/management.tsx";
+import { RoomSettingsAttachments } from "./attachments.tsx";
 import { RoomSettingsCharacters } from "./characters.tsx";
 import { RoomSettingsGeneration } from "./generation.tsx";
 import { RoomSettingsHome } from "./home.tsx";
@@ -31,6 +32,7 @@ import {
  * - Persona: ChatPersonaStore and ChatStore.setRoomPersona (library copy and room copy)
  * - Rename: ChatStore.renameRoom. Delete: ChatStore.deleteRoom (synced tombstone)
  * - Memory: ChatMemoryStore, opened as a sibling dialog
+ * - Attachments: ChatStore.createAttachment / deleteAttachment (synced room children)
  * - User note: ChatStore.setRoomUserNote (synced room record). Info: read-only copy
  * - Tools: ChatStore.setRoomToolOverride (synced room record); the library itself is edited at
  *   /settings/tools
@@ -39,7 +41,7 @@ import {
  * success after only some writes succeeded. Each action completes under its owner's rules.
  *
  * The dialog shows one surface at a time (home, generation, persona, narration, intensity,
- * characters, user note, tools, info). Tabs and accordions are not used: tabs show every section at once,
+ * characters, attachments, user note, tools, info). Tabs and accordions are not used: tabs show every section at once,
  * and accordions recreate one long document. Nested dialogs are never opened, so Escape and the
  * focus trap have one target. Memory is the exception: its form and list would nest inside the
  * scroll area, and closing the outer dialog first would discard typed text. The persona creation
@@ -216,6 +218,8 @@ export function RoomSettingsDialog({
 						<RoomSettingsIntensity room={room} />
 					) : view === "characters" ? (
 						<RoomSettingsCharacters room={room} />
+					) : view === "attachments" ? (
+						<RoomSettingsAttachments room={room} />
 					) : view === "userNote" ? (
 						<RoomSettingsUserNote room={room} />
 					) : view === "tools" ? (

@@ -111,6 +111,8 @@ export function createChatConversation(input: {
 		 */
 		loadCharacters: () => store.listCharacters(room.id),
 		loadScenes: () => store.listScenes(room.id),
+		/** Attached files, read once per turn like characters — and on every turn (`attachment.ts`). */
+		loadAttachments: () => store.listAttachments(room.id),
 		/**
 		 * The routing-friendly key is obtained, not merely read. room.routingSessionId is not passed
 		 * directly: rooms created before this field existed do not have it, so the needed step is to
