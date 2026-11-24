@@ -577,6 +577,31 @@ export const create = {
 			boolean: "Yes or no",
 		},
 	},
+	toolIssue: {
+		name_invalid:
+			"Name: start with a lowercase letter and use only lowercase letters, digits and underscores (up to 48).",
+		name_reserved: "Name: this name is built in. Choose another.",
+		name_taken: "Name: another tool in this story already uses it.",
+		description_required: "Description: say when the AI should use this tool.",
+		description_too_long: "Description: too long.",
+		too_many_parameters: "Parameters: up to {{max}}.",
+		parameter_names_repeat: "Parameters: two have the same name.",
+		parameter_name_invalid:
+			"Parameter #{{row}}: needs a name with lowercase letters, digits and underscores, starting with a letter.",
+		parameter_description_too_long: "Parameter #{{row}}: description too long.",
+		parameter_choices_invalid:
+			"Parameter #{{row}}: too many choices, or a choice is too long.",
+		template_required: "Template: write the text to return.",
+		template_too_long: "Template: up to {{max}} characters.",
+		entries_required: "Rows: add at least one.",
+		too_many_entries: "Rows: up to {{max}}.",
+		entry_too_long: "Rows: each row up to {{max}} characters.",
+		draws_out_of_range: "Rows per call: from 1 to {{max}}.",
+		system_required: "Sub-agent instructions: write them.",
+		system_too_long: "Sub-agent instructions: up to {{max}} characters.",
+		max_output_tokens_out_of_range: "Answer length cap: from 1 to {{max}}.",
+		other: "Something in this tool isn't valid yet.",
+	},
 	toolEditorCard: {
 		name: "Name",
 		nameHint:

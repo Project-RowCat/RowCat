@@ -5,6 +5,7 @@ import {
 	type DraftTool,
 	type DraftToolParameter,
 	type DraftToolPatch,
+	draftToolIssueSentence,
 } from "@rowcat/authoring";
 import {
 	CHAT_MAX_TOOL_PARAMETERS,
@@ -197,7 +198,9 @@ function ToolCard({
 
 			{checked.ok ? null : (
 				/** Not destructive: an unfinished tool is the normal state while writing, not a failure. */
-				<Notice message={`${TOOL.issues}\n${checked.issues.join("\n")}`} />
+				<Notice
+					message={`${TOOL.issues}\n${checked.issues.map(draftToolIssueSentence).join("\n")}`}
+				/>
 			)}
 
 			<Input

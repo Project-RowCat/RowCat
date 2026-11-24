@@ -1,11 +1,14 @@
 import {
 	checkDraftTool,
 	DRAFT_TOOL_KINDS,
+	DRAFT_TOOL_LIMITS,
 	type DraftTool,
+	type DraftToolIssue,
 	type DraftToolKind,
 	type DraftToolParameter,
 } from "@rowcat/authoring";
 import {
+	CHAT_MAX_TOOL_PARAMETERS,
 	CHAT_TOOL_PARAMETER_TYPES,
 	type ChatToolParameterType,
 } from "@rowcat/contracts";
@@ -98,7 +101,7 @@ export interface ToolSummary {
 	/** Kind and parameter count: what a curator scans for. */
 	meta: string[];
 	/**
-	 * What stops this tool from being published, as `path: message` lines. Empty when it is ready. The
+	 * What stops this tool from being published, as sentences (`toolIssueText`). Empty when it is ready. The
 	 * card shows these while the creator writes, so the publish button is not the first place they
 	 * learn a tool will be left out.
 	 */
@@ -119,7 +122,7 @@ export function toolSummary(tool: DraftTool): ToolSummary {
 				: []),
 			...(checked.ok ? [] : [t("tool.notReady")]),
 		],
-		issues: checked.ok ? [] : checked.issues,
+		issues: checked.ok ? [] : checked.issues.map(toolIssueText),
 	};
 }
 
@@ -130,4 +133,28 @@ export function toolSummary(tool: DraftTool): ToolSummary {
 export function parseWholeNumber(text: string, fallback: number): number {
 	const parsed = Number.parseInt(text, 10);
 	return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/** The cap each code's sentence names, so the words and the contract cannot disagree. */
+const ISSUE_MAX: Partial<Record<DraftToolIssue["code"], number>> = {
+	too_many_parameters: CHAT_MAX_TOOL_PARAMETERS,
+	template_too_long: DRAFT_TOOL_LIMITS.templateChars,
+	too_many_entries: DRAFT_TOOL_LIMITS.tableEntries,
+	entry_too_long: DRAFT_TOOL_LIMITS.tableEntryChars,
+	draws_out_of_range: DRAFT_TOOL_LIMITS.tableMaxDraws,
+	system_too_long: DRAFT_TOOL_LIMITS.agentSystemChars,
+	max_output_tokens_out_of_range: DRAFT_TOOL_LIMITS.agentMaxOutputTokens,
+};
+
+/**
+ * One issue as a sentence in the reader's language. The code comes from `checkDraftTool`; the
+ * contract's own messages never reach the screen, since they name schema paths the creator never
+ * saw.
+ */
+export function toolIssueText(issue: DraftToolIssue): string {
+	const max = ISSUE_MAX[issue.code];
+	return translator("create")(`toolIssue.${issue.code}`, {
+		row: issue.parameter ?? 0,
+		max: max === undefined ? "" : max.toLocaleString(),
+	});
 }

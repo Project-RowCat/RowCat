@@ -61,6 +61,9 @@ describe("the collapsed card", () => {
 		const summary = toolSummary(blank);
 		expect(summary.hasName).toBe(false);
 		expect(summary.issues.length).toBeGreaterThan(0);
+		/* Sentences, not the contract's schema text (paths and zod messages). */
+		for (const issue of summary.issues)
+			expect(issue).not.toMatch(/declaration|action\.|expected|Too small/);
 	});
 
 	it("a complete tool has no issues", () => {

@@ -567,6 +567,31 @@ export const create: Messages["create"] = {
 			boolean: "예/아니오",
 		},
 	},
+	toolIssue: {
+		name_invalid:
+			"이름: 영문 소문자로 시작하고 소문자·숫자·밑줄만 쓸 수 있어요(최대 48자).",
+		name_reserved: "이름: 기본 제공 도구의 이름이라 쓸 수 없어요.",
+		name_taken: "이름: 이 작품의 다른 도구가 이미 쓰고 있어요.",
+		description_required: "설명: AI가 언제 이 도구를 쓸지 적어 주세요.",
+		description_too_long: "설명: 너무 길어요.",
+		too_many_parameters: "인자: 최대 {{max}}개까지예요.",
+		parameter_names_repeat: "인자: 이름이 같은 인자가 있어요.",
+		parameter_name_invalid:
+			"인자 #{{row}}: 영문 소문자로 시작하는 이름(소문자·숫자·밑줄)이 필요해요.",
+		parameter_description_too_long: "인자 #{{row}}: 설명이 너무 길어요.",
+		parameter_choices_invalid:
+			"인자 #{{row}}: 선택지가 너무 많거나 너무 길어요.",
+		template_required: "템플릿: 돌려줄 글을 적어 주세요.",
+		template_too_long: "템플릿: 최대 {{max}}자까지예요.",
+		entries_required: "행: 한 줄 이상 넣어 주세요.",
+		too_many_entries: "행: 최대 {{max}}줄까지예요.",
+		entry_too_long: "행: 한 줄은 최대 {{max}}자까지예요.",
+		draws_out_of_range: "한 번에 뽑을 행: 1부터 {{max}}까지예요.",
+		system_required: "서브 에이전트 지시문: 내용을 적어 주세요.",
+		system_too_long: "서브 에이전트 지시문: 최대 {{max}}자까지예요.",
+		max_output_tokens_out_of_range: "답변 길이 상한: 1부터 {{max}}까지예요.",
+		other: "아직 올바르지 않은 부분이 있어요.",
+	},
 	toolEditorCard: {
 		name: "이름",
 		nameHint:
