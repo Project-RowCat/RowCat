@@ -5,9 +5,11 @@ import { describe, expect, it } from "vitest";
 import {
 	checkDraftTool,
 	createDraftToolRecord,
+	DRAFT_TOOL_ISSUE_CODES,
 	DRAFT_TOOL_LIMITS,
 	DRAFT_TOOL_RESERVED_NAMES,
 	type DraftTool,
+	draftToolIssueSentence,
 	sortDraftTools,
 	toCreatorTool,
 } from "./draft-tool.ts";
@@ -188,14 +190,11 @@ describe("checking a tool", () => {
 		);
 		expect(checked.ok).toBe(false);
 		if (checked.ok) return;
-		const paths = checked.issues.map((issue) => issue.split(":")[0]);
-		expect(paths).toEqual(
-			expect.arrayContaining([
-				"declaration.name",
-				"declaration.description",
-				"action.template",
-			]),
-		);
+		expect(checked.issues).toEqual([
+			{ code: "name_invalid" },
+			{ code: "description_required" },
+			{ code: "template_required" },
+		]);
 	});
 
 	it("rejects an empty table, too many draws, and an agent over its cap", () => {
@@ -233,6 +232,61 @@ describe("checking a tool", () => {
 		expect(
 			checkDraftTool(tool("t", { parameters: [parameter, parameter] })).ok,
 		).toBe(false);
+	});
+});
+
+describe("issue codes", () => {
+	it("names the parameter row and tells too big from missing", () => {
+		const checked = checkDraftTool(
+			tool("t", {
+				kind: "agent",
+				system: "",
+				maxOutputTokens: DRAFT_TOOL_LIMITS.agentMaxOutputTokens + 1,
+				parameters: [
+					{
+						name: "ok",
+						type: "string",
+						description: "",
+						required: false,
+						choices: [],
+					},
+					{
+						name: "Bad",
+						type: "string",
+						description: "",
+						required: false,
+						choices: [],
+					},
+				],
+			}),
+		);
+		expect(checked.ok ? [] : checked.issues).toEqual([
+			{ code: "parameter_name_invalid", parameter: 2 },
+			{ code: "system_required" },
+			{ code: "max_output_tokens_out_of_range" },
+		]);
+		expect(
+			checkDraftTool(
+				tool("t", {
+					template: "x".repeat(DRAFT_TOOL_LIMITS.templateChars + 1),
+				}),
+			),
+		).toEqual({ ok: false, issues: [{ code: "template_too_long" }] });
+	});
+
+	it("reports a reserved name on the card, before publishing", () => {
+		expect(checkDraftTool(tool("t", { name: "lore_search" }))).toEqual({
+			ok: false,
+			issues: [{ code: "name_reserved" }],
+		});
+	});
+
+	it("every code has an English sentence without schema vocabulary", () => {
+		for (const code of DRAFT_TOOL_ISSUE_CODES) {
+			const sentence = draftToolIssueSentence({ code, parameter: 1 });
+			expect(sentence).not.toMatch(/declaration|action\.|expected/);
+			expect(sentence.length).toBeGreaterThan(0);
+		}
 	});
 });
 

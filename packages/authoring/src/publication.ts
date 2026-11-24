@@ -9,8 +9,8 @@ import type {
 import type { StoryPublishRuntimeInput } from "@rowcat/contracts/story-runtime";
 import {
 	checkDraftTool,
-	DRAFT_TOOL_RESERVED_NAMES,
 	type DraftTool,
+	type DraftToolIssue,
 	sortDraftTools,
 } from "./draft-tool.ts";
 import type {
@@ -163,7 +163,7 @@ export interface PreparedStoryPublication {
 	 * valid tools are published or played: a tool the contract rejects would make every request of
 	 * the conversation a 400, so playtest drops it silently and publishing is blocked by validation.
 	 */
-	toolIssues: { index: number; name: string; issues: string[] }[];
+	toolIssues: { index: number; name: string; issues: DraftToolIssue[] }[];
 }
 
 export type BuildStoryPublicationResult =
@@ -371,7 +371,8 @@ export function prepareStoryPublication(
 	const lore = sortLore(source.lore.filter(isLiveRecord));
 	const tools: ChatCreatorToolDto[] = [];
 	const toolIssues: PreparedStoryPublication["toolIssues"] = [];
-	const toolNames = new Set<string>(DRAFT_TOOL_RESERVED_NAMES);
+	/** Reserved names are reported by `checkDraftTool` itself, so only names used here count. */
+	const toolNames = new Set<string>();
 	sortDraftTools((source.tools ?? []).filter(isLiveRecord)).forEach(
 		(tool, index) => {
 			const checked = checkDraftTool(tool);
@@ -387,9 +388,7 @@ export function prepareStoryPublication(
 				toolIssues.push({
 					index,
 					name: tool.name,
-					issues: [
-						`declaration.name: '${checked.tool.declaration.name}' is already used.`,
-					],
+					issues: [{ code: "name_taken" }],
 				});
 				return;
 			}

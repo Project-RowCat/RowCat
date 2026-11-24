@@ -1,5 +1,6 @@
 import type { StoryPublishRequest } from "@rowcat/contracts/publication";
 import { STORY_PUBLISH_LIMITS } from "@rowcat/contracts/publication";
+import { type DraftToolIssue, draftToolIssueSentence } from "./draft-tool.ts";
 
 /**
  * Pre-publish validation: a judgment made for UX.
@@ -144,7 +145,7 @@ export interface PublicationValidationContext {
 	 */
 	runtimeIssues?: { entryMissing: boolean };
 	/** Creator tools normalization left out (`PreparedStoryPublication.toolIssues`). */
-	toolIssues?: { index: number; name: string; issues: string[] }[];
+	toolIssues?: { index: number; name: string; issues: DraftToolIssue[] }[];
 }
 
 /**
@@ -362,7 +363,7 @@ export function validateStoryPublication(
 			issue(
 				`tools.${tool.index}`,
 				PUBLICATION_ISSUE_CODE.invalidTool,
-				`Tool '${tool.name || `#${tool.index + 1}`}' cannot be published: ${tool.issues.join(" ")}`,
+				`Tool '${tool.name.trim() || `#${tool.index + 1}`}' cannot be published. ${tool.issues.map(draftToolIssueSentence).join(" ")}`,
 			),
 		);
 
