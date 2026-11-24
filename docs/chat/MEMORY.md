@@ -38,7 +38,8 @@ V2 역사 기록         @rowcat/chat (summary.ts)             요약 레코드�
 저장소 포트          @rowcat/chat (store.ts)               ChatStore — countMessages·getSummary(읽기)
 저장(웹)             apps/web/src/lib/local-chat/store.ts (IndexedDB, Dexie)
 저장(모바일)         apps/mobile/src/lib/local-data/chat-store.ts (SQLite)
-엔진(데스크톱 창)    apps/web/src/lib/afterstate/{desktop-memory,use-memory-runtime}.ts
+엔진(웹·데스크톱)   apps/web/src/lib/afterstate/{desktop-memory,use-memory-runtime}.ts
+브라우저 실행       apps/web/src/lib/afterstate/browser-memory.worker.ts (afterstate-wasm)
 엔진(모바일)         apps/mobile/src/lib/afterstate/native-memory.ts (afterstate-memory 모듈)
 동기화 코덱          @rowcat/chat (sync-codec.ts)          chat.memory · chat.summary(역사) · chat.scene
 컨텍스트 조립        @rowcat/chat (context.ts)             예산 선택 + 블록 형식
@@ -300,3 +301,62 @@ apps/mobile/src/lib/boundaries.test.ts              제거된 엔진·스위치�
 배경 정합성 검사는 수정·삭제·동기화가 누락되지 않도록 여전히 방의 원본 전체를 대조한다. 직전 통합이 끝났고 이야기 기록이 그대로라면 같은 통합 호출을 반복하지 않는다. 앱 재시작 후에는 다시 점검한다. 오래된 포트나 진단용 스냅샷에 대상 조회 기능이 없을 때에는 전체 메시지를 읽을 수 있다.
 
 요청을 보내기 직전 두 앱 모두 역사 창·장면·수동 기억과 실제 인용된 과거 출처의 판본을 다시 확인한다. 삭제·편집·관객 변경을 발견하거나 최종 점검이 400ms를 넘으면 전송 전에 턴을 중단한다. 처음 조회한 장기 기억만 포기하는 경우와 달리, 이 경우 사용자가 다시 생성하면 최신 기록으로 시작한다.
+
+
+### 웹 브라우저 실행
+
+브라우저는 `afterstate-wasm@0.1.0-rc.1`을 회원별 Web Worker 안에서 실행한다. 같은
+`AfterstatePort`와 기존 대화 어댑터를 사용하므로 장면 권한·원본 재검증·400ms 생성 제한이
+그대로 적용된다. 데스크톱 창에서는 preload → 인증된 IPC → Node Worker Thread의 WASM 엔진을 우선한다.
+
+WASM 인덱스는 메모리 안의 파생 데이터다. 새로고침하면 IndexedDB의 원본 기록으로 다시
+만들고, 로그아웃·계정 전환·로컬 초기화·다른 탭에서의 삭제는 해당 Worker를 종료한다.
+대화 내용은 서버나 npm으로 보내지 않는다. Worker와 WASM 파일은 앱과 같은 출처에서 제공한다.
+
+
+## 15. 캐릭터 기억 — 기본 활성화
+
+일반 방의 `conversationMemoryHooks`·`createLongTermLoader`는 캐릭터 기억 정책을
+자동 구성한다. 웹(데스크톱 창 포함)과 모바일의 기존 생성 진입점은
+`{ protectedRoom }`만 넘긴다. `characterPolicy` 인자, UI 설정, 기능 플래그는 필요 없다.
+이전 대화도 방을 열면 같은 단일 유지보수 경로가 색인을 보충하며, 저장된 응답·이어쓰기와
+커밋된 편집·삭제 후 다시 깨어난다. 실제로 진전이 있는 제한 배치만 연속 처리하고 실패 시
+무한 반복하지 않는다.
+
+컷오프는 이번 생성이 고정한 히스토리와 권위 저장소의 제한 조회에서 읽은 원본 시각이다.
+시스템 현재 시각으로 과거를 넓히지 않는다. 기본 역사 문맥 예산은 UTF-8 바이트로 상한을
+잡은 8,192 토큰이며 회상·원문 에피소드 발췌·사실을 합쳐 적용한다. 직접 검색 여섯 슬롯과
+추가 발췌 두 슬롯을 유지하고, 사실의 과거/현재 짝은 함께 자른다. 실제 전송 프레이밍에는
+여유분을 남긴다.
+
+관점은 활성 장면의 목격자 교집합이고 미상 관객은 제외한다. 활성 장면이 없는 일반 방은
+기존 방 전체 공유 전달 규칙을 **파생 색인에만** 명시적인 `room`으로 표현한다. 실제 장면
+레코드나 허구의 사건을 만들지 않는다. 명시적 장면이 하나라도 있으면 그 앞의 미분류 과거는
+자동 공개하지 않는다. 비공개 노트의 명시 관객도 바꾸지 않는다. 정상 경로에 권위 있는
+장면 조회가 없으면 안전하게 `degraded`로 끝난다.
+
+네이티브 브리지는 `character_context/1`을 광고해야 한다. 구버전·잘못된 패킷·예산 불일치에는
+기존 원문을 몰래 대신 넣지 않는다. 보호 작품 방은 원래 원문 검증 에피소드 조립 경로를
+유지한다. 브라우저 WASM 워커와 네이티브가 같은 정책을 쓴다. 어느 런타임도 열지 못하면
+`unavailable`이며 서버 색인으로 대체하지 않는다.
+E2EE 레코드·코덱·동기화 소유권은 그대로다. `characterPolicy: false`는 테스트/문제 진단용 내부
+예외이며 제품 생성 진입점에서 넘기지 않는다.
+
+기본 활성화되는 것은 **검색과 저장 후 색인**이다. 평범한 캐릭터 발화가 별도 설정 없이 들어가지만
+관계 발전의 자동 주석 생성은 아직 구현하지 않았다. 명시적인 호스트 주석과 기존 보수적
+서사 연결을 보존하며 감정 수치·관계·사건·정사를 만들어 내지 않는다.
+
+
+### 데스크톱 WASM의 보존 경계
+
+`apps/desktop/src/afterstate-worker.ts`는 같은 Rust bridge와 대화 어댑터를 사용한다.
+원본 IndexedDB가 진실이며 색인은 파생 데이터다. SQLite portable snapshot은 Main이 OS 키 저장소로
+감싼 키로 Worker에서 암호화한 뒤에만 파일이 된다. 다른 기기로 동기화되지 않는다.
+
+Worker가 시작될 때마다 메시지·메모·역사 요약의 live manifest를 받기 전에는 회상·사실·episode를
+돌려주지 않는다. 복구된 색인도 이 검사를 거치며, 기존 `verifyPromptSnapshot`과 장면/원본 권한
+재검사는 그대로다. 읽기 실패는 `degraded`이고 V2나 다른 엔진이 대신 돌지 않는다.
+
+동기 Rust 호출은 Main/Renderer에서 실행하지 않는다. Main의 큐·시간 제한·회원 인증과 Worker의
+순차 처리·메모리 제한이 쓰기와 삭제 순서를 보존한다. 네이티브 `open/close/destroy`를 WASM에
+성공했다고 답하지 않으며, 생성/해제와 암호문·키 삭제가 생명주기를 소유한다.

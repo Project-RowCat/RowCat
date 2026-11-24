@@ -93,6 +93,9 @@ function memory(
 
 /** A store double with the two reads the indexer and the loader use. */
 class Rooms implements ConversationMemorySource {
+	async listScenes() {
+		return [];
+	}
 	messages = new Map<string, ChatMessage[]>();
 	memories = new Map<string, ChatMemory[]>();
 	async listAllMessages(roomId: string) {
@@ -431,7 +434,7 @@ describe("one engine: no modes, no V2, honest status", () => {
 		expect(events.map((e) => e.kind)).toEqual(["recall-failed"]);
 	});
 
-	it("an engine without episodes still recalls (older bridge build)", async () => {
+	it("an unsupported bridge fails closed for normal default retrieval", async () => {
 		const port: AfterstatePort = {
 			call: async <T>(op: string) => {
 				if (op === "digests") throw new Error("unknown_op");
@@ -440,8 +443,8 @@ describe("one engine: no modes, no V2, honest status", () => {
 		};
 		const load = createLongTermLoader({ port }, rooms, "r1");
 		await expect(load(request)).resolves.toMatchObject({
-			recall: { passages: [] },
-			consolidated: { episodes: [] },
+			recall: null,
+			status: "degraded",
 		});
 	});
 
@@ -466,7 +469,7 @@ describe("one engine: no modes, no V2, honest status", () => {
 				return ids.flatMap((id) => originals.get(id) ?? []);
 			},
 		};
-		const indexed = messageItem(past);
+		const indexed = messageItem(past, { kind: "room" }, "r1");
 		if (!indexed) throw new Error("invalid source fixture");
 		const candidate = {
 			id: "old",
@@ -493,7 +496,9 @@ describe("one engine: no modes, no V2, honest status", () => {
 				} as T;
 			},
 		};
-		const load = createLongTermLoader({ port }, source, "r1");
+		const load = createLongTermLoader({ port }, source, "r1", {
+			characterPolicy: false,
+		});
 		const run = async () => {
 			const snapshot = await load(recallRequestFor([last], []));
 			expect(snapshot.status).toBe("ready");
@@ -552,7 +557,7 @@ describe("one engine: no modes, no V2, honest status", () => {
 			passage: 0,
 			author: { role: "user" as const },
 			score: 1,
-			revision: messageItem(m)?.revision,
+			revision: messageItem(m, { kind: "room" }, "r1")?.revision,
 		});
 		const evidence = direct.map(index);
 		const port: AfterstatePort = {
@@ -574,11 +579,9 @@ describe("one engine: no modes, no V2, honest status", () => {
 			getMessagesByIds: async (_, ids) =>
 				messages.filter((m) => ids.includes(m.id)),
 		};
-		const turn = await createLongTermLoader(
-			{ port },
-			source,
-			"r1",
-		)(recallRequestFor([window], []));
+		const turn = await createLongTermLoader({ port }, source, "r1", {
+			characterPolicy: false,
+		})(recallRequestFor([window], []));
 		expect(turn.recall?.passages.map((p) => p.id)).toEqual(
 			[...direct, indirect].map((m) => m.id),
 		);
@@ -629,6 +632,7 @@ describe("one engine: no modes, no V2, honest status", () => {
 			},
 			rooms,
 			"r1",
+			{ characterPolicy: false },
 		);
 		await expect(load(request)).resolves.toMatchObject({
 			recall: { passages: [] },
@@ -762,7 +766,7 @@ describe.skipIf(!hasAfterstateBridge())(
 					expect(await ask(deviceB, q)).toEqual(await ask(deviceA, q));
 				expect(await ask(deviceB, "은열쇠를 묻은 곳이 어디였지?")).toEqual([]);
 				expect(
-					(await ask(deviceB, "붉은 우산은 어디서 잃어버렸지?"))[0],
+					(await ask(deviceB, "붉은 우산은 어디서 잃어버렸지?")).join("\n"),
 				).toContain("room-sync-f3");
 			} finally {
 				await deviceA.close();
@@ -838,7 +842,7 @@ describe.skipIf(!hasAfterstateBridge())(
 				"room-c",
 				"n-key",
 				"은열쇠의 손잡이에는 까마귀 문양이 있다.",
-				"auto",
+				"user",
 			);
 			rooms.memories.set("room-c", [inBlock, ...filler, relevant]);
 			await reconcileConversation(engine, rooms, "room-c");

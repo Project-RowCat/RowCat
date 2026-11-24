@@ -1,5 +1,10 @@
 import type { ChatCharacter } from "./character.ts";
-import { selectMemoriesForContext } from "./context.ts";
+import {
+	consolidatedText,
+	factsText,
+	recallBlock,
+	selectMemoriesForContext,
+} from "./context.ts";
 import type { ConversationSession } from "./conversation.ts";
 import { type ChatMemory, isAutoMemory } from "./memory.ts";
 import type { ChatMessage, ChatRoom } from "./model.ts";
@@ -178,7 +183,10 @@ export function messageItem(
  * extracted is model-written (`model`, never `user`) and labelled `origin:auto`. Kept whole, never
  * rewritten; the record stays authoritative.
  */
-export function noteItem(memory: ChatMemory): BridgeItem | null {
+export function noteItem(
+	memory: ChatMemory,
+	audience: ChatMemory["audience"] = memory.audience,
+): BridgeItem | null {
 	if (!isBridgeId(memory.id) || !isBridgeId(memory.roomId)) return null;
 	return {
 		conversation: memory.roomId,
@@ -186,16 +194,28 @@ export function noteItem(memory: ChatMemory): BridgeItem | null {
 		id: memory.id,
 		revision: isAutoMemory(memory)
 			? revisionOf(memory)
-			: `${FACTS_REVISION_PREFIX}${revisionOf(memory)}`,
+			: `${FACTS_REVISION_PREFIX}${revisionOf(memory)}${audience ? `~${audienceKey(audience)}` : ""}`,
 		text: memory.content,
 		author: { role: isAutoMemory(memory) ? "model" : "user" },
 		at_ms: millis(memory.createdAt),
-		...(isAutoMemory(memory) ? {} : { facts: true, audience: memory.audience }),
+		...(isAutoMemory(memory) ? {} : { facts: true, audience }),
 		labels: [
 			isAutoMemory(memory) ? "origin:auto" : "origin:user",
 			...(memory.pinned ? ["pinned"] : []),
 		],
 	};
+}
+
+function noteAudience(
+	memory: ChatMemory,
+	scenes: readonly ChatScene[],
+): ChatMemory["audience"] {
+	return (
+		memory.audience ??
+		(!isAutoMemory(memory) && !scenes.some((s) => s.deletedAt === null)
+			? { kind: "room" }
+			: undefined)
+	);
 }
 
 /**
@@ -243,6 +263,11 @@ export interface ConversationMemorySource {
 	listScenes?(roomId: string): Promise<ChatScene[]>;
 	/** Characters added to the room (their aliases feed recall). */
 	listCharacters?(roomId: string): Promise<ChatCharacter[]>;
+	/** Bounded authoritative tail for an empty/replayed request window. */
+	listRecentMessages?(
+		roomId: string,
+		options: { limit: number },
+	): Promise<ChatMessage[]>;
 	/** Memory V2's historical summary (migration input). Absent: none is imported. */
 	getSummary?(roomId: string): Promise<ChatSummary | null>;
 }
@@ -305,6 +330,85 @@ async function roomCast(source: ConversationMemorySource, roomId: string) {
 		aliases: recallAliases(characters),
 		entities: entityMentions(room?.seed.characters ?? [], characters),
 	};
+}
+
+/** No-scene RowCat messages are delivered to the whole room by contract. Materialize
+ * that existing scope explicitly in the derived index. Never classify pre-scene
+ * unknown history in a room that has an active scene. This is not fictional canon. */
+function resolveMemoryAudiences(
+	roomId: string,
+	messages: readonly Pick<ChatMessage, "id" | "createdAt">[],
+	scenes: readonly ChatScene[],
+	anchors?: Map<string, string>,
+): Map<string, ResolvedAudience> {
+	if (scenes.some((s) => s.deletedAt === null))
+		return resolveMessageAudiences(messages, scenes, anchors);
+	for (const message of messages) anchors?.set(message.id, roomId);
+	return new Map(
+		messages.map((message) => [message.id, { kind: "room" as const }]),
+	);
+}
+
+/** Source-time cutoff, independent of wall clocks or a model's interpretation. */
+function conversationCutoff(
+	roomId: string,
+	messages: readonly ChatMessage[],
+): number {
+	let cutoff: number | undefined;
+	for (const message of messages) {
+		if (message.roomId !== roomId || message.deletedAt !== null) continue;
+		const time = millis(message.createdAt);
+		if (time !== undefined && Number.isSafeInteger(time))
+			cutoff = Math.max(cutoff ?? time, time);
+	}
+	return cutoff ?? 0;
+}
+
+export const CHAT_CHARACTER_MEMORY_TOKEN_BUDGET = 8192;
+
+function turnCharacterPolicy(
+	input: Pick<RecallTurnInput, "roomId" | "messages" | "characterPolicy">,
+): CharacterRecallPolicy | undefined {
+	if (input.characterPolicy === false) return undefined;
+	const cutoff = conversationCutoff(input.roomId, input.messages);
+	return {
+		tokenBudget:
+			input.characterPolicy?.tokenBudget ?? CHAT_CHARACTER_MEMORY_TOKEN_BUDGET,
+		beforeMs: Math.min(input.characterPolicy?.beforeMs ?? cutoff, cutoff),
+	};
+}
+
+const characterBridges = new WeakSet<AfterstatePort>();
+async function requireCharacterBridge(port: AfterstatePort): Promise<void> {
+	if (characterBridges.has(port)) return;
+	const status = await port.call<{
+		protocol?: string;
+		capabilities?: string[];
+	}>("status", {});
+	if (
+		status.protocol !== AFTERSTATE_PROTOCOL ||
+		!Array.isArray(status.capabilities) ||
+		!status.capabilities?.includes("character_context/1")
+	)
+		throw new Error("character memory is unsupported by this bridge");
+	characterBridges.add(port);
+}
+
+/** Portable UTF-8 byte count; no browser or native text-encoder dependency. */
+function utf8Bytes(text: string): number {
+	const Encoder = (
+		globalThis as {
+			TextEncoder?: new () => { encode(value: string): Uint8Array };
+		}
+	).TextEncoder;
+	if (Encoder) return new Encoder().encode(text).byteLength;
+	// Hermes/custom isolated runtimes may omit this host global.
+	let bytes = 0;
+	for (const char of text) {
+		const point = char.codePointAt(0) ?? 0;
+		bytes += point <= 0x7f ? 1 : point <= 0x7ff ? 2 : point <= 0xffff ? 3 : 4;
+	}
+	return bytes;
 }
 
 async function revisionTokens(
@@ -471,7 +575,7 @@ export async function reconcileConversation(
 		roomCast(source, roomId),
 	]);
 	const anchors = new Map<string, string>();
-	const audiences = resolveMessageAudiences(messages, scenes, anchors);
+	const audiences = resolveMemoryAudiences(roomId, messages, scenes, anchors);
 	const messageReport = await run("message", messages, (m) =>
 		messageItem(
 			m,
@@ -480,7 +584,9 @@ export async function reconcileConversation(
 			cast.entities(m.content),
 		),
 	);
-	const noteReport = await run("note", memories, noteItem);
+	const noteReport = await run("note", memories, (m) =>
+		noteItem(m, noteAudience(m, scenes)),
+	);
 	const summaryReport = await run(
 		"summary",
 		summary ? [summary] : [],
@@ -615,7 +721,7 @@ export const CHAT_RECALL_TIMEOUT_MS = 400;
 export type ChatRecallLayer = "story" | "ooc" | "notes" | "character";
 
 export interface ChatRecalledPassage {
-	/** Grounded through a summary instead of a direct source match. */
+	/** Original evidence expanded through an episode or validated following turn, not a direct match. */
 	expanded?: boolean;
 	/** Record id (message, memory, episode or historical summary); not shown to the model. */
 	id: string;
@@ -647,7 +753,21 @@ export interface ChatRecallSnapshot {
 	passages: readonly ChatRecalledPassage[];
 }
 
+export interface CharacterRecallPolicy {
+	/** Native evidence-packet token bound; UTF-8 bytes, excludes provider framing. */
+	tokenBudget: number;
+	/** Explicit source cutoff. Unknown audience is excluded. */
+	beforeMs: number;
+}
+
 interface RecallChannels {
+	character_context?: {
+		text: string;
+		estimator: string;
+		items: BridgeEvidence[];
+		tokens: number;
+		token_budget: number;
+	};
 	evidence: BridgeEvidence[];
 	expanded?: BridgeEvidence[];
 	summaries?: BridgeEvidence[];
@@ -656,6 +776,8 @@ interface RecallChannels {
 interface BridgeEvidence {
 	revision?: string;
 	source_revisions?: Record<string, string>;
+	scene?: string;
+	witnesses?: string[];
 	layer: ChatRecallLayer;
 	record: "message" | "note" | "summary" | "digest";
 	id: string;
@@ -830,6 +952,8 @@ export function selectRecallForContext(
 }
 
 export interface RecallTurnInput {
+	/** @internal Default is automatic. False disables for diagnostics only. */
+	characterPolicy?: CharacterRecallPolicy | false;
 	roomId: string;
 	query: string;
 	/** Live messages of the room, oldest first (the validation snapshot). */
@@ -862,7 +986,7 @@ export interface RecallTurnInput {
 /**
  * How many following messages the best story hits bring along. A question names the scene but the
  * answer is said in the next lines, which share none of its words. Only the two best hits do, only
- * messages of the same scene (same audience) and only outside the history window.
+ * messages of the same scene and audience and only outside the history window.
  */
 export const CHAT_RECALL_CONTINUATION = 2;
 const CONTINUATION_ANCHORS = 2;
@@ -879,13 +1003,22 @@ async function searchChannels(
 	port: AfterstatePort,
 	input: Pick<
 		RecallTurnInput,
-		"roomId" | "query" | "digests" | "unscoped" | "aliases"
+		"roomId" | "query" | "digests" | "unscoped" | "aliases" | "characterPolicy"
 	>,
 	windowIds: readonly string[],
 	perspective: ChatPerspective,
 ): Promise<RecallChannels> {
-	return port.call<RecallChannels>("recall", {
+	if (input.characterPolicy) await requireCharacterBridge(port);
+	const result = await port.call<RecallChannels>("recall", {
 		conversation: input.roomId,
+		...(input.characterPolicy
+			? {
+					character_policy: {
+						token_budget: input.characterPolicy.tokenBudget,
+						before_ms: input.characterPolicy.beforeMs,
+					},
+				}
+			: {}),
 		channels: input.unscoped !== true,
 		query: input.query.slice(0, 4_000),
 		visible: {
@@ -901,6 +1034,81 @@ async function searchChannels(
 			? { aliases: input.aliases.map((g) => [...g]) }
 			: {}),
 	});
+	if (!input.characterPolicy) return result;
+	const packet = result.character_context;
+	if (
+		!packet ||
+		!Number.isSafeInteger(packet.tokens) ||
+		packet.tokens < 0 ||
+		packet.tokens > input.characterPolicy.tokenBudget ||
+		packet.token_budget !== input.characterPolicy.tokenBudget ||
+		!Array.isArray(packet.items) ||
+		packet.items.length > 24 ||
+		typeof packet.text !== "string" ||
+		packet.text.length > input.characterPolicy.tokenBudget ||
+		packet.estimator !== "utf8-byte-bound" ||
+		utf8Bytes(packet.text) !== packet.tokens
+	)
+		throw new Error("invalid character evidence packet");
+	const cutoff = input.characterPolicy.beforeMs;
+	const parsed = packet.text
+		? JSON.parse(packet.text)
+		: { type: "character_memory_evidence", items: [] };
+	const fingerprint = (e: BridgeEvidence) =>
+		JSON.stringify([
+			e.layer,
+			e.record,
+			e.id,
+			e.passage,
+			e.revision,
+			e.text,
+			e.at_ms,
+			e.author?.role,
+			e.author?.name,
+		]);
+	if (
+		parsed.type !== "character_memory_evidence" ||
+		!Array.isArray(parsed.items) ||
+		parsed.items.length !== packet.items.length ||
+		packet.items.some(
+			(e, i) =>
+				e.layer !== "story" ||
+				e.record !== "message" ||
+				!isBridgeId(e.id) ||
+				!Number.isSafeInteger(e.passage) ||
+				e.passage < 0 ||
+				typeof e.revision !== "string" ||
+				!e.revision ||
+				typeof e.text !== "string" ||
+				!Number.isSafeInteger(e.at_ms) ||
+				(e.at_ms ?? Infinity) > cutoff ||
+				!["user", "character", "narrator"].includes(e.author?.role ?? "") ||
+				fingerprint(e) !== fingerprint(parsed.items[i]),
+		)
+	)
+		throw new Error("invalid character evidence packet");
+
+	// Direct retrieval retains its established six-source allowance; scene/arc
+	// expansions share the existing two-source excerpt allowance.
+	const key = (e: BridgeEvidence) =>
+		`${e.layer}:${e.record}:${e.id}#${e.passage}`;
+	const selected = new Map(packet.items.map((e) => [key(e), e]));
+
+	const direct = result.evidence.flatMap((e) => {
+		const original = selected.get(key(e));
+		if (original) return [original];
+		return e.layer === "notes" &&
+			e.record === "note" &&
+			e.author.role === "user"
+			? [e]
+			: [];
+	});
+	const directKeys = new Set(direct.map(key));
+	return {
+		evidence: direct,
+		expanded: packet.items.filter((e) => !directKeys.has(key(e))),
+		summaries: result.summaries ?? [],
+	};
 }
 
 /**
@@ -913,6 +1121,8 @@ export async function recallForTurn(
 	candidates?: RecallChannels,
 ): Promise<ChatRecallSnapshot> {
 	if (!input.query.trim() || !isBridgeId(input.roomId)) return { passages: [] };
+	const characterPolicy = turnCharacterPolicy(input);
+	input = { ...input, characterPolicy: characterPolicy ?? false };
 	const live = new Map(input.messages.map((m) => [m.id, m]));
 	const windowIds =
 		input.windowIds ??
@@ -924,9 +1134,17 @@ export async function recallForTurn(
 	const windowSet = new Set(windowIds);
 	const notes = new Map(input.memories.map((m) => [m.id, m]));
 	const scenes = (input.scenes ?? []).filter((s) => s.deletedAt === null);
-	const perspective = recallPerspective(scenes);
+	const perspective: ChatPerspective = characterPolicy
+		? { ...recallPerspective(scenes), unknown: "exclude" }
+		: recallPerspective(scenes);
 	const admission = admissionContext(scenes);
-	const audiences = resolveMessageAudiences(input.messages, scenes);
+	const sceneAnchors = new Map<string, string>();
+	const audiences = resolveMemoryAudiences(
+		input.roomId,
+		input.messages,
+		scenes,
+		sceneAnchors,
+	);
 	const response =
 		candidates ?? (await searchChannels(port, input, windowIds, perspective));
 	const passages: ChatRecalledPassage[] = [];
@@ -936,6 +1154,14 @@ export async function recallForTurn(
 	for (const e of [...response.evidence, ...(response.expanded ?? [])]) {
 		if (e.record === "message") {
 			const message = live.get(e.id);
+			if (
+				characterPolicy &&
+				message &&
+				(millis(message.createdAt) !== e.at_ms ||
+					(e.at_ms ?? Infinity) > characterPolicy.beforeMs ||
+					/\booc\b|\(\(|out of character/iu.test(message.content))
+			)
+				continue;
 			if (
 				!message ||
 				windowSet.has(e.id) ||
@@ -1064,9 +1290,21 @@ export async function recallForTurn(
 		input,
 		audiences,
 		perspective,
+		sceneAnchors,
 	);
 	passages.splice(0, passages.length, ...withNext.passages);
 	termsOf.splice(0, termsOf.length, ...withNext.terms);
+	if (input.characterPolicy) {
+		const selected = packChannels(passages);
+		while (
+			selected.length &&
+			utf8Bytes(recallBlock({ passages: selected }) ?? "") >
+				input.characterPolicy.tokenBudget
+		)
+			selected.pop();
+		return { passages: selected };
+	}
+
 	if (input.supersession === false) return { passages: packChannels(passages) };
 	const marked = markSuperseded(
 		passages.map((p, i) => ({ passage: p, terms: termsOf[i] ?? [] })),
@@ -1118,6 +1356,7 @@ function addContinuation(
 	input: RecallTurnInput,
 	audiences: Map<string, ResolvedAudience>,
 	perspective: ChatPerspective,
+	sceneAnchors: ReadonlyMap<string, string>,
 ): { passages: ChatRecalledPassage[]; terms: string[][] } {
 	const n = input.continuation ?? CHAT_RECALL_CONTINUATION;
 	if (n <= 0) return { passages, terms: termsOf };
@@ -1149,6 +1388,13 @@ function addContinuation(
 			? (input.following.get(p.id) ?? [])
 			: input.messages.slice(at + 1, Math.min(at + n + 1, windowStart));
 		for (const m of next) {
+			if (
+				input.characterPolicy &&
+				(millis(m.createdAt) ?? Infinity) > input.characterPolicy.beforeMs
+			)
+				break;
+			// Equal witnesses do not make separate scenes one continuous event.
+			if (sceneAnchors.get(m.id) !== sceneAnchors.get(p.id)) break;
 			if (input.windowIds?.includes(m.id)) break;
 			if (!m || present.has(m.id)) continue;
 			const a = audiences.get(m.id) ?? { kind: "unknown" as const };
@@ -1163,6 +1409,9 @@ function addContinuation(
 			present.add(m.id);
 			out.push({
 				id: m.id,
+				// A supporting reply must not evict a directly retrieved later
+				// development from the six direct-source slots.
+				...(input.characterPolicy ? { expanded: true } : {}),
 				layer: "story",
 				kind: "message",
 				text,
@@ -1356,7 +1605,11 @@ export async function consolidatedForTurn(
 	const windowSet = new Set(windowIds);
 	const scenes = (input.scenes ?? []).filter((s) => s.deletedAt === null);
 	const perspective = recallPerspective(scenes);
-	const audiences = resolveMessageAudiences(input.messages, scenes);
+	const audiences = resolveMemoryAudiences(
+		input.roomId,
+		input.messages,
+		scenes,
+	);
 	const response = candidates
 		? { digests: candidates }
 		: await port.call<{ digests: BridgeDigest[] }>("digests", {
@@ -1488,7 +1741,11 @@ export async function factsForTurn(
 	const scenes = (input.scenes ?? []).filter((s) => s.deletedAt === null);
 	const perspective = recallPerspective(scenes);
 	const admission = admissionContext(scenes);
-	const audiences = resolveMessageAudiences(input.messages, scenes);
+	const audiences = resolveMemoryAudiences(
+		input.roomId,
+		input.messages,
+		scenes,
+	);
 	const messages = new Map(input.messages.map((m) => [m.id, m]));
 	const memories = new Map(input.memories.map((m) => [m.id, m]));
 	const response = candidates
@@ -1653,6 +1910,7 @@ export interface ConversationMemoryRuntime {
 
 export interface RecallRequest {
 	windowIds?: string[];
+	beforeMs?: number;
 	sceneRevision?: string;
 	query: string;
 	windowLength: number;
@@ -1762,15 +2020,27 @@ export async function verifyPromptSnapshot(
  * twice and a withheld one is never quoted at all). Web and mobile call this one function.
  */
 export function recallRequestFor(
-	history: readonly (Pick<ChatMessage, "role" | "content"> & { id?: string })[],
+	history: readonly (Pick<ChatMessage, "role" | "content"> & {
+		id?: string;
+		createdAt?: string;
+	})[],
 	memories: readonly ChatMemory[],
 	userInput?: string,
 	scope?: { scenes?: readonly ChatScene[] },
 ): RecallRequest {
 	const context = admissionContext(scope?.scenes);
 	const inBlock = memories.filter((m) => memoryAdmitted(m, context));
+	const historyTimes = history.map((m) =>
+		m.createdAt ? millis(m.createdAt) : undefined,
+	);
+	const validTimes = historyTimes.filter(
+		(time): time is number => time !== undefined && Number.isSafeInteger(time),
+	);
 	return {
 		query: recallQuery(history, userInput),
+		...(validTimes.length > 0 && validTimes.length === history.length
+			? { beforeMs: Math.max(...validTimes) }
+			: {}),
 		...(scope?.scenes ? { sceneRevision: sceneRevision(scope.scenes) } : {}),
 		windowLength: history.length,
 		...(history.every((m) => typeof m.id === "string")
@@ -1826,10 +2096,17 @@ async function prepareTurn(
 	roomId: string,
 	request: RecallRequest,
 	protectedRoom: boolean,
+	policyOverride?: CharacterRecallPolicy | false,
 ) {
+	// Protected assembly keeps its existing source-checked episode path.
+	let characterPolicy: CharacterRecallPolicy | undefined;
 	if (!isBridgeId(roomId)) throw new Error("invalid conversation");
+	if (!protectedRoom && policyOverride !== false && !source.listScenes)
+		throw new Error(
+			"authoritative scene lookup is required for default character memory",
+		);
 	const scope = await recallScope(source, roomId);
-	const perspective = recallPerspective(scope.scenes);
+	let perspective = recallPerspective(scope.scenes);
 	const all =
 		!source.getMessagesByIds || !request.windowIds
 			? await source.listAllMessages(roomId)
@@ -1839,10 +2116,31 @@ async function prepareTurn(
 		(all ?? [])
 			.slice(Math.max(0, (all?.length ?? 0) - request.windowLength))
 			.map((m) => m.id);
+	if (!protectedRoom && policyOverride !== false) {
+		const rows =
+			all ??
+			(windowIds.length
+				? await source.getMessagesByIds?.(roomId, windowIds)
+				: await source.listRecentMessages?.(roomId, { limit: 1 })) ??
+			[];
+		const relevant = windowIds.length
+			? rows.filter((m) => windowIds.includes(m.id))
+			: rows;
+		const cutoff = Math.min(
+			request.beforeMs ?? Infinity,
+			conversationCutoff(roomId, relevant),
+		);
+		characterPolicy = {
+			tokenBudget:
+				policyOverride?.tokenBudget ?? CHAT_CHARACTER_MEMORY_TOKEN_BUDGET,
+			beforeMs: Math.min(policyOverride?.beforeMs ?? cutoff, cutoff),
+		};
+		perspective = { ...perspective, unknown: "exclude" };
+	}
 	const [channels, factResponse] = await Promise.all([
 		searchChannels(
 			port,
-			{ roomId, query: request.query, aliases: scope.aliases },
+			{ roomId, query: request.query, aliases: scope.aliases, characterPolicy },
 			windowIds,
 			perspective,
 		),
@@ -1921,7 +2219,12 @@ async function prepareTurn(
 		(m) => m.roomId === roomId && m.deletedAt === null,
 	);
 	const sceneAnchors = new Map<string, string>();
-	const audiences = resolveMessageAudiences(messages, scenes, sceneAnchors);
+	const audiences = resolveMemoryAudiences(
+		roomId,
+		messages,
+		scenes,
+		sceneAnchors,
+	);
 	const requestedIds = new Set([...raw, ...expanded].map((e) => e.id));
 	for (const source of [...summaries, ...facts])
 		for (const id of source.sources ?? []) requestedIds.add(id);
@@ -1936,7 +2239,9 @@ async function prepareTurn(
 					scope.entities(m.content),
 				),
 			),
-		...liveMemories.filter((m) => requestedIds.has(m.id)).map(noteItem),
+		...liveMemories
+			.filter((m) => requestedIds.has(m.id))
+			.map((m) => noteItem(m, noteAudience(m, scenes))),
 		summary && requestedIds.has(summary.id) ? summaryItem(summary) : null,
 	].filter((i): i is BridgeItem => i !== null);
 	const versions = new Map<string, string>();
@@ -1952,9 +2257,20 @@ async function prepareTurn(
 	const fresh = (kind: string, id: string, token: string | undefined) =>
 		!!token && versions.get(`${kind}:${id}`) === token;
 	const validRaw = (e: BridgeEvidence) => fresh(e.record, e.id, e.revision);
+	const liveSource = new Map(messages.map((m) => [m.id, m]));
 	const validSummary = (d: BridgeEvidence) =>
 		!!d.sources?.length &&
-		d.sources.every((id) => fresh("message", id, d.source_revisions?.[id]));
+		d.sources.every((id) => {
+			const source = liveSource.get(id);
+			return (
+				fresh("message", id, d.source_revisions?.[id]) &&
+				(!characterPolicy ||
+					(!!source &&
+						(millis(source.createdAt) ?? Infinity) <=
+							characterPolicy.beforeMs &&
+						!/\booc\b|\(\(|out of character/iu.test(source.content)))
+			);
+		});
 	const shared = {
 		roomId,
 		messages,
@@ -1963,13 +2279,14 @@ async function prepareTurn(
 		memories: liveMemories,
 		scenes,
 	};
-	const recall = protectedRoom
+	let recall = protectedRoom
 		? null
 		: await recallForTurn(
 				port,
 				{
 					...shared,
 					query: request.query,
+					characterPolicy: characterPolicy ?? false,
 					memoryIdsInContext: request.memoryIdsInContext,
 					aliases: scope.aliases,
 					summary,
@@ -1980,7 +2297,7 @@ async function prepareTurn(
 					expanded: expanded.filter(validRaw),
 				},
 			);
-	const consolidated = await consolidatedForTurn(
+	let consolidated = await consolidatedForTurn(
 		port,
 		shared,
 		summaries
@@ -1988,23 +2305,59 @@ async function prepareTurn(
 			.map((d) => ({ ...d, sources: d.sources ?? [] })),
 		recall?.passages,
 	);
-	const selectedFacts = factResponse
+	const sourceTimes = new Map(messages.map((m) => [m.id, millis(m.createdAt)]));
+	let selectedFacts = factResponse
 		? await factsForTurn(
 				port,
 				shared,
 				facts.filter(
 					(f) =>
 						f.sources.length > 0 &&
-						f.sources.every((id) =>
-							fresh(
-								f.layer === "notes" ? "note" : "message",
-								id,
-								f.source_revisions?.[id],
-							),
+						f.sources.every(
+							(id) =>
+								(f.layer !== "story" ||
+									!characterPolicy ||
+									(sourceTimes.get(id) ?? Infinity) <=
+										characterPolicy.beforeMs) &&
+								fresh(
+									f.layer === "notes" ? "note" : "message",
+									id,
+									f.source_revisions?.[id],
+								),
 						),
 				),
 			)
 		: null;
+
+	if (characterPolicy) {
+		const episodes = [...consolidated.episodes];
+		let facts = [...(selectedFacts?.facts ?? [])];
+		const recalled = [...(recall?.passages ?? [])];
+		const used = () => {
+			const text = [
+				recallBlock({ passages: recalled }) ?? "",
+				consolidatedText({ episodes }),
+				factsText({ facts }),
+			]
+				.filter(Boolean)
+				.join("\n\n");
+			return text ? utf8Bytes(text) + 256 : 0; // enclosing assembly labels
+		};
+		while (used() > characterPolicy.tokenBudget && episodes.length)
+			episodes.pop();
+		while (used() > characterPolicy.tokenBudget && facts.length) {
+			const last = facts.at(-1);
+			if (!last) break;
+			facts = facts.filter(
+				(f) => f.subject !== last.subject || f.predicate !== last.predicate,
+			);
+		}
+		while (used() > characterPolicy.tokenBudget && recalled.length)
+			recalled.pop();
+		consolidated = { episodes };
+		if (selectedFacts) selectedFacts = { facts };
+		if (recall) recall = { passages: recalled };
+	}
 	const citedIds = new Set(
 		recall?.passages.filter((p) => p.kind === "message").map((p) => p.id),
 	);
@@ -2064,7 +2417,10 @@ export function createLongTermLoader(
 	runtime: ConversationMemoryRuntime | null | undefined,
 	source: ConversationMemorySource,
 	roomId: string,
-	options: { protectedRoom?: boolean } = {},
+	options: {
+		protectedRoom?: boolean;
+		characterPolicy?: CharacterRecallPolicy | false;
+	} = {},
 ): (request: RecallRequest) => Promise<ChatLongTermSnapshot> {
 	const port = runtime?.port ?? null;
 	if (!runtime || !port)
@@ -2091,6 +2447,7 @@ export function createLongTermLoader(
 				roomId,
 				request,
 				!!options.protectedRoom,
+				options.characterPolicy,
 			);
 			const result = await withTimeout(work, CHAT_RECALL_TIMEOUT_MS);
 			if (result === "timeout") {
@@ -2164,12 +2521,19 @@ export function createMaintainer(
 			// ignore
 		}
 	};
-	const runOnce = async (): Promise<void> => {
+	const runOnce = async (): Promise<boolean> => {
+		let resume = false;
 		const started = now();
 		let complete = false;
 		try {
 			const report = await reconcileConversation(port, source, roomId);
 			complete = report.complete;
+			resume =
+				!report.complete &&
+				report.messages.ingested +
+					report.notes.ingested +
+					report.summaries.ingested >
+					0;
 			const alreadyConsolidated =
 				states.get(roomId)?.complete === true &&
 				complete &&
@@ -2187,15 +2551,18 @@ export function createMaintainer(
 					report.notes.erasedPassages +
 					report.summaries.erasedPassages,
 			});
-			if (alreadyConsolidated) return;
+			if (alreadyConsolidated) return false;
 		} catch {
+			resume = false;
 			observe({ kind: "index-failed", ms: now() - started });
-			return;
+			states.set(roomId, { complete: false });
+			return false;
 		}
 		const consolidating = now();
 		try {
 			const c = await consolidateConversation(port, roomId);
 			complete = complete && c.complete;
+			resume ||= !c.complete && c.written + c.retracted > 0;
 			observe({
 				kind: "consolidate",
 				ms: now() - consolidating,
@@ -2204,10 +2571,12 @@ export function createMaintainer(
 			});
 		} catch {
 			complete = false;
+			resume = false;
 			observe({ kind: "consolidate-failed", ms: now() - consolidating });
 		} finally {
 			states.set(roomId, { complete });
 		}
+		return resume;
 	};
 	return () => {
 		const running = table.get(roomId);
@@ -2216,12 +2585,13 @@ export function createMaintainer(
 			return;
 		}
 		const state = { again: false };
+		states.set(roomId, { complete: false });
 		table.set(roomId, state);
 		void (async () => {
 			try {
 				do {
 					state.again = false;
-					await runOnce();
+					if (await runOnce()) state.again = true;
 				} while (state.again);
 			} finally {
 				table.delete(roomId);
@@ -2254,12 +2624,20 @@ export function conversationMemoryHooks(
 	runtime: ConversationMemoryRuntime | null | undefined,
 	source: ConversationMemorySource,
 	roomId: string,
-	options: { protectedRoom?: boolean } = {},
+	options: {
+		protectedRoom?: boolean;
+		characterPolicy?: CharacterRecallPolicy | false;
+	} = {},
 ): {
 	loadLongTermMemory: (request: RecallRequest) => Promise<ChatLongTermSnapshot>;
 	maintain?: () => void;
 } {
 	const maintain = createMaintainer(runtime, source, roomId);
+	const port = runtime?.port;
+	if (maintain && port) {
+		roomsOf(indexState, port).set(roomId, { complete: false });
+		void Promise.resolve().then(maintain);
+	}
 	return {
 		loadLongTermMemory: createLongTermLoader(runtime, source, roomId, options),
 		...(maintain ? { maintain } : {}),

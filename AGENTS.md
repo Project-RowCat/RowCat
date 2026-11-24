@@ -756,10 +756,11 @@ turn start → loadLongTermMemory(recallRequestFor(...)) → recall passages + e
 ```
 
 - **One wiring for both apps:** `conversationMemoryHooks(runtime, store, roomId, {protectedRoom})`. Web gets
-  `runtime` from `useMemoryRuntime` (desktop window's `window.rowcatAfterstate`), mobile from
+  `runtime` from `useMemoryRuntime` (desktop preload or a per-member browser WASM worker), mobile from
   `openMemoryRuntime` (native module). `null` runtime = this device has no engine: the loader answers
   `unavailable` with nothing, `maintain` is absent, and **nothing else stands in**. Never read the stored V2
   summary on the turn path.
+- **Character retrieval is default-on** in the shared adapter. Callers pass only `{protectedRoom}`; it derives the source-time cutoff, 8,192-byte historical budget and fail-closed scene perspective. `characterPolicy: false` is internal diagnostics only. Source-grounded episode excerpts and current user notes remain; automatic narrative annotation is not implemented. See `docs/chat/MEMORY.md` §15.
 - **The retired switches stay retired**: web `localStorage` `rowcat.memoryBackend` is removed on load, mobile
   `EXPO_PUBLIC_MEMORY_BACKEND` is not read. `apps/mobile/src/lib/boundaries.test.ts` fails if a product file
   names a removed V2 symbol or the switch.

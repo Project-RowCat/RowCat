@@ -466,7 +466,7 @@ describe.skipIf(!hasAfterstateBridge())(
 			}
 		});
 
-		it("in a room without scenes the historical summary is recalled, attributed as model-written", async () => {
+		it("default character retrieval withholds historical model summaries", async () => {
 			const engine = await spawnAfterstate();
 			try {
 				const messages = corpus();
@@ -487,8 +487,7 @@ describe.skipIf(!hasAfterstateBridge())(
 					"What happened to the copper lantern?",
 				);
 				const hit = r.passages.find((p) => p.kind === "summary");
-				expect(hit?.text).toContain("copper lantern");
-				expect(hit?.automatic).toBe(true);
+				expect(hit).toBeUndefined();
 			} finally {
 				await engine.close();
 			}
@@ -655,6 +654,7 @@ describe.skipIf(!hasAfterstateBridge())(
 				const ask = (query: string) =>
 					recallForTurn(engine, {
 						roomId: ROOM,
+						characterPolicy: false, // Diagnostic access verifies legacy retirement, never the default.
 						query,
 						messages,
 						windowLength: chatHistoryWindow(messages).length,

@@ -928,7 +928,9 @@ describe.skipIf(!hasAfterstateBridge())(
 							...recallRequestFor(messages.slice(-8), [], query),
 							messages,
 							scenes: await p.chat.listScenes(room.id),
-							...(unscoped ? { unscoped: true } : {}),
+							...(unscoped
+								? { unscoped: true, characterPolicy: false as const }
+								: {}),
 						})
 					).passages.map((x) => ({
 						id: x.id,
