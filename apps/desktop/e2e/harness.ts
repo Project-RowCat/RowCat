@@ -12,6 +12,7 @@
  * none, or an impostor — which is how the fallback scenarios swap the engine without touching
  * `.stage/`.
  */
+import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
 import {
 	chmodSync,
@@ -20,6 +21,7 @@ import {
 	existsSync,
 	mkdirSync,
 	readFileSync,
+	rmSync,
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
@@ -29,13 +31,11 @@ import { _electron, type ElectronApplication, type Page } from "@playwright/test
 
 export const DESKTOP = resolve(fileURLToPath(import.meta.url), "../..");
 export const STAGE = join(DESKTOP, ".stage", "resources");
-export const ELECTRON = join(
-	DESKTOP,
-	"node_modules/electron/dist/Electron.app/Contents/MacOS/Electron",
-);
+export const ELECTRON = createRequire(import.meta.url)("electron") as string;
 
 export type BridgeKind =
 	| { kind: "real"; path: string }
+	| { kind: "wasm"; path: string }
 	| { kind: "missing" }
 	| { kind: "script"; source: string; executable?: boolean };
 
@@ -55,7 +55,7 @@ export function prepareRun(root: string, bridge: BridgeKind): Run {
 	cpSync(join(DESKTOP, "e2e", "harness"), app, { recursive: true });
 	for (const name of ["api", "web", "console"]) {
 		const link = join(resources, name);
-		if (!existsSync(link)) symlinkSync(join(STAGE, name), link);
+		if (!existsSync(link)) symlinkSync(join(STAGE, name), link, process.platform === "win32" ? "junction" : "dir");
 	}
 	setBridge({ root }, bridge);
 	const appData = join(root, "appData");
@@ -65,7 +65,7 @@ export function prepareRun(root: string, bridge: BridgeKind): Run {
 		root,
 		appData,
 		userData,
-		storeDir: join(userData, "afterstate"),
+		storeDir: join(userData, "afterstate-wasm"),
 		bridgePath: join(resources, "afterstate", "afterstate-bridge"),
 	};
 }
@@ -74,8 +74,9 @@ export function prepareRun(root: string, bridge: BridgeKind): Run {
 export function setBridge(run: Pick<Run, "root">, bridge: BridgeKind): void {
 	const dir = join(run.root, "app", ".stage", "resources", "afterstate");
 	const target = join(dir, "afterstate-bridge");
-	execFileSync("rm", ["-rf", dir]);
+	rmSync(dir, { recursive: true, force: true });
 	if (bridge.kind === "missing") return;
+	if (bridge.kind === "wasm") { cpSync(bridge.path, dir, { recursive: true }); return; }
 	mkdirSync(dir, { recursive: true });
 	if (bridge.kind === "real") copyFileSync(bridge.path, target);
 	else writeFileSync(target, bridge.source);

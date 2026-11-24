@@ -10,7 +10,12 @@ import { defineConfig } from "tsdown";
  */
 export default defineConfig([
 	{
-		entry: ["src/main.ts"],
+		entry: [
+			"src/main.ts",
+			"src/afterstate-worker.ts",
+			"src/afterstate-smoke.ts",
+			"src/stack-smoke.ts",
+		],
 		outDir: "dist",
 		format: "esm",
 		platform: "node",

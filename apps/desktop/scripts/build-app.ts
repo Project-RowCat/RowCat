@@ -31,6 +31,8 @@ import {
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { validateAfterstateArtifact, AFTERSTATE_FILES } from "../src/afterstate-artifact.ts";
+import { auditPackage } from "./package-audit.ts";
 import { APP_BUNDLE_ID, APP_NAME } from "@rowcat/domain";
 import { build, type Configuration } from "electron-builder";
 import sharp from "sharp";
@@ -66,6 +68,28 @@ if (version !== undefined && !/^\d+\.\d+\.\d+$/.test(version)) {
  */
 const stage = join(desktop, mode === "stage" ? ".stage" : "out/.stage");
 const resources = join(stage, "resources");
+const internal = process.env.ROWCAT_DESKTOP_INTERNAL === "1";
+const afterstateDir = resolve(process.env.AFTERSTATE_WASM_DIR ?? join(desktop, ".afterstate-wasm"));
+const afterstateManifest = validateAfterstateArtifact(afterstateDir);
+const signedMac = process.platform === "darwin" && process.env.ROWCAT_MAC_SIGN === "1";
+if (mode === "package" && signedMac) {
+    if (!process.env.CSC_LINK && !process.env.CSC_NAME)
+        throw new Error("macOS signing requires a maintainer's Developer ID identity");
+    const apiKey = process.env.APPLE_API_KEY && process.env.APPLE_API_KEY_ID && process.env.APPLE_API_ISSUER;
+    const appleId = process.env.APPLE_ID && process.env.APPLE_APP_SPECIFIC_PASSWORD && process.env.APPLE_TEAM_ID;
+    if (!apiKey && !appleId) throw new Error("macOS notarization credentials are required");
+}
+
+const afterstatePin = JSON.parse(readFileSync(join(desktop, "afterstate-source.json"), "utf8"));
+if (afterstatePin.revision !== afterstateManifest.source.revision || afterstatePin.sha256 !== afterstateManifest.source.sha256)
+    throw new Error("afterstate source does not match the reviewed pin");
+const publishedPackage = afterstatePin.distribution?.name === "afterstate-wasm" &&
+    afterstatePin.distribution.version === afterstateManifest.version &&
+    /^sha512-[A-Za-z0-9+/]+={0,2}$/.test(afterstatePin.distribution.integrity) &&
+    AFTERSTATE_FILES.every(file => afterstatePin.files?.[file] === afterstateManifest.files[file]);
+if (mode === "package" && !internal && !publishedPackage && (afterstatePin.dirty || afterstateManifest.source.dirty))
+    throw new Error("afterstate source is uncommitted: public packaging is blocked; ROWCAT_DESKTOP_INTERNAL=1 is only for internal testing");
+
 
 const required = {
 	"apps/api/dist/index.mjs": "pnpm --filter @rowcat/api build",
@@ -101,7 +125,7 @@ rmSync(stage, { recursive: true, force: true });
  */
 const api = join(resources, "api");
 const apiDeploy = join(stage, "api-deploy");
-run("pnpm", ["--filter", "@rowcat/api", "deploy", "--prod", "--legacy", "--config.node-linker=hoisted", apiDeploy]);
+run("pnpm", ["--filter", "@rowcat/api", "deploy", "--prod", "--config.inject-workspace-packages=true", "--frozen-lockfile", "--node-linker=hoisted", apiDeploy]);
 cpSync(join(apiDeploy, "node_modules"), join(api, "node_modules"), {
 	recursive: true,
 	verbatimSymlinks: true,
@@ -122,30 +146,17 @@ cpSync(join(repo, "apps/api/drizzle"), join(api, "drizzle"), { recursive: true }
 cpSync(join(repo, "apps/web/.output"), join(resources, "web"), { recursive: true });
 cpSync(join(repo, "apps/admin/dist"), join(resources, "console"), { recursive: true });
 
-/**
- * The conversation-memory engine (`src/afterstate-host.ts`): the `afterstate-bridge` executable, a
- * release build from the afterstate repository (`AFTERSTATE_BRIDGE_BIN`, default a sibling
- * checkout's `target/release`). Optional: without it the app runs memory V2 only, and says so here.
- */
-{
-	const exe = process.platform === "win32" ? "afterstate-bridge.exe" : "afterstate-bridge";
-	const bridge =
-		process.env.AFTERSTATE_BRIDGE_BIN ??
-		join(repo, "..", "..", "rust", "afterstate", "target", "release", exe);
-	if (existsSync(bridge)) {
-		mkdirSync(join(resources, "afterstate"), { recursive: true });
-		cpSync(bridge, join(resources, "afterstate", exe));
-	} else {
-		console.warn(`afterstate engine not found at ${bridge}: memory runs on V2 only`);
-	}
-}
+// Only allowlisted bindings, WASM, license and provenance reach runtime resources.
+mkdirSync(join(resources, "afterstate"), { recursive: true });
+for (const file of [...AFTERSTATE_FILES, "manifest.json"])
+    cpSync(join(afterstateDir, file), join(resources, "afterstate", file));
 
 // The main process and the one runtime dependency it leaves external.
 run("pnpm", ["exec", "tsdown"], desktop);
 // The same allowlist as the API: this folder can hold a developer's `.desktop-data` database.
 const app = join(stage, "app");
 const appDeploy = join(stage, "app-deploy");
-run("pnpm", ["--filter", "@rowcat/desktop", "deploy", "--prod", "--legacy", "--config.node-linker=hoisted", appDeploy]);
+run("pnpm", ["--filter", "@rowcat/desktop", "deploy", "--prod", "--config.inject-workspace-packages=true", "--frozen-lockfile", "--node-linker=hoisted", appDeploy]);
 cpSync(join(appDeploy, "node_modules"), join(app, "node_modules"), {
 	recursive: true,
 	verbatimSymlinks: true,
@@ -162,6 +173,10 @@ trimPostgres(
 			.map((file) => readFileSync(join(repo, "apps/api/drizzle", file), "utf8")),
 	),
 );
+for (const file of ["LICENSE", "NOTICE"])
+    cpSync(join(repo, file), join(app, file));
+auditPackage(resources);
+auditPackage(app);
 const icons = await writeIcons(join(stage, "icons"));
 
 /**
@@ -282,7 +297,7 @@ if (mode === "stage") {
  * GitHub Actions there is none, so a locally packaged installer gets no `app-update.yml` and does not
  * update itself (`src/update-policy.ts`).
  */
-const feed = updateFeedFrom(process.env.GITHUB_REPOSITORY);
+const feed = internal ? null : updateFeedFrom(process.env.GITHUB_REPOSITORY);
 console.log(
 	feed
 		? `update feed: github.com/${feed.owner}/${feed.repo} releases`
@@ -291,6 +306,7 @@ console.log(
 
 const config: Configuration = {
 	appId: `${APP_BUNDLE_ID}.desktop`,
+	forceCodeSigning: signedMac,
 	productName: APP_NAME,
 	...(version ? { extraMetadata: { version } } : {}),
 	directories: { app, output: join(desktop, "out") },
@@ -315,21 +331,44 @@ const config: Configuration = {
 			context.electronPlatformName === "darwin"
 				? join(context.appOutDir, `${APP_NAME}.app`, "Contents", "Resources")
 				: join(context.appOutDir, "resources");
-		for (const name of ["api", "web", "console", "afterstate"].filter((n) =>
-			existsSync(join(resources, n)),
-		))
+		for (const name of ["api", "web", "console", "afterstate"])
 			cpSync(join(resources, name), join(target, name), {
 				recursive: true,
 				verbatimSymlinks: true,
 			});
+        validateAfterstateArtifact(join(target, "afterstate"));
+        const platform = context.electronPlatformName === "win32" ? "windows" : context.electronPlatformName;
+        const pgBin = join(target, "app", "node_modules", "@embedded-postgres", `${platform}-${process.arch}`, "native", "bin");
+        for (const name of ["postgres", "initdb", "pg_ctl"]) {
+            if (!existsSync(join(pgBin, `${name}${platform === "windows" ? ".exe" : ""}`)))
+                throw new Error(`packaged PostgreSQL runtime missing: ${name}`);
+        }
+
+        auditPackage(target);
+        const executable = context.electronPlatformName === "darwin"
+            ? join(context.appOutDir, `${APP_NAME}.app`, "Contents", "MacOS", APP_NAME)
+            : join(context.appOutDir, context.electronPlatformName === "win32" ? `${APP_NAME}.exe` : APP_NAME.toLowerCase());
+        // Run the packaged executable and bundled worker. Missing JS chunks, invalid
+        // bindings and WASM initialization failures stop before installer creation.
+        execFileSync(executable, [join(target, "app", "dist", "afterstate-smoke.mjs"), join(target, "afterstate")], {
+            env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }, stdio: "inherit", timeout: 180_000,
+        });
+        execFileSync(executable, [join(target, "app", "dist", "stack-smoke.mjs"), target], {
+            env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }, stdio: "inherit", timeout: 180_000,
+        });
 	},
 	mac: {
 		target: ["dmg"],
 		category: "public.app-category.entertainment",
-		identity: null,
+        ...(signedMac ? {
+            hardenedRuntime: true,
+            entitlements: join(desktop, "scripts", "entitlements.mac.plist"),
+            entitlementsInherit: join(desktop, "scripts", "entitlements.mac.plist"),
+            notarize: true,
+        } : { identity: null }),
 		icon: icons.mac,
 	},
-	win: { target: ["nsis"], icon: icons.other },
+	win: { target: [{ target: "nsis", arch: ["x64"] }], icon: icons.other },
 	nsis: {
 		oneClick: true,
 		perMachine: false,

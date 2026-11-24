@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld("rowcatAfterstate", {
 	protocol: "afterstate-bridge/1",
 	call: (memberKey: string, op: string, params: object): Promise<unknown> =>
 		ipcRenderer.invoke("afterstate:call", memberKey, op, params),
+	release: (memberKey: string): Promise<void> =>
+		ipcRenderer.invoke("afterstate:release", memberKey),
 	/** Deletes the member's index files (account deletion, local reset). */
 	destroy: (memberKey: string): Promise<void> =>
 		ipcRenderer.invoke("afterstate:destroy", memberKey),

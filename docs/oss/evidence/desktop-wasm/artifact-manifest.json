@@ -1,0 +1,19 @@
+{
+  "format": "rowcat-afterstate-artifact/1",
+  "protocol": "afterstate-bridge/1",
+  "snapshot": "afterstate-portable/1",
+  "version": "0.1.0-rc.1",
+  "source": {
+    "repository": "https://github.com/astra-void/afterstate",
+    "revision": "c0cb19dbc8855cdc25c37657fa1a704e19afb463",
+    "sha256": "a77cbf391fc1dfa9b899ee2ef904629aa0191775b140e16b944fef34822c302f",
+    "dirty": true
+  },
+  "files": {
+    "afterstate_wasm.js": "20d9c4ea1d00f1b25d5ecdf5bd726dcc220be20a99a77cfb528758ad966764bc",
+    "afterstate_wasm_bg.wasm": "d6d02153ab3744d28d9ed407b94b574ff3e1a7c7b1ed683d7c23f6fd7988c024",
+    "LICENSE": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+    "package.json": "feff7f75bbea58726e81789981d80ec06c688326364de379b4c7bf62396ddaee",
+    "THIRD-PARTY-NOTICES.txt": "e07aac7bd7079f35ba56f1c415e91a039c7f177e5e8ef3779c6cb1b76aa19432"
+  }
+}

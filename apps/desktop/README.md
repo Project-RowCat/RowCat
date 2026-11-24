@@ -85,15 +85,38 @@ pnpm --filter @rowcat/desktop package   # 이 OS용 설치 파일 → apps/deskt
 설치 파일은 **그 OS에서** 만든다 — 조립할 때 이 OS의 네이티브 바이너리(sharp, Postgres)만 들어간다.
 `package` 뒤에 버전(`2026.10.31`)을 주면 설치 파일이 그 번호를 단다. 없으면 `package.json`의 자리표시자 `0.0.0`이다.
 
-대화 기억 색인(afterstate)을 실제 창에서 끝까지 확인하는 여정은 따로 돈다(`e2e/afterstate-window.e2e.ts`, macOS).
-조립한 앱을 Playwright로 열고(앱 폴더는 임시 폴더로 옮긴다 — 개발용 「RowCat Dev」를 건드리지 않는다), 합성 계정과 이
-컴퓨터의 가짜 OpenAI 호환 서버(요청 본문을 모두 기록한다)로 회상·수정·방 삭제·재시작·legacy 전환·엔진 강제 종료·엔진
-없음·가짜 엔진을 지난다. 실제 공급자는 부르지 않는다.
+대화 기억은 **기본으로 WASM**을 쓴다. Renderer → 인증된 IPC → Main → 회원별 Node Worker
+Thread → Rust afterstate다. 네이티브 실행 파일·Rust·Cargo·wasm-pack은 설치된 앱에 필요 없다.
+
+빌드 전에 **명시적인** afterstate 소스 경로에서 만든 아티팩트를 준비한다. 형제 저장소를 추측하지 않는다.
 
 ```bash
-AFTERSTATE_BRIDGE_BIN=<afterstate>/target/release/afterstate-bridge pnpm --filter @rowcat/desktop stage
-AFTERSTATE_BRIDGE_BIN=… E2E_EVIDENCE_DIR=<증거 폴더> pnpm --filter @rowcat/desktop exec tsx e2e/afterstate-window.e2e.ts
+# afterstate 저장소에서 (배포가 아니라 로컬 빌드)
+scripts/build-wasm.sh nodejs
+node scripts/desktop-artifact.mjs
+
+# RowCat 저장소에서; 처음 pin을 바꾸기 전에 source/라이선스를 검토한다.
+pnpm --filter @rowcat/desktop prepare:afterstate /absolute/afterstate/target/wasm/desktop --lock
+pnpm --filter @rowcat/desktop stage
+pnpm --filter @rowcat/desktop exec tsx e2e/afterstate-window.e2e.ts
 ```
+
+`afterstate-source.json`의 clean commit/tree와 다른 아티팩트, 누락·손상·다른 프로토콜은 빌드를
+멈춘다. `dirty: true`인 현재 개발 소스는 공개 설치 파일을 만들 수 없다. 명시적인 내부 시험만
+`ROWCAT_DESKTOP_INTERNAL=1 pnpm --filter @rowcat/desktop package`로 만든다. 이 파일은 업데이트
+피드를 갖지 않고 공개용이 아니다. 패키징은 결과물 안의 Electron과 Worker로 엔진을 실제 초기화한다.
+
+색인은 `<userData>/afterstate-wasm`의 AES-GCM 암호문이다. 키는 OS의 `safeStorage`로 감싸고,
+E2EE 동기화 키는 Main/Worker에 넘기지 않는다. 재시작 때 판본·체크섬·SQLite 구조를 확인하고,
+원본 manifest를 받은 뒤에만 회상을 허용한다. 본문과 현재 관객은 기존 대화 어댑터가 다시 검사한다.
+중단·손상·비호환 색인은 원본 IndexedDB에서 배치 단위로 복구한다. 로그아웃은 Worker를 닫고,
+계정 삭제·기기 초기화는 해당 암호문과 키를 지운다. 옛 네이티브의 회원별 **파생 SQLite 파일만**
+은퇴시키며 대화·초안·V2 역사 기록은 지우거나 마이그레이션하지 않는다.
+
+실제 창 여정은 합성 계정과 로컬 가짜 OpenAI 서버만 사용한다. 설치된 Windows의 시작·업그레이드는
+CI 전용 `e2e/installed-smoke.ts`가 별도로 확인한다. 검증 결과와 남은 공개 차단 항목은
+[`DESKTOP-WASM-READINESS.md`](../../docs/oss/DESKTOP-WASM-READINESS.md), macOS 서명 절차는
+[`DESKTOP-SIGNING.md`](../../docs/oss/DESKTOP-SIGNING.md)에 기록한다.
 
 ## 릴리스 — Windows 설치 파일 (`.github/workflows/desktop-release.yml`)
 

@@ -6,10 +6,12 @@
   "scripts": {
     "dev": "tsx scripts/build-app.ts stage && electron .",
     "stage": "tsx scripts/build-app.ts stage",
+    "prepare:afterstate": "tsx scripts/prepare-afterstate.ts",
+    "fetch:afterstate": "tsx scripts/fetch-afterstate.ts",
     "package": "tsx scripts/build-app.ts package",
     "stack": "tsx scripts/run-stack.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "tsdown && vitest run"
   },
   "dependencies": {
     "electron-updater": "6.8.10",

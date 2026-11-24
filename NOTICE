@@ -128,3 +128,13 @@ Narration pack bodies (not included)
   table; the narration vocabulary and rules in packages/chat remain, and do
   nothing until a build adds bodies it has the right to use
   (docs/chat/NARRATION.md).
+
+
+Desktop afterstate WASM
+  Source: https://github.com/astra-void/afterstate
+  License: Apache-2.0 (bundled resources/afterstate/LICENSE)
+  The production artifact carries its pinned source revision/tree and SHA-256
+  hashes in resources/afterstate/manifest.json. Bundled Rust/SQLite dependency
+  texts and copyright notices are in
+  resources/afterstate/THIRD-PARTY-NOTICES.txt. The memory index is derived user
+  data and is never part of the distributed artifact.

@@ -1,0 +1,124 @@
+{
+  "passed": 22,
+  "failed": 0,
+  "checks": [
+    {
+      "phase": "startup",
+      "name": "first launch initializes Postgres/API/web",
+      "ok": true,
+      "detail": {
+        "ms": 3966
+      }
+    },
+    {
+      "phase": "startup",
+      "name": "preload exposes the protocol",
+      "ok": true
+    },
+    {
+      "phase": "startup",
+      "name": "fixture story seeded into the app's own Postgres",
+      "ok": true
+    },
+    {
+      "phase": "startup",
+      "name": "sign-up a (synthetic account on the local stack)",
+      "ok": true,
+      "detail": {
+        "up": 200,
+        "me": 200,
+        "email": "desktop-a-mwrzbs8s@rowcat.test"
+      }
+    },
+    {
+      "phase": "startup",
+      "name": "mock provider connected (GET /v1/models probe reached the mock)",
+      "ok": true
+    },
+    {
+      "phase": "memory",
+      "name": "new conversation generates using local mock",
+      "ok": true
+    },
+    {
+      "phase": "memory",
+      "name": "old event recalled automatically beyond the recent window",
+      "ok": true
+    },
+    {
+      "phase": "memory",
+      "name": "no native afterstate executable process",
+      "ok": true
+    },
+    {
+      "phase": "memory",
+      "name": "only ciphertext/key files persist",
+      "ok": true
+    },
+    {
+      "phase": "memory",
+      "name": "private message text absent from derived files",
+      "ok": true
+    },
+    {
+      "phase": "memory",
+      "name": "authenticated member boundary rejects another member",
+      "ok": true
+    },
+    {
+      "phase": "edit",
+      "name": "assistant reply edited in place",
+      "ok": true
+    },
+    {
+      "phase": "edit",
+      "name": "edited original is absent from engine recall",
+      "ok": true
+    },
+    {
+      "phase": "api-recovery",
+      "name": "API child identified in this isolated run",
+      "ok": true
+    },
+    {
+      "phase": "api-recovery",
+      "name": "API restarts after a crash",
+      "ok": true
+    },
+    {
+      "phase": "api-recovery",
+      "name": "memory remains available after API restart",
+      "ok": true
+    },
+    {
+      "phase": "restart",
+      "name": "restart reconciles without restoring edited material",
+      "ok": true
+    },
+    {
+      "phase": "restart",
+      "name": "restart retains exact corrected evidence",
+      "ok": true
+    },
+    {
+      "phase": "deletion",
+      "name": "deleted room cannot supply memory",
+      "ok": true
+    },
+    {
+      "phase": "deletion",
+      "name": "deleted material is absent from disk",
+      "ok": true
+    },
+    {
+      "phase": "unclean-restart",
+      "name": "unclean exit recovers local stack",
+      "ok": true
+    },
+    {
+      "phase": "unclean-restart",
+      "name": "deleted room stays absent after unclean restart",
+      "ok": true
+    }
+  ]
+}

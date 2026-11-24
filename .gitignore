@@ -148,3 +148,12 @@ Desktop.ini
 # Dev-tool cache for rendering mail previews. It is output, not source (a Next build result):
 # committing it would ship a bundle built on someone else's machine.
 .react-email/
+
+# Generated, checksummed desktop memory artifact (prepare:afterstate).
+/apps/desktop/.afterstate-wasm/
+
+# Private reproducible source baselines and local readiness evidence.
+/.desktop-readiness/
+
+# Disposable desktop test profiles and local databases.
+/apps/desktop/.e2e-evidence/

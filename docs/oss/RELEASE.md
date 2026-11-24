@@ -181,3 +181,17 @@ There is no hosted RowCat service; this is code you run under your own name.
 
 릴리스마다 이 문서를 위에서부터 한 번 걷는다. 막는 항목의 증거 문서가 새로 생기거나 「남은 것」이 바뀌면 표와
 「알려진 한계」를 같은 커밋에서 고친다.
+
+
+## Desktop WASM release gate (2026-11-22)
+
+The desktop now requires the checksummed, source-pinned afterstate Node WASM
+artifact. Missing/corrupt/incompatible artifacts stop packaging. An uncommitted
+source pin permits only explicit internal testing with no update feed; it is not
+a public-release exception. See [the readiness evidence](DESKTOP-WASM-READINESS.md)
+and [the signing/notarization procedure](DESKTOP-SIGNING.md).
+
+The local Apple Silicon internal artifact and staged window journey do not prove
+Windows installation/update behavior, macOS signing/notarization or physical-device
+readiness. Keep those gates open until their own evidence exists. No release or
+tag was published during this work.

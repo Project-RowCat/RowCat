@@ -1,0 +1,65 @@
+{
+  "dateKst": "2026-11-23",
+  "commits": {
+    "rowcat": "fca38267e8d9422d33f3bab5a9e73e979e5ee2dc",
+    "afterstate": "c0cb19dbc8855cdc25c37657fa1a704e19afb463"
+  },
+  "uncommitted": true,
+  "baselineChecksums": {
+    "rowcat": {
+      "history.bundle": "3698e54197b94baedbd8cd68b10143905188a8a4e5053bd40c380ca3f9fd04aa",
+      "changes.patch": "d6061d3c327920f7c8112e761c10539b105efae554ba1f291d3fc8f842b0e453",
+      "untracked.tar.gz": "8b37c21a8e9e0cdfc25ac1a644cc84e22fe6aa4cc51c077635e2a68dd5418b51",
+      "HEAD": "7440706d47a0dce8715cc8c1145aa702d1c19b5227646dba025956c91c3d6855",
+      "status.txt": "4dbda0aac93632ea4928a66b357e61977e8366c03c46b248993000404e6d973a"
+    },
+    "afterstate": {
+      "history.bundle": "a0e281fdbeafb1534928c95caffbdb670335845858ffc6f096390b2d4cdb2ab7",
+      "changes.patch": "940b8ab6fe81773e602016fde491320b81cdcb81a6fffacf040969197d7caa73",
+      "untracked.tar.gz": "0ec19056f9d1f0e57a10f2eb8dc4342ddd6563fe8f1a999f924756e46acf3a8d",
+      "HEAD": "39b27af215f7f7706f92f854c2d9a431669911927ffb8af427734ee3245a9df0",
+      "status.txt": "d6c7a50290c604367991120ce49fe43749e25ef5de733e253cb7d7273000b92f"
+    }
+  },
+  "tests": {
+    "baselineDesktop": 50,
+    "baselineChat": 1273,
+    "baselineWasm": 4,
+    "baselineNativeBridge": 90,
+    "desktop": 64,
+    "coreIncludingFailpoints": 359,
+    "nativeBridge": 91,
+    "wasmNodeIncludingDifferential": 7,
+    "wasmBrowserBindingsUnderNode": 6,
+    "chat": 1274,
+    "web": {
+      "passed": 4590,
+      "skipped": 2
+    },
+    "mobile": 3473,
+    "fullPnpmTest": "failed: API timeouts/worker error; all 17 failed API files passed sequential rerun (413 tests)",
+    "pnpmCheck": "passed",
+    "pnpmTypecheck": "passed; desktop E2E additionally included and checked",
+    "windowRecovery": 22,
+    "windowsInstalled": "not executed",
+    "macSigningNotarizationGatekeeper": "not executed"
+  },
+  "artifact": {
+    "RowCat-0.0.0-arm64.dmg": {
+      "bytes": 202803627,
+      "sha256": "0791b356583fea16695ca7c7f6db2b49b4891ad58a075fea08419b6c8b403bde"
+    },
+    "RowCat-0.0.0-arm64.dmg.blockmap": {
+      "bytes": 212122,
+      "sha256": "0aafcd4877f6a9655d28c4987311b0c093ffed7aa809574ccd421f2868117234"
+    }
+  },
+  "toolchain": {
+    "rustc": "1.98.1",
+    "wasmPack": "0.14.0",
+    "pnpm": "10.34.5",
+    "electron": "45.1.0",
+    "sqliteNative": "3.54.1",
+    "sqliteWasm": "3.54.1"
+  }
+}

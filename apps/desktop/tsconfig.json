@@ -1,9 +1,9 @@
 {
-	"include": ["src/**/*.ts", "scripts/**/*.ts", "tsdown.config.ts"],
+	"include": ["src/**/*.ts", "scripts/**/*.ts", "e2e/**/*.ts", "tsdown.config.ts"],
 	"compilerOptions": {
 		"target": "ES2022",
 		"module": "ESNext",
-		"lib": ["ES2022", "DOM"],
+		"lib": ["ES2024", "DOM"],
 		"types": ["node"],
 		"moduleResolution": "bundler",
 		"allowImportingTsExtensions": true,

@@ -100,6 +100,7 @@ jobs:
       date: ${{ steps.plan.outputs.date }}
       version: ${{ steps.plan.outputs.version }}
       sha: ${{ steps.plan.outputs.sha }}
+      upgrade_from: ${{ steps.previous.outputs.tag }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -133,6 +134,19 @@ jobs:
           } >>"$GITHUB_OUTPUT"
           echo "release ${date}, installer version ${version}"
 
+      - name: Validate pinned published WASM package
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; import assert from "node:assert/strict"; const p=JSON.parse(fs.readFileSync("apps/desktop/afterstate-source.json")); assert.equal(p.distribution.name,"afterstate-wasm"); assert.match(p.distribution.integrity,/^sha512-[A-Za-z0-9+/]+={0,2}$/);'
+
+      - name: Previous supported installer for upgrade smoke
+        id: previous
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name)"
+          [[ "$tag" =~ ^desktop-[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo '::error::Select and validate a supported previous desktop release before shipping.'; exit 1; }
+          echo "tag=$tag" >>"$GITHUB_OUTPUT"
+
       # A release by that name already exists — say so now rather than after half an hour of building.
       - name: Refuse to republish
         if: github.event_name == 'push'
@@ -149,8 +163,29 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/ci-passed.sh "$(git rev-parse HEAD)" 60
 
-  windows:
+  afterstate:
     needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22.23.2"
+      - name: Fetch exact published WASM and verify integrity
+        run: node apps/desktop/scripts/fetch-afterstate.ts
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rowcat-afterstate-wasm
+          path: apps/desktop/.afterstate-wasm/
+          if-no-files-found: error
+          retention-days: 7
+
+  windows:
+    needs: [plan, afterstate]
     runs-on: windows-latest
     timeout-minutes: 60
     defaults:
@@ -169,7 +204,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: "22"
+          node-version: "22.23.2"
 
       # No `version`: the action reads `packageManager` from the root package.json.
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
@@ -178,9 +213,43 @@ jobs:
       # lockfile. On this runner it brings Windows' own native binaries (Postgres, sharp).
       - run: pnpm install --frozen-lockfile
 
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: rowcat-afterstate-wasm
+          path: apps/desktop/.afterstate-wasm
+      - run: pnpm --filter @rowcat/desktop prepare:afterstate .afterstate-wasm
+      - run: pnpm --filter @rowcat/desktop test
+
+
       - run: pnpm turbo run build --filter=@rowcat/api --filter=web --filter=admin
 
       - run: pnpm --filter @rowcat/desktop run package "${{ needs.plan.outputs.version }}"
+
+      - name: Install previous version and preserve its data
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPGRADE_FROM: ${{ needs.plan.outputs.upgrade_from }}
+        shell: pwsh
+        run: |
+          gh release download $env:UPGRADE_FROM --repo $env:GITHUB_REPOSITORY --pattern '*.exe' --dir upgrade-baseline
+          $old = @(Get-ChildItem upgrade-baseline/*.exe)
+          if ($old.Count -ne 1) { throw 'Expected one prior installer' }
+          $install = Start-Process -FilePath $old[0].FullName -ArgumentList '/S' -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw 'Previous installer failed' }
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs/RowCat/RowCat.exe'
+          pnpm exec tsx apps/desktop/e2e/installed-smoke.ts $exe upgrade-state.json --seed-upgrade
+          if ($LASTEXITCODE -ne 0) { throw 'Previous app startup failed' }
+
+      - name: Install new version and smoke the installed WASM engine
+        shell: pwsh
+        run: |
+          $new = @(Get-ChildItem apps/desktop/out/*.exe)
+          if ($new.Count -ne 1) { throw 'Expected one new installer' }
+          $install = Start-Process -FilePath $new[0].FullName -ArgumentList '/S' -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw 'New installer failed' }
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs/RowCat/RowCat.exe'
+          pnpm exec tsx apps/desktop/e2e/installed-smoke.ts $exe upgrade-state.json --verify-upgrade
+          if ($LASTEXITCODE -ne 0) { throw 'Installed upgrade/WASM smoke failed' }
 
       # The installer is attached under the name electron-builder gave it (scripts/build-app.ts names
       # it by the date): `latest.yml` points at that name, so a rename breaks every update. What is
@@ -209,7 +278,7 @@ jobs:
             || { echo "::error::app-update.yml does not name ${GITHUB_REPOSITORY}." >&2; exit 1; }
           mkdir -p ../../../release
           cp "$installer" "${installer}.blockmap" latest.yml ../../../release/
-          (cd ../../../release && sha256sum "$installer" >"${installer}.sha256")
+          (cd ../../../release && sha256sum "$installer" >"${installer}.sha256" && sha256sum "$installer" "${installer}.blockmap" latest.yml > SHA256SUMS)
           ls -l ../../../release
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -219,9 +288,43 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+  macos:
+    needs: [plan, afterstate]
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22.23.2"
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: rowcat-afterstate-wasm
+          path: apps/desktop/.afterstate-wasm
+      - run: pnpm turbo run build --filter=@rowcat/api --filter=web --filter=admin
+      - name: Unsigned internal Apple Silicon package
+        env:
+          ROWCAT_DESKTOP_INTERNAL: "1"
+        run: pnpm --filter @rowcat/desktop package "${{ needs.plan.outputs.version }}"
+      - run: cd apps/desktop/out && shasum -a 256 *.dmg *.blockmap > macos-sha256.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rowcat-desktop-macos-unsigned-internal
+          path: |
+            apps/desktop/out/*.dmg
+            apps/desktop/out/*.blockmap
+            apps/desktop/out/macos-sha256.txt
+          if-no-files-found: error
+          retention-days: 7
+
   release:
     if: github.event_name == 'push'
-    needs: [plan, windows]
+    needs: [plan, windows, macos]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -237,7 +340,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           DATE: ${{ needs.plan.outputs.date }}
+          VALIDATED_SHA: ${{ needs.plan.outputs.sha }}
         run: |
+          actual="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_REF_NAME}" --jq .sha)"
+          [ "$actual" = "$VALIDATED_SHA" ] || { echo '::error::Release tag changed after validation'; exit 1; }
           installer="$(cd release && ls *.exe)"
           checksum="$(cut -d' ' -f1 "release/${installer}.sha256")"
           cat >notes.md <<EOF
@@ -290,4 +396,4 @@ jobs:
             --title "Desktop · 데스크톱 ${DATE}" \
             --notes-file notes.md \
             "release/${installer}" "release/${installer}.sha256" \
-            "release/${installer}.blockmap" "release/latest.yml"
+            "release/${installer}.blockmap" "release/latest.yml" "release/SHA256SUMS"

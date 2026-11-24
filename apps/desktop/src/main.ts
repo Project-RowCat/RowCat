@@ -12,14 +12,20 @@ import {
 	app,
 	BrowserWindow,
 	dialog,
+	type IpcMainInvokeEvent,
 	ipcMain,
 	Menu,
 	type MenuItemConstructorOptions,
 	nativeTheme,
+	safeStorage,
 	screen,
 	shell,
 } from "electron";
-import { AfterstateHosts, afterstateIpc } from "./afterstate-host.ts";
+import {
+	AfterstateHosts,
+	afterstateIpc,
+	type IpcSender,
+} from "./afterstate-host.ts";
 import {
 	PortsBusyError,
 	type RunningStack,
@@ -74,8 +80,8 @@ type WindowKind = "main" | "console";
 
 let stack: RunningStack | null = null;
 /**
- * The local conversation-memory index (`afterstate-host.ts`): one engine process per member store,
- * under `<userData>/afterstate`, reached only by the main window's web origin. Derived data: the
+ * The local conversation-memory index (`afterstate-host.ts`): one WASM worker per authenticated member,
+ * under `<userData>/afterstate-wasm`, reached only by the main window's web origin. Derived data: the
  * conversations it indexes stay in the page's IndexedDB and sync as before.
  */
 let afterstate: AfterstateHosts | null = null;
@@ -119,13 +125,7 @@ function artifacts() {
 		apiDir: join(root, "api"),
 		webServerEntry: join(root, "web", "server", "index.mjs"),
 		consoleDistDir: join(root, "console"),
-		afterstateBridge: join(
-			root,
-			"afterstate",
-			process.platform === "win32"
-				? "afterstate-bridge.exe"
-				: "afterstate-bridge",
-		),
+		afterstateDir: join(root, "afterstate"),
 		// Electron is the Node runtime for the two servers — no second Node ships with the app.
 		node: {
 			command: process.execPath,
@@ -605,6 +605,7 @@ async function launch(): Promise<void> {
 	buildMenu(null);
 	showPage({ kind: "launch" });
 	try {
+		await afterstate?.probe();
 		stack = await startStack({
 			dataDir,
 			artifacts: artifacts(),
@@ -667,19 +668,85 @@ if (!app.requestSingleInstanceLock()) {
 	});
 
 	app.whenReady().then(() => {
-		const bridge = artifacts().afterstateBridge;
-		if (existsSync(bridge)) {
-			const storeDir = join(app.getPath("userData"), "afterstate");
-			mkdirSync(storeDir, { recursive: true });
-			afterstate = new AfterstateHosts(bridge, storeDir);
-			const ipc = afterstateIpc(afterstate, () => stack?.origins.web ?? null);
-			ipcMain.handle("afterstate:call", (event, memberKey, op, params) =>
-				ipc.call(event, memberKey, op, params),
-			);
-			ipcMain.handle("afterstate:destroy", (event, memberKey) =>
-				ipc.destroy(event, memberKey),
-			);
-		}
+		afterstate = new AfterstateHosts({
+			artifactDir: artifacts().afterstateDir,
+			storeDir: join(app.getPath("userData"), "afterstate-wasm"),
+			legacyStoreDir: join(app.getPath("userData"), "afterstate"),
+			keys: {
+				available: async () =>
+					(await safeStorage.isAsyncEncryptionAvailable()) &&
+					(process.platform !== "linux" ||
+						safeStorage.getSelectedStorageBackend() !== "basic_text"),
+				wrap: (text) => safeStorage.encryptStringAsync(text),
+				unwrap: async (bytes) =>
+					(await safeStorage.decryptStringAsync(bytes)).result,
+			},
+			onRecovery: () =>
+				log(
+					"afterstate",
+					"derived index failed verification; rebuilding from local records",
+				),
+		});
+		const owners = new Map<number, string>();
+		const authorize = async (
+			candidate: IpcSender,
+			member: string,
+			action: "call" | "destroy" | "release",
+		): Promise<boolean> => {
+			const event = candidate as IpcMainInvokeEvent;
+			const main = windows.get("main");
+			if (
+				!stack ||
+				!main ||
+				event.sender !== main.webContents ||
+				event.senderFrame !== event.sender.mainFrame
+			)
+				return false;
+			// Release reads no data and starts no engine. It must still work after sign-out.
+			if (action === "release") return owners.get(event.sender.id) === member;
+			try {
+				const cookies = await event.sender.session.cookies.get({
+					url: stack.origins.api,
+				});
+				const response = await fetch(`${stack.origins.api}/v2/me`, {
+					headers: {
+						origin: stack.origins.web,
+						cookie: cookies.map((c) => `${c.name}=${c.value}`).join("; "),
+					},
+					signal: AbortSignal.timeout(3_000),
+					redirect: "error",
+				});
+				if (!response.ok) return false;
+				const viewer = (await response.json()) as { id?: unknown } | null;
+				if (viewer?.id === member) {
+					owners.set(event.sender.id, member);
+					return true;
+				}
+				// Withdrawal deletes the server session before local cleanup. Only an index
+				// this exact window previously authenticated may be erased afterward.
+				return (
+					action === "destroy" &&
+					viewer === null &&
+					owners.get(event.sender.id) === member
+				);
+			} catch {
+				return false;
+			}
+		};
+		const ipc = afterstateIpc(
+			afterstate,
+			() => stack?.origins.web ?? null,
+			authorize,
+		);
+		ipcMain.handle("afterstate:call", (event, member, op, params) =>
+			ipc.call(event, member, op, params),
+		);
+		ipcMain.handle("afterstate:destroy", (event, member) =>
+			ipc.destroy(event, member),
+		);
+		ipcMain.handle("afterstate:release", (event, member) =>
+			ipc.release(event, member),
+		);
 		return launch();
 	});
 
@@ -715,11 +782,14 @@ if (!app.requestSingleInstanceLock()) {
 			if (!stopped) event.preventDefault();
 			return;
 		}
-		if (!stack) return;
+		if (!stack && !afterstate) return;
 		event.preventDefault();
 		stopping = true;
 		const engines = afterstate?.closeAll() ?? Promise.resolve();
-		void Promise.allSettled([engines, stack.stop()]).finally(() => {
+		void Promise.allSettled([
+			engines,
+			stack?.stop() ?? Promise.resolve(),
+		]).finally(() => {
 			stopped = true;
 			app.exit(0);
 		});

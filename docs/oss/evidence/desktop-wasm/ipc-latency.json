@@ -1,0 +1,6 @@
+{
+  "requests": 30,
+  "p50Ms": 9.675916000000143,
+  "p95Ms": 18.74437500000022,
+  "includes": "renderer IPC + authenticated member check + worker status"
+}

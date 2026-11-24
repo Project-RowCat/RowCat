@@ -1,44 +1,18 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
-import { createInterface } from "node:readline";
-
 /**
- * The local afterstate index for the desktop window (conversation memory, `@rowcat/chat`'s
- * `conversation-memory.ts`).
- *
- * The engine runs as the bundled `afterstate-bridge` executable, one child process per member
- * store, speaking JSON lines over stdio. **No port is opened** (the stack's servers are the only
- * listeners), and a crash in native code takes down that child, not the app. Stores live in the
- * app's data folder (`afterstate/`, one file per member, named by the engine from the member key).
- *
- * The window reaches it through the preload (`preload.cts`) and the IPC handlers below, which only
- * answer the RowCat web origin of this stack and only the protocol's operations. The page could
- * already read the same conversations from its own IndexedDB, so this opens no new class of access;
- * the origin check keeps any other page from using it.
- *
- * **The engine is optional, and its failures stay here.** Every way it can fail — missing or not
- * executable, an older build that speaks another protocol, one that never answers, one killed
- * mid-session — ends in a rejected call, which the web app's loaders already turn into a turn
- * without recall (memory V2). None of them may throw in the main process, hold a call open forever,
- * or hold up quitting:
- *
- * - The handshake (`open`, then `status`) must name `AFTERSTATE_PROTOCOL` within `openTimeoutMs`;
- *   anything else is killed and refused. An older engine answering `ok` to everything would
- *   otherwise be handed the member's conversations.
- * - A call unanswered within `callTimeoutMs` kills that process: its state is unknown, and the next
- *   call starts a fresh one on the same store.
- * - A process that exits (killed, crashed) is forgotten, so the next call starts it again. Three
- *   failures within a minute pause that for a minute: a binary that dies on every start must not be
- *   spawned on every turn.
- * - Quitting ends stdin (the engine checkpoints and exits) and kills what has not exited after
- *   `closeTimeoutMs`, including a process still in its handshake.
- *
- * Found by the Phase 12 desktop window journey (`e2e/afterstate-window.e2e.ts`): before these rules
- * a killed engine stayed dead until the app restarted, an impostor answering `afterstate-bridge/0`
- * was accepted, and an engine that never answered made quitting hang.
+ * Main owns member authorization and a bounded request queue. The dedicated worker
+ * owns WASM, encrypted snapshots and all synchronous indexing. A timeout/crash
+ * rejects every queued call; the next call gets a fresh, verified instance. No
+ * request is retried after an uncertain write, and recall waits for live manifests.
+ * Native open/close/destroy are lifecycle operations, never forwarded as WASM ops.
  */
+import { createHash, randomBytes } from "node:crypto";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { Worker } from "node:worker_threads";
+import { AFTERSTATE_PROTOCOL } from "./afterstate-artifact.ts";
+import type { AfterstateWorkerData } from "./afterstate-worker.ts";
 
-export const AFTERSTATE_PROTOCOL = "afterstate-bridge/1";
-
+export { AFTERSTATE_PROTOCOL } from "./afterstate-artifact.ts";
 export const AFTERSTATE_OPS = new Set([
 	"status",
 	"consolidate",
@@ -53,326 +27,583 @@ export const AFTERSTATE_OPS = new Set([
 	"verify",
 	"checkpoint",
 ]);
-
-export interface AfterstateTimeouts {
-	/** Each handshake step (`open`, `status`). The engine opens its file and answers in milliseconds. */
-	openTimeoutMs: number;
-	/** One call. Ingest batches are 64 items (`CHAT_INDEX_BATCH`), far below this. */
-	callTimeoutMs: number;
-	/** From the end of stdin to exit, before the process is killed. */
-	closeTimeoutMs: number;
-}
-
-export const AFTERSTATE_TIMEOUTS: AfterstateTimeouts = {
-	openTimeoutMs: 10_000,
+export const AFTERSTATE_FAILURE_LIMIT = 3;
+export const AFTERSTATE_FAILURE_WINDOW_MS = 60_000;
+export const AFTERSTATE_TIMEOUTS = {
+	openTimeoutMs: 60_000,
 	callTimeoutMs: 30_000,
 	closeTimeoutMs: 5_000,
 };
-
-/** Failures (refused handshakes, unexpected exits) of one member's engine that pause restarts. */
-export const AFTERSTATE_FAILURE_LIMIT = 3;
-export const AFTERSTATE_FAILURE_WINDOW_MS = 60_000;
+export type AfterstateTimeouts = typeof AFTERSTATE_TIMEOUTS;
+export const AFTERSTATE_LIMITS = {
+	requests: 32,
+	bytes: 32 * 1024 * 1024,
+	members: 2,
+	memoryBytes: 768 * 1024 * 1024,
+};
 
 interface Response {
 	id: number;
 	ok: boolean;
 	result?: unknown;
-	error?: { code: string; message: string };
+	error?: { code?: string };
+}
+interface Request {
+	id: number;
+	op: string;
+	params: object;
+	bytes: number;
+	resolve(value: unknown): void;
+	reject(reason: unknown): void;
+	timer: NodeJS.Timeout;
+}
+export interface AfterstateWorkerOptions {
+	artifactDir: string;
+	snapshot: AfterstateWorkerData["snapshot"];
+	workerEntry?: URL;
+	timeouts?: AfterstateTimeouts;
+	memoryLimitBytes?: number;
+	onExit?(): void;
+	onRecovery?(): void;
 }
 
-const failure = (code: string, message: string): Response => ({
-	id: 0,
-	ok: false,
-	error: { code, message },
-});
-
-/** One member's engine process. */
-export class AfterstateProcess {
-	private next = 1;
-	private readonly pending = new Map<number, (r: Response) => void>();
-	private exited = false;
-	/** Set when the host ends the process on purpose (quit, destroy, a refused handshake, a timeout). */
+export class AfterstateWorker {
+	private readonly worker: Worker;
+	private readonly requests: Request[] = [];
+	private active: Request | undefined;
+	private bytes = 0;
+	private nextId = 0;
 	private ending = false;
-	/** Resolves once the process is gone (or never started). */
+	private exited = false;
+	private readonly timeouts: AfterstateTimeouts;
 	readonly whenExited: Promise<void>;
+	private readonly ready: Promise<void>;
 
-	private constructor(
-		private readonly child: ChildProcessWithoutNullStreams,
-		private readonly timeouts: AfterstateTimeouts,
-		onUnexpectedExit: () => void,
-	) {
-		createInterface({ input: child.stdout }).on("line", (line) => {
-			let response: Response;
-			try {
-				response = JSON.parse(line) as Response;
-			} catch {
-				return;
-			}
-			this.pending.get(response.id)?.(response);
-			this.pending.delete(response.id);
-		});
-		let exited!: () => void;
-		this.whenExited = new Promise((resolve) => {
-			exited = resolve;
-		});
-		const end = () => {
-			if (this.exited) return;
+	constructor(options: AfterstateWorkerOptions) {
+		this.timeouts = options.timeouts ?? AFTERSTATE_TIMEOUTS;
+		this.worker = new Worker(
+			options.workerEntry ??
+				new URL("./afterstate-worker.mjs", import.meta.url),
+			{
+				workerData: {
+					artifactDir: options.artifactDir,
+					snapshot: options.snapshot,
+					memoryLimitBytes:
+						options.memoryLimitBytes ?? AFTERSTATE_LIMITS.memoryBytes,
+				} satisfies AfterstateWorkerData,
+				resourceLimits: {
+					maxOldGenerationSizeMb: 128,
+					maxYoungGenerationSizeMb: 32,
+					stackSizeMb: 4,
+				},
+				execArgv: [],
+			},
+		);
+		const ready = Promise.withResolvers<void>();
+		const exit = Promise.withResolvers<void>();
+		this.ready = ready.promise;
+		this.whenExited = exit.promise;
+		// Observe rejection immediately, including a worker that fails before open() is awaited.
+		void this.ready.catch(() => {});
+		const timer = setTimeout(() => {
+			ready.reject(new Error("afterstate: initialization timeout"));
+			void this.kill();
+		}, this.timeouts.openTimeoutMs);
+		this.worker.on(
+			"message",
+			(
+				response: Response & {
+					ready?: boolean;
+					protocol?: string;
+					recovered?: boolean;
+					fatal?: string;
+				},
+			) => {
+				if (response.ready !== undefined) {
+					clearTimeout(timer);
+					if (!response.ready || response.protocol !== AFTERSTATE_PROTOCOL) {
+						ready.reject(new Error("afterstate: initialization failed"));
+						void this.kill();
+					} else {
+						if (response.recovered) options.onRecovery?.();
+						ready.resolve();
+					}
+					return;
+				}
+				if (response.fatal) {
+					this.fail("persistence failed");
+					return;
+				}
+				const active = this.active;
+				if (!active || response.id !== active.id) {
+					this.fail("invalid response");
+					return;
+				}
+				clearTimeout(active.timer);
+				this.bytes -= active.bytes;
+				this.active = undefined;
+				if (response.ok) active.resolve(response.result);
+				else
+					active.reject(
+						new Error(`afterstate: ${response.error?.code ?? "engine"}`),
+					);
+				if (response.error?.code === "memory_pressure")
+					this.fail("memory pressure");
+				else this.dispatch();
+			},
+		);
+		this.worker.on("error", () => this.fail("worker failed"));
+		this.worker.on("exit", () => {
+			clearTimeout(timer);
 			this.exited = true;
-			for (const resolve of this.pending.values())
-				resolve(failure("closed", "engine exited"));
-			this.pending.clear();
-			exited();
-			if (!this.ending) onUnexpectedExit();
-		};
-		child.on("exit", end);
-		// A missing or non-executable file arrives here (ENOENT, EACCES), not as a throw from spawn.
-		child.on("error", end);
-		// Writing to an engine that just died is EPIPE; its exit settles the calls.
-		child.stdin.on("error", () => {});
-		// The engine writes nothing to stderr but a fixed broken-pipe line; drain it.
-		child.stderr.resume();
-	}
-
-	/**
-	 * Starts the engine on the member's store and checks that it speaks this protocol. Rejects, and
-	 * leaves no process behind, otherwise.
-	 */
-	static async open(
-		bridge: string,
-		storeDir: string,
-		memberKey: string,
-		options: {
-			timeouts?: AfterstateTimeouts;
-			onUnexpectedExit?: () => void;
-			onSpawn?: (process: AfterstateProcess) => void;
-		} = {},
-	): Promise<AfterstateProcess> {
-		const timeouts = options.timeouts ?? AFTERSTATE_TIMEOUTS;
-		const child = spawn(bridge, [], {
-			stdio: ["pipe", "pipe", "pipe"],
-			windowsHide: true,
+			ready.reject(new Error("afterstate: worker exited"));
+			this.rejectAll("worker exited");
+			exit.resolve();
+			if (!this.ending) options.onExit?.();
 		});
-		const host = new AfterstateProcess(
-			child,
-			timeouts,
-			options.onUnexpectedExit ?? (() => {}),
-		);
-		options.onSpawn?.(host);
-		const refuse = async (code: string): Promise<never> => {
-			await host.kill();
-			throw new Error(`afterstate open: ${code}`);
-		};
-		const opened = await host.send(
-			"open",
-			{ store: { user: { dir: storeDir, user: memberKey } } },
-			timeouts.openTimeoutMs,
-		);
-		if (!opened.ok) return refuse(opened.error?.code ?? "failed");
-		const status = await host.send("status", {}, timeouts.openTimeoutMs);
-		if (!status.ok) return refuse(status.error?.code ?? "failed");
-		const protocol = (status.result as { protocol?: unknown } | undefined)
-			?.protocol;
-		if (protocol !== AFTERSTATE_PROTOCOL) return refuse("incompatible");
-		return host;
 	}
 
-	get pid(): number | undefined {
-		return this.child.pid;
+	async open(): Promise<this> {
+		await this.ready;
+		return this;
 	}
-
+	get threadId(): number {
+		return this.worker.threadId;
+	}
 	get running(): boolean {
-		return !this.exited;
+		return !this.ending && !this.exited;
 	}
 
-	private send(
+	private dispatch(): void {
+		if (this.active || this.exited || !this.requests.length) return;
+		const request = this.requests.shift();
+		if (!request) return;
+		this.active = request;
+		try {
+			this.worker.postMessage({
+				id: request.id,
+				op: request.op,
+				params: request.params,
+			});
+		} catch {
+			this.fail("request could not be cloned");
+		}
+	}
+
+	private rejectAll(code: string): void {
+		for (const request of [
+			...(this.active ? [this.active] : []),
+			...this.requests,
+		]) {
+			clearTimeout(request.timer);
+			request.reject(new Error(`afterstate: ${code}`));
+		}
+		this.requests.length = 0;
+		this.active = undefined;
+		this.bytes = 0;
+	}
+	private fail(code: string): void {
+		this.rejectAll(code);
+		// Preserve unexpected-exit accounting; termination never throws into main.
+		if (!this.exited) void this.worker.terminate().catch(() => {});
+	}
+
+	private async send(
 		op: string,
 		params: object,
-		timeoutMs: number,
-	): Promise<Response> {
-		if (this.exited) return Promise.resolve(failure("closed", "engine exited"));
-		return new Promise((resolve) => {
-			const id = this.next++;
-			const timer = setTimeout(() => {
-				if (!this.pending.delete(id)) return;
-				resolve(failure("timeout", `no answer to ${op}`));
-				// Its state is unknown now: end it as a failure, so the next call starts a fresh one.
-				if (!this.exited) this.child.kill("SIGKILL");
-			}, timeoutMs);
-			this.pending.set(id, (response) => {
-				clearTimeout(timer);
-				resolve(response);
-			});
-			this.child.stdin.write(`${JSON.stringify({ id, op, params })}\n`);
+		timeout = this.timeouts.callTimeoutMs,
+	): Promise<unknown> {
+		if (!this.running) throw new Error("afterstate: closed");
+		// IPC already cloned the object, but framing can still reject cycles and oversized requests.
+		let bytes: number;
+		try {
+			bytes = Buffer.byteLength(JSON.stringify({ op, params }));
+		} catch {
+			throw new Error("afterstate: invalid params");
+		}
+		if (
+			bytes > AFTERSTATE_LIMITS.bytes ||
+			this.bytes + bytes > AFTERSTATE_LIMITS.bytes ||
+			this.requests.length + Number(!!this.active) >= AFTERSTATE_LIMITS.requests
+		)
+			throw new Error("afterstate: queue full");
+		await this.ready;
+		if (
+			this.bytes + bytes > AFTERSTATE_LIMITS.bytes ||
+			this.requests.length + Number(!!this.active) >= AFTERSTATE_LIMITS.requests
+		)
+			throw new Error("afterstate: queue full");
+		if (!this.running) throw new Error("afterstate: closed");
+		return new Promise((resolve, reject) => {
+			const request: Request = {
+				id: ++this.nextId,
+				op,
+				params,
+				bytes,
+				resolve,
+				reject,
+				timer: setTimeout(() => this.fail("timeout"), timeout),
+			};
+			this.bytes += bytes;
+			this.requests.push(request);
+			this.dispatch();
 		});
 	}
-
-	async call(op: string, params: object): Promise<unknown> {
-		if (!AFTERSTATE_OPS.has(op)) throw new Error("afterstate: unknown op");
-		const r = await this.send(op, params, this.timeouts.callTimeoutMs);
-		if (!r.ok) throw new Error(`afterstate ${op}: ${r.error?.code ?? "error"}`);
-		return r.result;
+	call(op: string, params: object): Promise<unknown> {
+		if (!AFTERSTATE_OPS.has(op))
+			return Promise.reject(new Error("afterstate: unknown op"));
+		return this.send(op, params);
 	}
-
-	/** Closes the store, deletes its files and ends the process (account deletion). */
-	async destroy(): Promise<void> {
-		this.ending = true;
-		const r = await this.send("destroy", {}, this.timeouts.callTimeoutMs);
-		if (!r.ok)
-			throw new Error(`afterstate destroy: ${r.error?.code ?? "error"}`);
+	async close(destroy = false): Promise<void> {
+		if (this.ending || this.exited) return this.whenExited;
+		const deadline = setTimeout(
+			() => void this.kill(),
+			this.timeouts.closeTimeoutMs,
+		);
+		try {
+			await this.send(
+				destroy ? "__destroy" : "__close",
+				{},
+				this.timeouts.closeTimeoutMs,
+			);
+		} finally {
+			clearTimeout(deadline);
+			await this.kill();
+		}
 	}
-
-	/** Closes stdin; the engine checkpoints and exits. Killed if it has not after the timeout. */
-	async close(): Promise<void> {
-		this.ending = true;
-		if (this.exited) return;
-		this.child.stdin.end();
-		let timer: NodeJS.Timeout | undefined;
-		const late = new Promise<"late">((resolve) => {
-			timer = setTimeout(() => resolve("late"), this.timeouts.closeTimeoutMs);
-		});
-		const outcome = await Promise.race([this.whenExited, late]);
-		clearTimeout(timer);
-		if (outcome === "late") await this.kill();
-	}
-
-	/** Ends the process now. */
 	async kill(): Promise<void> {
 		this.ending = true;
-		if (this.exited) return;
-		this.child.kill("SIGKILL");
+		this.rejectAll("closed");
+		if (!this.exited) await this.worker.terminate();
 		await this.whenExited;
 	}
 }
 
-/** Member stores of this app, opened on demand and closed together on quit. */
+export interface AfterstateKeyProtection {
+	available(): Promise<boolean>;
+	wrap(plaintext: string): Promise<Buffer>;
+	unwrap(ciphertext: Buffer): Promise<string>;
+}
+export interface AfterstateHostOptions {
+	artifactDir: string;
+	storeDir: string;
+	legacyStoreDir?: string;
+	keys: AfterstateKeyProtection;
+	workerEntry?: URL;
+	timeouts?: AfterstateTimeouts;
+	memoryLimitBytes?: number;
+	now?: () => number;
+	onRecovery?(): void;
+}
+
 export class AfterstateHosts {
-	private readonly open = new Map<string, Promise<AfterstateProcess>>();
-	/** Every process started and not exited yet: opened, or still in its handshake. */
-	private readonly live = new Set<AfterstateProcess>();
+	private readonly open = new Map<string, Promise<AfterstateWorker>>();
+	private readonly live = new Set<AfterstateWorker>();
 	private readonly failures = new Map<string, number[]>();
+	private readonly retiring = new Map<string, Promise<void>>();
+	private readonly initializing = new Map<string, AbortController>();
 	private closing = false;
+	constructor(private readonly options: AfterstateHostOptions) {}
 
-	constructor(
-		private readonly bridge: string,
-		private readonly storeDir: string,
-		private readonly timeouts: AfterstateTimeouts = AFTERSTATE_TIMEOUTS,
-		private readonly now: () => number = Date.now,
-	) {}
-
-	private recentFailures(memberKey: string): number[] {
-		const recent = (this.failures.get(memberKey) ?? []).filter(
-			(at) => this.now() - at < AFTERSTATE_FAILURE_WINDOW_MS,
-		);
-		this.failures.set(memberKey, recent);
-		return recent;
+	async probe(): Promise<void> {
+		const worker = new AfterstateWorker({ ...this.options, snapshot: null });
+		this.live.add(worker);
+		try {
+			await worker.open();
+			await worker.call("status", {});
+		} finally {
+			await worker.kill();
+			this.live.delete(worker);
+		}
 	}
 
-	host(memberKey: string): Promise<AfterstateProcess> {
-		const existing = this.open.get(memberKey);
-		if (existing) return existing;
+	private name(member: string): string {
+		return createHash("sha256")
+			.update(`rowcat-afterstate/1\0${member}`)
+			.digest("hex");
+	}
+	private async retireLegacy(member: string): Promise<void> {
+		if (!this.options.legacyStoreDir) return;
+		// Native v1 used this documented, member-hashed derived filename. Remove
+		// only that index and SQLite companions; IndexedDB/E2EE sources stay owned
+		// by the web app. Leaving it would retain deleted plaintext from old builds.
+		const hash = createHash("sha256")
+			.update(`afterstate-ffi/user/v1\0${member}`)
+			.digest("hex")
+			.slice(0, 32);
+		const file = join(this.options.legacyStoreDir, `afterstate-${hash}.db`);
+		for (const suffix of ["", "-wal", "-shm", "-journal"])
+			await rm(`${file}${suffix}`, { force: true });
+	}
+	private async snapshot(
+		member: string,
+		signal: AbortSignal,
+	): Promise<NonNullable<AfterstateWorkerData["snapshot"]>> {
+		if (!(await this.options.keys.available()))
+			throw new Error("afterstate: secure storage unavailable");
+		signal.throwIfAborted();
+		await this.retireLegacy(member);
+		await mkdir(this.options.storeDir, { recursive: true, mode: 0o700 });
+		const identity = this.name(member);
+		const file = join(this.options.storeDir, `${identity}.index`);
+		const keyFile = join(this.options.storeDir, `${identity}.key`);
+		let key: Buffer;
+		try {
+			if ((await stat(keyFile)).size > 64 * 1024)
+				throw new Error("invalid wrapped key");
+			key = Buffer.from(
+				await this.options.keys.unwrap(await readFile(keyFile, { signal })),
+				"base64",
+			);
+			if (key.length !== 32) throw new Error("invalid key");
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+				// An inaccessible OS key is not silently replaced. The user can restore OS
+				// key access or explicitly erase this device's derived data.
+				throw new Error("afterstate: secure key unavailable");
+			}
+			key = randomBytes(32);
+			await rm(file, { force: true });
+			const wrapped = await this.options.keys.wrap(key.toString("base64"));
+			signal.throwIfAborted();
+			await writeFile(keyFile, wrapped, { flag: "wx", mode: 0o600, signal });
+		}
+		if (signal.aborted) {
+			key.fill(0);
+			signal.throwIfAborted();
+		}
+		return { file, key, identity };
+	}
+
+	host(member: string): Promise<AfterstateWorker> {
 		if (this.closing) return Promise.reject(new Error("afterstate: closing"));
-		if (this.recentFailures(memberKey).length >= AFTERSTATE_FAILURE_LIMIT)
+		const retirement = this.retiring.get(member);
+		if (retirement) return retirement.then(() => this.host(member));
+		const existing = this.open.get(member);
+		if (existing) return existing;
+		if (this.open.size >= AFTERSTATE_LIMITS.members)
+			return Promise.reject(new Error("afterstate: member limit"));
+		const now = this.options.now ?? Date.now;
+		const failures = (this.failures.get(member) ?? []).filter(
+			(at) => now() - at < AFTERSTATE_FAILURE_WINDOW_MS,
+		);
+		this.failures.set(member, failures);
+		if (failures.length >= AFTERSTATE_FAILURE_LIMIT)
 			return Promise.reject(new Error("afterstate: unavailable"));
 		let forgotten = false;
 		const forget = () => {
 			if (forgotten) return;
 			forgotten = true;
-			if (this.open.get(memberKey) === opening) this.open.delete(memberKey);
-			this.recentFailures(memberKey).push(this.now());
+			if (this.open.get(member) === opening) this.open.delete(member);
+			if (
+				!this.closing &&
+				!(
+					controller.signal.aborted &&
+					controller.signal.reason instanceof Error &&
+					controller.signal.reason.message === "afterstate: closing"
+				)
+			)
+				failures.push(now());
 		};
-		const opening: Promise<AfterstateProcess> = AfterstateProcess.open(
-			this.bridge,
-			this.storeDir,
-			memberKey,
-			{
-				timeouts: this.timeouts,
-				onSpawn: (process) => {
-					this.live.add(process);
-					void process.whenExited.then(() => this.live.delete(process));
+		// The OS keychain can itself stall before a worker exists. Its deadline
+		// and cancellation belong to the same lifecycle as WASM initialization.
+		const controller = new AbortController();
+		this.initializing.set(member, controller);
+		let spawned: AfterstateWorker | undefined;
+		const cancelled = new Promise<never>((_resolve, reject) => {
+			controller.signal.addEventListener(
+				"abort",
+				() => {
+					if (spawned) void spawned.kill();
+					reject(controller.signal.reason);
 				},
-				// Killed or crashed: the next call starts a fresh process.
-				onUnexpectedExit: forget,
+				{ once: true },
+			);
+		});
+		const timer = setTimeout(
+			() => controller.abort(new Error("afterstate: initialization timeout")),
+			(this.options.timeouts ?? AFTERSTATE_TIMEOUTS).openTimeoutMs,
+		);
+		const starting = this.snapshot(member, controller.signal).then(
+			async (snapshot) => {
+				if (this.closing || controller.signal.aborted) {
+					snapshot.key.fill(0);
+					throw new Error("afterstate: closing");
+				}
+				const worker = new AfterstateWorker({
+					...this.options,
+					snapshot,
+					onExit: forget,
+				});
+				spawned = worker;
+				snapshot.key.fill(0);
+				this.live.add(worker);
+				void worker.whenExited.then(() => this.live.delete(worker));
+				try {
+					return await worker.open();
+				} catch {
+					await worker.kill();
+					throw new Error("afterstate: initialization failed");
+				}
 			},
 		);
-		this.open.set(memberKey, opening);
-		opening.catch(forget);
+		const opening = Promise.race([starting, cancelled]).finally(() => {
+			clearTimeout(timer);
+			if (this.initializing.get(member) === controller)
+				this.initializing.delete(member);
+		});
+		this.open.set(member, opening);
+		void opening.catch(forget);
 		return opening;
 	}
-
-	/** Deletes a member's store (opening it first if needed: the engine owns the file name). */
-	async destroy(memberKey: string): Promise<void> {
-		const host = await this.host(memberKey);
-		this.open.delete(memberKey);
-		await host.destroy();
+	private retire(member: string, destroy: boolean): Promise<void> {
+		const previous = this.retiring.get(member) ?? Promise.resolve();
+		this.initializing.get(member)?.abort(new Error("afterstate: closing"));
+		const opening = this.open.get(member);
+		this.open.delete(member);
+		const retiring = previous.then(async () => {
+			if (opening) {
+				const worker = await opening.catch(() => null);
+				if (worker) {
+					try {
+						await worker.close(destroy);
+					} catch {
+						if (!destroy) throw new Error("afterstate: checkpoint failed");
+					}
+				}
+			}
+			if (destroy) {
+				await this.retireLegacy(member);
+				const name = join(this.options.storeDir, this.name(member));
+				for (const suffix of [".index", ".index.pending", ".key"])
+					await rm(`${name}${suffix}`, { force: true });
+			}
+		});
+		this.retiring.set(member, retiring);
+		void retiring
+			.finally(() => {
+				if (this.retiring.get(member) === retiring)
+					this.retiring.delete(member);
+			})
+			.catch(() => {});
+		return retiring;
+	}
+	release(member: string): Promise<void> {
+		return this.retire(member, false);
+	}
+	destroy(member: string): Promise<void> {
+		return this.retire(member, true);
 	}
 
-	/** Ends every engine process, whatever state it is in; resolves when all have exited. */
 	async closeAll(): Promise<void> {
 		this.closing = true;
+		for (const controller of this.initializing.values())
+			controller.abort(new Error("afterstate: closing"));
+		this.initializing.clear();
 		this.open.clear();
-		await Promise.allSettled([...this.live].map((p) => p.close()));
-	}
-
-	/** After `closeAll`, for a host that keeps serving (tests reopening the same stores). */
-	reopen(): void {
-		this.closing = false;
+		// Also settle key initialization, which may still be waiting for the OS keychain.
+		await Promise.allSettled([...this.live].map((worker) => worker.close()));
 	}
 }
 
-/** What an IPC event tells us about its sender. */
 export interface IpcSender {
-	senderFrame?: { url: string } | null;
+	senderFrame?: { url: string; parent?: unknown } | null;
 }
-
-const isMemberKey = (v: unknown): v is string =>
+const isMember = (v: unknown): v is string =>
 	typeof v === "string" && v.length > 0 && v.length <= 256;
 
-/**
- * The IPC handlers, independent of Electron so they can be tested: `call(event, memberKey, op,
- * params)`. Every request is checked: the sender frame must be the stack's web origin (not the
- * console, not a page the window navigated to), the op must be one of the protocol's, and the
- * params a plain object.
- */
+/** Exact tuple origin plus main-provided authenticated member validation. Neither
+ * origin nor a renderer-supplied member id is authentication on its own. */
 export function afterstateIpc(
 	hosts: AfterstateHosts,
 	webOrigin: () => string | null,
-): {
-	call: (
+	authorize: (
 		event: IpcSender,
-		memberKey: unknown,
-		op: unknown,
-		params: unknown,
-	) => Promise<unknown>;
-	destroy: (event: IpcSender, memberKey: unknown) => Promise<void>;
-} {
-	const allowed = (event: IpcSender): boolean => {
+		member: string,
+		action: "call" | "destroy" | "release",
+	) => Promise<boolean>,
+) {
+	const check = async (
+		event: IpcSender,
+		member: unknown,
+		action: "call" | "destroy" | "release",
+	): Promise<string> => {
 		const origin = webOrigin();
-		if (!origin || !event.senderFrame) return false;
+		let allowed = false;
 		try {
-			return new URL(event.senderFrame.url).origin === origin;
+			const parsed = new URL(event.senderFrame?.url ?? "");
+			allowed =
+				origin !== null &&
+				parsed.origin !== "null" &&
+				parsed.origin === origin &&
+				!event.senderFrame?.parent;
 		} catch {
-			return false;
+			/* invalid or opaque URL */
 		}
+		if (!allowed) throw new Error("afterstate: refused origin");
+		if (!isMember(member)) throw new Error("afterstate: bad member");
+		if (!(await authorize(event, member, action)))
+			throw new Error("afterstate: refused member");
+		return member;
+	};
+	const queues = new Map<string, Promise<unknown>>();
+	let queued = 0;
+	let queuedBytes = 0;
+	const ordered = <T>(
+		member: unknown,
+		params: unknown,
+		run: () => Promise<T>,
+	): Promise<T> => {
+		let bytes: number;
+		try {
+			bytes = Buffer.byteLength(JSON.stringify(params));
+		} catch {
+			return Promise.reject(new Error("afterstate: invalid params"));
+		}
+		if (
+			queued >= AFTERSTATE_LIMITS.requests ||
+			queuedBytes + bytes > AFTERSTATE_LIMITS.bytes
+		)
+			return Promise.reject(new Error("afterstate: queue full"));
+		const key = typeof member === "string" ? member : "invalid";
+		queued++;
+		queuedBytes += bytes;
+		// Authorization can complete out of order. Serialize it with the operation,
+		// so erase cannot overtake an earlier ingest or be overtaken by later recall.
+		const result = (queues.get(key) ?? Promise.resolve())
+			.catch(() => {})
+			.then(run);
+		queues.set(key, result);
+		void result
+			.finally(() => {
+				queued--;
+				queuedBytes -= bytes;
+				if (queues.get(key) === result) queues.delete(key);
+			})
+			.catch(() => {});
+		return result;
 	};
 	return {
-		call: async (event, memberKey, op, params) => {
-			if (!allowed(event)) throw new Error("afterstate: refused origin");
-			if (!isMemberKey(memberKey)) throw new Error("afterstate: bad member");
-			if (typeof op !== "string" || !AFTERSTATE_OPS.has(op))
-				throw new Error("afterstate: unknown op");
-			if (
-				typeof params !== "object" ||
-				params === null ||
-				Array.isArray(params)
-			)
-				throw new Error("afterstate: bad params");
-			const host = await hosts.host(memberKey);
-			return host.call(op, params);
-		},
-		destroy: async (event, memberKey) => {
-			if (!allowed(event)) throw new Error("afterstate: refused origin");
-			if (!isMemberKey(memberKey)) throw new Error("afterstate: bad member");
-			await hosts.destroy(memberKey);
-		},
+		call: (event: IpcSender, member: unknown, op: unknown, params: unknown) =>
+			ordered(member, params, async () => {
+				const key = await check(event, member, "call");
+				if (typeof op !== "string" || !AFTERSTATE_OPS.has(op))
+					throw new Error("afterstate: unknown op");
+				if (
+					typeof params !== "object" ||
+					params === null ||
+					Array.isArray(params)
+				)
+					throw new Error("afterstate: bad params");
+				return (await hosts.host(key)).call(op, params);
+			}),
+		destroy: (event: IpcSender, member: unknown) =>
+			ordered(member, {}, async () =>
+				hosts.destroy(await check(event, member, "destroy")),
+			),
+		release: (event: IpcSender, member: unknown) =>
+			ordered(member, {}, async () =>
+				hosts.release(await check(event, member, "release")),
+			),
 	};
 }
