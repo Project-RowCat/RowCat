@@ -111,6 +111,7 @@ const previewWorkerDependencies = [
 	"typescript-compiler-api",
 	"quickjs-emscripten-core",
 	"@jitl/quickjs-ng-wasmfile-release-sync",
+	"afterstate-wasm",
 	"monaco-editor/internal/common/initialize",
 	"monaco-editor/languages/features/typescript/tsWorker",
 ];

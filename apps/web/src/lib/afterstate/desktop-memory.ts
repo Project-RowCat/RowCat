@@ -1,14 +1,13 @@
 import { type AfterstatePort, eraseConversation } from "@rowcat/chat";
+import { browserMemoryPort, releaseBrowserMemory } from "./browser-memory.ts";
 
 /**
  * Long-term memory in the web app is afterstate, and only afterstate.
  *
- * A browser has no afterstate engine (the engine does not build for `wasm32-unknown-unknown`; see
- * the Phase 11 report). Inside the desktop app the window's preload exposes the engine as
- * `window.rowcatAfterstate` (`apps/desktop/src/preload.cts`). Without it the conversation still
- * works on its recent window and the memories the person wrote, and the memory screen says
- * long-term memory is unavailable on this device. There is no second engine to fall back to and no
- * switch that selects one.
+ * Electron uses the preload's WASM worker; a plain browser uses the same JSON bridge through
+ * a per-member WASM worker. Both are derived indexes of the local store, never another source of
+ * truth or a second memory algorithm. A browser index is rebuilt after a reload. Without either
+ * transport, the existing unavailable state leaves the recent window and user-written memories.
  *
  * Earlier builds kept a per-device rollout switch in `localStorage` (`rowcat.memoryBackend`). It is
  * no longer read; `retireMemoryBackendSetting` removes the stale value once.
@@ -17,6 +16,7 @@ interface DesktopAfterstate {
 	protocol: string;
 	call(memberKey: string, op: string, params: object): Promise<unknown>;
 	destroy(memberKey: string): Promise<void>;
+	release?(memberKey: string): Promise<void>;
 }
 
 const PROTOCOL = "afterstate-bridge/1";
@@ -61,6 +61,11 @@ export function desktopMemoryPort(memberKey: string): AfterstatePort | null {
 	return port;
 }
 
+/** The desktop Worker Thread transport takes precedence in Electron; browsers use bundled WASM. */
+export function memoryPort(memberKey: string): AfterstatePort | null {
+	return desktopMemoryPort(memberKey) ?? browserMemoryPort(memberKey);
+}
+
 /**
  * Erases a deleted room from the member's index at once. The sweep at the next start would catch it
  * too, and recall already drops passages of records the store no longer has; this makes the
@@ -70,7 +75,7 @@ export async function eraseRoomMemory(
 	memberKey: string | null,
 	roomId: string,
 ): Promise<void> {
-	const port = memberKey ? desktopMemoryPort(memberKey) : null;
+	const port = memberKey ? memoryPort(memberKey) : null;
 	if (!port) return;
 	try {
 		await eraseConversation(port, roomId);
@@ -79,8 +84,10 @@ export async function eraseRoomMemory(
 	}
 }
 
-/** Deletes the member's index files (account deletion, local reset). No-op outside desktop. */
+/** Deletes the member's derived index on either transport (account deletion, local reset). */
 export async function deleteDerivedMemory(memberKey: string): Promise<void> {
+	releaseBrowserMemory(memberKey);
+	ports.delete(memberKey);
 	const desktop = desktopAfterstate();
 	if (!desktop) return;
 	try {
@@ -88,4 +95,16 @@ export async function deleteDerivedMemory(memberKey: string): Promise<void> {
 	} catch {
 		console.warn("[local-data] couldn't delete the local memory index");
 	}
+}
+
+/** Drop plaintext worker state when the member scope closes. Ciphertext survives
+ * sign-out; destruction is reserved for account deletion or explicit local reset. */
+export function releaseMemory(memberKey: string): void {
+	releaseBrowserMemory(memberKey);
+	ports.delete(memberKey);
+	void desktopAfterstate()
+		?.release?.(memberKey)
+		.catch(() => {
+			console.warn("[chat] couldn't close the local memory worker");
+		});
 }

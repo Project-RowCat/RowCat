@@ -30,6 +30,7 @@ import type {
 import type { SyncRecoveryRecord } from "@rowcat/sync";
 import { type HlcState, tickHlc } from "@rowcat/sync";
 import Dexie, { type Table, type Transaction } from "dexie";
+import { releaseMemory } from "../afterstate/desktop-memory.ts";
 import type { StoredDraftCover } from "../local-authoring/draft-cover.ts";
 import type { StoredGenerationPreference } from "../local-generation/record.ts";
 import type { StoredProviderConnection } from "../local-provider/record.ts";
@@ -1009,6 +1010,7 @@ export function activateLocalDbScope(viewerId: string): LocalDb {
 	 */
 	db.on("versionchange", (event) => {
 		if (event.newVersion !== null) return;
+		releaseMemory(viewerId);
 		db.close({ disableAutoOpen: true });
 		if (active?.db === db) active = null;
 		deletedElsewhere(viewerId);
@@ -1070,6 +1072,7 @@ export function resetLocalDbScope(): void {
  * withdrawal calls this before clearing caches (`local-data/purge.ts`).
  */
 export async function deleteLocalDbForViewer(viewerId: string): Promise<void> {
+	releaseMemory(viewerId);
 	if (active?.viewerId === viewerId) {
 		const { db } = active;
 		// Drops the reference first. Even if deletion fails, this connection is never used again.
@@ -1086,8 +1089,9 @@ export async function deleteLocalDbForViewer(viewerId: string): Promise<void> {
 
 function closeActiveScope(): void {
 	if (!active) return;
-	const { db } = active;
+	const { db, viewerId } = active;
 	active = null;
+	releaseMemory(viewerId);
 	try {
 		db.close();
 	} catch {

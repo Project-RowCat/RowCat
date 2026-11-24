@@ -4,6 +4,7 @@ import {
 	type ChatStore,
 	type ConversationMemoryRuntime,
 	conversationMemoryHooks,
+	createMaintainer,
 	effectiveChatPersona,
 	type GeneratedAssistantMessage,
 	type GenerationPreference,
@@ -11,7 +12,7 @@ import {
 	loadChatHistoryWindow,
 	protectedStoryIdOf,
 } from "@rowcat/chat";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import type { ConversationSession } from "#/features/conversation/session.ts";
 import {
 	type ConversationGenerationState,
@@ -176,9 +177,16 @@ export function useChatGeneration(
 	room: ChatRoom | null,
 ): ConversationGenerationState {
 	const { store, viewerId } = useChatScope();
-	// The local afterstate engine (desktop; null in a plain browser, where memory is unavailable).
+	// The local afterstate engine: native preload in Electron, WASM Worker in a browser.
 	const memory = useMemoryRuntime(viewerId, store);
 	const { store: preferences } = useGenerationScope();
+	const roomId = room?.id ?? null;
+	useEffect(() => {
+		// Browser indexes disappear on reload. Rebuild from the authoritative local records as
+		// soon as a room opens, before its first reply; a per-room single flight coalesces this
+		// with the same maintainer used after saves and by the memory screen.
+		if (store && roomId) createMaintainer(memory, store, roomId)?.();
+	}, [store, roomId, memory]);
 
 	/**
 	 * The execution identity: store and effective role together, a new object only when those two
