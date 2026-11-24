@@ -575,8 +575,9 @@ function KindEditor({
 				<>
 					<Notice>{t("editor.agentNote")}</Notice>
 					<Field label={t("editor.system")} errors={errors("system")}>
-						{(props) => (
+						{({ id, ...props }) => (
 							<Textarea
+								id={id}
 								{...props}
 								value={draft.system}
 								rows={6}
@@ -650,8 +651,9 @@ function HttpEditor({
 				</span>
 			</Notice>
 			<Field label={t("editor.url")} errors={issuesFor(issues, "url")}>
-				{(props) => (
+				{({ id, ...props }) => (
 					<Input
+						id={id}
 						{...props}
 						type="url"
 						inputMode="url"
