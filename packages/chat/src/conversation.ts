@@ -171,6 +171,14 @@ export interface ConversationSession {
 	 */
 	loadUserTools?: () => Promise<ChatCustomToolDto[]>;
 	/**
+	 * The room's tool switches (`ChatRoom.toolOverrides`), read at turn start for `loadUserTools`'s
+	 * reason. The registry reads the creator's switches from it: a work's `http` tool runs only where
+	 * the reader switched it on (`creatorToolActiveIn`), so a switch flipped off a moment before
+	 * sending must already be off. Absent: no creator `http` tool runs. A work test answers
+	 * `authorToolOverrides` instead — the person testing is the author, on their own machine.
+	 */
+	loadToolOverrides?: () => Promise<Readonly<Record<string, boolean>>>;
+	/**
 	 * Wakes long-term memory maintenance (afterstate indexing and consolidation) after the confirmed
 	 * response has been saved. Optional: absent where there is no engine and in replay sessions.
 	 *

@@ -1,6 +1,9 @@
 import {
 	type ChatRoom,
 	type ChatUserTool,
+	type CreatorConsentTool,
+	creatorConsentTools,
+	roomToolOverrides,
 	userToolActiveIn,
 } from "@rowcat/chat";
 import { CHAT_MAX_TOOLS } from "@rowcat/contracts/chat";
@@ -30,8 +33,10 @@ import { roomOverridesTool } from "./tool-copy.ts";
  * revert, and a save button over switches would be a second step that people forget.
  *
  * What a tool is and does is edited in /settings/tools, not here; this view only links there.
- * The work's own tools are not listed: the creator decided those, and the room has no switch for
- * them.
+ * The work's own tools are not listed, except the ones that reach outside the conversation: its
+ * local web requests (`creatorConsentTools`). Those call a program on the reader's own machine
+ * with what the model wrote from this conversation, so they are off until the reader switches them
+ * on here, and off is the absence of the key (`creatorToolActiveIn` has no default-on).
  */
 export function RoomSettingsTools({
 	room,
@@ -56,8 +61,31 @@ export function RoomSettingsTools({
 			});
 	};
 
+	const creatorTools = creatorConsentTools(room.seed);
+	const overrides = roomToolOverrides(room);
+
 	return (
 		<div className="flex flex-col gap-4">
+			{creatorTools.length > 0 && (
+				<section className="flex flex-col gap-2">
+					<h3 className="font-medium text-sm">{t("room.creatorTitle")}</h3>
+					<p className="text-muted-foreground text-sm">
+						{t("room.creatorDescription")}
+					</p>
+					<ul className="flex flex-col divide-y">
+						{creatorTools.map((tool) => (
+							<CreatorToolRow
+								key={tool.key}
+								tool={tool}
+								active={overrides[tool.key] === true}
+								disabled={!library.ready}
+								onChange={(enabled) => set(tool.key, enabled ? true : null)}
+							/>
+						))}
+					</ul>
+				</section>
+			)}
+
 			<p className="text-muted-foreground text-sm">{t("room.description")}</p>
 
 			{loading ? null : items.length === 0 ? (
@@ -103,6 +131,46 @@ export function RoomSettingsTools({
 				</Link>
 			</div>
 		</div>
+	);
+}
+
+function CreatorToolRow({
+	tool,
+	active,
+	disabled,
+	onChange,
+}: {
+	tool: CreatorConsentTool;
+	active: boolean;
+	disabled: boolean;
+	onChange: (enabled: boolean) => void;
+}) {
+	const { t } = useTranslation("tools");
+	const id = useId();
+	return (
+		<li className="flex items-start gap-3 py-3">
+			<div className="flex min-w-0 flex-1 flex-col gap-0.5">
+				<label htmlFor={id} className="truncate font-medium font-mono text-sm">
+					{tool.name}
+				</label>
+				<p className="line-clamp-2 text-muted-foreground text-xs">
+					{tool.description}
+				</p>
+				<p className="break-all font-mono text-muted-foreground text-xs">
+					{t("room.creatorAddress", { address: tool.address })}
+				</p>
+			</div>
+			<Switch
+				id={id}
+				checked={active}
+				disabled={disabled}
+				aria-label={t("room.creatorToggleLabel", {
+					name: tool.name,
+					address: tool.address,
+				})}
+				onCheckedChange={(next) => onChange(next)}
+			/>
+		</li>
 	);
 }
 

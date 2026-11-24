@@ -7,6 +7,7 @@ import type {
 import {
 	CHAT_CUSTOM_TOOL_LIMITS,
 	ChatCreatorToolDto as ChatCreatorToolSchema,
+	isChatCreatorHttpUrl,
 } from "@rowcat/contracts/chat";
 import type {
 	AuthoringSoftDelete,
@@ -29,11 +30,13 @@ import { freshSyncMeta } from "./model.ts";
  * template text. Publishing narrows the record to the contract (`toCreatorTool`), and validation
  * names what is missing (`checkDraftTool`).
  *
- * `http` is not in the creator's vocabulary (`ChatCreatorToolDto`): a creator's endpoint would
- * receive excerpts of other people's conversations.
+ * A creator's `http` calls the **reader's own machine** only (`localhost`, `127.0.0.1`, `[::1]`) and
+ * carries no headers (`ChatCreatorHttpToolAction`): any other host would receive excerpts of other
+ * people's conversations, and a header value in the seed would be published to every reader. It
+ * also runs only in rooms where the reader switched it on.
  */
 
-export const DRAFT_TOOL_KINDS = ["template", "table", "agent"] as const;
+export const DRAFT_TOOL_KINDS = ["template", "table", "agent", "http"] as const;
 export type DraftToolKind = (typeof DRAFT_TOOL_KINDS)[number];
 
 export interface DraftToolParameter {
@@ -63,6 +66,13 @@ export interface DraftTool extends AuthoringSyncMeta, AuthoringSoftDelete {
 	/** `agent`: the sub-agent's system prompt and output cap. */
 	system: string;
 	maxOutputTokens: number;
+	/**
+	 * `http`: a loopback address on the reader's machine, and the method. Optional on the record
+	 * because drafts written before this kind have no key; read through `createDraftToolRecord`'s
+	 * defaults or `draftToolUrl` / `draftToolMethod`.
+	 */
+	url?: string;
+	method?: DraftToolHttpMethod;
 
 	createdAt: string;
 	updatedAt: string;
@@ -80,6 +90,8 @@ export interface CreateDraftToolInput {
 	draws?: number;
 	system?: string;
 	maxOutputTokens?: number;
+	url?: string;
+	method?: DraftToolHttpMethod;
 }
 
 export type NewDraftTool = Omit<
@@ -99,8 +111,19 @@ export type DraftToolPatch = Partial<
 		| "draws"
 		| "system"
 		| "maxOutputTokens"
+		| "url"
+		| "method"
 	>
 >;
+
+export const DRAFT_TOOL_HTTP_METHODS = ["POST", "GET"] as const;
+export type DraftToolHttpMethod = (typeof DRAFT_TOOL_HTTP_METHODS)[number];
+
+export const draftToolUrl = (tool: Pick<DraftTool, "url">): string =>
+	tool.url ?? "";
+export const draftToolMethod = (
+	tool: Pick<DraftTool, "method">,
+): DraftToolHttpMethod => tool.method ?? "POST";
 
 export const DRAFT_TOOL_DEFAULT_AGENT_OUTPUT_TOKENS = 1_024;
 
@@ -125,6 +148,8 @@ export function createDraftToolRecord(
 		system: input.system ?? "",
 		maxOutputTokens:
 			input.maxOutputTokens ?? DRAFT_TOOL_DEFAULT_AGENT_OUTPUT_TOKENS,
+		url: input.url ?? "",
+		method: input.method ?? "POST",
 		createdAt: stamp.now,
 		updatedAt: stamp.now,
 		deletedAt: null,
@@ -158,6 +183,13 @@ function actionOf(tool: DraftTool): ChatCreatorToolAction {
 				kind: "agent",
 				system: tool.system.trim(),
 				maxOutputTokens: tool.maxOutputTokens,
+			};
+		case "http":
+			return {
+				kind: "http",
+				url: draftToolUrl(tool).trim(),
+				method: draftToolMethod(tool),
+				headers: [],
 			};
 	}
 }
@@ -193,8 +225,9 @@ export function toCreatorTool(tool: DraftTool): ChatCreatorToolDto {
  * declaration and action are copied as values, not linked: a published work must not change when
  * its author later edits their own library, and a reader never has that library.
  *
- * `http` has no draft form (creators cannot publish one, see the header), so it returns `null` and
- * the picker says why rather than dropping the endpoint silently.
+ * An `http` tool comes across only when it could be published: a loopback address and no headers
+ * (see the header). Anything else returns `null` and the picker says why (`draftToolImportBlock`),
+ * rather than dropping the headers silently or carrying an address publication would refuse.
  */
 export function newDraftToolOf(tool: ChatCustomToolDto): NewDraftTool | null {
 	const { declaration, action } = tool;
@@ -227,8 +260,24 @@ export function newDraftToolOf(tool: ChatCustomToolDto): NewDraftTool | null {
 				maxOutputTokens: action.maxOutputTokens,
 			};
 		case "http":
-			return null;
+			return draftToolImportBlock(tool) === null
+				? { ...base, kind: "http", url: action.url, method: action.method }
+				: null;
 	}
+}
+
+/**
+ * Why a library tool cannot be copied into a draft, or `null` when it can. Only `http` is ever
+ * blocked: by an address off the reader's machine, or by headers (whose values would be published).
+ */
+export function draftToolImportBlock(
+	tool: ChatCustomToolDto,
+): "http_not_local" | "http_headers" | null {
+	const { action } = tool;
+	if (action.kind !== "http") return null;
+	if (!isChatCreatorHttpUrl(action.url)) return "http_not_local";
+	if (action.headers.length > 0) return "http_headers";
+	return null;
 }
 
 /**
@@ -259,6 +308,8 @@ export const DRAFT_TOOL_ISSUE_CODES = [
 	"system_required",
 	"system_too_long",
 	"max_output_tokens_out_of_range",
+	"url_required",
+	"url_not_local",
 	"other",
 ] as const;
 export type DraftToolIssueCode = (typeof DRAFT_TOOL_ISSUE_CODES)[number];
@@ -323,6 +374,7 @@ function issueOf(issue: SchemaIssue): DraftToolIssue {
 			return { code: sizeCode(issue, "system_required", "system_too_long") };
 		if (key === "maxOutputTokens")
 			return { code: "max_output_tokens_out_of_range" };
+		if (key === "url") return { code: "url_not_local" };
 	}
 	return { code: "other" };
 }
@@ -347,7 +399,16 @@ export function checkDraftTool(tool: DraftTool): DraftToolCheck {
 	const parsed = ChatCreatorToolSchema.safeParse(toCreatorTool(tool));
 	const reserved = DRAFT_TOOL_RESERVED_NAMES.includes(tool.name.trim());
 	if (parsed.success && !reserved) return { ok: true, tool: parsed.data };
-	const issues = parsed.success ? [] : parsed.error.issues.map(issueOf);
+	const urlMissing = tool.kind === "http" && draftToolUrl(tool).trim() === "";
+	const issues = parsed.success
+		? []
+		: parsed.error.issues
+				.map(issueOf)
+				.map((issue) =>
+					urlMissing && issue.code === "url_not_local"
+						? { code: "url_required" as const }
+						: issue,
+				);
 	if (reserved) issues.unshift({ code: "name_reserved" });
 	return { ok: false, issues: dedupeIssues(issues) };
 }
@@ -399,6 +460,10 @@ export function draftToolIssueSentence(issue: DraftToolIssue): string {
 			return `The sub-agent's instructions can be up to ${limits.agentSystemChars.toLocaleString("en-US")} characters.`;
 		case "max_output_tokens_out_of_range":
 			return `The answer length must be between 1 and ${limits.agentMaxOutputTokens.toLocaleString("en-US")} tokens.`;
+		case "url_required":
+			return "Enter the address the tool calls.";
+		case "url_not_local":
+			return "A story's HTTP tool can only call the reader's own machine: http://localhost, 127.0.0.1 or [::1].";
 		case "other":
 			return "Something in this tool isn't valid yet.";
 	}

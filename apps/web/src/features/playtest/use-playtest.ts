@@ -1,5 +1,6 @@
 import type { AuthoringStore, PlaytestSnapshot } from "@rowcat/authoring";
 import {
+	authorToolOverrides,
 	type ConversationDebugState,
 	type ConversationDebugStore,
 	chatHistoryWindow,
@@ -218,6 +219,11 @@ export function usePlaytest(initial: PlaytestState): PlaytestController {
 			 * shared hook, which builds that layer.
 			 */
 			loadPreference: async () => stateRef.current.preference,
+			/**
+			 * The person testing is the work's author, on their own machine: the draft's own `http` tools
+			 * (loopback only) run without a room switch to flip (`authorToolOverrides`).
+			 */
+			loadToolOverrides: async () => authorToolOverrides(token.snapshot.seed),
 			/**
 			 * History goes through the same window as a real conversation (`chatHistoryWindow`, stepped on
 			 * the message count). A different rule here would give long playtests and long conversations

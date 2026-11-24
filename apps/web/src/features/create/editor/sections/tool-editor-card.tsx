@@ -1,9 +1,13 @@
 import {
 	checkDraftTool,
+	DRAFT_TOOL_HTTP_METHODS,
 	DRAFT_TOOL_LIMITS,
 	type DraftTool,
+	type DraftToolHttpMethod,
 	type DraftToolKind,
 	type DraftToolParameter,
+	draftToolMethod,
+	draftToolUrl,
 } from "@rowcat/authoring";
 import { userToolNameTaken } from "@rowcat/chat";
 import {
@@ -103,6 +107,8 @@ export function ToolEditorCard({
 	const kindId = useId();
 	const numberId = useId();
 	const numberHintId = `${numberId}-hint`;
+	const methodId = useId();
+	const methodHintId = `${methodId}-hint`;
 	const panelId = useId();
 
 	/** A tool with nothing written yet starts expanded, so `Add` leads straight to typing. */
@@ -347,6 +353,54 @@ export function ToolEditorCard({
 									})}
 								</p>
 							</div>
+						</>
+					)}
+					{tool.kind === "http" && (
+						<>
+							<TextField
+								label={t("toolEditorCard.url")}
+								value={draftToolUrl(tool)}
+								placeholder="http://localhost:8787/tool"
+								hint={t("toolEditorCard.urlHint")}
+								onChange={(url) => patch({ url })}
+							/>
+							<div className="flex flex-col gap-1.5">
+								<Label htmlFor={methodId}>{t("toolEditorCard.method")}</Label>
+								<Select
+									value={draftToolMethod(tool)}
+									items={DRAFT_TOOL_HTTP_METHODS.map((value) => ({
+										value,
+										label: value,
+									}))}
+									onValueChange={(next) =>
+										next !== null &&
+										next !== draftToolMethod(tool) &&
+										patch({ method: next as DraftToolHttpMethod })
+									}
+								>
+									<SelectTrigger
+										id={methodId}
+										size="sm"
+										className="w-28"
+										aria-describedby={methodHintId}
+									>
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										{DRAFT_TOOL_HTTP_METHODS.map((value) => (
+											<SelectItem key={value} value={value}>
+												{value}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+								<p id={methodHintId} className="text-xs text-muted-foreground">
+									{t(`toolEditorCard.methodHint.${draftToolMethod(tool)}`)}
+								</p>
+							</div>
+							<p className="text-xs text-muted-foreground">
+								{t("toolEditorCard.httpNote")}
+							</p>
 						</>
 					)}
 				</CardDisclosurePanel>

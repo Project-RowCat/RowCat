@@ -11,6 +11,7 @@ import {
 	type GenerationPreferenceStore,
 	loadChatHistoryWindow,
 	protectedStoryIdOf,
+	roomToolOverrides,
 } from "@rowcat/chat";
 
 /**
@@ -125,6 +126,10 @@ export function createChatConversation(input: {
 			]);
 			return current ? activeUserTools(current, tools) : [];
 		},
+		// The room's tool switches, re-read for the same reason (same wiring as web): the creator's
+		// `http` tools run only where the reader switched them on. A deleted room answers none.
+		loadToolOverrides: async () =>
+			roomToolOverrides((await store.getRoom(room.id)) ?? {}),
 		...memoryHooks,
 		appendUserMessage: async (content: string) => {
 			await store.appendMessage({

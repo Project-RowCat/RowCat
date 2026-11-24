@@ -9,7 +9,10 @@ import {
 	DRAFT_TOOL_LIMITS,
 	DRAFT_TOOL_RESERVED_NAMES,
 	type DraftTool,
+	draftToolImportBlock,
 	draftToolIssueSentence,
+	draftToolMethod,
+	draftToolUrl,
 	newDraftToolOf,
 	sortDraftTools,
 	toCreatorTool,
@@ -322,7 +325,41 @@ describe("between a user's library and a draft", () => {
 		expect(checkDraftTool(draft)).toEqual({ ok: true, tool: library });
 	});
 
-	it("an http tool has no draft form", () => {
+	it("a localhost http tool with no headers copies into a draft and publishes as it was", () => {
+		const library = {
+			declaration: { name: "hook", description: "x", parameters: [] },
+			action: {
+				kind: "http" as const,
+				url: "http://localhost:8787/hook",
+				method: "GET" as const,
+				headers: [],
+			},
+		};
+		expect(draftToolImportBlock(library)).toBeNull();
+		const input = newDraftToolOf(library);
+		expect(input).not.toBeNull();
+		const draft = createDraftToolRecord(
+			{ draftId: "draft-1", positionIndex: 0, ...input },
+			stamp("t"),
+		);
+		expect(checkDraftTool(draft)).toEqual({ ok: true, tool: library });
+	});
+
+	it("an http tool with headers stays out, and says why", () => {
+		const library = {
+			declaration: { name: "hook", description: "x", parameters: [] },
+			action: {
+				kind: "http" as const,
+				url: "http://localhost:8787/hook",
+				method: "POST" as const,
+				headers: [{ name: "Authorization", value: "secret" }],
+			},
+		};
+		expect(newDraftToolOf(library)).toBeNull();
+		expect(draftToolImportBlock(library)).toBe("http_headers");
+	});
+
+	it("an http tool off localhost has no draft form", () => {
 		expect(
 			newDraftToolOf({
 				declaration: { name: "hook", description: "x", parameters: [] },
@@ -334,6 +371,76 @@ describe("between a user's library and a draft", () => {
 				},
 			}),
 		).toBeNull();
+	});
+});
+
+describe("the creator's http tool", () => {
+	it("publishes a loopback address with no headers", () => {
+		const checked = checkDraftTool(
+			tool("t", {
+				kind: "http",
+				url: " http://127.0.0.1:3000/x ",
+				method: "GET",
+			}),
+		);
+		expect(checked).toEqual({
+			ok: true,
+			tool: expect.objectContaining({
+				action: {
+					kind: "http",
+					url: "http://127.0.0.1:3000/x",
+					method: "GET",
+					headers: [],
+				},
+			}),
+		});
+	});
+
+	it("asks for an address when there is none, and refuses one off the reader's machine", () => {
+		expect(checkDraftTool(tool("t", { kind: "http" }))).toEqual({
+			ok: false,
+			issues: [{ code: "url_required" }],
+		});
+		expect(
+			checkDraftTool(
+				tool("t", { kind: "http", url: "https://example.com/hook" }),
+			),
+		).toEqual({ ok: false, issues: [{ code: "url_not_local" }] });
+	});
+
+	it("reads a record from before this kind as an empty address and POST", () => {
+		const { url: _url, method: _method, ...rest } = tool("t");
+		const old: DraftTool = rest;
+		expect(draftToolUrl(old)).toBe("");
+		expect(draftToolMethod(old)).toBe("POST");
+	});
+
+	it("syncs the address and method, and decodes a payload without them", () => {
+		const record = tool("t", {
+			kind: "http",
+			url: "http://localhost:8787",
+			method: "GET",
+		});
+		const data = draftToolSyncCodec.encode(record) as Record<string, unknown>;
+		const decoded = draftToolSyncCodec.decode({
+			id: "t",
+			schemaVersion: AUTHORING_SCHEMA_VERSION,
+			rev: REV,
+			deletedAt: null,
+			data,
+		});
+		expect(decoded?.url).toBe("http://localhost:8787");
+		expect(decoded?.method).toBe("GET");
+		const { url: _url, method: _method, ...older } = data;
+		const decodedOld = draftToolSyncCodec.decode({
+			id: "t",
+			schemaVersion: AUTHORING_SCHEMA_VERSION,
+			rev: REV,
+			deletedAt: null,
+			data: older,
+		});
+		expect(decodedOld).not.toBeNull();
+		expect(decodedOld && draftToolUrl(decodedOld)).toBe("");
 	});
 });
 
@@ -466,7 +573,7 @@ describe("the tool sync codec", () => {
 				schemaVersion: AUTHORING_SCHEMA_VERSION,
 				rev: REV,
 				deletedAt: null,
-				data: { ...data, kind: "http" },
+				data: { ...data, kind: "script" },
 			}),
 		).toBeNull();
 	});

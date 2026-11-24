@@ -1,5 +1,9 @@
 import type { ChatRoom } from "@rowcat/chat";
-import { roomToolOverrides, userToolActiveIn } from "@rowcat/chat";
+import {
+	creatorConsentTools,
+	roomToolOverrides,
+	userToolActiveIn,
+} from "@rowcat/chat";
 import { space } from "@rowcat/design";
 import { Button, Notice, Spinner, Switch, Text } from "@rowcat/ui-native";
 import { useState } from "react";
@@ -19,6 +23,10 @@ import { useLocalUserTools } from "../../../lib/local-data/use-user-tools.ts";
  * and offers "use default", which clears the key (`null`) instead of writing the default's value:
  * writing it would freeze today's default into this room and silently ignore a later change in
  * settings.
+ *
+ * Above them, the work's own local web requests (`creatorConsentTools`): they call a program on
+ * this device with what the model wrote from this conversation, so they stay off until the reader
+ * switches them on here. Off is the absence of the key — `creatorToolActiveIn` has no default-on.
  */
 export function RoomSettingsTools({
 	room,
@@ -36,6 +44,7 @@ export function RoomSettingsTools({
 	const [error, setError] = useState<string | null>(null);
 	const [busyId, setBusyId] = useState<string | null>(null);
 	const overrides = roomToolOverrides(room);
+	const creatorTools = creatorConsentTools(room.seed);
 
 	const apply = (toolId: string, enabled: boolean | null): void => {
 		if (busyId) return;
@@ -55,6 +64,43 @@ export function RoomSettingsTools({
 
 	return (
 		<View style={styles.root}>
+			{creatorTools.length > 0 ? (
+				<View style={styles.section}>
+					<Text variant="label" weight="semibold">
+						{t("room.creatorTitle")}
+					</Text>
+					<Text variant="caption" tone="muted-foreground">
+						{t("room.creatorDescription")}
+					</Text>
+					{creatorTools.map((tool) => (
+						<View key={tool.key} style={styles.rowTop}>
+							<View style={styles.rowText}>
+								<Text variant="body" weight="medium" numberOfLines={1}>
+									{tool.name}
+								</Text>
+								<Text variant="label" tone="muted-foreground" numberOfLines={2}>
+									{tool.description}
+								</Text>
+								<Text variant="caption" tone="muted-foreground">
+									{t("room.creatorAddress", { address: tool.address })}
+								</Text>
+							</View>
+							<Switch
+								label={t("room.creatorSwitchLabel", {
+									name: tool.name,
+									address: tool.address,
+								})}
+								value={overrides[tool.key] === true}
+								disabled={busyId !== null}
+								onValueChange={(enabled) =>
+									apply(tool.key, enabled ? true : null)
+								}
+							/>
+						</View>
+					))}
+				</View>
+			) : null}
+
 			<Text variant="caption" tone="muted-foreground">
 				{t("room.description")}
 			</Text>
@@ -128,6 +174,7 @@ export function RoomSettingsTools({
 
 const styles = StyleSheet.create({
 	root: { gap: space.md },
+	section: { gap: space.sm },
 	center: { alignItems: "center", paddingVertical: space.xl },
 	row: { gap: space.xs },
 	rowTop: { alignItems: "center", flexDirection: "row", gap: space.md },

@@ -6,6 +6,7 @@ import {
 	type DraftToolIssue,
 	type DraftToolKind,
 	type DraftToolParameter,
+	draftToolUrl,
 } from "@rowcat/authoring";
 import {
 	CHAT_MAX_TOOL_PARAMETERS,
@@ -92,6 +93,7 @@ export const isBlankTool = (tool: DraftTool): boolean =>
 	tool.template.trim() === "" &&
 	tool.system.trim() === "" &&
 	tool.entries.every((entry) => entry.trim() === "") &&
+	draftToolUrl(tool).trim() === "" &&
 	tool.parameters.length === 0;
 
 export interface ToolSummary {

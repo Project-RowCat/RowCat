@@ -140,5 +140,10 @@ export const tools = {
 		summaryOn: "{{on}} of {{total}} on",
 		switchLabel: "{{name}} in this conversation",
 		resetLabel: "Use the default for {{name}}",
+		creatorTitle: "This story's local tools",
+		creatorDescription:
+			"These call a program on this device. When the AI uses one, it sends what it wrote from this conversation to that address. They stay off until you turn them on here.",
+		creatorAddress: "Calls {{address}}",
+		creatorSwitchLabel: "Let {{name}} call {{address}} in this conversation",
 	},
 };

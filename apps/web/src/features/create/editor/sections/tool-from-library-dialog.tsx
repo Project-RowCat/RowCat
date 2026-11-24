@@ -1,5 +1,5 @@
 import type { NewDraftTool } from "@rowcat/authoring";
-import { newDraftToolOf } from "@rowcat/authoring";
+import { draftToolImportBlock, newDraftToolOf } from "@rowcat/authoring";
 import type { ChatUserTool } from "@rowcat/chat";
 import { Badge } from "@rowcat/ui-web/components/badge";
 import { Button } from "@rowcat/ui-web/components/button";
@@ -20,9 +20,10 @@ import { toolKindLabel } from "./tool-fields.ts";
  * it to the draft (`newDraftToolOf`). A copy, not a link: the published work must not change when
  * the author later edits their library, and readers never have that library.
  *
- * `http` tools are listed but cannot be picked, with the reason on the row. Creators cannot publish
- * one (an endpoint the author controls would receive other people's conversations), and hiding the
- * row would leave the author wondering where their tool went.
+ * An `http` tool can be picked only when a story could publish it: a localhost address and no
+ * headers (`draftToolImportBlock`). Others are listed with the reason on the row — an endpoint the
+ * author controls would receive other people's conversations, and header values would reach every
+ * reader — because hiding the row would leave the author wondering where their tool went.
  *
  * The dialog does not close on its own after a pick, so several tools can be brought in one visit;
  * each pick says so on its row.
@@ -93,6 +94,7 @@ function LibraryRow({
 }) {
 	const { t } = useTranslation("create");
 	const input = newDraftToolOf(tool.tool);
+	const block = draftToolImportBlock(tool.tool);
 	const { declaration, action } = tool.tool;
 
 	return (
@@ -103,7 +105,7 @@ function LibraryRow({
 						{declaration.name}
 					</span>
 					<Badge variant="secondary">
-						{action.kind === "http"
+						{action.kind === "http" && block !== null
 							? t("toolLibraryPick.http")
 							: toolKindLabel(action.kind)}
 					</Badge>
@@ -111,9 +113,11 @@ function LibraryRow({
 				<p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
 					{declaration.description}
 				</p>
-				{input === null && (
+				{block !== null && (
 					<p className="mt-1 text-xs text-muted-foreground">
-						{t("toolLibraryPick.httpUnavailable")}
+						{block === "http_headers"
+							? t("toolLibraryPick.httpHeaders")
+							: t("toolLibraryPick.httpNotLocal")}
 					</p>
 				)}
 				{input !== null && inDraft && (

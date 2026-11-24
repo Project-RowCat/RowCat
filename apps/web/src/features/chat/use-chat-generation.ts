@@ -12,6 +12,7 @@ import {
 	type GenerationPreferenceStore,
 	loadChatHistoryWindow,
 	protectedStoryIdOf,
+	roomToolOverrides,
 } from "@rowcat/chat";
 import { useEffect, useMemo } from "react";
 import type { ConversationSession } from "#/features/conversation/session.ts";
@@ -141,6 +142,13 @@ export function createChatConversation(input: {
 			]);
 			return current ? activeUserTools(current, tools) : [];
 		},
+		/**
+		 * The room's tool switches, re-read for the same reason: the creator's `http` tools run only
+		 * where the reader switched them on (`creatorToolActiveIn`). A room deleted meanwhile answers
+		 * none, which switches every one of them off.
+		 */
+		loadToolOverrides: async () =>
+			roomToolOverrides((await store.getRoom(room.id)) ?? {}),
 		...memoryHooks,
 		appendUserMessage: async (content: string) => {
 			await store.appendMessage({

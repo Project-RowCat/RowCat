@@ -494,7 +494,7 @@ describe("creator tools", () => {
 
 	it("an unknown tool kind is refused rather than dropped", () => {
 		const manifest = JSON.parse(JSON.stringify(build(withTools())));
-		manifest.tools[0].kind = "http";
+		manifest.tools[0].kind = "script";
 		expect(parseStoryArchiveManifest(manifest).ok).toBe(false);
 	});
 });

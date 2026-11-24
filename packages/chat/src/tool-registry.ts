@@ -7,6 +7,7 @@ import { CHAT_MAX_TOOLS } from "@rowcat/contracts/chat";
 import type { ChatTool } from "./tool.ts";
 import { type ChatCustomToolPorts, chatCustomTool } from "./tool-custom.ts";
 import { chatLoreTool } from "./tool-lore.ts";
+import { creatorToolActiveIn } from "./user-tool.ts";
 
 /**
  * The one place that decides what this conversation can call. If two apps (and the server's
@@ -16,7 +17,8 @@ import { chatLoreTool } from "./tool-lore.ts";
  *
  * Three sources, in this order:
  * 1. Built in: lore search, when the room has something to find (`chatLoreTool`).
- * 2. The creator's tools, carried in the seed (`seed.tools`).
+ * 2. The creator's tools, carried in the seed (`seed.tools`). Their `http` tools only where the
+ *    reader switched them on (`creatorToolActiveIn`).
  * 3. The user's own tools that are on for this room (`activeUserTools` in `user-tool.ts`).
  *
  * The order is the precedence. A name already taken is skipped, so a user tool can never shadow the
@@ -36,6 +38,12 @@ export interface ChatToolRegistryOptions {
 	userTools?: readonly ChatCustomToolDto[];
 	/** What custom tools need from outside. Absent: no custom tool is built. */
 	ports?: ChatCustomToolPorts;
+	/**
+	 * The room's tool switches (`ChatRoom.toolOverrides`), read at turn start. The creator's `http`
+	 * tools run only where the reader switched them on (`creatorToolActiveIn`); absent means none
+	 * of them run.
+	 */
+	toolOverrides?: Readonly<Record<string, boolean>>;
 }
 
 export function chatConversationTools(
@@ -64,7 +72,9 @@ export function chatConversationTools(
 
 	const { ports } = options;
 	if (ports) {
-		for (const tool of room.seed.tools ?? []) add(chatCustomTool(tool, ports));
+		const switches = { toolOverrides: options.toolOverrides };
+		for (const tool of room.seed.tools ?? [])
+			if (creatorToolActiveIn(switches, tool)) add(chatCustomTool(tool, ports));
 		for (const tool of options.userTools ?? [])
 			add(chatCustomTool(tool, ports));
 	}

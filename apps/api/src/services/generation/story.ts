@@ -67,8 +67,11 @@ type StoryAgentRunner = (
 
 /**
  * This room's tools: the device's registration (`chatConversationTools`), with the ports the server
- * can offer. Randomness for tables, and a sub-agent runner. No `fetch`: `http` is not in a
- * creator's vocabulary, and this loop never runs a user's tools (the device holds those).
+ * can offer. Randomness for tables, and a sub-agent runner. No `fetch`, and no tool switches: a
+ * creator's `http` calls the **reader's** own machine (loopback only), which from here would be
+ * this server's — a request forgery against our own host. So protected rooms never run it (the
+ * registry skips it twice: no port, and no reader switch). This loop never runs a user's tools
+ * either (the device holds those).
  *
  * The agent port is always present, even at assembly time where it would never be called, because
  * port presence decides which tools are registered (`chatCustomTool`). Assembly and the loop must

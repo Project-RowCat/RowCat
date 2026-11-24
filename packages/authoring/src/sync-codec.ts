@@ -5,7 +5,13 @@ import {
 import type { Rev } from "@rowcat/contracts/sync";
 import { ORIENTATIONS, STORY_VISIBILITIES } from "@rowcat/domain";
 import { z } from "zod";
-import { DRAFT_TOOL_KINDS, type DraftTool } from "./draft-tool.ts";
+import {
+	DRAFT_TOOL_HTTP_METHODS,
+	DRAFT_TOOL_KINDS,
+	type DraftTool,
+	draftToolMethod,
+	draftToolUrl,
+} from "./draft-tool.ts";
 import { foldLegacyDraftBody } from "./legacy.ts";
 import {
 	AUTHORING_SCHEMA_VERSION,
@@ -536,6 +542,9 @@ const ToolData = z.object({
 	draws: z.number().int(),
 	system: z.string(),
 	maxOutputTokens: z.number().int(),
+	/** `http`. Optional: records written before that kind have no key, and absence reads as empty. */
+	url: z.string().optional(),
+	method: z.enum(DRAFT_TOOL_HTTP_METHODS).optional(),
 	createdAt: z.string(),
 	updatedAt: z.string(),
 });
@@ -555,6 +564,8 @@ export const draftToolSyncCodec = {
 		draws: record.draws,
 		system: record.system,
 		maxOutputTokens: record.maxOutputTokens,
+		url: draftToolUrl(record),
+		method: draftToolMethod(record),
 		createdAt: record.createdAt,
 		updatedAt: record.updatedAt,
 	}),

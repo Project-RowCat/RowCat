@@ -1,4 +1,8 @@
-import { ChatCustomToolDto } from "@rowcat/contracts/chat";
+import {
+	type ChatCreatorToolDto,
+	ChatCustomToolDto,
+	isChatCreatorHttpUrl,
+} from "@rowcat/contracts/chat";
 import type { ChatSoftDelete, ChatStamp, ChatSyncMeta } from "./model.ts";
 import { freshChatSyncMeta } from "./model.ts";
 import { CHAT_LORE_TOOL_NAME } from "./tool-lore.ts";
@@ -168,6 +172,97 @@ export function applyRoomToolOverrides<
 		return { ...room, toolOverrides: { ...overrides } };
 	const { toolOverrides: _cleared, ...rest } = room;
 	return rest as T;
+}
+
+/**
+ * The creator's tools share the room's override map with the user's, under a key a user tool id
+ * can never be (ids are issued by the store and carry no colon). Keyed by **name**, not position:
+ * the name is what the model calls and what a republished work keeps, so a switch follows the tool
+ * across republishes, and a renamed tool is a different call and starts off again.
+ */
+export const creatorToolOverrideKey = (name: string): string =>
+	`creator:${name}`;
+
+/**
+ * Whether a creator tool needs the reader's own switch before it runs. Only `http` does: it is the
+ * one kind that reaches outside the conversation (to a service on the reader's machine,
+ * `ChatCreatorHttpToolAction`), and a work must not do that because someone opened it.
+ */
+export const creatorToolNeedsConsent = (tool: ChatCreatorToolDto): boolean =>
+	tool.action.kind === "http";
+
+/**
+ * Whether a creator tool runs in this room. Tools that need consent are on only where the reader
+ * said so — there is no default-on, and absence (every room before this axis, the server's loop,
+ * a work test) means off. Every other creator tool is always on; the creator decided those.
+ */
+export function creatorToolActiveIn(
+	room: { toolOverrides?: Readonly<Record<string, boolean>> },
+	tool: ChatCreatorToolDto,
+): boolean {
+	if (!creatorToolNeedsConsent(tool)) return true;
+	/*
+	 * The contract already refuses anything else, but a seed can reach this function from a stored
+	 * record that was never re-parsed. Checking here too keeps the guarantee where the call is made.
+	 */
+	if (
+		tool.action.kind === "http" &&
+		(!isChatCreatorHttpUrl(tool.action.url) || tool.action.headers.length > 0)
+	)
+		return false;
+	return (
+		roomToolOverrides(room)[creatorToolOverrideKey(tool.declaration.name)] ===
+		true
+	);
+}
+
+/** A creator tool the reader can switch on, as room settings list it. */
+export interface CreatorConsentTool {
+	name: string;
+	description: string;
+	/** Scheme, host and port only (`http://localhost:8787`): where the call goes, without the path's noise. */
+	address: string;
+	/** The room's override key (`creatorToolOverrideKey`). */
+	key: string;
+}
+
+/**
+ * The work's tools that run only with the reader's switch, for room settings. Tools whose address
+ * fails the loopback check are left out: they never run (`creatorToolActiveIn`), and a switch for
+ * them would promise something that cannot happen.
+ */
+export function creatorConsentTools(seed: {
+	tools?: readonly ChatCreatorToolDto[];
+}): CreatorConsentTool[] {
+	const listed: CreatorConsentTool[] = [];
+	for (const tool of seed.tools ?? []) {
+		const { action, declaration } = tool;
+		if (action.kind !== "http") continue;
+		if (!isChatCreatorHttpUrl(action.url) || action.headers.length > 0)
+			continue;
+		listed.push({
+			name: declaration.name,
+			description: declaration.description,
+			address: /^https?:\/\/[^/?#]+/i.exec(action.url)?.[0] ?? action.url,
+			key: creatorToolOverrideKey(declaration.name),
+		});
+	}
+	return listed;
+}
+
+/**
+ * Switches that turn on every creator tool that needs consent, for a work test: the person running
+ * it is the work's author, on their own machine, calling their own localhost. There is no room to
+ * hold a switch, and asking the author to consent to themselves would only be a step to forget.
+ */
+export function authorToolOverrides(seed: {
+	tools?: readonly ChatCreatorToolDto[];
+}): Record<string, boolean> {
+	const overrides: Record<string, boolean> = {};
+	for (const tool of seed.tools ?? [])
+		if (creatorToolNeedsConsent(tool))
+			overrides[creatorToolOverrideKey(tool.declaration.name)] = true;
+	return overrides;
 }
 
 /** Whether a tool is on in this room: the room's choice, else the tool's default. */

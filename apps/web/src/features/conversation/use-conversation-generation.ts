@@ -651,6 +651,11 @@ export function useConversationGeneration(
 					 * means a tool switched off a moment ago is not declared on this turn.
 					 */
 					const userTools = (await session.loadUserTools?.()) ?? [];
+					/**
+					 * The room's tool switches, at the same moment. The work's `http` tools run only where the
+					 * reader switched them on (`creatorToolActiveIn`); a session without switches runs none.
+					 */
+					const toolOverrides = (await session.loadToolOverrides?.()) ?? {};
 
 					/**
 					 * Step ②-b: freeze this turn's effective generation settings, resolved as conversation over
@@ -891,6 +896,7 @@ export function useConversationGeneration(
 							 */
 							tools: chatConversationTools(session.runtime, {
 								userTools,
+								toolOverrides,
 								...(plan.kind === "assembled"
 									? {
 											ports: {

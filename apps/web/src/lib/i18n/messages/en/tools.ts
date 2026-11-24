@@ -206,5 +206,10 @@ export const tools = {
 		limit:
 			"A conversation can offer the model up to {{max}} tools at once, including built-in and story tools. Tools past the limit are left out.",
 		saveFailed: "Couldn't change this tool. Please try again.",
+		creatorTitle: "This story's local tools",
+		creatorDescription:
+			"These call a program on your own device. When the AI uses one, it sends what it wrote from this conversation to that address. They stay off until you turn them on here.",
+		creatorAddress: "Calls {{address}}",
+		creatorToggleLabel: "Let {{name}} call {{address}} in this conversation",
 	},
 };

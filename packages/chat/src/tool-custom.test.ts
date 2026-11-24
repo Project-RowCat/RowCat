@@ -19,6 +19,12 @@ import {
 } from "./tool-custom.ts";
 import { CHAT_LORE_TOOL_NAME } from "./tool-lore.ts";
 import { chatConversationTools } from "./tool-registry.ts";
+import {
+	authorToolOverrides,
+	creatorConsentTools,
+	creatorToolActiveIn,
+	creatorToolOverrideKey,
+} from "./user-tool.ts";
 
 /**
  * What custom tools must guarantee:
@@ -302,5 +308,106 @@ describe("chatConversationTools", () => {
 		expect(
 			chatConversationTools({ seed: { lore: [] } }, { ports: ports() }),
 		).toEqual([]);
+	});
+});
+
+/**
+ * A work's `http` tool calls the reader's own machine with what the model wrote from their
+ * conversation, so it is never declared unless the reader switched it on in that room.
+ */
+describe("the work's local http tools", () => {
+	const hook = (url = "http://localhost:8787/hook"): ChatCreatorToolDto => ({
+		declaration: {
+			name: "hook",
+			description: "Calls a local app.",
+			parameters: [],
+		},
+		action: { kind: "http", url, method: "POST", headers: [] },
+	});
+	const fetchPort: ChatToolFetch = async () => ({
+		ok: true,
+		status: 200,
+		text: async () => "ok",
+	});
+	const on = { [creatorToolOverrideKey("hook")]: true };
+
+	it("is off without the reader's switch, and with no switches at all", () => {
+		const room = { seed: { lore: [], tools: [hook()] } };
+		expect(
+			chatConversationTools(room, { ports: ports({ fetch: fetchPort }) }),
+		).toEqual([]);
+		expect(
+			chatConversationTools(room, {
+				ports: ports({ fetch: fetchPort }),
+				toolOverrides: { [creatorToolOverrideKey("hook")]: false },
+			}),
+		).toEqual([]);
+	});
+
+	it("runs where the reader switched it on", async () => {
+		const tools = chatConversationTools(
+			{ seed: { lore: [], tools: [hook()] } },
+			{ ports: ports({ fetch: fetchPort }), toolOverrides: on },
+		);
+		expect(tools.map((entry) => entry.declaration.name)).toEqual(["hook"]);
+		expect(await tools[0]?.run({}, signal)).toBe("ok");
+	});
+
+	it("is not declared without a fetch port (the server's protected loop), switch or not", () => {
+		expect(
+			chatConversationTools(
+				{ seed: { lore: [], tools: [hook()] } },
+				{ ports: ports(), toolOverrides: on },
+			),
+		).toEqual([]);
+	});
+
+	it("never runs off loopback or with headers, even from a record that skipped the contract", () => {
+		const offHost = hook("https://example.com/hook");
+		const withHeader: ChatCreatorToolDto = {
+			...hook(),
+			action: {
+				kind: "http",
+				url: "http://localhost:8787/hook",
+				method: "POST",
+				headers: [{ name: "Authorization", value: "k" }],
+			},
+		};
+		for (const tool of [offHost, withHeader]) {
+			expect(creatorToolActiveIn({ toolOverrides: on }, tool)).toBe(false);
+			expect(creatorConsentTools({ tools: [tool] })).toEqual([]);
+		}
+	});
+
+	it("leaves every other creator kind on without a switch", () => {
+		expect(
+			creatorToolActiveIn(
+				{},
+				{
+					declaration: { name: "t", description: "x", parameters: [] },
+					action: { kind: "template", template: "x" },
+				},
+			),
+		).toBe(true);
+	});
+
+	it("lists what room settings shows: name, description and the address without its path", () => {
+		expect(
+			creatorConsentTools({
+				tools: [hook("http://127.0.0.1:11434/api/x?y=1")],
+			}),
+		).toEqual([
+			{
+				name: "hook",
+				description: "Calls a local app.",
+				address: "http://127.0.0.1:11434",
+				key: "creator:hook",
+			},
+		]);
+	});
+
+	it("switches every one on for the author's own work test", () => {
+		expect(authorToolOverrides({ tools: [hook()] })).toEqual(on);
+		expect(authorToolOverrides({})).toEqual({});
 	});
 });

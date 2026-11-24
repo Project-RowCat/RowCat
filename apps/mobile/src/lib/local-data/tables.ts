@@ -8,6 +8,7 @@ import type {
 	DraftTool,
 	StoryDraft,
 } from "@rowcat/authoring";
+import { draftToolMethod, draftToolUrl } from "@rowcat/authoring";
 import type {
 	ChatAttachment,
 	ChatCharacter,
@@ -1308,6 +1309,8 @@ const DRAFT_TOOL_COLUMNS = [
 	"draws",
 	"system",
 	"max_output_tokens",
+	"url",
+	"method",
 	"created_at",
 	"updated_at",
 ] as const;
@@ -1332,6 +1335,13 @@ export const authoringToolTable: RecordTable<DraftTool> = {
 		draws: int(row.draws),
 		system: text(row.system),
 		maxOutputTokens: int(row.max_output_tokens),
+		/** `NULL` on tools from before v25; the record reads absence as empty and POST. */
+		...(row.url === null || row.url === undefined
+			? {}
+			: { url: text(row.url) }),
+		...(row.method === "GET" || row.method === "POST"
+			? { method: row.method }
+			: {}),
 		createdAt: text(row.created_at),
 		updatedAt: text(row.updated_at),
 		...metaOf(row),
@@ -1350,6 +1360,8 @@ export const authoringToolTable: RecordTable<DraftTool> = {
 			record.draws,
 			record.system,
 			record.maxOutputTokens,
+			draftToolUrl(record),
+			draftToolMethod(record),
 			record.createdAt,
 			record.updatedAt,
 			...metaValues(record),

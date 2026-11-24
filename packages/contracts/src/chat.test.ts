@@ -3,12 +3,15 @@ import {
 	CHAT_MAX_MESSAGE_CHARS,
 	CHAT_MAX_TOOL_PROVIDER_STATE_CHARS,
 	CHAT_MAX_TOOL_RESULT_CHARS,
+	ChatCreatorToolDto,
+	ChatCustomToolDto,
 	ChatGenerationMessage,
 	ChatGenerationRequest,
 	ChatGenerationRole,
 	ChatStreamEvent,
 	ChatToolCall,
 	ChatToolDeclaration,
+	isChatCreatorHttpUrl,
 	ManagedChatGenerationRequest,
 	RoutingSessionId,
 } from "./chat.ts";
@@ -342,5 +345,71 @@ describe("tool_call frames", () => {
 				call: { id: "toolu_1", name: "dice", arguments: '{"sides":' },
 			}).success,
 		).toBe(false);
+	});
+});
+
+/**
+ * A creator's `http` tool runs on readers' devices with arguments written from their conversation,
+ * so the only address it may name is the reader's own machine. Each refusal below is a way a
+ * looser check would have let the call leave that machine.
+ */
+describe("creator http tools", () => {
+	const action = (
+		url: string,
+		headers: { name: string; value: string }[] = [],
+	) =>
+		ChatCreatorToolDto.safeParse({
+			declaration: { name: "hook", description: "x", parameters: [] },
+			action: { kind: "http", url, method: "POST", headers },
+		}).success;
+
+	it.each([
+		"http://localhost",
+		"http://localhost:8787/tool",
+		"https://LOCALHOST:3000/a?b=c#d",
+		"http://127.0.0.1:11434/api",
+		"http://[::1]:8080",
+		"http://localhost?x=1",
+	])("accepts the reader's own machine: %s", (url) => {
+		expect(isChatCreatorHttpUrl(url)).toBe(true);
+		expect(action(url)).toBe(true);
+	});
+
+	it.each([
+		"https://example.com/tool",
+		"http://localhost.example.com/",
+		"http://localhost@example.com/",
+		"http://localhost:80@example.com/",
+		"http://127.0.0.1.nip.io/",
+		"http://192.168.0.1/",
+		"http://10.0.0.1/",
+		"http://0.0.0.0/",
+		"http://localhost@example.com/",
+		"http://localhost/ space",
+		"ftp://localhost/",
+		"localhost:8787",
+	])("refuses anything else: %s", (url) => {
+		expect(isChatCreatorHttpUrl(url)).toBe(false);
+		expect(action(url)).toBe(false);
+	});
+
+	it("refuses headers: the seed would publish their values to every reader", () => {
+		expect(
+			action("http://localhost:8787", [{ name: "Authorization", value: "k" }]),
+		).toBe(false);
+	});
+
+	it("leaves a user's own http tool unrestricted", () => {
+		expect(
+			ChatCustomToolDto.safeParse({
+				declaration: { name: "hook", description: "x", parameters: [] },
+				action: {
+					kind: "http",
+					url: "https://example.com/tool",
+					method: "POST",
+					headers: [{ name: "Authorization", value: "k" }],
+				},
+			}).success,
+		).toBe(true);
 	});
 });

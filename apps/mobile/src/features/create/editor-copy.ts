@@ -289,6 +289,16 @@ export const TOOL = {
 	systemHint:
 		"The sub-agent's own system prompt. It sees only what the AI passes in the parameters, not the conversation, and it can't call tools.",
 	maxOutputTokens: "Answer length cap (tokens)",
+	url: "Address",
+	urlHint:
+		"Only the reader's own machine: http://localhost, 127.0.0.1 or [::1], with any port and path. Headers can't be set, because every reader would receive them.",
+	method: "Method",
+	methodHint: {
+		GET: "Arguments are sent as query parameters.",
+		POST: 'Sends JSON: { "tool": name, "arguments": { … } }.',
+	},
+	httpNote:
+		"Runs only for readers who switch it on in that conversation's settings, and only on their device. It does not run in prompt-protected stories.",
 	parameters: "Parameters",
 	noParameters: "No parameters. The AI calls the tool as is.",
 	addParameter: "Add parameter",
@@ -311,8 +321,10 @@ export const TOOL = {
 	libraryEmpty: "You have no tools in Settings → Tools yet.",
 	libraryAdd: "Add",
 	libraryClose: "Done",
-	libraryHttp:
-		"Web request tools can't be added to a story: they would send readers' conversations to your address.",
+	libraryHttpNotLocal:
+		"Only web requests to localhost can be added to a story: any other address would receive readers' conversations.",
+	libraryHttpHeaders:
+		"Web requests with headers can't be added to a story: every reader would receive the header values.",
 	libraryInDraft: "Already in this story.",
 	saveToLibrary: "Save to my tools",
 	savedToLibrary: "Saved to Settings → Tools (off by default).",
@@ -324,6 +336,7 @@ export const TOOL_KIND_LABEL: Record<DraftToolKind, string> = {
 	template: "Template",
 	table: "Random table",
 	agent: "Sub-agent",
+	http: "Local web request",
 };
 
 export const TOOL_PARAMETER_TYPE_LABEL: Record<ChatToolParameterType, string> =

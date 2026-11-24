@@ -1267,7 +1267,7 @@ screen     features/chat/suggestion/                  the panel above the compos
 Full rules in `docs/chat/TOOLS.md` §14–§17.
 
 ```text
-contract     ChatCustomToolDto = declaration + action (template · table · http · agent); creators: no http
+contract     ChatCustomToolDto = declaration + action (template · table · http · agent); creators: http to loopback only, no headers
 user tools   chat.tool records (account library, like personas) · room.toolOverrides by id · settings → Tools
 creator      authoring.tool draft children → seed.tools (only valid ones; publish blocks on invalid_tool)
 registry     chatConversationTools(room, { userTools, ports }) — lore → creator → user, first name wins, ≤ CHAT_MAX_TOOLS
@@ -1284,6 +1284,10 @@ share        tool-file.ts — header values never exported, imports arrive off, 
   inside the generation hook, which is already a credential door — do not add a new one.
 - **Rooms refer to user tools by id; they do not copy them** (unlike personas): a tool result never outlives a turn.
 - **`lore_search` is reserved** for users (store, codec) and creators (publication), pinned equal in both packages.
+- **A creator's `http` reaches the reader's own machine only** (`CHAT_CREATOR_HTTP_URL_PATTERN`: localhost ·
+  127.0.0.1 · [::1]), carries no headers, and runs only where the reader switched it on in that room
+  (`room.toolOverrides["creator:<name>"]`, read at turn start; no default-on). Never give the server's
+  protected loop a `fetch` port — loopback there is the API's own host. `docs/chat/TOOLS.md` §16a.
 
 ### Prompt protection — the manuscript stays on the server
 

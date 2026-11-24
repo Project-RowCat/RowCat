@@ -204,7 +204,9 @@ describe("migrations", () => {
 				rev_t, rev_c, rev_d
 			) VALUES ('r1', NULL, 'Room', 0, 0, '{}', 'a', 'a', NULL, 0, 3, 1, 0, 'd')`,
 		);
-		/** Undo v24. The file is now a real v23. */
+		/** Undo v25 and v24. The file is now a real v23. */
+		await first.run(`ALTER TABLE authoring_tool DROP COLUMN url`);
+		await first.run(`ALTER TABLE authoring_tool DROP COLUMN method`);
 		await first.run(`DROP TABLE chat_attachment`);
 		await first.run(`PRAGMA user_version = 23`);
 		await first.close();
@@ -222,6 +224,41 @@ describe("migrations", () => {
 				"SELECT dirty FROM chat_room WHERE id = 'r1'",
 			),
 		).toEqual({ dirty: 0 });
+		await second.close();
+	});
+
+	/**
+	 * v25 adds the creator tool's `url` and `method`. A v24 tool comes up with both `NULL` (read as an
+	 * empty address and POST) and stays clean: a schema change is not an edit.
+	 */
+	it("v25 adds NULL url and method to a v24 creator tool; it stays clean", async () => {
+		const first = await open();
+		await first.run(
+			`INSERT INTO authoring_tool (
+				id, draft_id, position_index, name, description, parameters, kind,
+				template, entries, draws, system, max_output_tokens, created_at, updated_at,
+				deleted_at, dirty, server_version, rev_t, rev_c, rev_d
+			) VALUES ('t1', 'd1', 0, 'roll', '', '[]', 'template', 'x', '[]', 1, '', 1024,
+				'a', 'a', NULL, 0, 3, 1, 0, 'd')`,
+		);
+		/** Undo v25. The file is now a real v24. */
+		await first.run(`ALTER TABLE authoring_tool DROP COLUMN url`);
+		await first.run(`ALTER TABLE authoring_tool DROP COLUMN method`);
+		await first.run(`PRAGMA user_version = 24`);
+		await first.close();
+
+		const second = await open();
+		const version = await second.first<{ user_version: number }>(
+			"PRAGMA user_version",
+		);
+		expect(version?.user_version).toBe(MOBILE_SCHEMA_VERSION);
+		expect(
+			await second.first<{
+				url: string | null;
+				method: string | null;
+				dirty: number;
+			}>("SELECT url, method, dirty FROM authoring_tool WHERE id = 't1'"),
+		).toEqual({ url: null, method: null, dirty: 0 });
 		await second.close();
 	});
 

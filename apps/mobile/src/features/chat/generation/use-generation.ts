@@ -345,6 +345,12 @@ export function useChatGeneration(
 				 */
 				const userTools =
 					(await session.loadUserTools?.().catch(() => [])) ?? [];
+				/**
+				 * The room's tool switches, at the same moment. The work's `http` tools run only where the
+				 * reader switched them on; a failed read is no switches, so none of them run.
+				 */
+				const toolOverrides =
+					(await session.loadToolOverrides?.().catch(() => ({}))) ?? {};
 				const result = await runGenerationTurn({
 					session,
 					text,
@@ -430,7 +436,7 @@ export function useChatGeneration(
 								toolAccess: {
 									tools: chatConversationTools(
 										session.runtime,
-										ports ? { userTools, ports } : {},
+										ports ? { userTools, ports, toolOverrides } : {},
 									),
 									/**
 									 * A generation that can no longer be saved makes no more round trips either. The same

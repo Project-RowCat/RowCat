@@ -635,10 +635,11 @@ export type ChatToolDeclaration = z.infer<typeof ChatToolDeclaration>;
  * Custom tools: a declaration plus an action that says what the device does when the model calls
  * it. Lore search is built in; these are written by people. Two authors write them:
  * - Users, in their own settings (`chat.tool` records in @rowcat/chat). Every action kind is open.
- * - Creators, as part of a work (`StoryChatSeedDto.tools`). `http` is closed to them
- *   (`ChatCreatorToolDto`), because a creator's tool runs on other people's devices, and its
- *   arguments are written by a model that has read that person's conversation. An endpoint the
- *   creator controls would receive excerpts of strangers' conversations on every call.
+ * - Creators, as part of a work (`StoryChatSeedDto.tools`). Their `http` is narrowed to the
+ *   reader's own machine and carries no headers (`ChatCreatorHttpToolAction`), because a creator's
+ *   tool runs on other people's devices, and its arguments are written by a model that has read
+ *   that person's conversation. An endpoint the creator controls would receive excerpts of
+ *   strangers' conversations on every call. It also runs only where the reader switched it on.
  *
  * The action vocabulary is closed and declarative on purpose. There is no code execution: what a
  * tool does must mean the same thing on web, mobile and the server (prompt-protected rooms run
@@ -741,10 +742,52 @@ export const ChatHttpToolAction = z.object({
 		.default([]),
 });
 
+/**
+ * The only addresses a creator's `http` tool may call: the reader's own machine (`localhost`,
+ * `127.0.0.1`, `[::1]`), with an optional port, path, query or fragment.
+ *
+ * A creator's tool runs on other people's devices, with arguments a model wrote after reading that
+ * person's conversation. Any other host would receive excerpts of strangers' conversations (and
+ * their address) on every call, and a private-network address would let a work reach the reader's
+ * router or NAS. Loopback keeps the call on the reader's own machine, where it can only reach a
+ * service the reader runs — and even that needs the reader's switch in the room
+ * (`creatorToolActiveIn` in @rowcat/chat).
+ *
+ * A regex rather than `new URL()`: React Native's URL is not a full WHATWG parser, and this must
+ * mean the same on web, mobile and the server. The host must be followed by `:port`, a path, `?`,
+ * `#` or the end, so `localhost.example.com` and `localhost@example.com` are both refused, and a
+ * backslash is refused anywhere because some parsers read it as a path separator and others do not.
+ */
+export const CHAT_CREATOR_HTTP_URL_PATTERN =
+	/^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?(?:[/?#][^\s\\]*)?$/i;
+
+export const isChatCreatorHttpUrl = (url: string): boolean =>
+	CHAT_CREATOR_HTTP_URL_PATTERN.test(url);
+
+/**
+ * The creator's `http`: the same action as a user's, narrowed to loopback addresses and **no
+ * headers**. The seed reaches every reader's device, so a header value there would be the
+ * creator's secret published to everyone who opens the work. `headers` stays in the shape (always
+ * empty) so a creator tool is still a `ChatCustomToolDto` and runs through the same handler.
+ */
+export const ChatCreatorHttpToolAction = z.object({
+	kind: z.literal("http"),
+	url: z
+		.string()
+		.max(CHAT_CUSTOM_TOOL_LIMITS.urlChars)
+		.refine(isChatCreatorHttpUrl, {
+			message:
+				"A story's HTTP tool can only call localhost, 127.0.0.1 or [::1].",
+		}),
+	method: z.enum(["GET", "POST"]).default("POST"),
+	headers: z.array(ChatToolHttpHeader).max(0).default([]),
+});
+
 export const ChatCreatorToolAction = z.discriminatedUnion("kind", [
 	ChatTemplateToolAction,
 	ChatTableToolAction,
 	ChatAgentToolAction,
+	ChatCreatorHttpToolAction,
 ]);
 export type ChatCreatorToolAction = z.infer<typeof ChatCreatorToolAction>;
 
@@ -770,7 +813,10 @@ export const ChatCustomToolDto = z.object({
 });
 export type ChatCustomToolDto = z.infer<typeof ChatCustomToolDto>;
 
-/** A creator's custom tool, carried in the seed. `http` is not in its vocabulary (see above). */
+/**
+ * A creator's custom tool, carried in the seed. Its `http` reaches loopback only and carries no
+ * headers (`ChatCreatorHttpToolAction`).
+ */
 export const ChatCreatorToolDto = z.object({
 	declaration: ChatToolDeclaration,
 	action: ChatCreatorToolAction,

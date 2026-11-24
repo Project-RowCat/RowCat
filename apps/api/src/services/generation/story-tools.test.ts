@@ -140,6 +140,33 @@ async function run(tools: unknown[], responses: (() => Response)[]) {
 }
 
 describe("creator tools on the server's protected loop", () => {
+	/**
+	 * A creator's `http` names the reader's loopback. From this loop, loopback is the API's own host,
+	 * so the tool must never be declared here: no fetch port, and no reader's switch.
+	 */
+	it("never declares a creator's localhost http tool", async () => {
+		const { assembled } = await run(
+			[
+				{
+					declaration: {
+						name: "local_hook",
+						description: "Calls a program on the reader's machine.",
+						parameters: [],
+					},
+					action: {
+						kind: "http",
+						url: "http://localhost:8787/hook",
+						method: "POST",
+					},
+				},
+			],
+			[() => text("Hello.")],
+		);
+		expect(JSON.stringify(assembled.firstRequest.tools ?? [])).not.toContain(
+			"local_hook",
+		);
+	});
+
 	it("runs a template tool and returns its filled text as the result", async () => {
 		const { bodies, events, assembled } = await run(
 			[

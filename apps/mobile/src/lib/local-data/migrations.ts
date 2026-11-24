@@ -19,7 +19,7 @@ import type { MobileDatabase, SqlRunner } from "./sqlite.ts";
  * other axes. Those three are agreements between devices: bumping them affects other devices. This
  * value stays inside this file.
  */
-export const MOBILE_SCHEMA_VERSION = 24;
+export const MOBILE_SCHEMA_VERSION = 25;
 
 /**
  * v1 sets up conversation, authoring and sync state in one go.
@@ -1158,6 +1158,17 @@ const V24: readonly MigrationStep[] = [
 	`CREATE INDEX chat_attachment_dirty ON chat_attachment (dirty, id)`,
 ];
 
+/**
+ * v25: creator tools gain the `http` kind (`ChatCreatorHttpToolAction`: the reader's own machine
+ * only). Two nullable columns, `url` and `method`; a v24 tool reads them as absent, which the record
+ * reads as an empty address and POST (`draftToolUrl` / `draftToolMethod`). No backfill and no dirty
+ * mark: a schema change is not an edit.
+ */
+const V25: readonly MigrationStep[] = [
+	`ALTER TABLE authoring_tool ADD COLUMN url TEXT`,
+	`ALTER TABLE authoring_tool ADD COLUMN method TEXT`,
+];
+
 /** Migration steps per version. The array position is the target version (1-based). */
 const MIGRATIONS: readonly (readonly MigrationStep[])[] = [
 	V1,
@@ -1184,6 +1195,7 @@ const MIGRATIONS: readonly (readonly MigrationStep[])[] = [
 	V22,
 	V23,
 	V24,
+	V25,
 ];
 
 /**

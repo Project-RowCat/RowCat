@@ -12,8 +12,11 @@ import { STORY_COVER_LIMITS } from "@rowcat/contracts/story-cover";
 import { StoryVisibility } from "@rowcat/contracts/story-visibility";
 import { z } from "zod";
 import {
+	DRAFT_TOOL_HTTP_METHODS,
 	DRAFT_TOOL_KINDS,
 	type DraftTool,
+	draftToolMethod,
+	draftToolUrl,
 	type NewDraftTool,
 	sortDraftTools,
 } from "./draft-tool.ts";
@@ -263,6 +266,12 @@ export const StoryArchiveManifest = z
 						draws: z.number().int(),
 						system: text(STORY_ARCHIVE_LIMITS.text),
 						maxOutputTokens: z.number().int(),
+						/**
+						 * `http`. Written only when set, so an archive with no HTTP tool is byte for byte what it
+						 * was before this kind existed.
+						 */
+						url: text(STORY_ARCHIVE_LIMITS.shortText).optional(),
+						method: z.enum(DRAFT_TOOL_HTTP_METHODS).optional(),
 					})
 					.strict(),
 			)
@@ -473,6 +482,9 @@ export function buildStoryArchiveManifest(
 			draws: tool.draws,
 			system: tool.system,
 			maxOutputTokens: tool.maxOutputTokens,
+			...(draftToolUrl(tool) !== "" || tool.kind === "http"
+				? { url: draftToolUrl(tool), method: draftToolMethod(tool) }
+				: {}),
 		}),
 	);
 

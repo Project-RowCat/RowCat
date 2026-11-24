@@ -571,6 +571,7 @@ export const create = {
 			template: "Template",
 			table: "Random table",
 			agent: "Sub-agent",
+			http: "Local web request",
 		},
 		parameterType: {
 			string: "Text",
@@ -601,6 +602,9 @@ export const create = {
 		system_required: "Sub-agent instructions: write them.",
 		system_too_long: "Sub-agent instructions: up to {{max}} characters.",
 		max_output_tokens_out_of_range: "Answer length cap: from 1 to {{max}}.",
+		url_required: "Address: enter the address the tool calls.",
+		url_not_local:
+			"Address: a story can only call the reader's own machine (http://localhost, 127.0.0.1 or [::1]).",
 		other: "Something in this tool isn't valid yet.",
 	},
 	toolLibraryPick: {
@@ -611,8 +615,10 @@ export const create = {
 		openSettings: "Open Settings → Tools",
 		add: "Add",
 		http: "Web request",
-		httpUnavailable:
-			"Web request tools can't be added to a story: they would send readers' conversations to your address.",
+		httpNotLocal:
+			"Only web requests to localhost can be added to a story: any other address would receive readers' conversations.",
+		httpHeaders:
+			"Web requests with headers can't be added to a story: every reader would receive the header values.",
 		inDraft: "Already in this story.",
 	},
 	toolEditorCard: {
@@ -636,6 +642,16 @@ export const create = {
 		maxOutputTokens: "Answer length cap (tokens)",
 		maxOutputTokensHint:
 			"From 1 to {{max}}. The sub-agent's answer becomes the tool result.",
+		url: "Address",
+		urlHint:
+			"Only the reader's own machine: http://localhost, 127.0.0.1 or [::1], with any port and path. Headers can't be set, because every reader would receive them.",
+		method: "Method",
+		methodHint: {
+			GET: "Arguments are sent as query parameters.",
+			POST: 'Sends JSON: { "tool": name, "arguments": { … } }.',
+		},
+		httpNote:
+			"Runs only for readers who switch it on in that conversation's settings, and only on their device. It does not run in prompt-protected stories. In the story test it runs on your machine.",
 		parameters: "Parameters",
 		parametersHint: "What the AI fills in when it calls the tool.",
 		noParameters: "No parameters. The AI calls the tool as is.",

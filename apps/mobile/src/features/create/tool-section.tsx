@@ -1,11 +1,15 @@
 import {
 	checkDraftTool,
+	DRAFT_TOOL_HTTP_METHODS,
 	DRAFT_TOOL_KINDS,
 	DRAFT_TOOL_LIMITS,
 	type DraftTool,
 	type DraftToolParameter,
 	type DraftToolPatch,
+	draftToolImportBlock,
 	draftToolIssueSentence,
+	draftToolMethod,
+	draftToolUrl,
 	type NewDraftTool,
 	newDraftToolOf,
 } from "@rowcat/authoring";
@@ -352,6 +356,41 @@ function ToolCard({
 					/>
 				</>
 			) : null}
+
+			{tool.kind === "http" ? (
+				<>
+					<Input
+						label={TOOL.url}
+						value={draftToolUrl(tool)}
+						placeholder="http://localhost:8787/tool"
+						autoCapitalize="none"
+						autoCorrect={false}
+						keyboardType="url"
+						onChangeText={(url) => onPatch({ url })}
+					/>
+					<Text variant="caption" tone="muted-foreground">
+						{TOOL.urlHint}
+					</Text>
+					<Select label={TOOL.method} value={draftToolMethod(tool)}>
+						{DRAFT_TOOL_HTTP_METHODS.map((method) => (
+							<SelectOption
+								key={method}
+								label={method}
+								selected={method === draftToolMethod(tool)}
+								onSelect={() =>
+									method !== draftToolMethod(tool) && onPatch({ method })
+								}
+							/>
+						))}
+					</Select>
+					<Text variant="caption" tone="muted-foreground">
+						{TOOL.methodHint[draftToolMethod(tool)]}
+					</Text>
+					<Text variant="caption" tone="muted-foreground">
+						{TOOL.httpNote}
+					</Text>
+				</>
+			) : null}
 		</Panel>
 	);
 }
@@ -543,8 +582,8 @@ function ToolParameters({
 /**
  * Settings → Tools into this story, inline under the section header rather than a sheet: the
  * presentation boundary keeps generic sheets out of feature code, and the list is short. `http`
- * tools are listed with the reason they cannot be added, so the author does not wonder where they
- * went.
+ * tools a story could not publish (`draftToolImportBlock`: off localhost, or with headers) are
+ * listed with the reason they cannot be added, so the author does not wonder where they went.
  */
 function LibraryPicker({
 	disabled,
@@ -570,6 +609,7 @@ function LibraryPicker({
 			) : null}
 			{tools.map((tool) => {
 				const input = newDraftToolOf(tool.tool);
+				const block = draftToolImportBlock(tool.tool);
 				const inDraft = draftNames.has(tool.tool.declaration.name);
 				return (
 					<View key={tool.id} style={card.libraryItem}>
@@ -579,7 +619,9 @@ function LibraryPicker({
 							</Text>
 							<Text variant="caption" tone="muted-foreground" numberOfLines={2}>
 								{input === null
-									? TOOL.libraryHttp
+									? block === "http_headers"
+										? TOOL.libraryHttpHeaders
+										: TOOL.libraryHttpNotLocal
 									: inDraft
 										? TOOL.libraryInDraft
 										: `${TOOL_KIND_LABEL[input.kind ?? "template"]} · ${tool.tool.declaration.description}`}

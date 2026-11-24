@@ -561,6 +561,7 @@ export const create: Messages["create"] = {
 			template: "템플릿",
 			table: "무작위 표",
 			agent: "하위 에이전트",
+			http: "로컬 웹 요청",
 		},
 		parameterType: {
 			string: "텍스트",
@@ -591,6 +592,9 @@ export const create: Messages["create"] = {
 		system_required: "서브 에이전트 지시문: 내용을 적어 주세요.",
 		system_too_long: "서브 에이전트 지시문: 최대 {{max}}자까지입니다.",
 		max_output_tokens_out_of_range: "답변 길이 상한: 1부터 {{max}}까지입니다.",
+		url_required: "주소: 도구가 부를 주소를 적어 주세요.",
+		url_not_local:
+			"주소: 작품은 독자 자신의 기기(http://localhost, 127.0.0.1, [::1])만 부를 수 있습니다.",
 		other: "아직 올바르지 않은 부분이 있습니다.",
 	},
 	toolLibraryPick: {
@@ -601,8 +605,10 @@ export const create: Messages["create"] = {
 		openSettings: "설정 → 도구 열기",
 		add: "추가",
 		http: "웹 요청",
-		httpUnavailable:
-			"웹 요청 도구는 작품에 넣을 수 없습니다. 독자의 대화가 내 주소로 전송되기 때문입니다.",
+		httpNotLocal:
+			"localhost로 보내는 웹 요청만 작품에 넣을 수 있습니다. 다른 주소는 독자의 대화를 받게 되기 때문입니다.",
+		httpHeaders:
+			"헤더가 있는 웹 요청은 작품에 넣을 수 없습니다. 모든 독자가 헤더 값을 받게 되기 때문입니다.",
 		inDraft: "이미 이 작품에 있습니다.",
 	},
 	toolEditorCard: {
@@ -626,6 +632,16 @@ export const create: Messages["create"] = {
 		maxOutputTokens: "답변 길이 상한(토큰)",
 		maxOutputTokensHint:
 			"1부터 {{max}}까지. 하위 에이전트의 답변이 도구 결과가 됩니다.",
+		url: "주소",
+		urlHint:
+			"독자 자신의 기기만 부를 수 있습니다: http://localhost, 127.0.0.1, [::1](포트·경로 자유). 헤더는 모든 독자에게 전달되므로 쓸 수 없습니다.",
+		method: "방식",
+		methodHint: {
+			GET: "인자를 쿼리 매개변수로 보냅니다.",
+			POST: 'JSON으로 보냅니다: { "tool": 이름, "arguments": { … } }.',
+		},
+		httpNote:
+			"대화 설정에서 직접 켠 독자에게만, 그 독자의 기기에서 실행됩니다. 프롬프트 보호 작품에서는 실행되지 않습니다. 작품 테스트에서는 내 기기에서 실행됩니다.",
 		parameters: "매개변수",
 		parametersHint: "AI가 도구를 부를 때 채워 넣는 값입니다.",
 		noParameters: "매개변수가 없습니다. AI는 그냥 부릅니다.",

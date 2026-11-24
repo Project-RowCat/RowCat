@@ -207,5 +207,11 @@ export const tools: Messages["tools"] = {
 		limit:
 			"대화 하나에서 모델에게 줄 수 있는 도구는 기본 제공 도구와 작품 도구를 포함해 {{max}}개까지입니다. 넘치는 도구는 빠집니다.",
 		saveFailed: "도구 설정을 바꾸지 못했습니다. 다시 시도해 주세요.",
+		creatorTitle: "이 작품의 로컬 도구",
+		creatorDescription:
+			"내 기기에서 돌아가는 프로그램을 부르는 도구입니다. AI가 쓰면 이 대화를 바탕으로 쓴 내용이 그 주소로 전송됩니다. 여기서 켜기 전까지는 꺼져 있습니다.",
+		creatorAddress: "{{address}} 호출",
+		creatorToggleLabel:
+			"이 대화에서 {{name}}이(가) {{address}}을(를) 부르도록 허용",
 	},
 };
