@@ -47,7 +47,7 @@
     "@tanstack/react-router-ssr-query": "^1.167.1",
     "@tanstack/react-start": "^1.168.46",
     "@tanstack/react-virtual": "^3.14.9",
-    "afterstate-wasm": "0.1.0-rc.1",
+    "afterstate-wasm": "0.1.0-rc.3",
     "better-auth": "1.7.2",
     "dexie": "^4.2.0",
     "dexie-react-hooks": "^4.2.0",

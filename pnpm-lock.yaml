@@ -581,8 +581,8 @@ importers:
         specifier: ^3.14.9
         version: 3.14.9(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       afterstate-wasm:
-        specifier: 0.1.0-rc.1
-        version: 0.1.0-rc.1
+        specifier: 0.1.0-rc.3
+        version: 0.1.0-rc.3
       better-auth:
         specifier: 1.7.2
         version: 1.7.2(drizzle-orm@0.45.2(@types/pg@8.23.1)(kysely@0.29.5)(pg@8.23.0))(pg@8.23.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(solid-js@1.9.14)
@@ -4971,8 +4971,8 @@ packages:
     engines: {node: '>=0.4.0'}
     hasBin: true
 
-  afterstate-wasm@0.1.0-rc.1:
-    resolution: {integrity: sha512-i34/9mAWVZaclCqStGxFKg/Llg91rNAVk3eikBSNq5t/MrxW5CMfTiuKIK5oUixZZitgCJUeroqyv/rxhCNV7w==}
+  afterstate-wasm@0.1.0-rc.3:
+    resolution: {integrity: sha512-nWzLcDoJZ3ay/Drqz3zaDO4o6oQemlTafO26CgPz+L9Ff6YoKoFLxJMby5sWSCIHj+t7BHo29bC9BnCQ/N2kFA==}
     engines: {node: '>=22.14.0'}
 
   agent-base@7.1.4:
@@ -12523,9 +12523,7 @@ snapshots:
       metro-runtime: 0.84.5
     transitivePeerDependencies:
       - '@babel/core'
-      - bufferutil
       - supports-color
-      - utf-8-validate
 
   '@react-native/normalize-colors@0.86.3': {}
 
@@ -13721,7 +13719,7 @@ snapshots:
 
   acorn@8.18.0: {}
 
-  afterstate-wasm@0.1.0-rc.1: {}
+  afterstate-wasm@0.1.0-rc.3: {}
 
   agent-base@7.1.4: {}
 

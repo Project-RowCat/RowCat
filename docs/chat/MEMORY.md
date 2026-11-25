@@ -305,7 +305,7 @@ apps/mobile/src/lib/boundaries.test.ts              제거된 엔진·스위치�
 
 ### 웹 브라우저 실행
 
-브라우저는 `afterstate-wasm@0.1.0-rc.1`을 회원별 Web Worker 안에서 실행한다. 같은
+브라우저는 `afterstate-wasm@0.1.0-rc.3`을 회원별 Web Worker 안에서 실행한다. 같은
 `AfterstatePort`와 기존 대화 어댑터를 사용하므로 장면 권한·원본 재검증·400ms 생성 제한이
 그대로 적용된다. 데스크톱 창에서는 preload → 인증된 IPC → Node Worker Thread의 WASM 엔진을 우선한다.
 

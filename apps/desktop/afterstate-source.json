@@ -1,19 +1,19 @@
 {
   "format": "rowcat-afterstate-source/1",
   "repository": "https://github.com/astra-void/afterstate",
-  "revision": "c0cb19dbc8855cdc25c37657fa1a704e19afb463",
-  "sha256": "b0c302e0e1626502512ed69cfd332cc77869d4719de6107a57c486bc7168c709",
-  "dirty": true,
+  "revision": "5c78b3e2d393bc32e6ecc74ecb2454bea30c9baa",
+  "sha256": "725827cc94c3c151a76a21602086c31a52a1f56980734081171f3beea78b7331",
+  "dirty": false,
   "distribution": {
     "name": "afterstate-wasm",
-    "version": "0.1.0-rc.2",
-    "integrity": "sha512-wdzZ7ulFwbNe6rh1GUlmtNK6UD7c+F8twV+wz3djR5L5h6ZJetkUHd8UsXqQZTJjNOO4KMPvVhqyF5/Q3lKC7g=="
+    "version": "0.1.0-rc.3",
+    "integrity": "sha512-nWzLcDoJZ3ay/Drqz3zaDO4o6oQemlTafO26CgPz+L9Ff6YoKoFLxJMby5sWSCIHj+t7BHo29bC9BnCQ/N2kFA=="
   },
   "files": {
-    "afterstate_wasm.js": "20d9c4ea1d00f1b25d5ecdf5bd726dcc220be20a99a77cfb528758ad966764bc",
-    "afterstate_wasm_bg.wasm": "7658f567db92bd41b86cbe3c54691bcb95fae4e1be2f7666a35ea61a7808abde",
+    "afterstate_wasm.js": "5e2533d78be9e94c6254f02b37081d3747468947b1f01f07e53fa5374dd34495",
+    "afterstate_wasm_bg.wasm": "d7e83be1a84b14d2642cd0765af41c52c6cda9d673e2547a31f87cfc7716724f",
     "LICENSE": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
     "package.json": "feff7f75bbea58726e81789981d80ec06c688326364de379b4c7bf62396ddaee",
-    "THIRD-PARTY-NOTICES.txt": "40b836e4b7b2a2bb247efba0adeb8cf152a71d44ce18b94ecea9a1475a2e18e3"
+    "THIRD-PARTY-NOTICES.txt": "6a050cd01ac450f3547d8b8b554b7c7ffd861cecc2d662909a58b1f377029a1c"
   }
 }
