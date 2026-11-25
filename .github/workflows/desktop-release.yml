@@ -181,6 +181,8 @@ jobs:
         with:
           name: rowcat-afterstate-wasm
           path: apps/desktop/.afterstate-wasm/
+          # The directory itself is hidden; upload-artifact skips hidden paths by default.
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
 
