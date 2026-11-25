@@ -51,7 +51,7 @@ it("round-trips binary images across streaming chunk boundaries and rejects trun
 			const bytes = randomBytes(length);
 			snapshot.save(bytes);
 			// A byte compare: `toEqual` walks a megabyte element by element, seconds on a slow runner.
-			expect(Buffer.compare(Buffer.from(snapshot.load()), bytes)).toBe(0);
+			expect(snapshot.load()?.equals(bytes)).toBe(true);
 		}
 		const bytes = readFileSync(file);
 		writeFileSync(file, bytes.subarray(0, bytes.length - 3));
