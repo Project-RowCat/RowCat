@@ -227,6 +227,8 @@ jobs:
 
       - run: pnpm --filter @rowcat/desktop run package "${{ needs.plan.outputs.version }}"
 
+      # Both installed smokes run without administrative rights (e2e/run-unelevated.ps1): the runner's
+      # account is a full administrator, which no user runs RowCat as and which Postgres refuses.
       - name: Install previous version and preserve its data
         env:
           GH_TOKEN: ${{ github.token }}
@@ -239,8 +241,9 @@ jobs:
           $install = Start-Process -FilePath $old[0].FullName -ArgumentList '/S' -Wait -PassThru
           if ($install.ExitCode -ne 0) { throw 'Previous installer failed' }
           $exe = Join-Path $env:LOCALAPPDATA 'Programs/RowCat/RowCat.exe'
-          pnpm exec tsx apps/desktop/e2e/installed-smoke.ts $exe upgrade-state.json --seed-upgrade
-          if ($LASTEXITCODE -ne 0) { throw 'Previous app startup failed' }
+          Get-Process RowCat -ErrorAction SilentlyContinue | ForEach-Object { "RowCat was already running after install (pid $($_.Id)); stopping it"; $_ | Stop-Process -Force }
+          & ./apps/desktop/e2e/run-unelevated.ps1 -CommandLine "pnpm exec tsx apps/desktop/e2e/installed-smoke.ts `"$exe`" upgrade-state.json --seed-upgrade" -Log installed-smoke-seed.log
+          if ($LASTEXITCODE -ne 0) { ./apps/desktop/e2e/print-app-log.ps1; throw 'Previous app startup failed' }
 
       - name: Install new version and smoke the installed WASM engine
         shell: pwsh
@@ -250,8 +253,9 @@ jobs:
           $install = Start-Process -FilePath $new[0].FullName -ArgumentList '/S' -Wait -PassThru
           if ($install.ExitCode -ne 0) { throw 'New installer failed' }
           $exe = Join-Path $env:LOCALAPPDATA 'Programs/RowCat/RowCat.exe'
-          pnpm exec tsx apps/desktop/e2e/installed-smoke.ts $exe upgrade-state.json --verify-upgrade
-          if ($LASTEXITCODE -ne 0) { throw 'Installed upgrade/WASM smoke failed' }
+          Get-Process RowCat -ErrorAction SilentlyContinue | ForEach-Object { "RowCat was already running after install (pid $($_.Id)); stopping it"; $_ | Stop-Process -Force }
+          & ./apps/desktop/e2e/run-unelevated.ps1 -CommandLine "pnpm exec tsx apps/desktop/e2e/installed-smoke.ts `"$exe`" upgrade-state.json --verify-upgrade" -Log installed-smoke-verify.log
+          if ($LASTEXITCODE -ne 0) { ./apps/desktop/e2e/print-app-log.ps1; throw 'Installed upgrade/WASM smoke failed' }
 
       # The installer is attached under the name electron-builder gave it (scripts/build-app.ts names
       # it by the date): `latest.yml` points at that name, so a rename breaks every update. What is
