@@ -78,6 +78,7 @@ export * from "./tool-file.ts";
 export * from "./tool-loop.ts";
 export * from "./tool-lore.ts";
 export * from "./tool-registry.ts";
+export * from "./tool-round-reasoning.ts";
 export * from "./tracking-block.ts";
 export * from "./usage-view.ts";
 export * from "./user-note.ts";

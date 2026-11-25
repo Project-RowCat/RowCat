@@ -491,7 +491,7 @@ const MANAGED_MODELS: readonly ManagedModelRoute[] = [
 	 *
 	 * ⚠️ `deepseek-v4-pro` is the product default (`DEFAULT_MANAGED_MODEL`), so this row sits on the
 	 * path of someone who never opened AI settings. The "default target" group in `managed-models.test.ts` pins
-	 * that the product default effort (`PRODUCT_REASONING_EFFORT` = `medium`) is not forced onto this
+	 * that the product default effort (`PRODUCT_REASONING_EFFORT` = `low`) is not forced onto this
 	 * target.
 	 */
 	{

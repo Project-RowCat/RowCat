@@ -286,11 +286,14 @@ export const PRODUCT_GENERATION_TARGET: GenerationTarget = {
  * decided by the catalog (`ModelReasoningCapability.defaultEffort`). Folding the two together would
  * make adding a model shake the product default.
  *
- * `medium` because it is the middle of the current vocabulary and the step nearly every target
- * supports. A user who never chose anything then sees the execution step stay stable across model
- * changes. The label is `Standard`, not `Medium`; that copy belongs to the app.
+ * `low` because thinking is billed as output, and on the default managed model output is five times
+ * the price of input: for a roleplay turn, the hidden reasoning before the reply was the largest
+ * line of the turn's cost. A reply in a story rarely gains from deep deliberation, and the person who
+ * wants more chooses it in AI settings. It was `medium` until 2026-11-25. A model without `low`
+ * folds to its catalog default (`ModelReasoningCapability.defaultEffort`), as any unsupported
+ * level does. The label copy belongs to the app.
  */
-export const PRODUCT_REASONING_EFFORT: ReasoningEffort = "medium";
+export const PRODUCT_REASONING_EFFORT: ReasoningEffort = "low";
 
 /**
  * What one layer chose. The shape is the same for global and room.

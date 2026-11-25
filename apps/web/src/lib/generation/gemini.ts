@@ -1,6 +1,7 @@
 import {
 	CONTINUATION_FALLBACK_NUDGE,
 	chatToolJsonSchema,
+	chatToolRoundReasoning,
 	readChatToolCall,
 	trimContinuationPrefill,
 } from "@rowcat/chat";
@@ -532,7 +533,10 @@ async function* stream(
 	 * model or level missing from this table is dropped silently here. When the two disagree, running
 	 * without reasoning is better than sending a parameter the model rejects.
 	 */
-	const thinking = geminiThinkingFor(input.model, request.reasoningEffort);
+	const thinking = geminiThinkingFor(
+		input.model,
+		chatToolRoundReasoning(input.model, request),
+	);
 
 	/**
 	 * The axes that can identify this request. The prompt and key are not included (see errors.ts).

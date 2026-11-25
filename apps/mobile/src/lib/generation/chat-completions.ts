@@ -2,6 +2,7 @@ import {
 	CONTINUATION_FALLBACK_NUDGE,
 	chatCacheAnchorIndex,
 	chatToolJsonSchema,
+	chatToolRoundReasoning,
 	readChatToolCall,
 } from "@rowcat/chat";
 import {
@@ -203,6 +204,8 @@ function buildRequestBody(
 	const messages = request.continuation
 		? toContinuationMessages(request.messages)
 		: request.messages;
+	/** A tool round trip keeps reasoning only where the model thinks regardless (`chatToolRoundReasoning`). */
+	const effort = chatToolRoundReasoning(model, request);
 	const cached = profile.explicitPromptCaching(model);
 	/** The end of the stable history, read before a continuation's nudge; `-1` without breakpoints. */
 	const anchor = cached ? chatCacheAnchorIndex(request.messages) : -1;
@@ -250,10 +253,10 @@ function buildRequestBody(
 				}
 			: {}),
 		max_tokens: request.maxOutputTokens,
-		...(profile.unifiedReasoning && request.reasoningEffort !== null
+		...(profile.unifiedReasoning && effort !== null
 			? {
 					reasoning: {
-						effort: REASONING_EFFORT_PARAM[request.reasoningEffort],
+						effort: REASONING_EFFORT_PARAM[effort],
 					},
 				}
 			: {}),

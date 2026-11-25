@@ -2,6 +2,7 @@ import {
 	CONTINUATION_FALLBACK_NUDGE,
 	chatCacheAnchorIndex,
 	chatToolJsonSchema,
+	chatToolRoundReasoning,
 	readChatToolCall,
 	trimContinuationPrefill,
 } from "@rowcat/chat";
@@ -713,7 +714,10 @@ async function* stream(
 	const thinking =
 		continuation === "prefill"
 			? EMPTY_THINKING
-			: anthropicThinkingFor(input.model, request.reasoningEffort);
+			: anthropicThinkingFor(
+					input.model,
+					chatToolRoundReasoning(input.model, request),
+				);
 
 	/**
 	 * The fields needed to trace this request later. Neither the prompt nor the key is included (see

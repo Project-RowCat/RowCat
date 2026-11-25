@@ -125,12 +125,12 @@ export interface NextChatToolRequestInput {
  * model repeat it. `continuation` is always off, because the last message is a tool result and not
  * a prefill.
  *
- * Reasoning is dropped for this request only, and the stored preference is unchanged. The assembled
- * assistant turn has no thinking block, which Anthropic's extended form requires at the start of
- * the last assistant turn. Keeping reasoning would make the provider return 400 after the body had
- * already streamed, and disabling it would hide the cause. If one must give way, tools are kept and
- * only this turn's text quality suffers, matching the continuation choice in
- * apps/web/src/lib/generation/anthropic.ts.
+ * Reasoning rides along as the turn chose it, and the adapter decides whether it may go out
+ * (`chatToolRoundReasoning`). The assembled assistant turn has no thinking block, which Anthropic's
+ * extended form requires at the start of the last assistant turn, so for models where the parameter
+ * is what turns thinking on, the adapter drops it for this request only. For models that think
+ * regardless, dropping it only reset the depth to the model's default, so they keep the turn's
+ * level. The decision needs the model id, which this package does not have here.
  *
  * Gemini 3 is not solved this way: it requires the signature attached to the call, and disabling
  * thinking does not exempt it. So the whole call, including `ChatToolCall.providerState`, is sent
@@ -152,7 +152,6 @@ export function nextChatToolRequest(
 		],
 		tools: chatToolDeclarations(input.tools),
 		continuation: false,
-		reasoningEffort: null,
 		...(input.offersTools ? {} : { toolCallsRefused: true as const }),
 	};
 }

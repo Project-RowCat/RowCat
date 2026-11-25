@@ -2,6 +2,7 @@ import {
 	CONTINUATION_FALLBACK_NUDGE,
 	chatCacheAnchorIndex,
 	chatToolJsonSchema,
+	chatToolRoundReasoning,
 	readChatToolCall,
 	trimContinuationPrefill,
 } from "@rowcat/chat";
@@ -938,7 +939,10 @@ async function start(
 	const thinking =
 		continuation === "prefill"
 			? EMPTY_THINKING
-			: anthropicThinkingFor(input.model, request.reasoningEffort);
+			: anthropicThinkingFor(
+					input.model,
+					chatToolRoundReasoning(input.model, request),
+				);
 
 	let response: Awaited<ReturnType<ByoTransportInput["fetch"]>>;
 	try {

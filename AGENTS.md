@@ -1270,6 +1270,11 @@ share        tool-file.ts — header values never exported, imports arrive off, 
 - **One registry.** Apps and the server's protected loop pass ports; they never build tool lists themselves.
   Without `ports` only lore search is built — that is every caller's shape before this axis.
 - **A kind whose port is missing is not declared** (`chatCustomTool` → `null`). Never declare a tool that cannot run.
+- **A tool round trip's reasoning is decided per model, at the adapter** (`chatToolRoundReasoning`). The follow-up
+  request carries the turn's level; models that think without a parameter (Fable 5.x, Opus 5.5/5, Sonnet 5.5/5,
+  Haiku 5.5) keep it, every other model drops it for that request (the assembled assistant turn has no thinking block,
+  which the extended form requires — a 400). Dropping it for the first group only reset depth to the model's default,
+  so a `low` room paid for deeper thinking on every follow-up round.
 - **Sub-agents are one level deep by construction** (their request declares no tools). Do not give `runAgent`
   a transport with `toolAccess`.
 - **Agents run on the conversation's own target** (same BYO key or managed door); the device opens that transport

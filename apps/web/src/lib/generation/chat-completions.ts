@@ -2,6 +2,7 @@ import {
 	CONTINUATION_FALLBACK_NUDGE,
 	chatCacheAnchorIndex,
 	chatToolJsonSchema,
+	chatToolRoundReasoning,
 	readChatToolCall,
 } from "@rowcat/chat";
 import {
@@ -236,6 +237,8 @@ export function buildChatCompletionsBody(
 	const messages = request.continuation
 		? toContinuationMessages(request.messages)
 		: request.messages;
+	/** A tool round trip keeps reasoning only where the model thinks regardless (`chatToolRoundReasoning`). */
+	const effort = chatToolRoundReasoning(model, request);
 	const cached = profile.explicitPromptCaching(model);
 	/** The end of the stable history, read before a continuation's nudge; `-1` without breakpoints. */
 	const anchor = cached ? chatCacheAnchorIndex(request.messages) : -1;
@@ -292,10 +295,10 @@ export function buildChatCompletionsBody(
 			: {}),
 		max_tokens: request.maxOutputTokens,
 		/** Omitted when absent, so models without selectable reasoning get no reasoning key. */
-		...(profile.unifiedReasoning && request.reasoningEffort !== null
+		...(profile.unifiedReasoning && effort !== null
 			? {
 					reasoning: {
-						effort: REASONING_EFFORT_PARAM[request.reasoningEffort],
+						effort: REASONING_EFFORT_PARAM[effort],
 					},
 				}
 			: {}),
@@ -376,7 +379,9 @@ async function* stream(
 		provider: profile.provider,
 		model: input.model,
 		continuation: request.continuation,
-		reasoning: profile.unifiedReasoning && request.reasoningEffort !== null,
+		reasoning:
+			profile.unifiedReasoning &&
+			chatToolRoundReasoning(input.model, request) !== null,
 		/** Whether an upstream was pinned (not which: the cause needs the fact, not the company). */
 		pinned: profile.upstreamRouting && Boolean(input.upstream),
 	} as const;

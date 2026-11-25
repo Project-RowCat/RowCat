@@ -199,27 +199,14 @@ describe("nextChatToolRequest", () => {
 	});
 
 	/**
-	 * The assistant turn in this request is reassembled by us, so it has no thinking block from the
-	 * provider. Anthropic's extended-thinking form requires the last assistant turn of a
-	 * thinking-enabled request to start with that block. If reasoning were sent anyway, the request
-	 * would fail with 400 after the body had already streamed. Turning reasoning off would hide the
-	 * error, so the cause on this axis would never show.
+	 * The round trip carries the turn's level. Whether it may go out is the adapter's decision,
+	 * because it depends on the model (`chatToolRoundReasoning`).
 	 */
-	it("round-trip requests carry no reasoning", () => {
+	it("round-trip requests carry the turn's reasoning", () => {
 		expect(
 			next({ request: { ...request, reasoningEffort: "high" } })
 				.reasoningEffort,
-		).toBeNull();
-	});
-
-	/**
-	 * Stored preferences are not touched. The downgrade applies to this one request only, so the
-	 * original request and turns that call no tool keep the chosen value.
-	 */
-	it("the original request's reasoning value stays", () => {
-		const source = { ...request, reasoningEffort: "high" } as const;
-		next({ request: source });
-		expect(source.reasoningEffort).toBe("high");
+		).toBe("high");
 	});
 
 	/**

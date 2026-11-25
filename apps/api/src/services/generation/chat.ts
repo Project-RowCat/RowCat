@@ -2,6 +2,7 @@ import {
 	CONTINUATION_FALLBACK_NUDGE,
 	chatCacheAnchorIndex,
 	chatToolJsonSchema,
+	chatToolRoundReasoning,
 	readChatToolCall,
 	trimContinuationPrefill,
 } from "@rowcat/chat";
@@ -519,7 +520,10 @@ export function buildProviderRequestBody(
 	 * Normalization comes before body assembly: passing the requested tier through would send a value
 	 * this model lacks, and the failure would arrive only after the user sent the conversation.
 	 */
-	const effort = resolveUpstreamReasoning(capability, request.reasoningEffort);
+	const effort = resolveUpstreamReasoning(
+		capability,
+		chatToolRoundReasoning(model, request),
+	);
 	/** This request's continuation shape; `null` for ordinary generation. */
 	const shape = request.continuation ? continuation : null;
 	/**
@@ -802,7 +806,7 @@ export async function startChatGeneration(
 				model,
 				status: response.status,
 				continuation: request.continuation,
-				reasoning: request.reasoningEffort !== null,
+				reasoning: chatToolRoundReasoning(model, request) !== null,
 			}),
 		);
 		throw new ApiError(

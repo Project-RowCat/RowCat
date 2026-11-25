@@ -416,9 +416,9 @@ describe("continuation shape", () => {
  * Reasoning path of the product default target.
  *
  * `deepseek-v4-pro` is the default model, so this is the path of someone who never opened AI
- * settings. The product default effort is `medium` (`PRODUCT_REASONING_EFFORT` in `@rowcat/chat`)
+ * settings. The product default effort is `low` (`PRODUCT_REASONING_EFFORT` in `@rowcat/chat`)
  * but this target cannot run it, so the question is what happens where they meet. The answer must
- * be nothing: an inherited `medium` is not forced onto a target with no capability.
+ * be nothing: an inherited `low` is not forced onto a target with no capability.
  */
 describe("default target", () => {
 	it("the product default model has no adjustable reasoning", () => {

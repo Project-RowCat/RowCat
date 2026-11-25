@@ -1,6 +1,7 @@
 import {
 	CONTINUATION_FALLBACK_NUDGE,
 	chatToolJsonSchema,
+	chatToolRoundReasoning,
 	readChatToolCall,
 	trimContinuationPrefill,
 } from "@rowcat/chat";
@@ -774,7 +775,10 @@ async function start(
 	 * omitted here: if the two places disagree, running without reasoning is better than sending a
 	 * parameter the model rejects.
 	 */
-	const thinking = geminiThinkingFor(input.model, request.reasoningEffort);
+	const thinking = geminiThinkingFor(
+		input.model,
+		chatToolRoundReasoning(input.model, request),
+	);
 
 	let response: Awaited<ReturnType<ByoTransportInput["fetch"]>>;
 	try {
