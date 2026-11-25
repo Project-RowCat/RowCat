@@ -1,5 +1,5 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import type { Server } from "node:http";
 import { createRequire } from "node:module";
 import { join } from "node:path";
@@ -203,7 +203,7 @@ async function startDatabase(
 	dataDir: string,
 	settings: DesktopSettings,
 	log: StackLog,
-): Promise<EmbeddedPostgres> {
+): Promise<{ stop(): Promise<void> }> {
 	const databaseDir = join(dataDir, "postgres");
 	const fresh = !existsSync(join(databaseDir, "PG_VERSION"));
 	const database = new EmbeddedPostgres({
@@ -227,6 +227,22 @@ async function startDatabase(
 		onError: (message) => log("postgres", String(message).trimEnd()),
 	});
 	if (fresh) await database.initialise();
+	if (process.platform === "win32") {
+		await startDatabaseWithPgCtl(dataDir, databaseDir, settings, log);
+		if (fresh) {
+			// `createDatabase` only works on a server the library spawned itself; its client does not care.
+			const client = database.getPgClient("postgres", "127.0.0.1");
+			await client.connect();
+			try {
+				await client.query(
+					`CREATE DATABASE ${client.escapeIdentifier(DATABASE_NAME)}`,
+				);
+			} finally {
+				await client.end();
+			}
+		}
+		return { stop: () => stopDatabaseWithPgCtl(databaseDir) };
+	}
 	// embedded-postgres rejects with nothing when the server exits before it is ready; the reason is
 	// in what Postgres itself wrote, which went to `log`.
 	await database.start().catch((error: unknown) => {
@@ -236,6 +252,56 @@ async function startDatabase(
 	});
 	if (fresh) await database.createDatabase(DATABASE_NAME);
 	return database;
+}
+
+/**
+ * Windows: Postgres refuses to run with administrative rights ("Execution of PostgreSQL by a user
+ * with administrative permissions is not permitted"), so a launch with an administrator's full token
+ * — "Run as administrator", UAC switched off, a CI runner — ended at startup. embedded-postgres
+ * spawns `postgres` directly; `pg_ctl` starts it under a restricted token that drops those rights,
+ * the way PostgreSQL's own Windows tooling does. Its output goes to a log beside the data folder,
+ * and an exit code reports a server that never became ready. `stdio: "ignore"`: the server inherits
+ * pg_ctl's handles, and a pipe it held would keep this call waiting for as long as Postgres runs.
+ */
+async function startDatabaseWithPgCtl(
+	dataDir: string,
+	databaseDir: string,
+	settings: DesktopSettings,
+	log: StackLog,
+): Promise<void> {
+	const logFile = join(dataDir, "postgres.log");
+	rmSync(logFile, { force: true });
+	const options = `-p ${settings.ports.database} -c listen_addresses=127.0.0.1`;
+	const code = await runPgCtl([
+		"start",
+		"-D",
+		databaseDir,
+		"-l",
+		logFile,
+		"-o",
+		options,
+		"-w",
+		"-t",
+		"60",
+	]);
+	if (code === 0) return;
+	if (existsSync(logFile))
+		for (const line of readFileSync(logFile, "utf8").split(/\r?\n/))
+			if (line) log("postgres", line);
+	throw new Error("Postgres exited before it accepted connections");
+}
+
+async function stopDatabaseWithPgCtl(databaseDir: string): Promise<void> {
+	await runPgCtl(["stop", "-D", databaseDir, "-m", "fast", "-w", "-t", "30"]);
+}
+
+async function runPgCtl(args: string[]): Promise<number | null> {
+	const pgCtl = await pgCtlPath();
+	return new Promise((resolve, reject) => {
+		const child = spawn(pgCtl, args, { stdio: "ignore", windowsHide: true });
+		child.once("error", reject);
+		child.once("exit", (code) => resolve(code));
+	});
 }
 
 /**
