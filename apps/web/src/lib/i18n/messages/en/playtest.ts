@@ -62,10 +62,6 @@ export const playtest = {
 	},
 	debug: {
 		block: {
-			"absolute-guard": "Absolute prohibitions",
-			"rating-guard": "Rating guard",
-			"minor-guard": "Minor character guard",
-			"house-rules": "House rules",
 			"lore-system-top": "Lore (top)",
 			"roleplay-rules": "Roleplay rules",
 			"narration-pack": "Narration pack",
@@ -82,7 +78,6 @@ export const playtest = {
 			memory: "Memory",
 			"user-note": "User note",
 			intensity: "Intensity",
-			"tail-guard": "Tail guard",
 		},
 		status: {
 			running: "Running",

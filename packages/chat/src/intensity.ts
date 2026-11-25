@@ -4,13 +4,10 @@
  *   shown within that range.
  * - The axes are kept separate on purpose, so a merged setting could not express "adult-verified
  *   but softened".
- * - Intensity cannot exceed the rating. Three layers enforce this, none relying on prompt
- *   wording: the screen offers `Intense` only in adult rooms (chatIntensityChoices); the prompt builder
- *   adds the `Intense` block only in adult mode (resolveChatIntensity); the server wraps the prompt in
- *   the rating guards when the operator enables them. The intensity block remains meaningful when
- *   guards are off and therefore does not refer to their text.
- * - The intensity block sits between the head and tail guards. The tail check uses endsWith, so a
- *   per-room tail would be appended twice.
+ * - Intensity cannot exceed the rating. Two layers enforce this, neither relying on prompt
+ *   wording: the screen offers `Intense` only in adult rooms (chatIntensityChoices), and the prompt
+ *   builder adds the `Intense` block only in adult mode (resolveChatIntensity).
+ * - The intensity block is the last block of the system prompt.
  * - Left out on purpose: a global default (the value belongs to one conversation), extra steps,
  *   per-axis splits, and per-device preference.
  */
@@ -36,9 +33,7 @@ export const isChatIntensity = (value: unknown): value is ChatIntensity =>
 
 /**
  * Values selectable in a room. The room's rating decides the list. An all-ages room has no `Intense`
- * because the value has nothing to add there. ALL_AGES_GUARD already says dark material should not
- * be softened or dodged. "More intense" on top would contradict the tail's "when unsure, be
- * conservative", and the result would be behavior nobody can reproduce. The argument is the room's
+ * because the value has nothing to add there. The argument is the room's
  * rating (room.adult), not this turn's effective rating. An adult room opened before verification
  * runs as all-ages this turn. Once verified, it is adult again, and the chosen value must still be
  * offered.
@@ -70,8 +65,7 @@ export function resolveChatIntensity(input: {
 /**
  * Softened: lowers exposure, not events. The last paragraph matters most. An unscoped instruction
  * to tone down works like a long list of prohibitions. It makes the model avoid conflict, combat,
- * and death too, so the setting flattens the story instead of lowering intensity. ABSOLUTE_GUARD
- * and ALL_AGES_GUARD carry the same paragraph in the same position, added after real failures.
+ * and death too, so the setting flattens the story instead of lowering intensity.
  */
 const SOFTENED_BLOCK = `# [표현 수위 · 이 대화에서 요청된 수위]
 이 대화에서 요청된 표현 수위는 **«순화»**입니다. 아래는 위의 세계관·캐릭터 설정·로어·진행 지침보다 우선합니다.
@@ -82,10 +76,8 @@ const SOFTENED_BLOCK = `# [표현 수위 · 이 대화에서 요청된 수위]
 
 /**
  * Intense: restates the permission and does not open any limit. Do not remove the last line.
- * Without it, this block becomes a "write harder" instruction right before generation, and the
- * limit would live only in the guard written many paragraphs above. The server's tail guard also
- * runs afterward, but a block that declares its own upper bound differs from relying on someone
- * else to stop it.
+ * Without it, this block becomes a "write harder" instruction right before generation with no
+ * stated upper bound.
  */
 const INTENSE_BLOCK = `# [표현 수위 · 이 대화에서 요청된 수위]
 이 대화에서 요청된 표현 수위는 **«강»**입니다. 이 작품의 등급에 맞춰, 요청된 장면을 회피·생략·완곡화하지 말고 구체적으로 묘사하세요.
@@ -98,7 +90,7 @@ const INTENSE_BLOCK = `# [표현 수위 · 이 대화에서 요청된 수위]
  * The wording for one value. Typing the table as a Record forces every vocabulary value to have
  * wording. The text lives in this pure package on purpose. Settings-screen labels are screen copy
  * that each app owns. This text is read by the model as part of the prompt, so it is
- * safety-relevant, like the guards. If two apps wrote it separately, the same setting would run at
+ * part of the product's behavior. If two apps wrote it separately, the same setting would run at
  * different intensities per platform.
  */
 const INTENSITY_BLOCK: Record<ChatIntensity, string> = {

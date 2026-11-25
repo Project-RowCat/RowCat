@@ -22,8 +22,8 @@ import type { ChatPromptTrace, SafeChatRequestDebug } from "./prompt-trace.ts";
 
 const LIMITS = DEFAULT_DEBUG_TRACE_LIMITS;
 
-const prompt = (blockText = "가드"): ChatPromptTrace => ({
-	blocks: [{ id: "absolute-guard", text: blockText }],
+const prompt = (blockText = "규칙"): ChatPromptTrace => ({
+	blocks: [{ id: "roleplay-rules", text: blockText }],
 	lore: [
 		{
 			id: "lore:0",

@@ -4,7 +4,6 @@ import {
 } from "@rowcat/contracts/chat";
 import { describe, expect, it } from "vitest";
 import { buildChatGenerationRequest } from "./context.ts";
-import { deliveredChatSystem } from "./guards.ts";
 import type { ChatRoom, ChatSeed } from "./model.ts";
 import { createMessageRecord, createRoomRecord } from "./model.ts";
 import { openingMessage } from "./opening.ts";
@@ -298,14 +297,6 @@ describe("generation context", () => {
 	it("without an override the story's suggested counterpart rides as is", () => {
 		const request = build(room({ persona: suggested }));
 		expect(request.system).toContain("- 이름: 방문자");
-	});
-
-	it("the counterpart block still precedes the safety tail guard", () => {
-		const system = deliveredChatSystem(build(room({}, chosen)));
-		const personaAt = system.indexOf("# 유저(상대역)");
-		const tailAt = system.lastIndexOf("\n\n");
-		expect(personaAt).toBeGreaterThan(-1);
-		expect(personaAt).toBeLessThan(tailAt);
 	});
 
 	it("the speaker prefix of user turns is the effective persona's name", () => {

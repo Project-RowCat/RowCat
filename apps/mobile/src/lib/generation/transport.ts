@@ -5,11 +5,9 @@ import type {
 	GenerationTarget,
 } from "@rowcat/chat";
 import { openRouterUpstreamOf, runChatToolLoop } from "@rowcat/chat";
-import { deliveredChatSystem } from "@rowcat/chat/guards";
 import type { ChatGenerationRequest, ChatStreamEvent } from "@rowcat/contracts";
 import type { RowCatClient } from "@rowcat/sdk";
 import type { ProviderCredentialAccess } from "../local-provider/store.ts";
-import { signalWithDeadline, throwIfAborted } from "./abort-signal.ts";
 import { anthropicAdapter } from "./anthropic.ts";
 import type { ByoAdapter, ByoFetch } from "./byo.ts";
 import { ProviderError } from "./errors.ts";
@@ -36,15 +34,6 @@ import { openRouterAdapter } from "./openrouter.ts";
  * - Managed model identity is attached here, not in the request. The assembler is
  *   provider-neutral and knows no model, and a model field on the shared request would be one BYO
  *   ignores.
- * - Safety guards are attached here only for BYO. The guard text is applied by
- *   `applyPlatformSafetyPolicy`, and the assembler does not include it: in the request body it
- *   would be readable off-device. The managed path gets it from the server
- *   (`apps/api/src/routes/chat.ts`). BYO has no server, so this is the last point before the
- *   request reaches the provider (`deliveredChatSystem`). Whichever transport is used, the model
- *   sees the absolute guard first and the rating's tail guard last.
- * - Not attaching guards on managed requests is deliberate. The server does not wrap an
- *   already-wrapped body, so the result would be the same, but the full guard text would ride in
- *   the request body again.
  * - Product prompt content is still built only in `buildChatGenerationRequest`. Adapters map the
  *   result and do not reassemble it.
  * - Adapters are imported statically. Web splits them with dynamic imports so managed-only users
@@ -93,8 +82,6 @@ export interface GenerationTransportDeps {
 	 * time (see the header of `native-fetch.ts`).
 	 */
 	fetch?: ByoFetch | undefined;
-	/** Optional turn snapshot, shared with the playtest inspector. */
-	promptGuardsEnabled?: boolean;
 	/** Test seam for swapping provider adapters. */
 	loadAdapter?: ((provider: ByoProvider) => ByoAdapter) | undefined;
 	/**
@@ -257,16 +244,7 @@ function rowcatTransport(
 ): GenerationTransport {
 	return {
 		stream: (request, options) =>
-			client.chat.stream(
-				/**
-				 * Guards are **not applied here.** On the managed path the server applies them; if the device
-				 * sent them, the full guard text would ride in the request body again (see the
-				 * `applyPlatformSafetyPolicy` header). BYO has no server, so only that branch has this device
-				 * apply them.
-				 */
-				{ ...request, model },
-				{ signal: options.signal },
-			),
+			client.chat.stream({ ...request, model }, { signal: options.signal }),
 	};
 }
 
@@ -322,14 +300,11 @@ async function* streamByo(input: {
 	 * memory and keep the secret alive until the response ends. Opening belongs to the callback;
 	 * reading does not.
 	 */
-	const promptGuardsEnabled =
-		input.deps.promptGuardsEnabled ??
-		(await readPromptGuardsEnabled(input.deps.client, input.options.signal));
 	const events = await credentials.withCredential(
 		input.provider,
 		async (secret, endpoint) =>
 			adapter.start({
-				request: withPlatformPolicy(input.request, promptGuardsEnabled),
+				request: input.request,
 				model: input.model,
 				secret,
 				...(endpoint === undefined ? {} : { endpoint }),
@@ -348,24 +323,6 @@ async function* streamByo(input: {
 	if (!events) throw new ProviderError("invalid_credential");
 
 	yield* events;
-}
-
-/**
- * Request with platform policy applied. **Only the BYO branch calls this.**
- *
- * The rating is already on the request (`context.requestedMode`). The client computed it from the
- * room's rating and the member's entitlement (`resolveAllAges`). On the managed path the server
- * recomputes it from the session and attaches the guards. **BYO has no server**, so this device's
- * judgement and this one line are the last point of that policy.
- */
-function withPlatformPolicy(
-	request: ChatGenerationRequest,
-	enabled: boolean,
-): ChatGenerationRequest {
-	return {
-		...request,
-		system: deliveredChatSystem(request, enabled),
-	};
 }
 
 /**
@@ -394,35 +351,4 @@ export function probeProviderCredential(
 		signal: options.signal,
 		fetch: options.fetch,
 	});
-}
-
-/** Bound for the deployment-metadata read; the generation never waits longer than this on RowCat. */
-const PROMPT_GUARD_READ_TIMEOUT_MS = 2_000;
-
-/**
- * Only deployment metadata is read here; BYO prompts and keys still go straight to the provider.
- * Failure keeps the default guards and must not make BYO depend on RowCat availability. The bounded
- * read also handles a server that is unreachable while the provider remains reachable.
- *
- * Not `signal.throwIfAborted()` / `AbortSignal.any` / `AbortSignal.timeout`: React Native has none
- * of them (`abort-signal.ts`).
- */
-export async function readPromptGuardsEnabled(
-	client: RowCatClient,
-	signal: AbortSignal,
-): Promise<boolean> {
-	throwIfAborted(signal);
-	const bounded = signalWithDeadline(signal, PROMPT_GUARD_READ_TIMEOUT_MS);
-	try {
-		const config = await client.ops.runtimeConfig({ signal: bounded.signal });
-		throwIfAborted(signal);
-		return !config.disabledFeatures.some(
-			(feature) => feature.key === "prompt-guards",
-		);
-	} catch {
-		throwIfAborted(signal);
-		return true;
-	} finally {
-		bounded.dispose();
-	}
 }

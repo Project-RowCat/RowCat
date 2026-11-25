@@ -39,7 +39,7 @@ const request: ChatGenerationRequest = {
 	 * own tests.
 	 */
 	reasoningEffort: null,
-	context: { requestedMode: "all-ages", minorCharacterPresent: false },
+	context: { requestedMode: "all-ages" },
 	/** The default is a plain generation. The continuation path has its own tests. */
 	continuation: false,
 };
@@ -117,9 +117,20 @@ describe("Anthropic adapter", () => {
 				cache_control: { type: "ephemeral", ttl: "1h" },
 			},
 		]);
+		// The answer before the last user line carries the stable-history breakpoint
+		// (`chatCacheAnchorIndex`); its text is unchanged.
 		expect(sent.messages).toEqual([
 			{ role: "user", content: "first" },
-			{ role: "assistant", content: "answer" },
+			{
+				role: "assistant",
+				content: [
+					{
+						type: "text",
+						text: "answer",
+						cache_control: { type: "ephemeral", ttl: "1h" },
+					},
+				],
+			},
 			{ role: "user", content: "second" },
 		]);
 		expect(sent.stream).toBe(true);
@@ -140,26 +151,32 @@ describe("Anthropic adapter", () => {
 		const call = seen[0];
 		if (!call) throw new Error("no request");
 		const sent = body(call);
-		expect(sent.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
+		expect(sent.cache_control).toEqual({ type: "ephemeral", ttl: "5m" });
 		// Turning caching on must not change the prompt. This slice depends on that.
 		expect(sent.model).toBe("claude-sonnet-5");
 		expect(sent.max_tokens).toBe(1024);
 		expect(
 			(sent.system as Array<{ text: string }>).map((block) => block.text),
 		).toEqual(["system prompt"]);
-		expect(sent.messages).toEqual([
-			{ role: "user", content: "first" },
-			{ role: "assistant", content: "answer" },
-			{ role: "user", content: "second" },
-		]);
+		// Only breakpoints were added: every text block reads exactly as before.
+		expect(
+			(sent.messages as Array<{ content: string | { text: string }[] }>).map(
+				(m) =>
+					typeof m.content === "string"
+						? m.content
+						: m.content.map((block) => block.text).join(""),
+			),
+		).toEqual(["first", "answer", "second"]);
 		expect(sent.stream).toBe(true);
 	});
 
 	/**
-	 * The lifetime is this product's choice, not a config axis: one hour on both breakpoints. They must
-	 * stay equal or the system's longer, since a shorter TTL ahead of a longer one is a 400.
+	 * The lifetime is this product's choice, not a config axis. The system block and the end of the
+	 * stable history live an hour (a reply is often read for longer than five minutes); the tail — the
+	 * user's line with this turn's recall, which the next turn never resends — lives five. A shorter
+	 * TTL ahead of a longer one is a 400, so the order is hour, hour, five minutes.
 	 */
-	it("keeps both cache breakpoints for an hour", async () => {
+	it("keeps the system and history breakpoints for an hour and the tail for five minutes", async () => {
 		const { seen, fetchMock } = recorder(() => sseResponse(ANTHROPIC_STREAM));
 		await collect(anthropicAdapter, {
 			model: "claude-sonnet-5",
@@ -167,10 +184,35 @@ describe("Anthropic adapter", () => {
 			fetch: fetchMock,
 		});
 		const sent = body(seen[0] as { init: RequestInit });
-		expect(sent.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
+		const hour = { type: "ephemeral", ttl: "1h" };
 		expect(
 			(sent.system as Array<{ cache_control: unknown }>)[0]?.cache_control,
-		).toEqual(sent.cache_control);
+		).toEqual(hour);
+		expect(
+			(
+				sent.messages as Array<{
+					content: string | { cache_control?: unknown }[];
+				}>
+			)[1]?.content,
+		).toEqual([expect.objectContaining({ cache_control: hour })]);
+		expect(sent.cache_control).toEqual({ type: "ephemeral", ttl: "5m" });
+	});
+
+	/**
+	 * With no answer before the user's line there is nothing the next turn reads past the system
+	 * block but this tail, so it keeps the hour.
+	 */
+	it("keeps the tail an hour when the history has no anchor yet", async () => {
+		const { seen, fetchMock } = recorder(() => sseResponse(ANTHROPIC_STREAM));
+		await collect(anthropicAdapter, {
+			model: "claude-sonnet-5",
+			secret: "sk-ant",
+			fetch: fetchMock,
+			request: { ...request, messages: [{ role: "user", content: "Hi" }] },
+		});
+		const sent = body(seen[0] as { init: RequestInit });
+		expect(sent.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
+		expect(sent.messages).toEqual([{ role: "user", content: "Hi" }]);
 	});
 
 	/**
@@ -583,7 +625,7 @@ const sentSafetySettings = (
 		secret: "key",
 		request: {
 			...request,
-			context: { requestedMode, minorCharacterPresent: false },
+			context: { requestedMode },
 		},
 		fetch: fetchMock,
 	});
@@ -1087,7 +1129,22 @@ describe("OpenRouter adapter", () => {
 			fetch: fetchMock,
 		});
 		const [claude, gemini] = seen.map(body);
-		expect(claude?.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
+		// The tail lives five minutes once the history has an anchor; the anchor carries the hour.
+		expect(claude?.cache_control).toEqual({ type: "ephemeral", ttl: "5m" });
+		expect((claude?.messages as unknown[])[2]).toEqual({
+			role: "assistant",
+			content: [
+				{
+					type: "text",
+					text: "answer",
+					cache_control: { type: "ephemeral", ttl: "1h" },
+				},
+			],
+		});
+		expect((gemini?.messages as unknown[])[2]).toEqual({
+			role: "assistant",
+			content: "answer",
+		});
 		expect((claude?.messages as unknown[])[0]).toEqual({
 			role: "system",
 			content: [

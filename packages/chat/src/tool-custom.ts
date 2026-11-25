@@ -117,9 +117,8 @@ export function chatAgentPrompt(
 }
 
 /**
- * The sub-agent's request. It inherits only the parent turn's safety context (rating and minor
- * flag), because the platform guard is decided from that and an agent must not run under a looser
- * one than the conversation that started it. Everything else is the agent's own:
+ * The sub-agent's request. It inherits only the parent turn's rating context, so an agent never runs
+ * at a looser rating than the conversation that started it. Everything else is the agent's own:
  * - `tools: []`. That is what makes agents one level deep.
  * - No history. The agent sees what the model chose to pass, nothing of the conversation.
  * - No reasoning and no routing key. The agent's prefix is unrelated to the conversation's, so

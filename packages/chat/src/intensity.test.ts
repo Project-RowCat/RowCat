@@ -5,12 +5,6 @@ import {
 import { describe, expect, it } from "vitest";
 import { buildChatGenerationRequest } from "./context.ts";
 import {
-	ADULT_TAIL,
-	ALL_AGES_TAIL,
-	applyPlatformSafetyPolicy,
-	deliveredChatSystem,
-} from "./guards.ts";
-import {
 	applyRoomIntensity,
 	CHAT_INTENSITIES,
 	type ChatIntensity,
@@ -53,11 +47,7 @@ describe("resolveChatIntensity: the rating is the ceiling", () => {
 		expect(resolveChatIntensity({ intensity: "intense", allAges: false })).toBe(
 			"intense",
 		);
-		/*
-		 * In an all-ages turn, setting `Intense` conflicts directly with the tail guard's 'when in doubt, be
-		 * conservative'. Contradictory instructions do not raise an error; they show up as results that
-		 * sometimes work and sometimes do not.
-		 */
+		// An all-ages turn never asks for more than the rating it runs at.
 		expect(resolveChatIntensity({ intensity: "intense", allAges: true })).toBe(
 			null,
 		);
@@ -133,13 +123,12 @@ describe("applyRoomIntensity: default has one representation", () => {
 });
 
 describe("assembler: where the block stands", () => {
-	/** The prompt that reaches the model. The transport layer attaches the tail guard. */
+	/** The prompt that reaches the model. */
 	const build = (over: Partial<ChatRoom>, allAges: boolean) =>
-		deliveredChatSystem(
-			buildChatGenerationRequest({ room: room(over), messages: [], allAges }),
-		);
+		buildChatGenerationRequest({ room: room(over), messages: [], allAges })
+			.system;
 
-	it("the «softened» block stands after the user note, before the tail guard", () => {
+	it("the «softened» block stands after the user note", () => {
 		const system = build(
 			{ intensity: "softened", userNote: "USER_NOTE_MARKER" },
 			true,
@@ -147,7 +136,6 @@ describe("assembler: where the block stands", () => {
 		expect(system).toContain(chatIntensityBlock("softened"));
 		const block = system.indexOf(chatIntensityBlock("softened"));
 		expect(block).toBeGreaterThan(system.indexOf("USER_NOTE_MARKER"));
-		expect(block).toBeLessThan(system.indexOf(ALL_AGES_TAIL));
 	});
 
 	it("an all-ages turn gets no «intense» block", () => {
@@ -156,17 +144,11 @@ describe("assembler: where the block stands", () => {
 		);
 	});
 
-	it("an adult turn gets the «intense» block before the tail guard", () => {
+	it("an adult turn gets the «intense» block", () => {
 		const system = build({ intensity: "intense" }, false);
-		/*
-		 * Check presence first. If the block is absent, indexOf returns -1 and the order check below
-		 * passes trivially, so a missing block would still pass. This trap was hit while building the
-		 * slice: a rebuild dropped the axis, and the order-only test still passed.
-		 */
 		expect(system).toContain(chatIntensityBlock("intense"));
-		expect(system.indexOf(chatIntensityBlock("intense"))).toBeLessThan(
-			system.indexOf(ADULT_TAIL),
-		);
+		// Last block of the system prompt.
+		expect(system.endsWith(chatIntensityBlock("intense"))).toBe(true);
 	});
 
 	/**
@@ -177,34 +159,5 @@ describe("assembler: where the block stands", () => {
 	it("a room with no choice adds not one character to the prompt", () => {
 		const { intensity: _drop, ...base } = room({ intensity: "softened" });
 		expect(build(base, true)).toBe(build({}, true));
-	});
-});
-
-/**
- * Wrap integrity: the part of this slice most likely to break silently.
- *
- * applyPlatformSafetyPolicy checks whether the body ends with the fixed tail (endsWith) and passes
- * an already-wrapped request through untouched. If the intensity block went after the tail, that
- * check would fail and every normal request would get the tail twice, with no visible symptom.
- */
-describe("platform policy: the intensity block does not break the wrapping", () => {
-	it.each([
-		["softened", true],
-		["softened", false],
-		["intense", false],
-	] as const)("«%s» · allAges=%s", (intensity, allAges) => {
-		const system = buildChatGenerationRequest({
-			room: room({ intensity }),
-			messages: [],
-			allAges,
-		}).system;
-		const policy = { allAges, houseRules: true };
-		const wrapped = applyPlatformSafetyPolicy(system, policy);
-		// The intensity block ends the body, and the tail follows it exactly once.
-		expect(
-			wrapped.endsWith(`${system}\n\n${allAges ? ALL_AGES_TAIL : ADULT_TAIL}`),
-		).toBe(true);
-		// Wrapping the already-wrapped result again must add no bytes.
-		expect(applyPlatformSafetyPolicy(wrapped, policy)).toBe(wrapped);
 	});
 });

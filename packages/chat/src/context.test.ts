@@ -10,15 +10,6 @@ import {
 	resolveAllAges,
 	selectLore,
 } from "./context.ts";
-import {
-	ABSOLUTE_GUARD,
-	ADULT_GUARD,
-	ADULT_TAIL,
-	ALL_AGES_GUARD,
-	ALL_AGES_TAIL,
-	deliveredChatSystem,
-	MINOR_PRESENT_GUARD,
-} from "./guards.ts";
 import type { ChatMemory } from "./memory.ts";
 import { createMemoryRecord } from "./memory.ts";
 import type { ChatMessage, ChatRoom, ChatSeed } from "./model.ts";
@@ -27,7 +18,7 @@ import { CHAT_USER_NOTE_MAX_LENGTH } from "./user-note.ts";
 
 /**
  * Context-assembler tests. What is checked is order and inclusion, not wording. Specifically: the
- * safety guard sits before and after the creator content, the opening stays on the system side
+ * blocks keep their order, the opening stays on the system side
  * rather than in history, and history does not exceed its limit. These can break silently, and the
  * screen alone would not reveal it.
  */
@@ -90,87 +81,6 @@ describe("resolveAllAges", () => {
 	it("an adult story opens in adult mode only with entitlement", () => {
 		expect(resolveAllAges({ adult: true }, { adultAllowed: true })).toBe(false);
 		expect(resolveAllAges({ adult: true }, { adultAllowed: false })).toBe(true);
-	});
-});
-
-/**
- * The guard is added by the transport layer (applyPlatformSafetyPolicy), not by the assembler. What
- * is checked here is the prompt that reaches the model: whether the assembler's verdicts (rating,
- * minors) arrive in the right place.
- */
-describe("buildChatGenerationRequest: safety guards", () => {
-	it("the absolute guard always stands at the very top", () => {
-		const request = buildChatGenerationRequest({
-			room: room(),
-			messages: [],
-			allAges: true,
-		});
-		expect(deliveredChatSystem(request).startsWith(ABSOLUTE_GUARD)).toBe(true);
-	});
-
-	it("the all-ages and adult guards are exclusive", () => {
-		const allAges = deliveredChatSystem(
-			buildChatGenerationRequest({ room: room(), messages: [], allAges: true }),
-		);
-		expect(allAges).toContain(ALL_AGES_GUARD);
-		expect(allAges).not.toContain(ADULT_GUARD);
-
-		const adult = deliveredChatSystem(
-			buildChatGenerationRequest({
-				room: room({ adult: true }),
-				messages: [],
-				allAges: false,
-			}),
-		);
-		expect(adult).toContain(ADULT_GUARD);
-		expect(adult).not.toContain(ALL_AGES_GUARD);
-	});
-
-	it("the tail guard follows creator content", () => {
-		/**
-		 * This order is the reason the guard exists. If world setting or characters came after the tail,
-		 * they would sit closer to the generation point, by recency, and effectively override the safety
-		 * rules.
-		 */
-		const request = buildChatGenerationRequest({
-			room: room({ scenario: "SCENARIO_MARKER" }),
-			messages: [],
-			allAges: true,
-		});
-		expect(deliveredChatSystem(request).indexOf(ALL_AGES_TAIL)).toBeGreaterThan(
-			deliveredChatSystem(request).indexOf("SCENARIO_MARKER"),
-		);
-	});
-
-	it("the expression-limit tail attaches in adult mode too", () => {
-		const request = buildChatGenerationRequest({
-			room: room({ adult: true }),
-			messages: [],
-			allAges: false,
-		});
-		expect(deliveredChatSystem(request)).toContain(ADULT_TAIL);
-	});
-
-	it("a dedicated guard attaches in adult mode when a character reads as a minor", () => {
-		const request = buildChatGenerationRequest({
-			room: room({
-				adult: true,
-				characters: [{ name: "하나", description: "고등학생" }],
-			}),
-			messages: [],
-			allAges: false,
-		});
-		expect(deliveredChatSystem(request)).toContain(MINOR_PRESENT_GUARD);
-	});
-
-	it("all-ages mode does not attach the minor guard twice", () => {
-		// Sexual description is already banned outright, so restating it would only waste tokens.
-		const request = buildChatGenerationRequest({
-			room: room({ characters: [{ name: "하나", description: "고등학생" }] }),
-			messages: [],
-			allAges: true,
-		});
-		expect(deliveredChatSystem(request)).not.toContain(MINOR_PRESENT_GUARD);
 	});
 });
 
@@ -557,19 +467,15 @@ describe("narration packs", () => {
 	});
 
 	it("stands **after** the roleplay rules and **before** creator content", () => {
-		const system = deliveredChatSystem(
-			buildChatGenerationRequest({
-				room: seeded(),
-				messages: [],
-				allAges: true,
-				narration: { text: PACK, writesUser: false },
-			}),
-		);
+		const system = buildChatGenerationRequest({
+			room: seeded(),
+			messages: [],
+			allAges: true,
+			narration: { text: PACK, writesUser: false },
+		}).system;
 		const pack = system.indexOf("PACK BODY");
 		expect(pack).toBeGreaterThan(system.indexOf("# 진행 규칙"));
 		expect(pack).toBeLessThan(system.indexOf("# 세계관 / 상황"));
-		/* The tail guard is still last. The pack does not push it out of that position. */
-		expect(pack).toBeLessThan(system.indexOf(ALL_AGES_TAIL));
 	});
 
 	/**
@@ -755,62 +661,16 @@ describe("characters: those added in this conversation", () => {
 		expect(system).not.toContain("{{user}}");
 	});
 
-	/**
-	 * In v2 works the seed's characters are always empty. If minor detection looked only at the seed,
-	 * rooms whose cast consists of added characters would never trigger this guard.
-	 */
-	it("when an added character reads as a minor, the minor guard stands in adult mode", () => {
-		const system = deliveredChatSystem(
-			buildChatGenerationRequest({
-				room: room({ adult: true, scenario: "세계관" }),
-				messages: [],
-				allAges: false,
-				characters: [added("유진", "17세 고등학생.")],
-			}),
-		);
-		expect(system).toContain(MINOR_PRESENT_GUARD);
-	});
-
-	it("the minor guard stands when the user role's description reads as a minor too", () => {
-		const system = deliveredChatSystem(
-			buildChatGenerationRequest({
-				room: room({
-					adult: true,
-					scenario: "세계관",
-					persona: { name: "카이", description: "17세 고등학생" },
-				}),
-				messages: [],
-				allAges: false,
-			}),
-		);
-		expect(system).toContain(MINOR_PRESENT_GUARD);
-	});
-
-	it("without minor indicators the guard does not stand even with added characters", () => {
-		const system = deliveredChatSystem(
-			buildChatGenerationRequest({
-				room: room({ adult: true, scenario: "세계관" }),
-				messages: [],
-				allAges: false,
-				characters: [added("유진", "서른 살 형사.")],
-			}),
-		);
-		expect(system).not.toContain(MINOR_PRESENT_GUARD);
-	});
-
-	/** The position is after world setting and before the role. The tail guard still comes last. */
-	it("stands after the world and before the tail guard", () => {
-		const system = deliveredChatSystem(
-			buildChatGenerationRequest({
-				room: room({ scenario: "세계관" }),
-				messages: [],
-				allAges: true,
-				characters: [added("유진")],
-			}),
-		);
+	/** The position is after world setting and before the role. */
+	it("stands after the world", () => {
+		const system = buildChatGenerationRequest({
+			room: room({ scenario: "세계관" }),
+			messages: [],
+			allAges: true,
+			characters: [added("유진")],
+		}).system;
 		const cast = system.indexOf("# 등장인물");
 		expect(cast).toBeGreaterThan(system.indexOf("# 세계관 / 상황"));
-		expect(cast).toBeLessThan(system.indexOf(ALL_AGES_TAIL));
 	});
 });
 
@@ -849,24 +709,19 @@ describe("user note: the request the user attached to this conversation", () => 
 	});
 
 	/**
-	 * This order is the prompt-injection boundary of this product. Notes are a field where the user
-	 * may write anything, so the point of the order is that the note never sits where it could
-	 * override the safety rules. Moving the note after the tail guard would open that boundary.
+	 * The note is the person's latest request, so it sits nearer generation than memory.
 	 */
-	it("stands after memories and before the safety tail guard", () => {
-		const system = deliveredChatSystem(
-			buildChatGenerationRequest({
-				room: { ...room({ scenario: "세계관" }), userNote: "반말로 진행." },
-				messages: [],
-				allAges: true,
-				memories: [memory("카이는 왼손잡이다.")],
-			}),
-		);
+	it("stands after memories", () => {
+		const system = buildChatGenerationRequest({
+			room: { ...room({ scenario: "세계관" }), userNote: "반말로 진행." },
+			messages: [],
+			allAges: true,
+			memories: [memory("카이는 왼손잡이다.")],
+		}).system;
 		const memoryAt = system.indexOf("카이는 왼손잡이다.");
 		const noteAt = system.indexOf("반말로 진행.");
 		expect(memoryAt).toBeGreaterThan(-1);
 		expect(memoryAt).toBeLessThan(noteAt);
-		expect(noteAt).toBeLessThan(system.indexOf(ALL_AGES_TAIL));
 	});
 
 	/**

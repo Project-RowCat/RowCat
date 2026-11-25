@@ -33,7 +33,7 @@ import type { ChatSummary } from "./summary.ts";
  *                                 │
  * turn ──recall + digests (perspective inside the search)──▶ re-checked against the live store
  *                                 ──▶ the request: recalled passages (last user turn) and
- *                                     earlier episodes (system prompt)
+ *                                     earlier episodes and facts (the same turn, ahead of recall)
  * ```
  *
  * - **One owner, one pipeline.** There is no backend choice and no fallback. Memory V2 (model-written
@@ -1501,7 +1501,8 @@ function aliasNames(
 // ── Consolidated episodes (the long-range context) ───────────────────────────────────────────────
 
 /**
- * Characters the earlier-episodes block may take in the system prompt: the size V2's summary was
+ * Characters the earlier-episodes block may take (it rides in the last user turn with recall,
+ * `withLongTerm` in `context.ts`): the size V2's summary was
  * allowed (`CHAT_SUMMARY_MAX_LENGTH`), so replacing it does not grow the request.
  */
 export const CHAT_CONSOLIDATED_CHAR_BUDGET = 2_000;
@@ -1535,9 +1536,10 @@ interface BridgeDigest {
 }
 
 /**
- * Picks episodes for the budget — newest first, skipping one that does not fit — then orders them by
- * time. Depends only on the stored episodes and the window, so between two window steps the selection
- * (and the cached system prompt) does not change.
+ * Picks episodes for the budget — newest first (or in the search's rank), skipping one that does not
+ * fit — then orders them by time. Ranked by the turn's recall search, the selection follows this
+ * turn's words, which is why the block rides in the last user turn and not in the cached system
+ * prompt (`withLongTerm` in `context.ts`).
  */
 export function selectConsolidatedForContext(
 	episodes: readonly ChatConsolidatedEpisode[],

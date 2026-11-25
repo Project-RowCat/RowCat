@@ -2,7 +2,7 @@
  * Product rules for chat, independent of platform: model, memory (+ audience, long-term memory via
  * afterstate: conversation-memory), scenes (+ controls), persona, summary (historical V2 record
  * only), reply-suggestion (+ prompt, runner), utility-generation, store (port only:
- * Dexie on web, SQLite on mobile), conversation, guards, context, lore, prompt-trace,
+ * Dexie on web, SQLite on mobile), conversation, rating, roleplay-rules, context, lore, prompt-trace,
  * protected-seed, protected-generation, debug-trace, debug-view, placeholder, ai-evidence,
  * generation (+ preference, availability, summary, options, reasoning, openai-compatible,
  *   openrouter),
@@ -20,6 +20,7 @@
  */
 export * from "./ai-evidence.ts";
 export * from "./attachment.ts";
+export * from "./cache-anchor.ts";
 export * from "./character.ts";
 export * from "./composer-emphasis.ts";
 export * from "./context.ts";
@@ -33,7 +34,6 @@ export * from "./generation-availability.ts";
 export * from "./generation-options.ts";
 export * from "./generation-preference.ts";
 export * from "./generation-summary.ts";
-export * from "./guards.ts";
 export * from "./history-window.ts";
 export * from "./intensity.ts";
 export * from "./lore.ts";
@@ -52,10 +52,12 @@ export * from "./prompt-scope.ts";
 export * from "./prompt-trace.ts";
 export * from "./protected-generation.ts";
 export * from "./protected-seed.ts";
+export * from "./rating.ts";
 export * from "./reasoning.ts";
 export * from "./reply-suggestion.ts";
 export * from "./reply-suggestion-prompt.ts";
 export * from "./reply-suggestion-runner.ts";
+export * from "./roleplay-rules.ts";
 export * from "./room-actions.ts";
 export * from "./room-duplicate.ts";
 export * from "./room-library.ts";

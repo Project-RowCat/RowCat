@@ -1,5 +1,6 @@
 import {
 	CONTINUATION_FALLBACK_NUDGE,
+	chatCacheAnchorIndex,
 	chatToolJsonSchema,
 	readChatToolCall,
 	trimContinuationPrefill,
@@ -75,8 +76,10 @@ const headersFor = (secret: string): HeadersInit => ({
  * Merging is mapping, not prompt assembly. It adds no content and does not reorder. It joins the
  * two utterances with a blank line only.
  */
+type AnthropicCacheControl = { type: "ephemeral"; ttl: "1h" | "5m" };
+
 type AnthropicBlock =
-	| { type: "text"; text: string }
+	| { type: "text"; text: string; cache_control?: AnthropicCacheControl }
 	| {
 			type: "tool_use";
 			id: string;
@@ -146,10 +149,15 @@ function blocksOf(message: ChatGenerationMessage): {
 
 function toAnthropicMessages(
 	messages: readonly ChatGenerationMessage[],
+	/** The message whose end carries the stable-history breakpoint (`chatCacheAnchorIndex`); `-1` for none. */
+	anchor = -1,
 ): AnthropicMessage[] {
 	const folded: { role: "user" | "assistant"; blocks: AnthropicBlock[] }[] = [];
-	for (const message of messages) {
+	for (const [index, message] of messages.entries()) {
 		const next = blocksOf(message);
+		const end = next.blocks.at(-1);
+		if (index === anchor && end?.type === "text")
+			end.cache_control = { type: "ephemeral", ttl: "1h" };
 		const last = folded.at(-1);
 		if (!last || last.role !== next.role) {
 			folded.push(next);
@@ -165,6 +173,8 @@ function toAnthropicMessages(
 		const head = next.blocks[0];
 		if (tail?.type === "text" && head?.type === "text") {
 			tail.text = `${tail.text}\n\n${head.text}`;
+			/** A breakpoint on the joined text marks the end of both, which is where it stood. */
+			if (head.cache_control) tail.cache_control = head.cache_control;
 			last.blocks.push(...next.blocks.slice(1));
 			continue;
 		}
@@ -179,7 +189,8 @@ function toAnthropicMessages(
 		const only = blocks.length === 1 ? blocks[0] : undefined;
 		return {
 			role,
-			content: only?.type === "text" ? only.text : blocks,
+			content:
+				only?.type === "text" && !only.cache_control ? only.text : blocks,
 		};
 	});
 }
@@ -245,7 +256,7 @@ const continuationModeFor = (model: string): AnthropicContinuationMode =>
  * it had not changed. This breakpoint keeps that part readable.
  *
  * This is not a breakpoint placed by hand inside the prompt: the adapter already receives the system
- * prompt as one opaque string and marks the end of it, so it still knows nothing about the guards,
+ * prompt as one opaque string and marks the end of it, so it still knows nothing about the rules,
  * lore, summary or memory inside. The text is unchanged by a character.
  *
  * The breakpoint lives for an hour (`ttl: "1h"`), not the default five minutes. A cache entry's
@@ -269,10 +280,17 @@ const continuationModeFor = (model: string): AnthropicContinuationMode =>
  * hour-long write (2x input) there paid for a lifetime nothing uses; five minutes (1.25x) covers the
  * rounds that follow.
  *
+ * The same holds for an ordinary turn once the history has an anchor (`chatCacheAnchorIndex`): the
+ * last block is the user's line with this turn's recall, which the next turn does not resend, so
+ * the next turn reads up to the anchor's one-hour breakpoint instead and this tail is written for
+ * nothing past the same turn. Five minutes there costs 1.25x instead of 2x on those tokens.
+ *
  * Shorter after longer is the allowed order, so the system marker stays one hour.
  */
 const tailCacheTtl = (messages: readonly ChatGenerationMessage[]) =>
-	messages.at(-1)?.role === "tool" ? "5m" : "1h";
+	messages.at(-1)?.role === "tool" || chatCacheAnchorIndex(messages) >= 0
+		? "5m"
+		: "1h";
 
 const anthropicSystem = (system: string) =>
 	system
@@ -308,7 +326,7 @@ function toAnthropicContinuationMessages(
 	messages: readonly ChatGenerationMessage[],
 	mode: AnthropicContinuationMode,
 ): AnthropicMessage[] {
-	const folded = toAnthropicMessages(messages);
+	const folded = toAnthropicMessages(messages, chatCacheAnchorIndex(messages));
 	const nudged = (): AnthropicMessage[] => {
 		folded.push({ role: "user", content: CONTINUATION_FALLBACK_NUDGE });
 		return folded;
@@ -728,7 +746,10 @@ async function* stream(
 				 */
 				messages:
 					continuation === null
-						? toAnthropicMessages(request.messages)
+						? toAnthropicMessages(
+								request.messages,
+								chatCacheAnchorIndex(request.messages),
+							)
 						: toAnthropicContinuationMessages(request.messages, continuation),
 				/**
 				 * When no tools are declared, the key is absent. A client that does not know this axis gets a
@@ -771,16 +792,17 @@ async function* stream(
 				 * the last cacheable block, so as history grows, the cache boundary moves forward too.
 				 *
 				 * Breakpoints are not set by hand per content block. That would require this adapter to know
-				 * the boundaries of guards, seeds, lore, memory, and history. That structure belongs to
+				 * the boundaries of rules, seeds, lore, memory, and history. That structure belongs to
 				 * `@rowcat/chat` and is provider-neutral. Pushing cache mechanics into it would tie prompt
 				 * assembly to provider details. Provider mechanics stay inside the adapter.
 				 *
 				 * Cache lifetime is a transport optimization users have no reason to understand, so it is not a
 				 * config option.
 				 *
-				 * This automatic breakpoint is one of two; the other sits on the system block
-				 * (`anthropicSystem`). Both live an hour, for the reason given there, except on a tool
-				 * round trip (`tailCacheTtl`).
+				 * This automatic breakpoint is one of three: one sits on the system block
+				 * (`anthropicSystem`) and one at the end of the stable history (`chatCacheAnchorIndex`,
+				 * placed in `toAnthropicMessages`). Those two live an hour; this one only five minutes when
+				 * nothing past this turn reads it (`tailCacheTtl`).
 				 */
 				cache_control: {
 					type: "ephemeral",

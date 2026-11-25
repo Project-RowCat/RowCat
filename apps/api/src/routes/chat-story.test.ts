@@ -1,8 +1,3 @@
-import {
-	ABSOLUTE_GUARD,
-	ALL_AGES_TAIL,
-	HOUSE_RULES,
-} from "@rowcat/chat/guards";
 import { CHAT_ERROR_CODE, type StoryChatSeedInput } from "@rowcat/contracts";
 import { and, eq, isNull } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, test, vi } from "vitest";
@@ -10,7 +5,6 @@ import { app } from "../app.ts";
 import { closeDb, db } from "../db/client.ts";
 import { story } from "../db/schema.ts";
 import { newId } from "../lib/id.ts";
-import { setFeatureFlag } from "../services/ops.ts";
 import { allowManagedGeneration, createTestMember } from "../test/auth.ts";
 import { connectTestDatabase, deleteTestUsers } from "../test/database.ts";
 import { WEB_ORIGIN } from "../test/http.ts";
@@ -201,44 +195,7 @@ describe.skipIf(!databaseReady)("the seed sent down to the device", () => {
 });
 
 describe.skipIf(!databaseReady)("server-assembled generation", () => {
-	test("the operator can disable and re-enable prompt guards", async () => {
-		const viewer = await signUp();
-		try {
-			for (const enabled of [false, true]) {
-				await setFeatureFlag({
-					key: "prompt-guards",
-					actorId: viewer.memberId,
-					request: {
-						state: enabled ? "on" : "off",
-						message: "",
-						reason: "Test prompt guard setting",
-					},
-				});
-
-				const id = await seedStory(viewer.memberId);
-				const upstream = provider([() => TEXT_REPLY.clone()]);
-				const response = await generate(viewer.cookie, id, assembly());
-				expect(response.status).toBe(200);
-				await response.text();
-				const system = systemOf(upstream.bodies()[0]);
-				expect(system.includes(ABSOLUTE_GUARD)).toBe(enabled);
-				expect(system).toContain("SCENARIO_MARKER");
-				expect(system.includes(HOUSE_RULES)).toBe(enabled);
-			}
-		} finally {
-			await setFeatureFlag({
-				key: "prompt-guards",
-				actorId: viewer.memberId,
-				request: {
-					state: "default",
-					message: "",
-					reason: "Reset test setting",
-				},
-			});
-		}
-	});
-
-	test("the server assembles from the published manuscript and the guards and sends it upstream", async () => {
+	test("the server assembles from the published manuscript and sends it upstream", async () => {
 		const owner = await signUp();
 		const id = await seedStory(owner.memberId);
 		const upstream = provider([() => TEXT_REPLY.clone()]);
@@ -251,11 +208,8 @@ describe.skipIf(!databaseReady)("server-assembled generation", () => {
 		await response.text();
 
 		const system = systemOf(upstream.bodies()[0]);
-		expect(system.startsWith(ABSOLUTE_GUARD)).toBe(true);
-		expect(system).toContain(HOUSE_RULES);
 		expect(system).toContain("SCENARIO_MARKER");
 		expect(system).toContain("PLAYGUIDE_MARKER");
-		expect(system.endsWith(ALL_AGES_TAIL)).toBe(true);
 	});
 
 	test("a republish reaches the very next turn — the room is not a copy", async () => {
@@ -493,9 +447,8 @@ describe.skipIf(!databaseReady)("the server's tool round trip", () => {
 		expect(bodies).toHaveLength(3);
 		const agent = bodies[1];
 		const agentSystem = systemOf(agent);
-		// The agent's own prompt, under the same platform guard as the conversation.
+		// The agent's own prompt.
 		expect(agentSystem).toContain("AGENT_SYSTEM_MARKER");
-		expect(agentSystem.startsWith(ABSOLUTE_GUARD)).toBe(true);
 		// It sees what the model passed, not the manuscript or the conversation.
 		expect(JSON.stringify(agent.messages)).toContain("When is high tide?");
 		expect(JSON.stringify(agent)).not.toContain("SCENARIO_MARKER");

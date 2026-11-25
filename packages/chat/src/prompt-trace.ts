@@ -20,10 +20,6 @@ import type { PromptScopeReport } from "./prompt-scope.ts";
  * that the inspector does not omit part of the prompt.
  */
 export const CHAT_PROMPT_BLOCK_IDS = [
-	"absolute-guard",
-	"rating-guard",
-	"minor-guard",
-	"house-rules",
 	"lore-system-top",
 	"roleplay-rules",
 	"narration-pack",
@@ -40,16 +36,14 @@ export const CHAT_PROMPT_BLOCK_IDS = [
 	"memory",
 	"user-note",
 	"intensity",
-	"tail-guard",
 ] as const;
 export type ChatPromptBlockId = (typeof CHAT_PROMPT_BLOCK_IDS)[number];
 
 /**
  * Who wrote this text. This is provenance, not rating. `platform` is our rules, `creator` is the
  * work's manuscript, `viewer` is what the person in this conversation typed, and `narration` is a
- * narration pack, which is an original work. The safety guard wraps all four sources at both ends.
- * That fact is the real content of the assembly order, and the list must make it checkable at a
- * glance.
+ * narration pack, which is an original work. The list makes the order of those sources checkable at
+ * a glance.
  */
 export type ChatPromptBlockSource =
 	| "platform"
@@ -61,10 +55,6 @@ export const CHAT_PROMPT_BLOCK_SOURCE: Record<
 	ChatPromptBlockId,
 	ChatPromptBlockSource
 > = {
-	"absolute-guard": "platform",
-	"rating-guard": "platform",
-	"minor-guard": "platform",
-	"house-rules": "platform",
 	"lore-system-top": "creator",
 	"roleplay-rules": "platform",
 	"narration-pack": "narration",
@@ -86,7 +76,6 @@ export const CHAT_PROMPT_BLOCK_SOURCE: Record<
 	 * user opts in, which is why the injection boundary must be scannable at a glance.
 	 */
 	intensity: "viewer",
-	"tail-guard": "platform",
 };
 
 /**
@@ -95,10 +84,6 @@ export const CHAT_PROMPT_BLOCK_SOURCE: Record<
  * would silently change the screen.
  */
 export const CHAT_PROMPT_BLOCK_LABEL: Record<ChatPromptBlockId, string> = {
-	"absolute-guard": "Absolute rules",
-	"rating-guard": "Rating guard",
-	"minor-guard": "Minor character guard",
-	"house-rules": "House rules",
 	"lore-system-top": "Lore (top)",
 	"roleplay-rules": "Roleplay rules",
 	"narration-pack": "Narration pack",
@@ -115,7 +100,6 @@ export const CHAT_PROMPT_BLOCK_LABEL: Record<ChatPromptBlockId, string> = {
 	memory: "Memory",
 	"user-note": "User note",
 	intensity: "Intensity",
-	"tail-guard": "Tail guard",
 };
 
 /**
@@ -135,9 +119,7 @@ export interface ChatPromptBlock {
 export interface ChatPromptTrace {
 	/**
 	 * In the order the model receives them. Joining this array with a blank-line separator yields
-	 * `deliveredChatSystem(request)`. The outer guards belong to the transport layer, not the
-	 * assembler (they are not in `request.system`), and the same function that builds the labels
-	 * places them here.
+	 * `request.system` (`chatSystemPromptText`).
 	 */
 	blocks: ChatPromptBlock[];
 	/** This scene's lore decisions, including both activated and inactive entries. */
@@ -149,8 +131,7 @@ export interface ChatPromptTrace {
 	/** Number of history messages actually included, nudges and primers included. */
 	historyLength: number;
 	/**
-	 * Whether this turn was assembled as all-ages. This value separates the rating guard from the tail
-	 * guard.
+	 * Whether this turn was assembled as all-ages.
 	 */
 	allAges: boolean;
 	/**

@@ -33,26 +33,19 @@ import { z } from "zod";
  * - publish: POST and PUT /v2/stories. Writes to the catalog.
  * - sync: POST /v2/me/sync/records. Push for encrypted sync.
  * - signup: POST /v2/auth/sign-up/*. Creating new member accounts.
- * - prompt-guards: prompt wrapping in managed generation and in updated BYO clients.
  *
  * Limit: chat cannot block BYO generation, because that request never passes through this server.
  * Moderation omits a chat.generate capability for the same reason. The switch closes managed
  * generation only, and the comment says so plainly.
  */
-export const FeatureFlagKey = z.enum([
-	"chat",
-	"publish",
-	"sync",
-	"signup",
-	"prompt-guards",
-]);
+export const FeatureFlagKey = z.enum(["chat", "publish", "sync", "signup"]);
 export type FeatureFlagKey = z.infer<typeof FeatureFlagKey>;
 
 /**
  * Three states. This is why default does not collapse into a boolean:
  * - default: follows this deployment's default. The operator has not touched it.
  * - on: explicitly enabled.
- * - off: explicitly disabled. Breakers reject the operation; prompt-guards skips wrapping.
+ * - off: explicitly disabled. Breakers reject the operation.
  *
  * Merging default and on would make the operator having turned it on and nobody having touched it
  * the same value. Changing the product default would then also move deployments that were
@@ -80,13 +73,6 @@ export interface FeatureFlagDefinition {
 }
 
 export const FEATURE_FLAGS: readonly FeatureFlagDefinition[] = [
-	{
-		key: "prompt-guards",
-		defaultState: "on",
-		label: "Prompt guards",
-		description:
-			"Adds absolute, rating, minor-character, house-rule and tail guards to AI prompts. When off, generation continues without those blocks. Applies to managed generation and updated web/mobile BYO and runtime clients. Roleplay rules and chosen expression intensity stay in place.",
-	},
 	{
 		key: "chat",
 		defaultState: "on",
@@ -256,8 +242,8 @@ export type AppVersionFloorSetRequest = z.infer<
 /**
  * Values the client reads at boot from GET /v2/runtime-config. Public.
  *
- * Client presentation and prompt policy: which features are off (so it does not draw dead buttons
- * or add disabled prompt guards), and the minimum supported version.
+ * Client presentation: which features are off (so it does not draw dead buttons), and the minimum
+ * supported version.
  *
  * Operator fields are not in this response. updatedBy, updatedAt and internal reasons have no place
  * in it. The guarantee comes from using a different type, not from a function that picks fields,

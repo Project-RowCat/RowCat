@@ -5,7 +5,7 @@ import {
 	resolveEffectiveGeneration,
 	resolveGenerationExecution,
 } from "@rowcat/chat";
-import { runtimeGenerationSafety } from "@rowcat/chat/guards";
+import { runtimeGenerationContext } from "@rowcat/chat/rating";
 import {
 	CHAT_MAX_OUTPUT_TOKENS,
 	type ChatGenerationRequest,
@@ -53,15 +53,9 @@ import { toNativeGenerationFailure } from "./runtime-generation-failure.ts";
  * the hook that reads the scope, and the `fetch` passed when building the transport (this app uses
  * the native streaming fetch).
  *
- * ## The creator's instructions are **subordinate application content**
+ * ## The creator's instructions are the system prompt
  *
- * ```text
- * [RowCat] absolute prohibitions · rating guard   the head of applyPlatformSafetyPolicy
- *          · minor guard (adult, when the instructions describe a minor)
- * [creator] instructions                           this value; it can be neither removed nor
- * overridden
- * [RowCat] rating tail guard                       the last instruction just before generation
- * ```
+ * They go out verbatim, with the work's rating beside them (`runtimeGenerationContext`).
  *
  * ## The provider's raw text ends here
  *
@@ -93,7 +87,7 @@ export interface RuntimeGenerationScope {
 	/**
 	 * The work's rating, from the playback response. Required so no caller can forget it: all-ages is
 	 * decided by this **and** the viewer's entitlement (`resolveAllAges`, as conversations do). Deciding
-	 * from the viewer alone let an all-ages work's generations run under the adult guards for adult
+	 * from the viewer alone let an all-ages work's generations run at the adult rating for adult
 	 * viewers, walking around the adult publishing gate.
 	 */
 	adult: boolean;
@@ -183,7 +177,6 @@ export function useRuntimeGeneration(
 				{ adult: workIsAdult },
 				{ adultAllowed: canViewAdultContent(current) },
 			);
-			const safety = runtimeGenerationSafety(request.instructions, allAges);
 			const generationRequest: ChatGenerationRequest = {
 				/**
 				 * **The creator runtime has no tools.** Even though the contract has a slot for them, this path
@@ -192,11 +185,8 @@ export function useRuntimeGeneration(
 				 * under names we have not reviewed, into the device's data.
 				 */
 				tools: [],
-				/**
-				 * The creator's instructions between the guards, plus the minor guard when they describe a
-				 * minor — one judgment that also fills `context` (`runtimeGenerationSafety` in `@rowcat/chat/guards`).
-				 */
-				system: safety.system,
+				/** The creator's instructions, verbatim. */
+				system: request.instructions,
 				messages: request.messages.map((message) => ({
 					role: message.role,
 					content: message.content,
@@ -225,7 +215,7 @@ export function useRuntimeGeneration(
 						target: execution.target,
 					}),
 				}),
-				context: safety.context,
+				context: runtimeGenerationContext(allAges),
 			};
 
 			const transport = createGenerationTransport(execution.target, {

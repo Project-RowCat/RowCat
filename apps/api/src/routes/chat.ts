@@ -1,8 +1,4 @@
-import {
-	applyPlatformSafetyPolicy,
-	conversationSafetyPolicy,
-	resolvePlatformAllAges,
-} from "@rowcat/chat/guards";
+import { resolvePlatformAllAges } from "@rowcat/chat/rating";
 import {
 	CHAT_ERROR_CODE,
 	CHAT_STREAM_CONTENT_TYPE,
@@ -30,7 +26,7 @@ import {
 	assembleProtectedStoryGeneration,
 	startProtectedStoryGeneration,
 } from "../services/generation/story.ts";
-import { readFeatureState, requireFeatureEnabled } from "../services/ops.ts";
+import { requireFeatureEnabled } from "../services/ops.ts";
 import {
 	parseChatSeed,
 	requirePlayableStory,
@@ -97,34 +93,10 @@ export const chat = new Hono<AppEnv>()
 		if (!parsed.success) throw invalidInput(parsed.error);
 
 		/**
-		 * The final authority for safety policy is here. The body's `system` is client-assembled context;
-		 * our web sends guards built by the same rules (@rowcat/chat), but that holds only on paths
-		 * running our code. Any HTTP client with a session cookie can call this endpoint and drop the
-		 * guards or send "ignore the rules above", and it is our platform model that runs. So the server
-		 * decides two things:
-		 * 1. Rating: adult mode is downgraded to all-ages without member entitlement, using the same
-		 *    gate as gallery and detail (`canViewAdult`); a second definition would diverge and show up
-		 *    as adult content exposure.
-		 * 2. Guards: the absolute, rating, (minor) and house-rule guards plus the tail guard wrap both
-		 *    ends of the prompt, and only here. Clients no longer send them (the request body is visible
-		 *    in devtools), and a body from an older client that already carries them is not wrapped again
-		 *    (`applyPlatformSafetyPolicy`).
-		 *
-		 * Rooms and history still do not exist on the server; this is only this request's policy
-		 * decision.
+		 * The body goes upstream as the client assembled it. There are no platform guard blocks (they were
+		 * deleted), so the server reads nothing from the prompt and adds nothing to it.
 		 */
-		const allAges = resolvePlatformAllAges({
-			requestedMode: parsed.data.context.requestedMode,
-			adultAllowed: canViewAdult(viewer),
-		});
-		const request = {
-			...parsed.data,
-			system: applyPlatformSafetyPolicy(parsed.data.system, {
-				...conversationSafetyPolicy(parsed.data.context),
-				enabled: (await readFeatureState("prompt-guards")).enabled,
-				allAges,
-			}),
-		};
+		const request = parsed.data;
 
 		// A client disconnect cuts upstream too; otherwise stopping would still let the model generate to
 		// the end on tokens we pay for (route exit and tab close are the same signal). The wall-clock cap
@@ -220,7 +192,6 @@ export const chat = new Hono<AppEnv>()
 			AbortSignal.timeout(MANAGED_GENERATION_WALL_CLOCK_MS),
 		]);
 		const assembled = assembleProtectedStoryGeneration({
-			promptGuardsEnabled: (await readFeatureState("prompt-guards")).enabled,
 			seed,
 			request: parsed.data,
 			allAges,

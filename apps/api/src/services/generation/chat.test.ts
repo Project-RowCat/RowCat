@@ -33,7 +33,7 @@ const request: ManagedChatGenerationRequest = {
 	tools: [],
 	maxOutputTokens: 512,
 	reasoningEffort: null,
-	context: { requestedMode: "all-ages", minorCharacterPresent: false },
+	context: { requestedMode: "all-ages" },
 	model: "claude-sonnet-5",
 	/** Ordinary generation by default; continuation paths build their own describe. */
 	continuation: false,
@@ -175,6 +175,43 @@ describe("buildProviderRequestBody", () => {
 	it("marks the end of the system prompt for Anthropic models", () => {
 		const body = buildProviderRequestBody(request, "anthropic/claude-sonnet-5");
 		expect((body.messages as SentMessages)[0]).toEqual(cachedSystem);
+	});
+
+	/**
+	 * The last block is the user's line with this turn's recall, which the next turn never resends, so
+	 * the end of the history before it carries its own hour-long breakpoint and the tail lives five
+	 * minutes. Without that mark every turn that recalled anything wrote the whole history again
+	 * (`chatCacheAnchorIndex`). The text is unchanged and other upstreams get no marker.
+	 */
+	it("marks the end of the stable history for Anthropic models only", () => {
+		const conversation = {
+			...request,
+			messages: [
+				{ role: "user" as const, content: "first" },
+				{ role: "assistant" as const, content: "answer" },
+				{ role: "user" as const, content: "second" },
+			],
+		};
+		const claude = buildProviderRequestBody(
+			conversation,
+			"anthropic/claude-sonnet-5",
+		);
+		expect((claude.messages as SentMessages)[2]).toEqual({
+			role: "assistant",
+			content: [
+				{
+					type: "text",
+					text: "answer",
+					cache_control: { type: "ephemeral", ttl: "1h" },
+				},
+			],
+		});
+		expect(claude.cache_control).toEqual({ type: "ephemeral", ttl: "5m" });
+		const other = buildProviderRequestBody(conversation, "deepseek/x");
+		expect((other.messages as SentMessages)[2]).toEqual({
+			role: "assistant",
+			content: "answer",
+		});
 	});
 
 	/** An empty text block is rejected upstream, so an empty system prompt stays a string. */

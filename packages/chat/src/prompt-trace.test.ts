@@ -7,7 +7,6 @@ import {
 	buildChatGenerationRequest,
 	buildChatGenerationRequestTraced,
 } from "./context.ts";
-import { deliveredChatSystem } from "./guards.ts";
 import type { ChatMessage, ChatRoom, ChatSeed } from "./model.ts";
 import { createMessageRecord, createRoomRecord } from "./model.ts";
 import {
@@ -135,36 +134,12 @@ describe("instrumentation does not change the request", () => {
 });
 
 describe("block structure", () => {
-	it("the disabled-policy inspector shows exactly what is sent", () => {
-		const { request, trace } = buildChatGenerationRequestTraced({
-			...FIXTURES[1].input(),
-			promptGuardsEnabled: false,
-		});
-		expect(chatSystemPromptText(trace.blocks)).toBe(request.system);
-		expect(chatSystemPromptText(trace.blocks)).toBe(
-			deliveredChatSystem(request, false),
-		);
-		expect(
-			trace.blocks.some((block) =>
-				[
-					"absolute-guard",
-					"rating-guard",
-					"minor-guard",
-					"house-rules",
-					"tail-guard",
-				].includes(block.id),
-			),
-		).toBe(false);
-	});
-
 	it("joining the blocks gives the system prompt the model receives", () => {
 		for (const fixture of FIXTURES) {
 			const { request, trace } = buildChatGenerationRequestTraced(
 				fixture.input(),
 			);
-			expect(chatSystemPromptText(trace.blocks)).toBe(
-				deliveredChatSystem(request),
-			);
+			expect(chatSystemPromptText(trace.blocks)).toBe(request.system);
 		}
 	});
 
@@ -185,15 +160,6 @@ describe("block structure", () => {
 		});
 		expect(trace.blocks.some((block) => block.text.trim() === "")).toBe(false);
 		expect(trace.blocks.map((block) => block.id)).not.toContain("play-guide");
-	});
-
-	it("safety guards wrap creator content **at both ends**", () => {
-		const { trace } = buildChatGenerationRequestTraced(FIXTURES[1].input());
-		const sources = trace.blocks.map(
-			(block) => CHAT_PROMPT_BLOCK_SOURCE[block.id],
-		);
-		expect(sources[0]).toBe("platform");
-		expect(sources[sources.length - 1]).toBe("platform");
 	});
 
 	it("labels and sources cover the whole vocabulary", () => {

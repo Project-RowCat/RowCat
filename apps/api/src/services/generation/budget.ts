@@ -89,7 +89,7 @@ export interface ManagedGenerationReservation {
 	abandon(): Promise<void>;
 }
 
-/** Characters of one upstream call's body: the request as the server will send it, guards included. */
+/** Characters of one upstream call's body: the request as the server will send it. */
 export function inputCharsOf(request: object): number {
 	return JSON.stringify(request).length;
 }

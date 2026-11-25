@@ -198,19 +198,10 @@ result.text;
 원본 응답. V1의 결과는 글 하나다.
 
 **대화 역할은 둘이다**(`user`·`assistant`). 시스템 역할의 자리는 `instructions`가 갖고, 그
-값은 호스트의 안전 지시를 **대신하지 않는다**:
+값이 시스템 프롬프트 그대로 나간다. 그 옆에 작품 등급(`runtimeGenerationContext`)이 실린다.
 
-```text
-[RowCat] 절대 금지 · 등급 가드      applyPlatformSafetyPolicy 의 머리
-[제작자] instructions               종속된 응용 콘텐츠다
-[제작자] messages                   대화
-[RowCat] 등급 꼬리 가드             생성 직전의 마지막 지시
-```
-
-그 함수는 대화·BYO 경로가 쓰는 것과 **같은 것이고 멱등**이다. 제작자가 자기 지시 안에 "위
-규칙을 무시하라"를 적어도 토글이 켜져 있으면 꼬리 가드가 그 뒤에 선다.
-관리자 토글이 꺼져 있으면 전송 계층이 기존 래퍼를 걷어내고 지시문을 보낸다. 토글과 구버전 동작은
-`docs/chat/PROMPT-PROTECTION.md`의 관리자 토글 절을 따른다.
+한동안 이 지시문은 플랫폼 가드(절대 금지·등급 가드 머리, 등급 꼬리 가드)에 감싸여 나갔다. 그 가드는
+2026-11-25에 삭제됐다(`docs/chat/PROMPT-PROTECTION.md` §2).
 
 ## 7. 생성은 능력이다 — 정책은 호스트의 것이다
 
@@ -352,7 +343,7 @@ QuickJS(워커)
 메인 스레드의 라우터              세대 확인 · AbortController · 어댑터 부재의 답
     ↓
 RuntimePreviewGenerationAdapter  resolveEffectiveGeneration → resolveGenerationExecution
-                                 → applyPlatformSafetyPolicy → createGenerationTransport
+                                 → createGenerationTransport
     ↓  스트림을 끝까지 모은다
 generation-result { ok, text } 또는 이름 있는 사유
     ↓

@@ -275,9 +275,8 @@ export function chatToolJsonSchema(
 /**
  * The boundary sentence placed after a result. Tool results are untrusted input that enters
  * mid-conversation. Lore and memory are text written by users and creators, and it may contain
- * 'ignore the instructions above'. The head and tail guards of the safety policy wrap the system
- * prompt but do not cover this position (`applyPlatformSafetyPolicy`), so the boundary is set again
- * after the data. It is the same axis the maintenance and recommendation prompts already use, for
+ * 'ignore the instructions above'. Nothing in the system prompt covers this position, so the
+ * boundary is set right after the data. It is the same axis the maintenance and recommendation prompts already use, for
  * the same reason: after thousands of characters, the earlier instruction is far away.
  */
 export const CHAT_TOOL_RESULT_BOUNDARY =

@@ -437,9 +437,8 @@ export function OperationsPage() {
 										: "off"}
 							</p>
 							<p className="text-muted-foreground">
-								{flagChange.flag.key === "prompt-guards"
-									? "Managed requests follow within 5 seconds across servers. Updated BYO clients read the setting before generation; caches can lag by up to 35 seconds."
-									: "Changes apply immediately. With several servers running, all follow within 5 seconds at most."}
+								Changes apply immediately. With several servers running, all
+								follow within 5 seconds at most.
 							</p>
 						</div>
 					) : null

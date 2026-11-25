@@ -5,7 +5,7 @@ import {
 	resolveEffectiveGeneration,
 	resolveGenerationExecution,
 } from "@rowcat/chat";
-import { runtimeGenerationSafety } from "@rowcat/chat/guards";
+import { runtimeGenerationContext } from "@rowcat/chat/rating";
 import {
 	CHAT_MAX_OUTPUT_TOKENS,
 	type ChatGenerationMessage,
@@ -48,14 +48,11 @@ import { toPreviewGenerationFailure } from "./runtime-preview-generation-failure
  *   is in lib/local-generation/hooks.ts.
  * - Output length is not read here. The cap comes from the creator's request (outputTokensFor),
  *   which is why the work override screen has no such control.
- * - Creator instructions are dependent application content. The system prompt has three layers:
- *   RowCat's prohibitions and rating guard at the head, the creator's instructions in the middle
- *   (which cannot be removed or overridden), and a rating guard at the tail. A creator writing
- *   'ignore the rules above' still meets the tail guard.
+ * - The creator's instructions are the system prompt, verbatim.
  * - All-ages is decided the way a conversation decides it (`resolveAllAges`): the rating of what is
  *   being played (the draft's own rating in the studio and the playtest, the published work's rating
  *   from the playback response) **and** whether this member may view adult content. It was the second
- *   alone for a while, so an all-ages work's generations ran under the adult guards for adult viewers,
+ *   alone for a while, so an all-ages work's generations ran at the adult rating for adult viewers,
  *   which walked around the adult publishing gate. Creator status does not loosen the gate either.
  * - Streaming does not flow into the VM. The transport still streams, because stop needs it, but
  *   the adapter collects deltas into one finished text. That keeps scheduling, cancellation, state
@@ -181,7 +178,6 @@ export function useRuntimePreviewGeneration(
 				{ adult: workIsAdult },
 				{ adultAllowed: canViewAdultContent(current) },
 			);
-			const safety = runtimeGenerationSafety(request.instructions, allAges);
 			const messages: ChatGenerationMessage[] = request.messages.map(
 				(message) => ({ role: message.role, content: message.content }),
 			);
@@ -192,12 +188,8 @@ export function useRuntimePreviewGeneration(
 				 * actual playback running with different capabilities.
 				 */
 				tools: [],
-				/**
-				 * The creator's instructions sit between the two guards, and the minor guard stands when they
-				 * describe a minor (`runtimeGenerationSafety` in `@rowcat/chat/guards`). The wrap is the same idempotent
-				 * function the conversation and BYO paths use, so no second safety policy grows here.
-				 */
-				system: safety.system,
+				/** The creator's instructions, verbatim. */
+				system: request.instructions,
 				messages,
 				maxOutputTokens: outputTokensFor(request.maxOutputCharacters),
 				/**
@@ -216,7 +208,7 @@ export function useRuntimePreviewGeneration(
 						target: execution.target,
 					}),
 				}),
-				context: safety.context,
+				context: runtimeGenerationContext(allAges),
 				/**
 				 * Runtime generation has no continuation, and this is stated explicitly. Continuation is a
 				 * conversation feature that appends a truncated assistant record. Here the input is one request

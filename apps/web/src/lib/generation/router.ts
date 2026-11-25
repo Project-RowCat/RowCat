@@ -5,7 +5,6 @@ import type {
 	GenerationTarget,
 } from "@rowcat/chat";
 import { openRouterUpstreamOf, runChatToolLoop } from "@rowcat/chat";
-import { deliveredChatSystem } from "@rowcat/chat/guards";
 import type {
 	ChatGenerationRequest,
 	ChatStreamEvent,
@@ -36,20 +35,8 @@ import type { ByoAdapter, GenerationTransport } from "./transport.ts";
  * field. The browser knows only the public identity (for example claude-sonnet-5). Mapping it to
  * the upstream slug happens on the server alone.
  *
- * The platform safety policy is attached here for BYO only, via applyPlatformSafetyPolicy. The
- * assembler must not carry the guard text, because the request body would expose the full text
- * outside the device. Managed requests get it from the server (apps/api/src/routes/chat.ts). BYO
- * has no such server, so it is applied here (deliveredChatSystem) before the request goes to the
- * provider. Every transport therefore sends a prompt that starts with the prohibition guard and
- * ends with the guard for the room's rating.
- *
- * The product prompt is still built only in buildChatGenerationRequest. Adapters map it and add
- * nothing. This file adds only the platform policy, through the same function the server uses.
- *
- * The enforcement strength differs. The managed path has a server-side verdict that does not trust
- * the client. BYO relies entirely on code running in this browser. See
- * docs/settings/ARCHITECTURE.md for the exact difference. Doing more on BYO would mean sending the
- * prompt to our server, which breaks the definition of this feature.
+ * The product prompt is built only in buildChatGenerationRequest. Adapters map it and add nothing,
+ * and neither does this file.
  */
 
 /**
@@ -90,8 +77,6 @@ export interface GenerationRouterDeps {
 	 * the user is a guest.
 	 */
 	credentials: ProviderCredentialAccess | null;
-	/** Optional turn snapshot, shared with the playtest inspector. */
-	promptGuardsEnabled?: boolean;
 	/** Test seam for swapping provider adapters. */
 	loadAdapter?: (provider: ByoProvider) => Promise<ByoAdapter>;
 	/**
@@ -282,14 +267,11 @@ async function* streamByo(input: {
 	 * key lives only until that generator is created. Once the adapter has sent the request, nothing
 	 * needs the key.
 	 */
-	const promptGuardsEnabled =
-		input.deps.promptGuardsEnabled ??
-		(await readPromptGuardsEnabled(input.deps.client, input.options.signal));
 	const events = await credentials.withCredential(
 		input.provider,
 		async (secret, endpoint) =>
 			adapter.stream({
-				request: withPlatformPolicy(input.request, promptGuardsEnabled),
+				request: input.request,
 				model: input.model,
 				secret,
 				...(endpoint === undefined ? {} : { endpoint }),
@@ -305,24 +287,6 @@ async function* streamByo(input: {
 	if (!events) throw new ProviderError("invalid_credential");
 
 	yield* events;
-}
-
-/**
- * The request with the platform policy applied.
- *
- * The safety level is already carried by the request (context.requestedMode). That value is the
- * client's judgment from the room rating and membership (resolveAllAges). On the managed path the
- * server re-judges it from the session. BYO has no such re-judgment, so this browser's judgment is
- * final.
- */
-function withPlatformPolicy(
-	request: ChatGenerationRequest,
-	enabled: boolean,
-): ChatGenerationRequest {
-	return {
-		...request,
-		system: deliveredChatSystem(request, enabled),
-	};
 }
 
 /**
@@ -350,28 +314,4 @@ export async function probeProviderCredential(
 		...(options.endpoint === undefined ? {} : { endpoint: options.endpoint }),
 		signal: options.signal,
 	});
-}
-
-/**
- * Only deployment metadata is read here; BYO prompts and keys still go straight to the provider.
- * Failure keeps the default guards and must not make BYO depend on RowCat availability. The bounded
- * read also handles a server that is unreachable while the provider remains reachable.
- */
-export async function readPromptGuardsEnabled(
-	client: RowCatClient,
-	signal: AbortSignal,
-): Promise<boolean> {
-	signal.throwIfAborted();
-	try {
-		const config = await client.ops.runtimeConfig({
-			signal: AbortSignal.any([signal, AbortSignal.timeout(2_000)]),
-		});
-		signal.throwIfAborted();
-		return !config.disabledFeatures.some(
-			(feature) => feature.key === "prompt-guards",
-		);
-	} catch {
-		signal.throwIfAborted();
-		return true;
-	}
 }

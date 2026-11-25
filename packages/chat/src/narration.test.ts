@@ -1,7 +1,6 @@
 import type { GenerationModelDto } from "@rowcat/contracts/chat";
 import { describe, expect, it } from "vitest";
 import type { GenerationTarget } from "./generation-preference.ts";
-import { roleplayRules } from "./guards.ts";
 import {
 	applyRoomNarration,
 	type ChatNarrationSettings,
@@ -16,6 +15,7 @@ import {
 	readNarrationSettings,
 	resolveNarrationExecution,
 } from "./narration.ts";
+import { roleplayRules } from "./roleplay-rules.ts";
 
 const MANAGED: GenerationTarget = {
 	provider: "rowcat",

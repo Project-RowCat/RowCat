@@ -1,5 +1,6 @@
 import {
 	CONTINUATION_FALLBACK_NUDGE,
+	chatCacheAnchorIndex,
 	chatToolJsonSchema,
 	readChatToolCall,
 } from "@rowcat/chat";
@@ -105,11 +106,14 @@ const headersFor = (
 });
 
 /**
- * The automatic breakpoint's lifetime: an hour, except on a tool round trip, whose tail only the
- * next round of the same turn reads (the Anthropic adapter's `tailCacheTtl` has the reasoning).
+ * The automatic breakpoint's lifetime: an hour, except where nothing past this turn reads the tail —
+ * a tool round trip, or a turn whose history has an anchor (`chatCacheAnchorIndex`), which the next
+ * turn reads from instead. The Anthropic adapter's `tailCacheTtl` has the reasoning.
  */
-const tailCacheTtl = (messages: readonly ChatGenerationMessage[]) =>
-	messages.at(-1)?.role === "tool" ? "5m" : "1h";
+const tailCacheTtl = (
+	messages: readonly ChatGenerationMessage[],
+	anchor: number,
+) => (messages.at(-1)?.role === "tool" || anchor >= 0 ? "5m" : "1h");
 
 /**
  * The system message, carrying its own one-hour breakpoint on cached models. Only the end of the
@@ -156,8 +160,10 @@ function reasoningDetailsOf(state: string | undefined): {
  */
 function toChatMessages(
 	messages: readonly ChatGenerationMessage[],
+	/** Index whose content carries the stable-history breakpoint (`chatCacheAnchorIndex`); `-1` for none. */
+	anchor = -1,
 ): Record<string, unknown>[] {
-	return messages.map((message) => {
+	return messages.map((message, index) => {
 		if (message.role === "tool")
 			return {
 				role: "tool",
@@ -180,6 +186,24 @@ function toChatMessages(
 				],
 				/** Returned unchanged; the Gemini family rejects a call turn missing its signature. */
 				...reasoningDetailsOf(message.toolCall.providerState),
+			};
+		/**
+		 * The end of the history the next turn resends unchanged gets its own one-hour breakpoint: the
+		 * request's last block is the user's line with this turn's recall, which the next turn does
+		 * not resend, so without this mark the history past the system prompt was written to the cache
+		 * again on every turn (`chatCacheAnchorIndex` has the reasoning). Only the end of the stored
+		 * text is marked; the text is unchanged.
+		 */
+		if (index === anchor && message.content)
+			return {
+				role: message.role,
+				content: [
+					{
+						type: "text",
+						text: message.content,
+						cache_control: { type: "ephemeral", ttl: "1h" },
+					},
+				],
 			};
 		return { role: message.role, content: message.content };
 	});
@@ -213,6 +237,8 @@ export function buildChatCompletionsBody(
 		? toContinuationMessages(request.messages)
 		: request.messages;
 	const cached = profile.explicitPromptCaching(model);
+	/** The end of the stable history, read before a continuation's nudge; `-1` without breakpoints. */
+	const anchor = cached ? chatCacheAnchorIndex(request.messages) : -1;
 	return {
 		model,
 		/**
@@ -231,11 +257,16 @@ export function buildChatCompletionsBody(
 			? { provider: { order: [upstream], allow_fallbacks: false } }
 			: {}),
 		...(cached
-			? { cache_control: { type: "ephemeral", ttl: tailCacheTtl(messages) } }
+			? {
+					cache_control: {
+						type: "ephemeral",
+						ttl: tailCacheTtl(messages, anchor),
+					},
+				}
 			: {}),
 		messages: [
 			systemMessage(request.system, cached),
-			...toChatMessages(messages),
+			...toChatMessages(messages, anchor),
 		],
 		/**
 		 * No tools declared means no key at all. `parallel_tool_calls: false` asks for the one call per

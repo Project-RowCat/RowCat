@@ -1,5 +1,6 @@
 import {
 	CONTINUATION_FALLBACK_NUDGE,
+	chatCacheAnchorIndex,
 	chatToolJsonSchema,
 	readChatToolCall,
 } from "@rowcat/chat";
@@ -90,9 +91,14 @@ const headersFor = (
 	...profile.extraHeaders,
 });
 
-/** One hour, except a tool round trip's tail, which only the next round of the same turn reads. */
-const tailCacheTtl = (messages: readonly ChatGenerationMessage[]) =>
-	messages.at(-1)?.role === "tool" ? "5m" : "1h";
+/**
+ * One hour, except where nothing past this turn reads the tail: a tool round trip, or a turn whose
+ * history has an anchor (`chatCacheAnchorIndex`), which the next turn reads from instead.
+ */
+const tailCacheTtl = (
+	messages: readonly ChatGenerationMessage[],
+	anchor: number,
+) => (messages.at(-1)?.role === "tool" || anchor >= 0 ? "5m" : "1h");
 
 /** The system message with its own one-hour breakpoint on cached models; the text is unchanged. */
 function systemMessage(system: string, cached: boolean) {
@@ -131,8 +137,10 @@ function reasoningDetailsOf(state: string | undefined): {
  */
 function toChatMessages(
 	messages: readonly ChatGenerationMessage[],
+	/** Index whose content carries the stable-history breakpoint (`chatCacheAnchorIndex`); `-1` for none. */
+	anchor = -1,
 ): Record<string, unknown>[] {
-	return messages.map((message) => {
+	return messages.map((message, index) => {
 		if (message.role === "tool")
 			return {
 				role: "tool",
@@ -154,6 +162,24 @@ function toChatMessages(
 					},
 				],
 				...reasoningDetailsOf(message.toolCall.providerState),
+			};
+		/**
+		 * The end of the history the next turn resends unchanged gets its own one-hour breakpoint: the
+		 * request's last block is the user's line with this turn's recall, which the next turn does
+		 * not resend, so without this mark the history past the system prompt was written to the cache
+		 * again on every turn (`chatCacheAnchorIndex` has the reasoning). Only the end of the stored
+		 * text is marked; the text is unchanged.
+		 */
+		if (index === anchor && message.content)
+			return {
+				role: message.role,
+				content: [
+					{
+						type: "text",
+						text: message.content,
+						cache_control: { type: "ephemeral", ttl: "1h" },
+					},
+				],
 			};
 		return { role: message.role, content: message.content };
 	});
@@ -178,6 +204,8 @@ function buildRequestBody(
 		? toContinuationMessages(request.messages)
 		: request.messages;
 	const cached = profile.explicitPromptCaching(model);
+	/** The end of the stable history, read before a continuation's nudge; `-1` without breakpoints. */
+	const anchor = cached ? chatCacheAnchorIndex(request.messages) : -1;
 	return {
 		model,
 		/** Sticky routing: the conversation's opaque key; the parameter name ends in this file. */
@@ -192,11 +220,16 @@ function buildRequestBody(
 			? { provider: { order: [upstream], allow_fallbacks: false } }
 			: {}),
 		...(cached
-			? { cache_control: { type: "ephemeral", ttl: tailCacheTtl(messages) } }
+			? {
+					cache_control: {
+						type: "ephemeral",
+						ttl: tailCacheTtl(messages, anchor),
+					},
+				}
 			: {}),
 		messages: [
 			systemMessage(request.system, cached),
-			...toChatMessages(messages),
+			...toChatMessages(messages, anchor),
 		],
 		/**
 		 * A refusing round (`toolCallsRefused`, a tool loop's last round) drops the tools rather than

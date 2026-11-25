@@ -26,7 +26,6 @@ import {
 	buildChatGenerationRequestTraced,
 	CHAT_HISTORY_WINDOW_MAX,
 } from "./context.ts";
-import { ALL_AGES_TAIL, deliveredChatSystem } from "./guards.ts";
 import { createMemoryRecord } from "./memory.ts";
 import type { ChatSeed } from "./model.ts";
 import { createMessageRecord, createRoomRecord } from "./model.ts";
@@ -231,30 +230,25 @@ describe("the prompt", () => {
 		}
 	});
 
-	it("stands after the work's content, before memory and the note, before the tail guard", () => {
-		const system = deliveredChatSystem(
-			buildChatGenerationRequest({
-				room: { ...room(), userNote: "반말로 진행." },
-				messages: [],
-				allAges: true,
-				memories: [
-					createMemoryRecord(
-						{ roomId: "room-1", content: "카이는 왼손잡이다." },
-						{ id: "mem-1", now: NOW, rev: REV },
-					),
-				],
-				attachments: [attachment("notes.txt", "참고 자료 본문")],
-			}),
-		);
+	it("stands after the work's content, before memory and the note", () => {
+		const system = buildChatGenerationRequest({
+			room: { ...room(), userNote: "반말로 진행." },
+			messages: [],
+			allAges: true,
+			memories: [
+				createMemoryRecord(
+					{ roomId: "room-1", content: "카이는 왼손잡이다." },
+					{ id: "mem-1", now: NOW, rev: REV },
+				),
+			],
+			attachments: [attachment("notes.txt", "참고 자료 본문")],
+		}).system;
 		const scenarioAt = system.indexOf("비 내리는 항구 도시.");
 		const fileAt = system.indexOf("참고 자료 본문");
 		expect(scenarioAt).toBeGreaterThan(-1);
 		expect(scenarioAt).toBeLessThan(fileAt);
 		expect(fileAt).toBeLessThan(system.indexOf("카이는 왼손잡이다."));
 		expect(fileAt).toBeLessThan(system.indexOf("반말로 진행."));
-		expect(system.indexOf("반말로 진행.")).toBeLessThan(
-			system.indexOf(ALL_AGES_TAIL),
-		);
 	});
 
 	it("is a named block for the inspector", () => {

@@ -1,9 +1,4 @@
 import type { ChatTool, GenerationTarget } from "@rowcat/chat";
-import {
-	ABSOLUTE_GUARD,
-	ALL_AGES_GUARD,
-	ALL_AGES_TAIL,
-} from "@rowcat/chat/guards";
 import type {
 	ChatGenerationRequest,
 	ChatStreamEvent,
@@ -16,7 +11,6 @@ import type { ProviderCredentialAccess } from "#/lib/local-provider/store.ts";
 import { ProviderError } from "./errors.ts";
 import {
 	createGenerationTransport,
-	readPromptGuardsEnabled,
 	streamChatGenerationPlan,
 } from "./router.ts";
 import type { ByoAdapter } from "./transport.ts";
@@ -33,7 +27,7 @@ const request: ChatGenerationRequest = {
 	messages: [{ role: "user", content: "hello" }],
 	maxOutputTokens: 2048,
 	reasoningEffort: null,
-	context: { requestedMode: "all-ages", minorCharacterPresent: false },
+	context: { requestedMode: "all-ages" },
 	tools: [],
 	continuation: false,
 };
@@ -259,66 +253,11 @@ describe("no silent substitution", () => {
 	});
 });
 
-describe("platform policy", () => {
-	it.each([
-		false,
-		true,
-	])("the deployment switch controls BYO wrapping: enabled=%s", async (enabled) => {
+describe("the prompt passes through", () => {
+	/** A value our assembler produced passes through unchanged: nothing is added on the way. */
+	it("BYO sends the prompt as assembled", async () => {
 		const h = harness();
-		const client = {
-			...h.client,
-			ops: {
-				runtimeConfig: async () => ({
-					disabledFeatures: enabled
-						? []
-						: [{ key: "prompt-guards", message: "" }],
-				}),
-			},
-		} as unknown as RowCatClient;
-		const transport = createGenerationTransport(ANTHROPIC, {
-			client,
-			credentials: h.credentials({ "anthropic-byo": "sk-ant" }),
-			loadAdapter: async () => capture,
-		});
-		await h.drain(transport.stream(request, { signal: signal() }));
-		expect(seenSystem.includes(ABSOLUTE_GUARD)).toBe(enabled);
-		if (!enabled) expect(seenSystem).toBe(request.system);
-	});
-
-	/**
-	 * BYO has no server re-check, so the guard must be in place where the router passes the request.
-	 * That fact must be visible in the value the adapter receives.
-	 */
-	it("BYO requests carry the absolute guard too", async () => {
-		const h = harness();
-		const transport = createGenerationTransport(ANTHROPIC, {
-			client: h.client,
-			credentials: h.credentials({ "anthropic-byo": "sk-ant" }),
-			loadAdapter: async () => capture,
-		});
-
-		await h.drain(
-			transport.stream(
-				{ ...request, system: "a body without guards" },
-				{ signal: signal() },
-			),
-		);
-		expect(seenSystem).toContain(ABSOLUTE_GUARD);
-		expect(seenSystem).toContain("a body without guards");
-	});
-
-	/**
-	 * Idempotent, so a normal request does not grow by a single byte. This pins the rule that the
-	 * prompt is not assembled twice: a value our assembler produced passes through unchanged.
-	 */
-	it("an already guarded request does not grow by a byte", async () => {
-		const h = harness();
-		const composed = [
-			ABSOLUTE_GUARD,
-			ALL_AGES_GUARD,
-			"body",
-			ALL_AGES_TAIL,
-		].join("\n\n");
+		const composed = "body";
 		const transport = createGenerationTransport(ANTHROPIC, {
 			client: h.client,
 			credentials: h.credentials({ "anthropic-byo": "sk-ant" }),
@@ -333,8 +272,7 @@ describe("platform policy", () => {
 
 	/**
 	 * On the managed path the SDK receives the assembler's value unchanged. The only addition is the
-	 * chosen model, which the assembler cannot know. No guard is added here, because the server adds
-	 * it. Adding it here would put its full text into the request body.
+	 * chosen model, which the assembler cannot know.
 	 */
 	it("the managed path does not touch the prompt", async () => {
 		const h = harness();
@@ -646,34 +584,5 @@ describe("assembly plan", () => {
 			),
 		).toThrow();
 		expect(h.calls).toEqual([]);
-	});
-});
-
-describe("prompt guard config fallback", () => {
-	it("keeps guards on when runtime config is unavailable", async () => {
-		const client = {
-			ops: {
-				runtimeConfig: async () => {
-					throw new Error("offline");
-				},
-			},
-		} as unknown as RowCatClient;
-		expect(
-			await readPromptGuardsEnabled(client, new AbortController().signal),
-		).toBe(true);
-	});
-	it("does not continue a cancelled generation", async () => {
-		const controller = new AbortController();
-		controller.abort("stopped");
-		const client = {
-			ops: {
-				runtimeConfig: async () => {
-					throw new Error("must not read");
-				},
-			},
-		} as unknown as RowCatClient;
-		await expect(
-			readPromptGuardsEnabled(client, controller.signal),
-		).rejects.toBe("stopped");
 	});
 });

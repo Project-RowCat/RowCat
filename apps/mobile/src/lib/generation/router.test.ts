@@ -1,13 +1,11 @@
 import type { ChatTool } from "@rowcat/chat";
-import { ABSOLUTE_GUARD, ADULT_TAIL, ALL_AGES_TAIL } from "@rowcat/chat/guards";
 import type { ChatGenerationRequest, ChatStreamEvent } from "@rowcat/contracts";
 import type { RowCatClient } from "@rowcat/sdk";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ByoAdapter, ByoFetch, ByoTransportInput } from "./byo.ts";
 import { ProviderError } from "./errors.ts";
 import {
 	createGenerationTransport,
-	readPromptGuardsEnabled,
 	streamChatGenerationPlan,
 } from "./transport.ts";
 
@@ -21,7 +19,6 @@ import {
  * one provider stands in for another   the billing destination and the model's character change together
  * managed opens the secret         an API key is opened where it is not needed
  * billing identity on BYO          RowCat attaches a name to attempts it cannot count
- * safety guard dropped             BYO has no server re-check — this is the last check
  * secret outlives the callback     the reason the credential accessor is callback-shaped becomes moot
  * ```
  *
@@ -36,7 +33,7 @@ const request = (
 	messages: [{ role: "user" as const, content: "Hi" }],
 	maxOutputTokens: 768,
 	reasoningEffort: null,
-	context: { requestedMode: "all-ages", minorCharacterPresent: false },
+	context: { requestedMode: "all-ages" },
 	tools: [],
 	continuation: false,
 	...overrides,
@@ -53,7 +50,7 @@ function fakeClient() {
 	/**
 	 * Captures the incoming request as-is. The inferred argument tuple of `vi.fn` cannot be read here
 	 * (the function is a generator, so the tuple is empty), so this array is needed to check what a
-	 * managed request carried: billing identity, model and safety guard. Half of this file depends on
+	 * managed request carried: billing identity and model. Half of this file depends on
 	 * that check.
 	 */
 	const sent: Record<string, unknown>[] = [];
@@ -367,45 +364,9 @@ describe("the shape of managed requests", () => {
 	});
 });
 
-describe("platform safety policy", () => {
-	it.each([
-		false,
-		true,
-	])("the deployment switch controls BYO wrapping: enabled=%s", async (enabled) => {
-		const { client } = fakeClient();
-		const configuredClient = {
-			...client,
-			ops: {
-				runtimeConfig: async () => ({
-					disabledFeatures: enabled
-						? []
-						: [{ key: "prompt-guards", message: "" }],
-				}),
-			},
-		} as unknown as RowCatClient;
-		const { adapter, seen } = fakeAdapter();
-		await drain(
-			createGenerationTransport(
-				{ provider: "anthropic-byo", model: "m" },
-				{
-					client: configuredClient,
-					credentials: credentials({ "anthropic-byo": "sk" }).port,
-					fetch: forbiddenFetch,
-					loadAdapter: () => adapter,
-				},
-			).stream(request(), { signal: new AbortController().signal }),
-		);
-		const system = seen[0]?.request.system ?? "";
-		expect(system.includes(ABSOLUTE_GUARD)).toBe(enabled);
-		if (!enabled) expect(system).toBe(request().system);
-	});
-
-	/**
-	 * **P0.** BYO has no server re-check, so this is the last check. Rather than comparing strings, it
-	 * inspects **the request the adapter actually received** — that value is what goes to the
-	 * provider.
-	 */
-	it("BYO requests start with the absolute guard and end with the rating tail", async () => {
+describe("the prompt passes through", () => {
+	/** It inspects **the request the adapter actually received** — that value is what goes to the provider. */
+	it("BYO sends the prompt as assembled", async () => {
 		const { client } = fakeClient();
 		const { adapter, seen } = fakeAdapter();
 		await drain(
@@ -422,46 +383,11 @@ describe("platform safety policy", () => {
 			}),
 		);
 
-		const system = seen[0]?.request.system ?? "";
-		expect(system.startsWith(ABSOLUTE_GUARD)).toBe(true);
-		expect(system.endsWith(ALL_AGES_TAIL)).toBe(true);
-		expect(system).toContain("A prompt the creator wrote");
+		expect(seen[0]?.request.system).toBe("A prompt the creator wrote");
 	});
 
-	/** The rating comes from the value the request carries; neither the adapter nor the router re-decides it. */
-	it("adult requests get the adult tail", async () => {
-		const { client } = fakeClient();
-		const { adapter, seen } = fakeAdapter();
-		await drain(
-			createGenerationTransport(
-				{ provider: "gemini-byo", model: "m" },
-				{
-					client,
-					credentials: credentials({ "gemini-byo": "gm" }).port,
-					fetch: forbiddenFetch,
-					loadAdapter: () => adapter,
-				},
-			).stream(
-				request({
-					context: { requestedMode: "adult", minorCharacterPresent: false },
-				}),
-				{
-					signal: new AbortController().signal,
-				},
-			),
-		);
-
-		const system = seen[0]?.request.system ?? "";
-		expect(system.endsWith(ADULT_TAIL)).toBe(true);
-		expect(system.endsWith(ALL_AGES_TAIL)).toBe(false);
-	});
-
-	/**
-	 * Managed requests are **not wrapped** — the server adds the guard. If the device added it, the
-	 * full guard text would be carried in the request body again, and that body is read as-is outside
-	 * the device.
-	 */
-	it("managed requests carry no guards", async () => {
+	/** Managed requests carry the assembler's value unchanged too. */
+	it("the managed path does not touch the prompt", async () => {
 		const { client, sent } = fakeClient();
 		await drain(
 			createGenerationTransport(
@@ -472,39 +398,6 @@ describe("platform safety policy", () => {
 			}),
 		);
 		expect(String(sent[0]?.system ?? "")).toBe("Body");
-	});
-
-	/**
-	 * **Idempotent.** A request that already carries the guard does not grow by a single byte;
-	 * otherwise every normal request built by our assembler would gain another guard each time it
-	 * passes here.
-	 */
-	it("requests that already have guards stay as they are", async () => {
-		const { client } = fakeClient();
-		const { adapter, seen } = fakeAdapter();
-		const deps = {
-			client,
-			credentials: credentials({ "anthropic-byo": "sk" }).port,
-			fetch: forbiddenFetch,
-			loadAdapter: () => adapter,
-		};
-		const signal = new AbortController().signal;
-
-		await drain(
-			createGenerationTransport(
-				{ provider: "anthropic-byo", model: "m" },
-				deps,
-			).stream(request(), { signal }),
-		);
-		const once = seen[0]?.request.system ?? "";
-
-		await drain(
-			createGenerationTransport(
-				{ provider: "anthropic-byo", model: "m" },
-				deps,
-			).stream(request({ system: once }), { signal }),
-		);
-		expect(seen[1]?.request.system).toBe(once);
 	});
 
 	/** Does not re-assemble the prompt; history and limits pass through unchanged. */
@@ -839,109 +732,5 @@ describe("assembly plan", () => {
 			),
 		).toThrow();
 		expect(stream).not.toHaveBeenCalled();
-	});
-});
-
-describe("prompt guard config fallback", () => {
-	it("keeps guards on when runtime config is unavailable", async () => {
-		const client = {
-			ops: {
-				runtimeConfig: async () => {
-					throw new Error("offline");
-				},
-			},
-		} as unknown as RowCatClient;
-		expect(
-			await readPromptGuardsEnabled(client, new AbortController().signal),
-		).toBe(true);
-	});
-	it("does not continue a cancelled generation", async () => {
-		const controller = new AbortController();
-		controller.abort("stopped");
-		const client = {
-			ops: {
-				runtimeConfig: async () => {
-					throw new Error("must not read");
-				},
-			},
-		} as unknown as RowCatClient;
-		await expect(
-			readPromptGuardsEnabled(client, controller.signal),
-		).rejects.toBe("stopped");
-	});
-
-	/**
-	 * React Native's AbortSignal has no `throwIfAborted`, `AbortSignal.any` or `AbortSignal.timeout`.
-	 * Node has all three, so without this case the suite passed while every BYO turn on the device
-	 * failed with "undefined is not a function" before the request left (Phase 12 emulator run).
-	 */
-	describe("on a runtime without the newer AbortSignal API (React Native)", () => {
-		const statics = AbortSignal as unknown as Record<string, unknown>;
-		const proto = AbortSignal.prototype as unknown as Record<string, unknown>;
-		let saved: Record<string, unknown>;
-		beforeEach(() => {
-			saved = {
-				any: statics.any,
-				timeout: statics.timeout,
-				throwIfAborted: proto.throwIfAborted,
-			};
-			statics.any = undefined;
-			statics.timeout = undefined;
-			proto.throwIfAborted = undefined;
-		});
-		afterEach(() => {
-			statics.any = saved.any;
-			statics.timeout = saved.timeout;
-			proto.throwIfAborted = saved.throwIfAborted;
-		});
-
-		it("reads the config", async () => {
-			let received: AbortSignal | undefined;
-			const client = {
-				ops: {
-					runtimeConfig: async (options: { signal: AbortSignal }) => {
-						received = options.signal;
-						return { disabledFeatures: [{ key: "prompt-guards" }] };
-					},
-				},
-			} as unknown as RowCatClient;
-			expect(
-				await readPromptGuardsEnabled(client, new AbortController().signal),
-			).toBe(false);
-			expect(received?.aborted).toBe(false);
-		});
-
-		it("still refuses a cancelled generation", async () => {
-			const controller = new AbortController();
-			controller.abort("stopped");
-			const client = {
-				ops: {
-					runtimeConfig: async () => {
-						throw new Error("must not read");
-					},
-				},
-			} as unknown as RowCatClient;
-			await expect(
-				readPromptGuardsEnabled(client, controller.signal),
-			).rejects.toBe("stopped");
-		});
-
-		it("passes a cancellation through to the read", async () => {
-			const controller = new AbortController();
-			let received: AbortSignal | undefined;
-			const client = {
-				ops: {
-					runtimeConfig: (options: { signal: AbortSignal }) => {
-						received = options.signal;
-						controller.abort("stopped");
-						return Promise.reject(new Error("aborted"));
-					},
-				},
-			} as unknown as RowCatClient;
-			await expect(
-				readPromptGuardsEnabled(client, controller.signal),
-			).rejects.toBe("stopped");
-			expect(received?.aborted).toBe(true);
-		});
 	});
 });

@@ -114,21 +114,17 @@ describe("story test boundaries", () => {
 });
 
 /**
- * Prompt assembly must not exist in two copies. If guard text or block assembly appeared in this
+ * Prompt assembly must not exist in two copies. If rule text or block assembly appeared in this
  * folder, real conversations and tests would send different prompts, and the difference would
  * surface only after the creator publishes. Assembly lives entirely in buildChatGenerationRequest
  * in @rowcat/chat. This folder does not call it directly; the shared generation hook does.
  */
 describe("prompt assembly is not here", () => {
 	it.each([
-		"ABSOLUTE_GUARD",
-		"ADULT_GUARD",
-		"ALL_AGES_GUARD",
 		"ROLEPLAY_RULES",
-		"HOUSE_RULES",
+		"roleplayRules",
 		"selectLore",
 		"buildChatGenerationRequest",
-		"applyPlatformSafetyPolicy",
 	])("%s does not appear", (symbol) => {
 		const offenders = files()
 			.filter((file) => file.source.includes(symbol))

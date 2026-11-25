@@ -48,7 +48,7 @@ const REQUEST: ManagedChatGenerationRequest = {
 	tools: [],
 	maxOutputTokens: 128,
 	reasoningEffort: null,
-	context: { requestedMode: "all-ages", minorCharacterPresent: false },
+	context: { requestedMode: "all-ages" },
 	/** A plain generation. Provider-specific continuation handling is covered by the adapter tests. */
 	continuation: false,
 	/** Managed requests carry the selected model's public identity, not the upstream slug. */

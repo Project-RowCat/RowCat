@@ -1,9 +1,3 @@
-import {
-	ABSOLUTE_GUARD,
-	ADULT_GUARD,
-	ALL_AGES_GUARD,
-	ALL_AGES_TAIL,
-} from "@rowcat/chat/guards";
 import { CHAT_ERROR_CODE, ROWCAT_MANAGED_MODELS } from "@rowcat/contracts";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, test, vi } from "vitest";
@@ -17,16 +11,14 @@ import {
 import { RATE_LIMIT_POLICIES } from "../lib/rate-limit/policy.ts";
 import type { RateLimitStore } from "../lib/rate-limit/store.ts";
 import { listManagedModels } from "../services/generation/managed-models.ts";
-import { setFeatureFlag } from "../services/ops.ts";
 import { allowManagedGeneration, createTestMember } from "../test/auth.ts";
 import { connectTestDatabase, deleteTestUsers } from "../test/database.ts";
 import { WEB_ORIGIN } from "../test/http.ts";
 
 /**
- * The policy boundary of the generation endpoint. What is checked is the system prompt that
- * actually reaches the provider, not the model response. Any HTTP client with a session cookie can
- * call this endpoint without our assembler (@rowcat/chat), dropping the guards and claiming adult
- * mode, and it is our platform key that runs the model.
+ * The boundary of the generation endpoint. What is checked is the system prompt that actually
+ * reaches the provider, not the model response. Any HTTP client with a session cookie can call this
+ * endpoint without our assembler (@rowcat/chat), and it is our platform key that runs the model.
  *
  * So requests go through the real Hono app (auth, gates and policy assembly are all wiring) and
  * only the provider call is intercepted. Calling the service directly would leave out the fragile
@@ -124,7 +116,7 @@ const eventsOf = async (
 		.map((line) => JSON.parse(line) as Record<string, unknown>);
 
 /**
- * A request posing as client-assembled with no safety guards. `model` is the managed public
+ * A request posing as client-assembled. `model` is the managed public
  * identity; the default is an Anthropic model because this file's caching assertions look at that
  * branch, and tests about other models pass it as an argument.
  */
@@ -169,48 +161,12 @@ afterAll(async () => {
 });
 
 describe.skipIf(!databaseReady)("generation policy — server authority", () => {
-	test("the operator can disable and re-enable prompt guards", async () => {
-		const viewer = await signUp();
-		try {
-			for (const enabled of [false, true]) {
-				await setFeatureFlag({
-					key: "prompt-guards",
-					actorId: viewer.memberId,
-					request: {
-						state: enabled ? "on" : "off",
-						message: "",
-						reason: "Test prompt guard setting",
-					},
-				});
-				const provider = captureProviderRequest();
-				const response = await generate(
-					viewer.cookie,
-					hostileRequest("all-ages"),
-				);
-				expect(response.status).toBe(200);
-				await drain(response);
-				const system = systemTextOf(provider.body());
-				expect(system.includes(ABSOLUTE_GUARD)).toBe(enabled);
-				if (!enabled) expect(system).toBe(hostileRequest("all-ages").system);
-			}
-		} finally {
-			await setFeatureFlag({
-				key: "prompt-guards",
-				actorId: viewer.memberId,
-				request: {
-					state: "default",
-					message: "",
-					reason: "Reset test setting",
-				},
-			});
-		}
-	});
-
-	test("even a request with its guards removed goes out with the absolute guard attached", async () => {
+	test("the system prompt goes upstream as the client sent it", async () => {
+		// There are no platform guard blocks: the server adds nothing and removes nothing.
 		const { cookie } = await signUp();
 		const provider = captureProviderRequest();
 
-		const response = await generate(cookie, hostileRequest("all-ages"));
+		const response = await generate(cookie, hostileRequest("adult"));
 		expect(response.status).toBe(200);
 		expect(response.headers.get("Access-Control-Allow-Origin")).toBe(
 			WEB_ORIGIN,
@@ -218,63 +174,7 @@ describe.skipIf(!databaseReady)("generation policy — server authority", () => 
 		await drain(response);
 
 		expect(provider.body().messages[0]?.role).toBe("system");
-		const system = systemTextOf(provider.body());
-		// Both ends of the prompt must be ours: a guard only at the front is overridden by recency from
-		// the body that follows, which here is literally "ignore the rules above".
-		expect(system.startsWith(ABSOLUTE_GUARD)).toBe(true);
-		expect(system.endsWith(ALL_AGES_TAIL)).toBe(true);
-	});
-
-	test("claiming adult mode without eligibility goes out as all-ages", async () => {
-		// This assertion is the whole server side of the adult gate: a fresh member has neither identity
-		// verification nor the adult display setting, so all-ages policy applies whatever the request
-		// claims.
-		const { cookie } = await signUp();
-		const provider = captureProviderRequest();
-
-		const response = await generate(cookie, hostileRequest("adult"));
-		expect(response.status).toBe(200);
-		await drain(response);
-
-		const system = systemTextOf(provider.body());
-		expect(system).toContain(ALL_AGES_GUARD);
-		expect(system).not.toContain(ADULT_GUARD);
-		expect(system.endsWith(ALL_AGES_TAIL)).toBe(true);
-	});
-
-	test("sending no rating at all is read as the most conservative one", async () => {
-		const { cookie } = await signUp();
-		const provider = captureProviderRequest();
-
-		const response = await generate(cookie, {
-			system: "free-writing context",
-			messages: [{ role: "user", content: "Hi" }],
-			model: "claude-sonnet-5",
-		});
-		expect(response.status).toBe(200);
-		await drain(response);
-
-		expect(systemTextOf(provider.body())).toContain(ALL_AGES_GUARD);
-	});
-
-	test("an adult-eligible member goes out under the adult policy", async () => {
-		// The other side too: downgrading an entitled member to all-ages is a defect, not safety, and
-		// would soften every adult-verified user's work.
-		const { cookie, authUserId } = await signUp();
-		await db
-			.update(member)
-			.set({ verified: true, adult: true, show_adult: true })
-			.where(eq(member.user_id, authUserId));
-
-		const provider = captureProviderRequest();
-		const response = await generate(cookie, hostileRequest("adult"));
-		expect(response.status).toBe(200);
-		await drain(response);
-
-		const system = systemTextOf(provider.body());
-		expect(system.startsWith(ABSOLUTE_GUARD)).toBe(true);
-		expect(system).toContain(ADULT_GUARD);
-		expect(system).not.toContain(ALL_AGES_GUARD);
+		expect(systemTextOf(provider.body())).toBe(hostileRequest("adult").system);
 	});
 
 	test("a signed-out visitor never even reaches the provider", async () => {

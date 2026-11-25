@@ -1,6 +1,6 @@
 /**
- * The two `AbortSignal` conveniences generation code reached for, written against the part of the
- * API React Native actually has.
+ * The `AbortSignal` convenience generation code reaches for, written against the part of the API
+ * React Native actually has.
  *
  * React Native's `AbortSignal` (the `abort-controller` polyfill Hermes runs) has neither
  * `signal.throwIfAborted()` nor the static `AbortSignal.any` / `AbortSignal.timeout`. Calling them
@@ -12,16 +12,6 @@
  * because their boundary test forbids timers there (`boundaries.test.ts`, "adapters don't retry on
  * their own").
  */
-
-/** `signal.throwIfAborted()`: throws the abort reason, or an `AbortError` when there is none. */
-export function throwIfAborted(signal: AbortSignal): void {
-	if (!signal.aborted) return;
-	const reason: unknown = signal.reason;
-	if (reason !== undefined) throw reason;
-	const aborted = new Error("The operation was aborted.");
-	aborted.name = "AbortError";
-	throw aborted;
-}
 
 /**
  * `AbortSignal.any([signal, AbortSignal.timeout(ms)])`: a signal that aborts when `signal` does or

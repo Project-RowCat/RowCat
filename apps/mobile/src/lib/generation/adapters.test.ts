@@ -54,7 +54,7 @@ const request = (
 	messages: [message("user", "Hi")],
 	maxOutputTokens: 768,
 	reasoningEffort: null,
-	context: { requestedMode: "all-ages", minorCharacterPresent: false },
+	context: { requestedMode: "all-ages" },
 	tools: [],
 	/** Plain generation by default. The continuation path sets up its own describe block. */
 	continuation: false,
@@ -273,9 +273,24 @@ describe("Anthropic adapter", () => {
 		});
 		expect(bodyOf(transport.calls[0]?.body).messages).toEqual([
 			{ role: "user", content: "one\n\ntwo" },
-			{ role: "assistant", content: "Answer\n\nAnswer2" },
+			// The joined answer ends the stable history, so the breakpoint (`chatCacheAnchorIndex`)
+			// survives the merge on the joined text.
+			{
+				role: "assistant",
+				content: [
+					{
+						type: "text",
+						text: "Answer\n\nAnswer2",
+						cache_control: { type: "ephemeral", ttl: "1h" },
+					},
+				],
+			},
 			{ role: "user", content: "three" },
 		]);
+		expect(bodyOf(transport.calls[0]?.body).cache_control).toEqual({
+			type: "ephemeral",
+			ttl: "5m",
+		});
 	});
 
 	/**
@@ -715,7 +730,7 @@ const sentSafetySettings = async (
 	const transport = respondWith(fakeResponse({ body: geminiStream() }));
 	await run(geminiAdapter, {
 		request: request({
-			context: { requestedMode, minorCharacterPresent: false },
+			context: { requestedMode },
 		}),
 		model: "gemini-3-pro",
 		secret: "gm",

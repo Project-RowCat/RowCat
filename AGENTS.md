@@ -75,7 +75,7 @@ the `packageManager` field in the root `package.json` (`pnpm@10.34.5`) — do no
 | `docs/creator-runtime/` | Every runtime decision record — `patch-protocol` · `web-renderer` · `native-vm-host` · `vm-poc` · `story-state` · `persistence` · `input-generation` · `publication` · `player` · `remote-assets` · `managed-assets` · `managed-audio` · `scroll-and-focus` · `motion` · `templates` · `ai-authoring` · `public-beta` |
 | `docs/public/runtime` | **The public docs creators read.** A different audience from the folder above; do not copy that content here |
 | `docs/sync/ARCHITECTURE.md` | Encrypted sync · pairing · draft conflict recovery |
-| `docs/chat/` | `MEMORY.md` (memory, afterstate long-term memory) · `SCENES.md` (who witnessed what) · `PERSONA.md` (user personas) · `NARRATION.md` (the narration pack port) · `CHARACTERS.md` (characters added to a room) · `USER-NOTE.md` (the user's own instruction for a conversation) · `ATTACHMENTS.md` (text files a room reads on every turn) · `INTENSITY.md` (expression intensity — inside what the rating allows) · `REPLY-SUGGESTION.md` (what I might say next) · `TOOLS.md` (tool calling) · `PROMPT-PROTECTION.md` (guards off the wire; protected works assembled by the server) |
+| `docs/chat/` | `MEMORY.md` (memory, afterstate long-term memory) · `SCENES.md` (who witnessed what) · `PERSONA.md` (user personas) · `NARRATION.md` (the narration pack port) · `CHARACTERS.md` (characters added to a room) · `USER-NOTE.md` (the user's own instruction for a conversation) · `ATTACHMENTS.md` (text files a room reads on every turn) · `INTENSITY.md` (expression intensity — inside what the rating allows) · `REPLY-SUGGESTION.md` (what I might say next) · `TOOLS.md` (tool calling) · `PROMPT-PROTECTION.md` (protected works assembled by the server; the deleted platform guards) |
 | `docs/design/` | Design system boundaries · `FAILURE-FEEDBACK.md` · `VISUAL-PARITY.md` |
 | `docs/motion/ARCHITECTURE.md` | The motion language and the two apps' intended differences |
 | `docs/settings/ARCHITECTURE.md` | Settings, preferences, prompt caching |
@@ -249,10 +249,10 @@ what binds other packages too.**
                    messagesFromEnd · buildAiResponseEvidence · sceneTriggerKey
                    resolveEffectiveGeneration · resolveGenerationExecution
                    resolveUtilityTarget · finalizeWithSceneImage · parseChatContent
-                   planChatGeneration · protectedStoryIdOf · deliveredChatSystem
+                   planChatGeneration · protectedStoryIdOf
                    canSuggestReply · selectReplySuggestionWindow · replySuggestionTurnKey
                    buildReplySuggestionRequest · parseReplySuggestions · runReplySuggestion
-                   runtimeGenerationSafety
+                   runtimeGenerationContext
   @rowcat/domain   filtersForViewer · resolveProfileActions · profileContentBlocked
                    appliedGalleryFilters · sortTriggerLabel · periodApplies
                    adultVisibilityState · storyLifecycleActions
@@ -682,7 +682,7 @@ header in `@rowcat/chat`.
   different results".**
 - **`{{user}}`, the speaker on user turns, the counterpart block in the system prompt, and the opening all
   read the same value.** **The prompt order has not changed by a character** (the counterpart block sits
-  after characters, before play guidance, and before the safety tail guard).
+  after characters, before play guidance).
 - **Stored speakers are never rewritten** — changing the role leaves the speaker on turns already exchanged.
 - **If the role changes mid-generation, that response never reaches its final save.** The decision axis is
   the conversation's execution identity (`ConversationSession.token`), and the web's local room builds it
@@ -731,8 +731,7 @@ Memory is **per room**. Full rules in `docs/chat/MEMORY.md`.
 - **Context assembly happens in one place: `buildChatGenerationRequest`.** The budget
   (`CHAT_MEMORY_CONTEXT_CHAR_BUDGET`) is the axis that keeps memory from starving history, and `pinned` is
   **priority, not absolute protection**. **Generation freezes memory the moment it starts.** The memory block
-  sits after creator content and before the safety tail guard — that order is the substance of the prompt
-  injection boundary.
+  sits after creator content, so what the person recorded outranks the work's defaults.
 - **Memories have a source, and that axis is the permission** (`source: "user" | "auto"`). `"auto"` rows are
   **Memory V2's historical records** — nothing creates them any more; they never enter the memory block. The
   direction opens one way (`promoteMemoryPatch`), and `mergeMemorySource` enforces that monotonicity
@@ -751,7 +750,8 @@ is the on-device afterstate engine, through one adapter (`packages/chat/src/conv
 ```text
 response saved → maintain?.() → reconcile (index messages/notes/V2 records, audience-tagged)
   → consolidate (deterministic extractive episode digests, one per same-audience run) — no model call
-turn start → loadLongTermMemory(recallRequestFor(...)) → recall passages + earlier episodes, ≤ 400 ms
+turn start → loadLongTermMemory(recallRequestFor(...)) → recall passages + earlier episodes + facts, ≤ 400 ms
+  → all three ride in the last user turn (`withLongTerm`), never the system prompt — they change between turns
   → scopePromptInput → buildChatGenerationRequest
 ```
 
@@ -1152,22 +1152,15 @@ intensity   the user chooses     this conversation's value    mutable · E2EE sy
 - **Two values and an absence** (`softened` · 기본 · `intense`). The middle is the key's absence,
   the same representation every other override axis in this repository uses — there is no layer
   above to inherit from, so "reset" and "never chose" are the same fact.
-- **⚠️ Intensity cannot exceed the rating, and none of the three defences leans on prompt
-  wording.** The screen offers `강` only on adult-rated rooms (`chatIntensityChoices` takes the
-  **story's** rating, not this turn's effective one — the value must survive a lapse in
-  entitlement); the assembler stands that block only when the turn actually runs adult
-  (`resolveChatIntensity`); and the server wraps the prompt in the rating guards **without knowing
-  this axis exists.** That last line is why **the server, the contract and the API did not change
-  by a character** — a forged `강` block in an all-ages request still arrives bracketed by
-  `ALL_AGES_GUARD` and `ALL_AGES_TAIL`.
-- **The block stands between the head and the tail — never folded into the tail.**
-  `applyPlatformSafetyPolicy` passes an already-wrapped body through by checking that it
-  **ends with the fixed tail** (`endsWith`); a tail that varies per room fails that comparison and
-  **every normal request gets its tail attached twice**, invisibly. A test pins
-  `applyPlatformSafetyPolicy(system, allAges) === system` for all three live combinations.
-- **The wording declares itself as "the requested level"** because `ADULT_TAIL` already says *do
-  not lower the **requested** level arbitrarily* — declared that way the two compose; written as
-  "write softly" the tail overrides it by recency. **Do not delete the last paragraph of the
+- **⚠️ Intensity cannot exceed the rating, and neither defence leans on prompt wording.** The
+  screen offers `강` only on adult-rated rooms (`chatIntensityChoices` takes the **story's** rating,
+  not this turn's effective one — the value must survive a lapse in entitlement), and the assembler
+  stands that block only when the turn actually runs adult (`resolveChatIntensity`). There used to be
+  a third — the server's rating guards bracketing the prompt — and it went with the platform guards
+  (`### Prompt protection`): a forged `강` block now reaches the model as written.
+- **The block is the last block of the system prompt** (`intensity.test.ts` pins it).
+- **The wording declares itself as "the requested level"** — the person asked for it, so it is not an
+  arbitrary lowering. **Do not delete the last paragraph of the
   softened block** (it pins the scope: the events still happen, only the exposure drops) — a
   scope-less downward instruction behaves like a long prohibition list and starts avoiding
   conflict, combat and death. The intense block's last line is the same axis (it states its own
@@ -1184,9 +1177,8 @@ intensity   the user chooses     this conversation's value    mutable · E2EE sy
   full intensity on another device is not a setting that failed to follow, it is **the thing that
   person was avoiding, shown to them.**
 - **Provider filters are a different layer, and the Gemini BYO adapter now sets them from the
-  rating.** This axis is the prompt's; what a provider blocks by its own policy sits on top of it.
-  That second layer used to be left at its defaults and silently swallowed what our own guards had
-  allowed — see **Provider content filters** under `## Settings and preferences`.
+  rating.** This axis is the prompt's; what a provider blocks by its own policy sits on top of it —
+  see **Provider content filters** under `## Settings and preferences`.
 
 ### Reply suggestions — what I might say next
 
@@ -1295,19 +1287,17 @@ share        tool-file.ts — header values never exported, imports arrive off, 
 `docs/chat/PROMPT-PROTECTION.md`.
 
 ```text
-guards           applyPlatformSafetyPolicy only — server (managed) · router (BYO), including runtime
+guards           none — deleted 2026-11-25; the system prompt goes out as the assembler built it
 protected seed   /play · /playback blank scenario · playGuide · character prompts · lore (projectProtectedSeed)
 protected turn   POST /v2/chat/stories/:storyId/generate — device sends its share, server assembles
 ```
 
-- **The operator can toggle all prompt guards** (`prompt-guards`, default on) in operations settings. Managed routes read the server setting; updated BYO clients read public runtime config before generation (up to 35 seconds of cache lag, default on if unavailable). Complete existing wrappers, including runtime wrappers, are removed while off. Details: `docs/chat/PROMPT-PROTECTION.md`.
-- **The assembler emits no guard blocks.** When enabled, absolute, rating, minor, house rules and tail are attached by
-  `applyPlatformSafetyPolicy` alone; the minor decision rides as `context.minorCharacterPresent` (the
-  assembler is where story content is read). **Bytes reaching the model did not change** —
-  `guards.test.ts` pins new and legacy bodies to the same string, and legacy (pre-OTA) bodies are not
-  wrapped twice. **Do not wrap managed requests on the device** (mobile used to; that put the full text back
-  in the body). The inspector draws `platformPolicyBlocks` at both ends, so its blocks join to
-  `deliveredChatSystem(request)`.
+- **There are no platform guard blocks.** The absolute, rating, minor, house-rule and tail guards, the function that
+  wrapped them (`applyPlatformSafetyPolicy`), the minor verdict (`context.minorCharacterPresent`) and the operator
+  switch (`prompt-guards`) were deleted together — an open-source release has no operator to run that switch. Managed
+  server, BYO router and runtime port add nothing to and remove nothing from `request.system`. The roleplay rules
+  (`roleplay-rules.ts`, `ROLEPLAY_CONSENT` included) and the intensity block are not guards and stay. Reviving the
+  guards starts from reverting that commit, not from one wrapper (`docs/chat/PROMPT-PROTECTION.md` §2).
 - **A protected story's room is assembled by the server from the currently published seed.** The contract has
   no `system` slot (`StoryChatGenerationRequest`, `.strict()`); the device sends only what it holds (history,
   memories, summary, persona/note/intensity, added characters, narration). Device and server sides are one
@@ -1980,9 +1970,8 @@ The only irreversible operation, so the boundaries are tighter than elsewhere. R
 - **BYO credentials are member+device local and are never synced.** The seal is a non-extractable AES-GCM
   wrapping key with domain-separated AAD, and it **only prevents plaintext at rest** — a script on the same
   origin can still call decrypt (we state that honestly).
-- **BYO generation does not pass through the RowCat API.** That path therefore has no server-side safety
-  re-adjudication, and the policy is applied once by the generation router using **the same function** as the
-  server (`applyPlatformSafetyPolicy`, idempotent).
+- **BYO generation does not pass through the RowCat API.** The router hands the assembler's request to the
+  adapter unchanged; there are no platform guards to apply on either path.
 - **Provider adapters only map, normalizing into `ChatStreamEvent`.** Prompt assembly is still one place
   (`buildChatGenerationRequest`) and the conversation hook has no provider branching.
 - **Do not store "unset" as a value.** `기본 설정 사용` erases the override rather than copying the parent value —
@@ -2180,16 +2169,20 @@ left with billing (`docs/oss/PLAN.md` §3단계). What remains is the shape the 
   observes **even the invisible cells** (`themeDraftSyncKey`) — while **the `dirty` decision conversely looks only at the
   three visible cells** (merged, changing only the gradient on the web turns on mobile's `색상 저장`).
 
-### Provider content filters — the layer above our guards
+### Provider content filters — the provider's own layer
 
 **Only the Gemini BYO adapter has this axis today**, and it is set from one value: the turn's
 rating (`apps/{web,mobile}/src/lib/generation/gemini.ts`, `safetySettingsFor`).
 
 ```text
 all-ages   BLOCK_ONLY_HIGH   looser than the provider default, but the net stays
-adult      OFF               our guards are the ceiling; the filter does not second-guess them
+adult      OFF               the filter does not re-decide what the rating allows
 ```
 
+- **⚠︎ The platform guards several bullets below lean on were deleted (2026-11-25, `### Prompt
+  protection`).** The table did not change with them: adult still sends `OFF`, so an adult Gemini BYO
+  turn now has no prompt-side prohibitions and no provider filter — only the model's own policy and
+  the key owner's terms with the provider. Read the reasoning below as the history of the table.
 - **⚠️ Sending nothing is not neutral.** For a long time this adapter sent no `safetySettings` and
   the comment called that "the provider's policy, not ours to tune". The default thresholds are
   calibrated for a general assistant, so they blocked **what our own guards explicitly allow** —
@@ -2236,7 +2229,7 @@ adapter's header).
   to look at the resolved upstream slug. Do not write literals and do not copy the managed identity list (the day
   the registry's slug is swapped, caching turns off quietly, and the symptom is **the invoice**).
 - **Do not place breakpoints by hand** — attaching `cache_control` per block would require the adapter to know
-  the boundaries of guards, seed, lore, memory and history, which breaks `@rowcat/chat`'s provider neutrality.
+  the boundaries of rules, seed, lore, memory and history, which breaks `@rowcat/chat`'s provider neutrality.
   **The one exception is the end of the system block on Anthropic** — BYO (`anthropicSystem`, a web/mobile pair)
   and managed (`systemMessage` in `services/generation/chat.ts`, only where `usesExplicitPromptCaching` holds):
   with only the automatic breakpoint on the last block, any turn whose history changed in front of it (the window
@@ -2246,9 +2239,15 @@ adapter's header).
   included, and reading a reply and writing the next line often outlasts five minutes; since the history window
   stays put between summaries, the cached history is worth keeping across that pause too. A longer TTL must come
   before a shorter one, so the system marker must never be shorter than the automatic one (that is a 400).
-  **The one exception is a tool round trip's tail (`5m`, `tailCacheTtl` in all three adapters)** — a request ending
-  in a tool result is read back only by the next round of the same turn, and an hour-long write (2x) there bought a
-  lifetime nothing uses.
+  **The second marker is the end of the stable history** (`chatCacheAnchorIndex` in `@rowcat/chat`: the last answer
+  before the last user line; all five Anthropic-cached builders — both apps' Anthropic and chat-completions adapters
+  and the managed body). The last block is the user's line with this turn's long-term blocks (episodes, facts,
+  recall) in front of it, which the next turn never resends, so a read could only land on the system marker and every
+  turn with long-term memory wrote the whole history again. That position is chosen by **roles**, not by the
+  assembler's blocks, so the adapters still know nothing of rules, lore or memory. **The tail lives five minutes
+  (`tailCacheTtl`) when nothing past this turn reads it** — a tool round trip's tail (read only by the next round of
+  the same turn), or any turn with an anchor (the next turn reads from the anchor's hour instead). Order stays hour,
+  hour, five minutes.
 - **Keyword lore scans the whole history window, not the last few messages** (`assembleChatGenerationRequest`).
   Lore sits inside the system prompt, so every flip in the selected set rewrote the whole cached prefix; within one
   window the set now only grows, and it changes on the turn the window moves, which already rewrites that prefix.
@@ -3597,9 +3596,8 @@ Full rules in `docs/creator-runtime/input-generation.md`.
 - **A generation request has no provider, model, key, temperature, reasoning effort or streaming.** Those axes are
   decided by RowCat's product rules, and **the creator does not even know whether it is managed or BYO.** The result
   is one string too — token counts, cost, balance, model id and finish reason are not in that shape.
-- **The creator's `instructions` are subordinate application content** (they sit **between** the safety guards, and
-  that assembly goes through the one function conversation and BYO paths use — `applyPlatformSafetyPolicy`,
-  idempotent).
+- **The creator's `instructions` are the system prompt, verbatim** — with the work's rating beside them
+  (`runtimeGenerationContext`). There are no platform guards around them any more.
 - **⚠️ Generation starts only from a user interaction.** Only the `event` origin is authorized and every other origin is
   rejected — including **`media`**, which is `dispatchEvent` for an event the platform raised by itself (a sound reaching
   its end). The renderer names that source at the DOM or native callback (`RuntimeEventSource`), it crosses the worker
@@ -3884,13 +3882,13 @@ Full rules in `docs/creator-runtime/publication.md` and `player.md`.
   generation spends** (managed versus BYO is this device's setting) and do not name a provider. **The decision freezes into
   the session**, and a refusing session's `generate()` is not "not authorized" but
   `runtime_generation_unavailable`.
-- **Do not build a second AI stack** (target resolution, the managed gates, routing, transport and safety guards are all the
+- **Do not build a second AI stack** (target resolution, the managed gates, routing and transport are all the
   same functions conversation uses, and **the provider's original message is replaced with ours at the very place the
   reason is attached**).
 - **All-ages is the work's rating and the viewer's entitlement together** (`resolveAllAges`, as conversations do). The
   playback response carries the rating the server stored (`StoryPlaybackDto.adult`, absent reads as all-ages), the
   studio and the playtest pass the draft's own, and both apps' adapters take it as a **required** argument. Deciding
-  from the viewer alone ran an all-ages work's generations under the adult guards for adult viewers — a way around the
+  from the viewer alone ran an all-ages work's generations at the adult rating for adult viewers — a way around the
   adult publishing gate.
 - **Reading a thrown value has its own short budget** (`classify` in `vm/quickjs.ts`). It runs after the execution's
   slice, where nothing interrupts, and reading can run creator code (`toJSON`, getters, proxy traps): `throw { toJSON()

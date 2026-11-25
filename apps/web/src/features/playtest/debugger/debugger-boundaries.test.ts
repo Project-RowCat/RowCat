@@ -77,8 +77,8 @@ const FORBIDDEN: { door: string; why: string }[] = [
 		why: "the assembler already decided lore; doing it again here would split the screen from the prompt",
 	},
 	{
-		door: "ABSOLUTE_GUARD",
-		why: "guard text appearing here means a second prompt assembly has started",
+		door: "roleplayRules",
+		why: "rule text appearing here means a second prompt assembly has started",
 	},
 	{ door: "@rowcat/runtime-host", why: "the VM stands only inside the worker" },
 	{ door: "compileRuntimeProject", why: "the debugger does not compile" },

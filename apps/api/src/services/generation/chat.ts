@@ -1,5 +1,6 @@
 import {
 	CONTINUATION_FALLBACK_NUDGE,
+	chatCacheAnchorIndex,
 	chatToolJsonSchema,
 	readChatToolCall,
 	trimContinuationPrefill,
@@ -366,8 +367,10 @@ function reasoningDetailsOf(state: string | undefined): {
  */
 function toOpenAiMessages(
 	messages: ManagedChatGenerationRequest["messages"],
+	/** Index whose content carries the stable-history breakpoint (`chatCacheAnchorIndex`); `-1` for none. */
+	anchor = -1,
 ): Record<string, unknown>[] {
-	return messages.map((message) => {
+	return messages.map((message, index) => {
 		if (message.role === "tool")
 			return {
 				role: "tool",
@@ -405,6 +408,24 @@ function toOpenAiMessages(
 				...reasoningDetailsOf(message.toolCall.providerState),
 			};
 
+		/**
+		 * The end of the history the next turn resends unchanged gets its own one-hour breakpoint: the
+		 * request's last block is the user's line with this turn's recall, which the next turn does
+		 * not resend, so without this mark the history past the system prompt was written to the cache
+		 * again on every turn (`chatCacheAnchorIndex` has the reasoning). Only the end of the stored
+		 * text is marked; the text is unchanged.
+		 */
+		if (index === anchor && message.content)
+			return {
+				role: message.role,
+				content: [
+					{
+						type: "text",
+						text: message.content,
+						cache_control: { type: "ephemeral", ttl: "1h" },
+					},
+				],
+			};
 		return { role: message.role, content: message.content };
 	});
 }
@@ -415,11 +436,12 @@ function toOpenAiMessages(
  * The top-level automatic breakpoint sits on the last block only. Whenever the history in front of it
  * changes (the window steps forward, an earlier message is edited or regenerated), that one breakpoint's prefix no longer matches the previous turn, and the
  * turn rewrote the whole prompt to the cache, the unchanged system prompt included. Marking the end
- * of the system prompt lets that part be read back (2 of Anthropic's 4 breakpoints). This mirrors the BYO adapters'
+ * of the system prompt lets that part be read back (one of Anthropic's 4 breakpoints; the end of the
+ * stable history is another, `chatCacheAnchorIndex`). This mirrors the BYO adapters'
  * `anthropicSystem`.
  *
  * It is not a breakpoint placed by hand inside the prompt: the system prompt arrives as one opaque
- * string and only its end is marked, so this file still knows nothing about the guards, lore,
+ * string and only its end is marked, so this file still knows nothing about the rules, lore,
  * earlier episodes or memory inside. The text is unchanged by a character.
  *
  * The breakpoint lives for an hour (`ttl: "1h"`), not the default five minutes. A cache entry's
@@ -444,11 +466,16 @@ function toOpenAiMessages(
  * tail is read back only by the next round of the same turn, seconds later; the next turn never
  * reads it, because tool round trips are not stored and that turn's history has none of them. An
  * hour-long write (2x input) there paid for a lifetime nothing uses; five minutes (1.25x) covers the
- * rounds that follow.
+ * rounds that follow. The same holds once the history has an anchor (`chatCacheAnchorIndex`): the
+ * last block is the user's line with this turn's recall, which the next turn does not resend, so the
+ * next turn reads from the anchor's one-hour breakpoint and this tail lives five minutes.
  * Shorter after longer is the allowed order, so the system marker stays one hour.
  */
-function tailCacheTtl(messages: ManagedChatGenerationRequest["messages"]) {
-	return messages.at(-1)?.role === "tool" ? "5m" : "1h";
+function tailCacheTtl(
+	messages: ManagedChatGenerationRequest["messages"],
+	anchor: number,
+) {
+	return messages.at(-1)?.role === "tool" || anchor >= 0 ? "5m" : "1h";
 }
 
 function systemMessage(system: string, cached: boolean) {
@@ -530,6 +557,13 @@ export function buildProviderRequestBody(
 		shape === null
 			? request.messages
 			: CONTINUATION_MESSAGES[shape](request.messages);
+	/**
+	 * The end of the stable history, read on the request as the device sent it (a continuation's nudge
+	 * comes after it); `-1` where this upstream takes no explicit breakpoints.
+	 */
+	const anchor = usesExplicitPromptCaching(model)
+		? chatCacheAnchorIndex(request.messages)
+		: -1;
 	return {
 		model,
 		/**
@@ -563,11 +597,16 @@ export function buildProviderRequestBody(
 			? { session_id: request.routingSessionId }
 			: {}),
 		...(usesExplicitPromptCaching(model)
-			? { cache_control: { type: "ephemeral", ttl: tailCacheTtl(messages) } }
+			? {
+					cache_control: {
+						type: "ephemeral",
+						ttl: tailCacheTtl(messages, anchor),
+					},
+				}
 			: {}),
 		messages: [
 			systemMessage(request.system, usesExplicitPromptCaching(model)),
-			...toOpenAiMessages(messages),
+			...toOpenAiMessages(messages, anchor),
 		],
 		/**
 		 * No tools declared means no key at all, the same rule as `reasoningEffort: null`: clients

@@ -1,4 +1,3 @@
-import { ABSOLUTE_GUARD } from "@rowcat/chat/guards";
 import {
 	type ChatStreamEvent,
 	type ManagedChatGenerationRequest,
@@ -126,7 +125,6 @@ async function run(tools: unknown[], responses: (() => Response)[]) {
 		seed,
 		request,
 		allAges: true,
-		promptGuardsEnabled: true,
 	});
 	const { budget, admitted } = fakeBudget();
 	const stream = await startProtectedStoryGeneration({
@@ -226,10 +224,9 @@ describe("creator tools on the server's protected loop", () => {
 
 		expect(bodies).toHaveLength(3);
 		const agent = bodies[1];
-		// The agent's own prompt, wrapped in the conversation's platform guard.
+		// The agent's own prompt.
 		const system = systemOf(agent);
 		expect(system).toContain("AGENT_SYSTEM_MARKER");
-		expect(system.startsWith(ABSOLUTE_GUARD)).toBe(true);
 		// It sees what the model passed, nothing of the manuscript or the conversation.
 		expect(JSON.stringify(agent)).not.toContain("SCENARIO_MARKER");
 		expect(JSON.stringify(agent)).not.toContain("Hello there");

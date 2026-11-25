@@ -36,7 +36,6 @@ import { useHoldBuildSwitch } from "#/lib/build-freshness/hold.ts";
 import { GenerationBlockedError } from "#/lib/generation/availability.ts";
 import {
 	createGenerationTransport,
-	readPromptGuardsEnabled,
 	streamChatGenerationPlan,
 } from "#/lib/generation/router.ts";
 import { runToolAgent } from "#/lib/generation/tool-agent.ts";
@@ -835,9 +834,6 @@ export function useConversationGeneration(
 					 * sent is identical either way. That this is guaranteed by structure rather than by promise is
 					 * what makes this branch safe.
 					 */
-					const promptGuardsEnabled = debug
-						? await readPromptGuardsEnabled(client, controller.signal)
-						: undefined;
 					await verifyPromptSnapshot(session, {
 						history,
 						scenes,
@@ -845,12 +841,7 @@ export function useConversationGeneration(
 						longTerm,
 					});
 					const plan = planChatGeneration({
-						assembly: {
-							...assemblyInput,
-							...(promptGuardsEnabled === undefined
-								? {}
-								: { promptGuardsEnabled }),
-						},
+						assembly: assemblyInput,
 						protectedStoryId: session.protectedStoryId ?? null,
 						trace: Boolean(debug) && turnId !== null,
 					});
@@ -874,9 +865,6 @@ export function useConversationGeneration(
 					 * decides. The loop reads the same ChatStreamEvent either way.
 					 */
 					const routerDeps = {
-						...(promptGuardsEnabled === undefined
-							? {}
-							: { promptGuardsEnabled }),
 						client,
 						credentials: credentials ?? null,
 						/**
@@ -906,15 +894,12 @@ export function useConversationGeneration(
 												 * A sub-agent runs on this turn's own target and credentials: the connection the
 												 * person already chose to spend, and nothing else. Its transport is built with no
 												 * `toolAccess`, which is the second half of "one level deep" (its request already
-												 * declares no tools, `chatAgentRequest`). It inherits the parent request's safety
-												 * context, so it never runs under a looser guard than the conversation.
+												 * declares no tools, `chatAgentRequest`). It inherits the parent request's rating
+												 * context, so it never runs at a looser rating than the conversation.
 												 */
 												runAgent: (run, signal) =>
 													runToolAgent(
 														createGenerationTransport(execution.target, {
-															...(promptGuardsEnabled === undefined
-																? {}
-																: { promptGuardsEnabled }),
 															client,
 															credentials: credentials ?? null,
 														}),

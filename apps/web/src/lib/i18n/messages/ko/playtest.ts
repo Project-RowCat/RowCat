@@ -62,10 +62,6 @@ export const playtest: Messages["playtest"] = {
 	},
 	debug: {
 		block: {
-			"absolute-guard": "절대 금지",
-			"rating-guard": "등급 가드",
-			"minor-guard": "미성년 인물 가드",
-			"house-rules": "운영 규칙",
 			"lore-system-top": "로어 (상단)",
 			"roleplay-rules": "진행 규칙",
 			"narration-pack": "서술 팩",
@@ -82,7 +78,6 @@ export const playtest: Messages["playtest"] = {
 			memory: "기억",
 			"user-note": "유저 노트",
 			intensity: "표현 수위",
-			"tail-guard": "꼬리 가드",
 		},
 		status: {
 			running: "진행 중",

@@ -209,9 +209,9 @@ describe("agent (sub-agent)", () => {
 		expect(chatAgentPrompt([param("a")], {})).toBe("인자 없이 호출되었습니다.");
 	});
 
-	it("declares no tools and inherits only the parent's safety context", () => {
+	it("declares no tools and inherits only the parent's rating context", () => {
 		const parent = {
-			context: { requestedMode: "adult", minorCharacterPresent: true },
+			context: { requestedMode: "adult" },
 			routingSessionId: "route-1",
 		} as unknown as ChatGenerationRequest;
 		const request = chatAgentRequest(
@@ -223,7 +223,7 @@ describe("agent (sub-agent)", () => {
 			messages: [{ role: "user", content: "p" }],
 			maxOutputTokens: 10,
 			reasoningEffort: null,
-			context: { requestedMode: "adult", minorCharacterPresent: true },
+			context: { requestedMode: "adult" },
 			continuation: false,
 			tools: [],
 		});

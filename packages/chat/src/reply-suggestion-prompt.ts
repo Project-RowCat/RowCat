@@ -21,8 +21,7 @@ import { splitChatTrackingBlocks } from "./tracking-block.ts";
  *   billing, UI copy. Including them would make the call cost as much as a roleplay turn and could
  *   make the model start playing the scene.
  * - The all-ages level follows the room through resolveAllAges. Unlike maintenance, which is
- *   always all-ages because its output is stored and re-sent, suggestions are not stored. The
- *   server still decides eligibility (resolvePlatformAllAges).
+ *   always all-ages because its output is stored and re-sent, suggestions are not stored.
  * - Chat body is untrusted data. The system prompt says so, and the same line is repeated after
  *   the data. The output is one JSON object checked by a schema, and only strings for the input box
  *   survive; a person must still send them.
@@ -193,13 +192,8 @@ export function buildReplySuggestionRequest(
 		 * distinguishable from a forgotten field.
 		 */
 		reasoningEffort: null,
-		/**
-		 * Minor determination belongs to the assembler, which reads the work content. This request
-		 * carries no work settings, so no minor flag is computed. The value is not invented.
-		 */
 		context: {
 			requestedMode: input.allAges ? "all-ages" : "adult",
-			minorCharacterPresent: false,
 		},
 		/**
 		 * Explicitly not a continuation. The message is always a single user turn here, so prefill has no

@@ -977,26 +977,20 @@ export const ChatGenerationMode = z.enum(CHAT_GENERATION_MODES);
 export type ChatGenerationMode = z.infer<typeof ChatGenerationMode>;
 
 /**
- * The basis for the safety judgment carried by a generation request: a rating axis, not creative
- * content. It is kept apart from system on purpose. The system prompt is the creative context the
- * client assembles (world, characters, lore); this is the value the server reads to choose its
- * policy. Merging them would force the server to parse prompt text to learn the rating, and that
- * parse could be bypassed by a small wording change.
+ * The rating a generation request carries: an axis, not creative content. It is kept apart from
+ * system on purpose. The system prompt is the creative context the client assembles (world,
+ * characters, lore); this is the value adapters read (the Gemini BYO filter thresholds). Merging
+ * them would force a reader to parse prompt text to learn the rating.
+ *
+ * An older client may still send `minorCharacterPresent`; the object is not strict, so the key is
+ * dropped on parse rather than refused.
  *
  * No room or story id is sent. The server holds no rooms, and a story id is trivially dropped by a
- * hostile client, so it could not serve as verification. The value that actually caps behavior is
- * the member qualification the server reads from the session, not requestedMode below.
+ * hostile client, so it could not serve as verification. Where the server uses the rating (the
+ * protected-story route), it re-decides it from the member's entitlement.
  */
 export const ChatGenerationContext = z.object({
 	requestedMode: ChatGenerationMode.default("all-ages"),
-	/**
-	 * Whether the content has a character read as a minor. This is the basis for enabling the minor
-	 * guard at adult rating. The guard sentence itself is not carried: it is applied in one place
-	 * (applyPlatformSafetyPolicy), and this value carries only the judgment that function reads. A
-	 * client can claim this value or leave it out, but it could already omit the guard block before,
-	 * so trust did not drop. Defaulting to false means requests from older clients still pass.
-	 */
-	minorCharacterPresent: z.boolean().default(false),
 });
 export type ChatGenerationContext = z.infer<typeof ChatGenerationContext>;
 
@@ -1063,10 +1057,7 @@ export const ChatGenerationRequest = z.object({
 	 * The rating request. When omitted, it is read in the most conservative way, so a client that does
 	 * not know this field can never reach adult mode.
 	 */
-	context: ChatGenerationContext.default({
-		requestedMode: "all-ages",
-		minorCharacterPresent: false,
-	}),
+	context: ChatGenerationContext.default({ requestedMode: "all-ages" }),
 	/**
 	 * The routing-affinity key for this conversation. When absent, no key is sent at all.
 	 *

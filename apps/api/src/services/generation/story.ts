@@ -1,9 +1,4 @@
 import { buildChatGenerationRequest } from "@rowcat/chat/context";
-import {
-	applyPlatformSafetyPolicy,
-	conversationSafetyPolicy,
-	type PlatformSafetyPolicy,
-} from "@rowcat/chat/guards";
 import { storyAssemblyInput } from "@rowcat/chat/protected-generation";
 import { type ChatTool, chatToolDeclarations } from "@rowcat/chat/tool";
 import { type ChatAgentRun, chatAgentRequest } from "@rowcat/chat/tool-custom";
@@ -24,7 +19,7 @@ import { startChatGeneration } from "./chat.ts";
  * Generation for prompt-protected stories: the server assembles the request and runs the tool round
  * trips. The protected creative prompt never reaches the device (`projectProtectedSeed`), so the
  * device can neither build the system prompt nor run the lore search tool; both move here. Nothing
- * new is built: assembly, guards, the tool loop and the upstream call are the same functions the
+ * new is built: assembly, the tool loop and the upstream call are the same functions the
  * device and ordinary managed generation use. A second assembler on the server would let the two
  * paths diverge, and that would show up only as response quality.
  *
@@ -49,11 +44,6 @@ export interface AssembledStoryGeneration {
 	 * not exist yet at assembly time.
 	 */
 	readonly seed: StoryChatSeedDto;
-	/**
-	 * The platform policy `base.system` was wrapped with. A sub-agent's system prompt is wrapped with
-	 * the same one (`agentRequest`).
-	 */
-	readonly policy: PlatformSafetyPolicy;
 	readonly model: StoryChatGenerationRequest["model"];
 }
 
@@ -95,7 +85,6 @@ export function assembleProtectedStoryGeneration(input: {
 	seed: StoryChatSeedDto;
 	request: StoryChatGenerationRequest;
 	allAges: boolean;
-	promptGuardsEnabled: boolean;
 }): AssembledStoryGeneration {
 	const assembled = buildChatGenerationRequest(
 		storyAssemblyInput({
@@ -104,15 +93,7 @@ export function assembleProtectedStoryGeneration(input: {
 			allAges: input.allAges,
 		}),
 	);
-	const policy: PlatformSafetyPolicy = {
-		...conversationSafetyPolicy(assembled.context),
-		allAges: input.allAges,
-		enabled: input.promptGuardsEnabled,
-	};
-	const base: ChatGenerationRequest = {
-		...assembled,
-		system: applyPlatformSafetyPolicy(assembled.system, policy),
-	};
+	const base: ChatGenerationRequest = assembled;
 
 	// Same registration as the device (`chatConversationTools`); only the seed read is the server's. A
 	// story with no lore and no creator tools yields an empty array and the loop passes one request
@@ -127,7 +108,6 @@ export function assembleProtectedStoryGeneration(input: {
 		base,
 		firstRequest: { ...firstRequest, model: input.request.model },
 		seed: input.seed,
-		policy,
 		model: input.request.model,
 	};
 }
@@ -146,7 +126,7 @@ export async function startProtectedStoryGeneration(input: {
 	signal: AbortSignal;
 	budget: StoryGenerationBudget;
 }): Promise<AsyncGenerator<ChatStreamEvent>> {
-	const { base, firstRequest, seed, policy, model } = input.assembled;
+	const { base, firstRequest, seed, model } = input.assembled;
 	const managed = (
 		request: ChatGenerationRequest,
 	): ManagedChatGenerationRequest => ({
@@ -154,11 +134,7 @@ export async function startProtectedStoryGeneration(input: {
 		model,
 	});
 	const tools = storyTools(seed, (run, signal) =>
-		runStoryAgent(
-			managed(agentRequest(run, base, policy)),
-			signal,
-			input.budget,
-		),
+		runStoryAgent(managed(chatAgentRequest(run, base)), signal, input.budget),
 	);
 
 	const first = await startChatGeneration(firstRequest, input.signal);
@@ -210,24 +186,6 @@ async function* laterRound(
 		return;
 	}
 	yield* call.meter(events);
-}
-
-/**
- * A sub-agent's request (`chatAgentRequest`), with its system prompt wrapped in the conversation's
- * platform policy. Every managed request is wrapped on this server (`routes/chat.ts`), and a device
- * running the same agent over the managed path gets exactly this; an agent sent bare would be the
- * one request on the operator's key with no guard, under a system prompt a creator wrote.
- */
-function agentRequest(
-	run: ChatAgentRun,
-	base: ChatGenerationRequest,
-	policy: PlatformSafetyPolicy,
-): ChatGenerationRequest {
-	const request = chatAgentRequest(run, base);
-	return {
-		...request,
-		system: applyPlatformSafetyPolicy(request.system, policy),
-	};
 }
 
 /**
