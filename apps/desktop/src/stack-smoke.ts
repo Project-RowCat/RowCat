@@ -1,6 +1,7 @@
 /** Packaging verification uses the installed resources and Electron's Node mode.
  * Its fresh database is outside the bundle and outside every real app-data folder.
- * Server logs can contain a setup code, so only the final verdict reaches stdout. */
+ * Server logs can contain a setup code, so only the final verdict reaches stdout. Postgres's own
+ * lines carry no setup code; they reach stderr when the smoke fails, since they hold the reason. */
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -12,6 +13,7 @@ if (!process.argv[2])
 const resources = resolve(process.argv[2]);
 const dataDir = mkdtempSync(join(tmpdir(), "rowcat-packaged-stack-"));
 let stack: RunningStack | undefined;
+const postgresLog: string[] = [];
 try {
 	stack = await startStack({
 		dataDir,
@@ -21,7 +23,9 @@ try {
 			consoleDistDir: join(resources, "console"),
 			node: { command: process.execPath, env: { ELECTRON_RUN_AS_NODE: "1" } },
 		},
-		log: () => {},
+		log: (source, line) => {
+			if (source === "postgres") postgresLog.push(line);
+		},
 	});
 	for (const origin of [
 		stack.origins.api,
@@ -43,6 +47,9 @@ try {
 			console: "passed",
 		}),
 	);
+} catch (error) {
+	console.error(postgresLog.join("\n"));
+	throw error;
 } finally {
 	await stack?.stop();
 	rmSync(dataDir, { recursive: true, force: true });

@@ -227,7 +227,13 @@ async function startDatabase(
 		onError: (message) => log("postgres", String(message).trimEnd()),
 	});
 	if (fresh) await database.initialise();
-	await database.start();
+	// embedded-postgres rejects with nothing when the server exits before it is ready; the reason is
+	// in what Postgres itself wrote, which went to `log`.
+	await database.start().catch((error: unknown) => {
+		throw error instanceof Error
+			? error
+			: new Error("Postgres exited before it accepted connections");
+	});
 	if (fresh) await database.createDatabase(DATABASE_NAME);
 	return database;
 }
