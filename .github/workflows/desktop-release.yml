@@ -240,7 +240,9 @@ jobs:
           if ($old.Count -ne 1) { throw 'Expected one prior installer' }
           $install = Start-Process -FilePath $old[0].FullName -ArgumentList '/S' -Wait -PassThru
           if ($install.ExitCode -ne 0) { throw 'Previous installer failed' }
-          $exe = Join-Path $env:LOCALAPPDATA 'Programs/RowCat/RowCat.exe'
+          # A per-user one-click install is named after the package (`@rowcatdesktop`), not the product.
+          $exe = (Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Programs') -Recurse -Filter RowCat.exe -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+          if (-not $exe) { throw 'RowCat.exe was not installed' }
           Get-Process RowCat -ErrorAction SilentlyContinue | ForEach-Object { "RowCat was already running after install (pid $($_.Id)); stopping it"; $_ | Stop-Process -Force }
           & ./apps/desktop/e2e/run-unelevated.ps1 -CommandLine "pnpm exec tsx apps/desktop/e2e/installed-smoke.ts `"$exe`" upgrade-state.json --seed-upgrade" -Log installed-smoke-seed.log
           if ($LASTEXITCODE -ne 0) { ./apps/desktop/e2e/print-app-log.ps1; throw 'Previous app startup failed' }
@@ -252,7 +254,9 @@ jobs:
           if ($new.Count -ne 1) { throw 'Expected one new installer' }
           $install = Start-Process -FilePath $new[0].FullName -ArgumentList '/S' -Wait -PassThru
           if ($install.ExitCode -ne 0) { throw 'New installer failed' }
-          $exe = Join-Path $env:LOCALAPPDATA 'Programs/RowCat/RowCat.exe'
+          # A per-user one-click install is named after the package (`@rowcatdesktop`), not the product.
+          $exe = (Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Programs') -Recurse -Filter RowCat.exe -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+          if (-not $exe) { throw 'RowCat.exe was not installed' }
           Get-Process RowCat -ErrorAction SilentlyContinue | ForEach-Object { "RowCat was already running after install (pid $($_.Id)); stopping it"; $_ | Stop-Process -Force }
           & ./apps/desktop/e2e/run-unelevated.ps1 -CommandLine "pnpm exec tsx apps/desktop/e2e/installed-smoke.ts `"$exe`" upgrade-state.json --verify-upgrade" -Log installed-smoke-verify.log
           if ($LASTEXITCODE -ne 0) { ./apps/desktop/e2e/print-app-log.ps1; throw 'Installed upgrade/WASM smoke failed' }
